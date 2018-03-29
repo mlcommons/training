@@ -1,0 +1,26 @@
+FROM nvidia/cuda:9.0-cudnn7-runtime-ubuntu16.04
+
+WORKDIR /tmp
+
+# Generic python installations
+# PyTorch Audio for DeepSpeech: https://github.com/SeanNaren/deepspeech.pytorch/releases
+# Development environment installations
+RUN apt-get update && apt-get install -y \
+  apt-utils \
+  python \
+  python-pip \
+  sox \
+  libsox-dev \
+  libsox-fmt-all \
+  git \
+  cmake \
+  tree \
+  htop \
+  bmon \
+  iotop \
+  tmux \
+  vim \
+  g++
+
+RUN which g++
+
