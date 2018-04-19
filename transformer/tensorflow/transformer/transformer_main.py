@@ -396,9 +396,9 @@ if __name__ == "__main__":
   if FLAGS.random_seed is None:
     raise Exception('No Random seed given')
   seed = FLAGS.random_seed
-  random.seed(hash(seed + 1))
-  tf.set_random_seed(hash(seed + 2))
-  numpy.random.seed(hash(seed + 3))
+  random.seed(seed)
+  tf.set_random_seed(seed)
+  numpy.random.seed(seed)
 
 
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
