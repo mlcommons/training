@@ -24,9 +24,6 @@ RUN apt-get install -y python-pip python3-pip virtualenv htop
 RUN pip3 install --upgrade numpy scipy sklearn tf-nightly-gpu
 
 
-RUN echo "hi" >> /tmp/stuff
-
-
 # Mount data into the docker
 ADD . /research/resnet
 

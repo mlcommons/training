@@ -20,7 +20,9 @@ from __future__ import print_function
 
 import os
 import sys
+import random
 
+import numpy.random
 import tensorflow as tf  # pylint: disable=g-bad-import-order
 
 from official.resnet import imagenet_preprocessing
@@ -303,7 +305,13 @@ def main(argv):
       train_epochs=100
   )
 
-  flags = parser.parse_args(args=argv[1:])
+  flags = parser.parse_args(args=argv[2:])
+
+  seed = int(argv[1])
+  print('Setting random seed = ', seed)
+  random.seed(hash(seed + 1))
+  tf.set_random_seed(hash(seed + 2))
+  numpy.random.seed(hash(seed + 3))
 
   input_function = flags.use_synthetic_data and get_synth_input_fn() or input_fn
 
