@@ -29,8 +29,6 @@ import six
 import tensorflow as tf
 import urllib.request
 
-from utils import tokenizer
-
 # Data sources for training/evaluating the transformer translation model.
 # If any of the training sources are changed, then either:
 #   1) use the flag `--search` to find the best min count or
