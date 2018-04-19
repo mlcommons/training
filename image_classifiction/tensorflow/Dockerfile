@@ -23,12 +23,17 @@ RUN apt-get install -y python-setuptools
 RUN apt-get install -y python-pip python3-pip virtualenv htop
 RUN pip3 install --upgrade numpy scipy sklearn tf-nightly-gpu
 
-WORKDIR /research/resnet
 
+RUN echo "hi" >> /tmp/stuff
+
+
+# Mount data into the docker
 ADD . /research/resnet
-RUN pip3 install -r requirements.txt
 
-WORKDIR /research
+
+WORKDIR /research/resnet
+RUN pip3 install -r official/requirements.txt
+
 
 ENTRYPOINT ["/bin/bash"]
 
