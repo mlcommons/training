@@ -25,8 +25,8 @@ import sys
 import tarfile
 import urllib
 
-import six
 import tensorflow as tf
+
 import urllib.request
 
 # Data sources for training/evaluating the transformer translation model.
@@ -361,13 +361,11 @@ def make_dir(path):
 
 def main(unused_argv):
   """Obtain training and evaluation data for the Transformer model."""
-  tf.logging.set_verbosity(tf.logging.INFO)
-
   make_dir(FLAGS.raw_dir)
   make_dir(FLAGS.data_dir)
 
   # Get paths of download/extracted training and evaluation files.
-  tf.logging.info("Step 1/4: Downloading data from source")
+  print("Step 1/4: Downloading data from source")
   train_files = get_raw_files(FLAGS.raw_dir, _TRAIN_DATA_SOURCES)
   eval_files = get_raw_files(FLAGS.raw_dir, _EVAL_DATA_SOURCES)
 
