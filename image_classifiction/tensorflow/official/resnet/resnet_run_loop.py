@@ -331,7 +331,7 @@ def per_device_batch_size(batch_size, num_gpus):
   return int(batch_size / num_gpus)
 
 
-def resnet_main(flags, model_function, input_function, shape=None):
+def resnet_main(seed, flags, model_function, input_function, shape=None):
   """Shared main loop for ResNet Models.
 
   Args:
@@ -368,7 +368,7 @@ def resnet_main(flags, model_function, input_function, shape=None):
     )
 
   run_config = tf.estimator.RunConfig(train_distribute=distribution,
-                                      session_config=session_config)
+                                      session_config=session_config, tf_random_seed=seed)
 
   classifier = tf.estimator.Estimator(
       model_fn=model_function, model_dir=flags.model_dir, config=run_config,
