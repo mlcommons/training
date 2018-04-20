@@ -309,9 +309,9 @@ def main(argv):
 
   seed = int(argv[1])
   print('Setting random seed = ', seed)
-  random.seed(hash(seed + 1))
-  tf.set_random_seed(hash(seed + 2))
-  numpy.random.seed(hash(seed + 3))
+  random.seed(seed)
+  tf.set_random_seed(seed)
+  numpy.random.seed(seed)
 
   input_function = flags.use_synthetic_data and get_synth_input_fn() or input_fn
 
