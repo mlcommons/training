@@ -33,6 +33,7 @@ import math
 import numpy as np
 import six
 import tensorflow as tf
+from six.moves import xrange
 
 
 def _pad_tensors_to_same_length(x, y):
