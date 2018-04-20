@@ -309,13 +309,14 @@ def main(argv):
 
   seed = int(argv[1])
   print('Setting random seed = ', seed)
+  print('special seeding')
   random.seed(seed)
   tf.set_random_seed(seed)
   numpy.random.seed(seed)
 
   input_function = flags.use_synthetic_data and get_synth_input_fn() or input_fn
 
-  resnet_run_loop.resnet_main(
+  resnet_run_loop.resnet_main(seed,
       flags, imagenet_model_fn, input_function,
       shape=[_DEFAULT_IMAGE_SIZE, _DEFAULT_IMAGE_SIZE, _NUM_CHANNELS])
 
