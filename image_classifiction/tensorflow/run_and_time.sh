@@ -32,7 +32,7 @@ echo "ENDING TIMING RUN AT $end_fmt"
 
 # report result 
 result=$(( $end - $start )) 
-result_name="transformer"
+result_name="resnet"
 
 
 echo "RESULT,$result_name,$seed,$result,$USER,$start_fmt"
