@@ -1,7 +1,19 @@
+function get_checker {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        checkmd5=md5
+    else
+        checkmd5=md5sum
+    fi
+
+    echo $checkmd5
+}
+
+
 function verify_1m {
     # From: curl -O http://files.grouplens.org/datasets/movielens/ml-1m.zip.md5
     hash=<(echo "MD5 (ml-1m.zip) = c4d9eecfca2ab87c1945afe126590906")
-    if diff <(md5 ml-1m.zip) $hash &> /dev/null
+    local checkmd5=$(get_checker)
+    if diff <($checkmd5 ml-1m.zip) $hash &> /dev/null
     then
         echo "PASSED"
     else
@@ -12,7 +24,9 @@ function verify_1m {
 function verify_20m {
     # From: curl -O http://files.grouplens.org/datasets/movielens/ml-20m.zip.md5
     hash=<(echo "MD5 (ml-20m.zip) = cd245b17a1ae2cc31bb14903e1204af3")
-    if diff <(md5 ml-20m.zip) $hash &> /dev/null
+    local checkmd5=$(get_checker)
+
+    if diff <($checkmd5 ml-20m.zip) $hash &> /dev/null
     then
         echo "PASSED"
     else
