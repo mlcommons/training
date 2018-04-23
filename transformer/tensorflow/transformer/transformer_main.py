@@ -40,7 +40,7 @@ from utils import tokenizer
 
 DEFAULT_TRAIN_EPOCHS = 10
 BLEU_DIR = "bleu"
-INF = 1e9
+INF = 10000
 
 
 def model_fn(features, labels, mode, params):
