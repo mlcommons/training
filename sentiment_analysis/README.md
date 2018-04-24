@@ -17,9 +17,9 @@ A docker image with PaddlePaddle pre-installed can be pulled using:
 docker pull sidgoyal78/paddle:benchmark12042018
 ```
 
-To run the docker container use:
+To run the docker container, use:
 ```
-docker run -it -v `pwd`:/paddle sidgoyal78/paddle:benchmark12042018 /bin/bash
+nvidia-docker run -it -v `pwd`:/paddle sidgoyal78/paddle:benchmark12042018 /bin/bash
 ```
 
 Inside the container, use `cd paddle` to go to the correct directory.
