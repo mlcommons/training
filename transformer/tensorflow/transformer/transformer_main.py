@@ -259,7 +259,7 @@ def train_schedule(
     if evaluate_bleu:
       uncased_score, _ = evaluate_and_log_bleu(
           estimator, bleu_writer, bleu_source, bleu_ref)
-      if bleu_threshold is not None and uncased_score < bleu_threshold:
+      if bleu_threshold is not None and uncased_score > bleu_threshold:
         bleu_writer.close()
         break
 
