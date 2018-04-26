@@ -1,6 +1,14 @@
 # 1. Problem 
 Which benchmark is implemented, e.g. image classification
-# 2. Dataset/Environment
+How many test items per quality evaluation (typically all)
+# 2. Directions
+### Steps to configure machine
+Ideally, a list of command lines
+### Steps to download and verify data
+Ideally, a list of command lines
+### Steps to run and time
+Ideally, a list of command lines
+# 3. Dataset/Environment
 ### Publication/Attribution
 Cite paper describing dataset plus any additional attribution requested by dataset authors
 ### Data preprocessing
@@ -13,7 +21,7 @@ In what order is the training data traversed?
 In what order is the test data traversed?
 ### Simulation environment (RL models only)
 Describe simulation environment briefly, if applicable. 
-# 2. Model
+# 4. Model
 ### Publication/Attribution
 Cite paper describing model plus any additional attribution requested by code authors 
 ### List of layers 
@@ -32,11 +40,3 @@ What is the numeric quality target
 ### Evaluation frequency
 How many training items between quality evaluations (typically all, evaluated every epoch)
 ### Evaluation thoroughness
-How many test items per quality evaluation (typically all)
-# 4. Directions
-### Steps to configure machine
-Ideally, a list of command lines
-### Steps to download and verify data
-Ideally, a list of command lines
-### Steps to run and time
-Ideally, a list of command lines
