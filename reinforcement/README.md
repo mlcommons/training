@@ -62,8 +62,21 @@ Provided in with this benchmark are records of human games and the quality metri
 ### Quality target
 The quality target is predicting 40% of the moves.
 
+### Quality Progression
+Informally, we have observed that quality should improve roughly linearly with time. We observed roughly 0.5% improvement in quality per hour of runtime. An example of approximately how we've seen quality progress over time:
+
+    Approx. Hours to Quality (16 CPU & 1 P100)
+    2h           3%
+    12h          14%
+    24h          19%
+    36h          24%
+    60h          34%
+
+Note that quality does not necessarily monotically increase. 
+
 ### Evaluation frequency
-Evaluation should be preformed for every model which is trained (regardless if it wins the "model evaluation" round).
+Evaluation should be preformed for every model which is trained (regardless if it wins the "model evaluation" round). 
+    
 
 ### Evaluation thoroughness
 All positions should be considered in each evaluation phase.
