@@ -32,7 +32,7 @@ How are weights and biases intialized
 Name/description of loss function used
 ### Optimizer
 Name of optimzier used
-# 3. Quality
+# 5. Quality
 ### Quality metric
 What is the target quality metric
 ### Quality target
