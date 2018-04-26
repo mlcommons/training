@@ -1,3 +1,69 @@
-TODO
+# 1. Problem 
+This task benchmarks on policy reinforcement learning for the 9x9 version of the boardgame go. The model plays games against itself and uses these games to improve play.
 
-Note: no download dataset necessary.
+# 2. Directions
+### Steps to configure machine
+Ideally, a list of command lines
+
+### Steps to download and verify data
+Unlike other benchmarks, there is no data to download. All training data comes from games played during benchmarking.
+
+### Steps to run and time
+Ideally, a list of command lines
+
+If running using the docker instance,
+
+    cd ~/reference/reinforcement/tensorflow/
+    IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
+    SEED=1
+    NOW=`date "+%F-%T"`
+    sudo docker run --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
+
+# 3. Model
+### Publication/Attribution
+
+This benchmark is based on a fork of the minigo project (https://github.com/tensorflow/minigo); which is inspired by the work done by Deepmind with ["Mastering the Game of Go with Deep Neural Networks and
+Tree Search"](https://www.nature.com/articles/nature16961), ["Mastering the Game of Go without Human
+Knowledge"](https://www.nature.com/articles/nature24270), and ["Mastering Chess and Shogi by
+Self-Play with a General Reinforcement Learning
+Algorithm"](https://arxiv.org/abs/1712.01815). Note that minigo is an
+independent effort from AlphaGo, and that this fork is minigo is independent from minigo itself. 
+
+### Reinforcement Setup
+
+This benchmark includes both the environment and training for 9x9 go. There are four primary phases in this benchmark, these phases are repeated in order:
+
+ - Selfplay: the *current best* model plays games against itself to produce board positions for training.
+ - Training: train the neural networks selfplay data from several recent models. 
+ - Target Evaluation: the termination criteria for the benchmark is checked using the provided record of professional games. 
+ - Model Evaluation: the *current best* and the most recently trained model play a series of games. In order to become the new *current best*, the most recently trained model must win 55% of the games.
+
+### List of layers 
+
+(TODO)
+
+### Weight and bias initialization
+How are weights and biases intialized
+
+### Loss function
+Name/description of loss function used
+
+### Optimizer
+Name of optimzier used
+
+# 4. Quality
+
+Due to the difficulty of training a highly proficient go model, our quality metric and termination criteria is based on predicting moves from human reference games. Currently published results indicate that it takes weeks of time and/or cluster sized resources to achieve a high level of play. Given more liminited time and resources, it is possible to predict a significant number of moves from professional or near-professional games. 
+
+### Quality metric
+
+Provided in with this benchmark are records of human games and the quality metric is the percent of the time the model chooses the same move the human chose in each position. Each position is attempted twice by the model (keep in mind the model's choice is non-deterministic). The metric is calculated as the number of correct predictions devided by the number of predictions attempted. 
+
+### Quality target
+The quality target is predicting 40% of the moves.
+
+### Evaluation frequency
+Evaluation should be preformed for every model which is trained (regardless if it wins the "model evaluation" round).
+
+### Evaluation thoroughness
+All positions should be considered in each evaluation phase.
