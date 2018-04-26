@@ -1,6 +1,5 @@
 # 1. Problem 
 Which benchmark is implemented, e.g. image classification
-How many test items per quality evaluation (typically all)
 # 2. Directions
 ### Steps to configure machine
 Ideally, a list of command lines
@@ -40,3 +39,4 @@ What is the numeric quality target
 ### Evaluation frequency
 How many training items between quality evaluations (typically all, evaluated every epoch)
 ### Evaluation thoroughness
+How many test items per quality evaluation (typically all)
