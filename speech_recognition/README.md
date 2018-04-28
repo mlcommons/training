@@ -7,8 +7,12 @@ TODO - separate from base install script to setup nvidia-docker?
 The 'download_dataset' script will use the python data utils defined in the 'data' directory to download and process the full LibriSpeech dataset into './LibriSpeech_dataset'.  This takes up to 6 hours.
 The 'verify_dataset' script will build a single tarball of the dataset, checksum it, compare against a reference checksum, and report whether they match.  This takes up to an hour.
 
+Either run the download and verification inside the docker instance (described below) or, optionally, install additional dependencies locally with `sh install_dependencies.sh`.
+
     sh download_dataset.sh 
     sh verify_dataset.sh
+
+NOTE: The dataset itself is over 100GB, and intermediate files during download, processing, and verification require 220GB of free disk space to complete.
  
 ### Steps to run and time
 For each framework, there is a provided docker file and 'run_and_time' script.
@@ -33,8 +37,6 @@ After running the 'download_dataset' script, the 'LibriSpeech_dataset' directory
 Audio samples are sorted by length.
 ### Test data order
 Audio samples are sorted by length.
-### Simulation environment (RL models only)
-N/A
 # 4. Model
 (TODO)
 ### Publication/Attribution

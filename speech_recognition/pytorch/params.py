@@ -39,3 +39,4 @@ max_norm        = 200 # Norm cutoff to prevent explosion of gradients
 l2              = 0 # L2 regularization
 batch_size      = 5 #Batch size for training
 augment         = True # Use random tempo and gain perturbations
+exit_at_acc     = True # Exit at given target accuracy
