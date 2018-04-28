@@ -1,7 +1,7 @@
 FROM nvidia/cuda:9.1-cudnn7-devel-ubuntu16.04
 
 # Set working directory
-WORKDIR /research
+WORKDIR /mlperf
 
 RUN apt-get update
 RUN apt-get install -y git make build-essential libssl-dev zlib1g-dev libbz2-dev \
@@ -11,7 +11,7 @@ RUN apt-get install -y git make build-essential libssl-dev zlib1g-dev libbz2-dev
 # pyenv Install
 RUN git clone https://github.com/pyenv/pyenv.git .pyenv
 
-ENV HOME /research
+ENV HOME /mlperf
 ENV PYENV_ROOT $HOME/.pyenv
 ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
@@ -27,18 +27,18 @@ RUN conda install -c pytorch -y magma-cuda90
 
 # Install PyTorch
 RUN mkdir github
-WORKDIR /research/github
+WORKDIR /mlperf/github
 RUN git clone --recursive https://github.com/pytorch/pytorch
-WORKDIR /research/github/pytorch
+WORKDIR /mlperf/github/pytorch
 RUN git checkout e83dd71
 RUN git submodule update --init
 RUN python setup.py clean
 RUN python setup.py install
 
 # Install ncf-pytorch
-WORKDIR /research/ncf
+WORKDIR /mlperf/ncf
 # TODO: Change to clone github repo
-ADD . /research/ncf
+ADD . /mlperf/ncf
 RUN pip install -r requirements.txt
-WORKDIR /research
-ENTRYPOINT ["python", "ncf/ncf.py"]
+WORKDIR /mlperf/experiment
+ENTRYPOINT ["/mlperf/ncf/run_and_time.sh"]
