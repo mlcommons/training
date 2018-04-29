@@ -9,7 +9,20 @@ Standard script.
 Run the provided shell scripts.
 
 ### Steps to run and time
+Build the docker container.
+```sudo docker build -t detectron .```
 
+Run the docker container *and mount the data appropriately*:
+```sudo nvidia-docker run
+-v /mnt/disks/data/coco/:/packages/detectron/lib/datasets/data/coco
+-it detectron /bin/bash```
+(replace /mnt/disks/data/coco/ with the data directory)
+
+Run the command:
+```time stdbuf -o 0 \
+  python tools/train_net.py --cfg configs/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_1x.yaml \
+    --box_min_ap 0.377 --mask_min_ap 0.339 \
+    --seed 3 | tee run.log```
 
 # 3. Dataset/Environment
 ### Publication/Attribution
@@ -29,7 +42,10 @@ Any order.
 
 # 4. Model
 ### Publication/Attribution
-Mask R-CNN
+He, Kaiming, et al. "Mask r-cnn." Computer Vision (ICCV), 2017 IEEE International Conference on.
+IEEE, 2017.
+
+We use a version of Mask R-CNN with a ResNet50 backbone.
 
 ### List of layers 
 
@@ -42,7 +58,7 @@ The ResNet50 base must be loaded from the provided weights. They may be quantize
 
 # 5. Quality
 ### Quality metric
-Ask Mask R-CNN can provide both boxes and masks, we evalute on both box and mask mAP.
+As Mask R-CNN can provide both boxes and masks, we evalute on both box and mask mAP.
 
 ### Quality target
 Box mAP of 0.377, mask mAP of 0.339
