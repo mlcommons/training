@@ -10,12 +10,15 @@ Run the provided shell scripts.
 
 ### Steps to run and time
 Build the docker container.
+
 ```sudo docker build -t detectron .```
 
-Run the docker container *and mount the data appropriately*:
+Run the docker container and mount the data appropriately
+
 ```sudo nvidia-docker run
 -v /mnt/disks/data/coco/:/packages/detectron/lib/datasets/data/coco
 -it detectron /bin/bash```
+
 (replace /mnt/disks/data/coco/ with the data directory)
 
 Run the command:
