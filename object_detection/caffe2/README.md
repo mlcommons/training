@@ -57,13 +57,22 @@ IEEE, 2017.
 We use a version of Mask R-CNN with a ResNet50 backbone.
 
 ### List of layers 
+Running the timing script will display a list of layers.
 
 ### Weight and bias initialization
 The ResNet50 base must be loaded from the provided weights. They may be quantized.
 
 ### Loss function
+Multi-task loss (classification, box, mask). Described in the Mask R-CNN paper.
+
+Classification: Smooth L1 loss
+
+Box: Log loss for true class.
+
+Mask: per-pixel sigmoid, average binary cross-entropy loss.
 
 ### Optimizer
+Momentum SGD. Weight decay of 0.0001, momenum of 0.9.
 
 # 5. Quality
 ### Quality metric
