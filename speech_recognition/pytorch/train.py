@@ -38,6 +38,8 @@ parser.add_argument('--continue_from', default='', help='Continue from checkpoin
 
 parser.add_argument('--seed', default=0xdeadbeef, type=int, help='Random Seed')
 
+parser.add_argument('--acc', default=23.0, type=float, help='Target WER')
+
 parser.add_argument('--start_epoch', default=-1, type=int, help='Number of epochs at which to start from')
 
 def to_np(x):
@@ -272,6 +274,10 @@ def main():
             best_wer = wer
 
         avg_loss = 0
+
+        #If set to exit at a given accuracy, exit
+        if params.exit_at_acc and (best_wer <= args.acc):
+            break
 
     print ("=======================================================")
     print "***Best WER = ", best_wer

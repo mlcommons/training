@@ -40,6 +40,10 @@ def parse_args():
                         help='rank for test examples to be considered a hit')
     parser.add_argument('--no-cuda', action='store_true',
                         help='use available GPUs')
+    parser.add_argument('--seed', '-s', type=int,
+                        help='manually set random seed for torch')
+    parser.add_argument('--threshold', '-t', type=float,
+                        help='stop training early at threshold')
     return parser.parse_args()
 
 
@@ -115,6 +119,10 @@ def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None):
 
 def main():
     args = parse_args()
+    if args.seed is not None:
+        print("Using seed = {}".format(args.seed))
+        torch.manual_seed(args.seed)
+        np.random.seed(seed=args.seed)
 
     # Save configuration to file
     config = {k: v for k, v in args.__dict__.items()}
@@ -171,7 +179,8 @@ def main():
     # Calculate initial Hit Ratio and NDCG
     hits, ndcgs = val_epoch(model, test_ratings, test_negs, args.topk,
                             use_cuda=use_cuda)
-    print(np.mean(hits), np.mean(ndcgs))
+    print('Initial HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f}'
+          .format(K=args.topk, hit_rate=np.mean(hits), ndcg=np.mean(ndcgs)))
     for epoch in range(args.epochs):
         model.train()
         losses = utils.AverageMeter()
@@ -206,10 +215,15 @@ def main():
                                 use_cuda=use_cuda, output=valid_results_file,
                                 epoch=epoch)
         val_time = time.time() - begin
-        print('Epoch {}: HR = {:.4f} , NDCG = {:.4f} , train_time = {:.2f} ,'
-              ' val_time = {:.2f}'
-              .format(epoch, np.mean(hits), np.mean(ndcgs), train_time,
-                      val_time))
+        print('Epoch {epoch}: HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f},'
+              ' train_time = {train_time:.2f}, val_time = {val_time:.2f}'
+              .format(epoch=epoch, K=args.topk, hit_rate=np.mean(hits),
+                      ndcg=np.mean(ndcgs), train_time=train_time,
+                      val_time=val_time))
+        if args.threshold is not None:
+            if np.mean(hits) >= args.threshold:
+                print("Hit threshold of {}".format(args.threshold))
+                return 0
 
 
 if __name__ == '__main__':

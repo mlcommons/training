@@ -1,7 +1,7 @@
 # Script to verify the dataset
 
 #generate tar, this takes a few minutes
-tar -cvf data-LibriSpeech-ref.tar LibriSpeech_dataset
+tar -cf data-LibriSpeech-ref.tar LibriSpeech_dataset
 
 #generate checksum on tar, this takes a few minutes
 cksum data-LibriSpeech-ref.tar > data-LibriSpeech-cksum.out

@@ -123,7 +123,7 @@ class Transformer(object):
 
       if self.train:
         encoder_inputs = tf.nn.dropout(
-            embedded_inputs, 1 - self.params.layer_postprocess_dropout)
+            encoder_inputs, 1 - self.params.layer_postprocess_dropout)
 
       return self.encoder_stack(encoder_inputs, attention_bias, inputs_padding)
 
