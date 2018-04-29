@@ -41,7 +41,9 @@ Training stops when the model reaches the pre-defined target quality.
 
 # 3. Dataset/Environment
 ### Publication/Attribution
-["IMDB Dataset"](http://ai.stanford.edu/~amaas/data/sentiment/) provides 50000 movie reviews for sentiment analysis.
+[IMDB Dataset](http://ai.stanford.edu/~amaas/data/sentiment/) provides 50000 movie reviews for sentiment analysis.
+
+Maas, A. L.; Daly, R. E.; Pham, P. T.; Huang, D.; Ng, A. Y. & Potts, C. (2011), Learning Word Vectors for Sentiment Analysis, in 'Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies', Association for Computational Linguistics, Portland, Oregon, USA, pp. 142--150.
 ### Data preprocessing
 The dataset isn't preprocessed in any way.
 ### Training and test data separation
