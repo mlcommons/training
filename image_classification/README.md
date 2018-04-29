@@ -51,8 +51,7 @@ Dependencies:
 
     ssh-keyscan github.com >> ~/.ssh/known_hosts
     git clone git@github.com:mlperf/reference.git
-    cd ~/reference/reinforcement/tensorflow
-    sudo docker build .
+    
 
 Running:
 
