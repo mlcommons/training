@@ -18,7 +18,11 @@ def md5content(fname):
     return hash_md5.hexdigest()
 
 # Verify MD5 checksum
-if md5content(PATH) == MD5:
-    print("PASSED!")
-else:
-    print("FAILED")
+def verify():
+    if md5content(PATH) == MD5:
+        print("PASSED!")
+    else:
+        print("FAILED")
+
+if __name__ == "__main__":
+    verify()

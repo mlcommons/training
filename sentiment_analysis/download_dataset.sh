@@ -1,4 +1,4 @@
 #!/bin/bash
 
 # Use the python script to download the IMDB dataset
-python paddle/download.py
+python download.py

@@ -6,7 +6,6 @@ import shutil
 import sys
 
 URL = 'http://ai.stanford.edu/%7Eamaas/data/sentiment/aclImdb_v1.tar.gz'
-MD5 = '7c2ac02c03563afcf9b574c7e56c153a'
 DIR = os.path.expanduser('~/.cache/paddle/dataset/imdb')
 PATH = os.path.join(DIR, URL.split('/')[-1])
 CHUNK_SIZE = 4096
@@ -32,12 +31,10 @@ def download():
                 shutil.copyfileobj(r.raw, f)
         else:
             with open(PATH, 'w') as f:
-                dl = 0
-                total_length = int(total_length)
                 for data in r.iter_content(chunk_size=CHUNK_SIZE):
-                    dl += len(data)
                     f.write(data)
 
     print("Download successful!")
 
-download()
+if __name__ == "__main__":
+    download()
