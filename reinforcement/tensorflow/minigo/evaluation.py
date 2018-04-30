@@ -74,6 +74,10 @@ def play_match(black_net, white_net, games, readouts, sgf_dir, verbosity):
             if active.is_done():
                 fname = "{:d}-{:s}-vs-{:s}-{:d}.sgf".format(int(time.time()),
                                                             white_name, black_name, i)
+                if active.result_string is None:
+                  # This is an exceptionally  rare corner case where we don't get a winner.
+                  # Our temporary solution is to just drop this game.
+                  break
                 winners.append(active.result_string[0])
                 with open(os.path.join(sgf_dir, fname), 'w') as _file:
                     sgfstr = sgf_wrapper.make_sgf(active.position.recent,
