@@ -1,6 +1,8 @@
 
 # 1. Problem 
 
+This problem uses Attention mechanisms to do language translation.
+
 
 # 2. Directions
 ### Steps to configure machine
@@ -102,18 +104,34 @@ The model also applies embeddings on the input and output tokens, and adds a con
 
 ### List of layers 
 Brief summary of structure of model
+
 ### Weight and bias initialization
 How are weights and biases intialized
+
 ### Loss function
 Name/description of loss function used
+
 ### Optimizer
-Name of optimzier used
+The original authors use the Adam Optimizer.
+
+
 # 5. Quality
+
 ### Quality metric
-What is the target quality metric
+We use the BLEU scores with data from [Attention is All You Need](https://arxiv.org/abs/1706.03762). 
+
+
+    https://nlp.stanford.edu/projects/nmt/data/wmt14.en-de/newstest2014.en
+    https://nlp.stanford.edu/projects/nmt/data/wmt14.en-de/newstest2014.de
+
+
 ### Quality target
-What is the numeric quality target
+We currently run to a BLEU score (uncased) of 25. This was picked as a cut-off point based on time. 
+
+
 ### Evaluation frequency
-How many training items between quality evaluations (typically all, evaluated every epoch)
+Evaluation of BLEU score is done after every epoch.
+
+
 ### Evaluation thoroughness
-How many test items per quality evaluation (typically all)
+Evaluation uses all of `newstest2014.en`.
