@@ -17,9 +17,8 @@ echo "STARTING TIMING RUN AT $start_fmt"
 seed=${1:-1}
 
 echo "running benchmark with seed $seed"
-# Quality of 0.2 is roughly a few hours of work
-# 0.749 is the final target quality
-./run.sh $seed TODO
+# The termination quality is set in params/final.json. See RAEDME.md.
+./run.sh $seed
 sleep 3
 ret_code=$?; if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 
