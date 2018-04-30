@@ -62,3 +62,8 @@ Note: we assume that imagenet pre-processed has already been mounted at `/imn` .
     SEED=2
     NOW=`date "+%F-%T"`
     sudo docker run -v /imn:/imn --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
+
+For reference, 
+
+    $ ls /imn
+    imagenet  lost+found
