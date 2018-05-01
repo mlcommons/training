@@ -80,9 +80,8 @@ Run the docker:
 
 # 3. Dataset/Environment
 ### Publication/Attribution
-WMT17 ende training and evaluation datasets
+We use WMT17 ende training for tranding, and we evaluate using the WMT 2014 English-to-German translation task. See http://statmt.org/wmt17/translation-task.html for more information. 
 
-TODO Authors
 
 ### Data preprocessing
 We combine all the files together and subtokenize the data into a vocabulary.  
