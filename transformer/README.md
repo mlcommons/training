@@ -7,61 +7,60 @@ This problem uses Attention mechanisms to do language translation.
 # 2. Directions
 ### Steps to configure machine
 
-Run the following:
+To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you can use these commands. This may vary on a different operating system or graphics card.
 
 
-      # Install docker
-      sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+    # Install docker
+    sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
 
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-      sudo apt-key fingerprint 0EBFCD88
-      sudo add-apt-repository    "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
-         $(lsb_release -cs) \
-         stable"
-      sudo apt update
-      # sudo apt install docker-ce -y
-      sudo apt install docker-ce=18.03.0~ce-0~ubuntu -y --allow-downgrades
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    sudo apt-key fingerprint 0EBFCD88
+    sudo add-apt-repository    "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+       $(lsb_release -cs) \
+       stable"
+    sudo apt update
+    # sudo apt install docker-ce -y
+    sudo apt install docker-ce=18.03.0~ce-0~ubuntu -y --allow-downgrades
 
-      # Install nvidia-docker2
-      curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey |   sudo apt-key add -
-      curl -s -L https://nvidia.github.io/nvidia-docker/ubuntu16.04/nvidia-docker.list |   sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-      sudo apt-get update
-      sudo apt install nvidia-docker2 -y
-
-
-      sudo tee /etc/docker/daemon.json <<EOF
-      {
-          "runtimes": {
-              "nvidia": {
-                  "path": "/usr/bin/nvidia-container-runtime",
-                  "runtimeArgs": []
-              }
-          }
-      }
-      EOF
-      sudo pkill -SIGHUP dockerd
-
-      sudo apt install -y bridge-utils
-      sudo service docker stop
-      sleep 1;
-      sudo iptables -t nat -F
-      sleep 1;
-      sudo ifconfig docker0 down
-      sleep 1;
-      sudo brctl delbr docker0
-      sleep 1;
-      sudo service docker start
+    # Install nvidia-docker2
+    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey |   sudo apt-key add -
+    curl -s -L https://nvidia.github.io/nvidia-docker/ubuntu16.04/nvidia-docker.list |   sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+    sudo apt-get update
+    sudo apt install nvidia-docker2 -y
 
 
+    sudo tee /etc/docker/daemon.json <<EOF
+    {
+        "runtimes": {
+            "nvidia": {
+                "path": "/usr/bin/nvidia-container-runtime",
+                "runtimeArgs": []
+            }
+        }
+    }
+    EOF
+    sudo pkill -SIGHUP dockerd
 
-ssh-keyscan github.com >> ~/.ssh/known_hosts
-git clone git@github.com:mlperf/reference.git
+    sudo apt install -y bridge-utils
+    sudo service docker stop
+    sleep 1;
+    sudo iptables -t nat -F
+    sleep 1;
+    sudo ifconfig docker0 down
+    sleep 1;
+    sudo brctl delbr docker0
+    sleep 1;
+    sudo service docker start
+
+    ssh-keyscan github.com >> ~/.ssh/known_hosts
+    git clone git@github.com:mlperf/reference.git
 
 
 
 ### Steps to download and verify data
 
-Download the data:
+Download the data using the following command. Note: this will require a recent version of tensorflow installed.
    
     python3 data_download.py --raw_dir raw_data
     
@@ -69,7 +68,7 @@ Download the data:
 
 ### Steps to run and time
 
-Run the docker:
+Run the docker, assuming your checkout lives in `$HOME`. Modify paths as appropriate. 
 
     cd ~/reference/transformer/tensorflow
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
