@@ -7,6 +7,13 @@ This is a repository of reference implementations for the MLPerf benchmark. Thes
 
 This release of these implementaitons, and numbers reported, should be considered as preliminary and a "pre-alpha" release. The primary intention of this release is to demonstrate an end-to-end working benchmark. The benchmark is still being developed and refined, see the Suggestions section below to learn how to contribute. 
 
+In particular, you should expect the following is possible:
+* Modifications to the reference implementations to fix bugs or add additional functionality.
+* Changes to the target quality levels.
+* Additional benchmarks to be added.
+* Additional implementations for existing benchmarks (in new frameworks) to be added, over time.
+
+
 # Contents
 
 We provide reference implementations for each of the 7 benchmarks in the MLPerf suite. 
