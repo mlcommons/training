@@ -64,7 +64,7 @@ To run, this assumes you checked out the repo into $HOME, adjust paths as necess
     NOW=`date "+%F-%T"`
     sudo docker run --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
     
-To change the quality target, modify `params/final.josn` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. 
+To change the quality target, modify `params/final.josn` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.josn`.
 
 # 3. Model
 ### Publication/Attribution
@@ -85,18 +85,16 @@ This benchmark includes both the environment and training for 9x9 go. There are 
  - Target Evaluation: the termination criteria for the benchmark is checked using the provided record of professional games. 
  - Model Evaluation: the *current best* and the most recently trained model play a series of games. In order to become the new *current best*, the most recently trained model must win 55% of the games.
 
-### List of layers 
+### Structure
 
-(TODO)
+This task has a non-trivial network structure, including a search tree. A good overview of the sructure can be found here: https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0. 
 
-### Weight and bias initialization
-How are weights and biases intialized
-
-### Loss function
-Name/description of loss function used
+### Weight and bias initialization and Loss Function
+Network weights are initialized randomly. Initializion and loss are described here;
+["Mastering the Game of Go with Deep Neural Networks and Tree Search"](https://www.nature.com/articles/nature16961)
 
 ### Optimizer
-Name of optimzier used
+We use a MomentumOptimizer to train the primary network. 
 
 # 4. Quality
 
