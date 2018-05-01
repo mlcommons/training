@@ -5,12 +5,11 @@ This benchmark uses a RNN to classify images. This is a fork of https://github.c
 # 2. Directions
 ### Steps to configure machine
 
-To setup the machine for resnet;
-
+To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you can use these commands. This may vary on a different operating system or graphics card.
 
     # Install docker
     sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-    
+
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     sudo apt-key fingerprint 0EBFCD88
@@ -51,10 +50,9 @@ To setup the machine for resnet;
     sleep 1;
     sudo service docker start
 
-
-
     ssh-keyscan github.com >> ~/.ssh/known_hosts
     git clone git@github.com:mlperf/reference.git
+
 
 
 ### Steps to download and verify data
@@ -67,6 +65,7 @@ https://github.com/tensorflow/models/tree/master/research/inception#getting-star
 
 We assume that imagenet pre-processed has already been mounted at `/imn`. 
 
+    cd ~/reference/image_classification/tensorflow/
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
     SEED=2
     NOW=`date "+%F-%T"`
