@@ -3,20 +3,11 @@ This task benchmarks on policy reinforcement learning for the 9x9 version of the
 
 # 2. Directions
 ### Steps to configure machine
-Ideally, a list of command lines
-
-### Steps to download and verify data
-Unlike other benchmarks, there is no data to download. All training data comes from games played during benchmarking.
-
-### Steps to run and time
-Ideally, a list of command lines
-
-Dependencies:
-
+To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you can use these commands. This may vary on a different operating system or graphics card.
 
     # Install docker
     sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-    
+
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     sudo apt-key fingerprint 0EBFCD88
@@ -57,15 +48,15 @@ Dependencies:
     sleep 1;
     sudo service docker start
 
-
-
     ssh-keyscan github.com >> ~/.ssh/known_hosts
     git clone git@github.com:mlperf/reference.git
-    cd ~/reference/reinforcement/tensorflow
-    sudo docker build .
 
+### Steps to download and verify data
+Unlike other benchmarks, there is no data to download. All training data comes from games played during benchmarking.
 
-If running using the docker instance,
+### Steps to run and time
+
+To run, this assumes you checked out the repo into $HOME, adjust paths as necessary.
 
     cd ~/reference/reinforcement/tensorflow/
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
