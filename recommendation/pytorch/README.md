@@ -37,7 +37,7 @@ git clone https://github.com/mlperf/reference.git
 
 ```bash
 # Pull from Docker Hub
-docker pull ???
+docker pull mlperf/recommendation:v0.5
 ```
 
 or
@@ -45,7 +45,7 @@ or
 ```bash
 # Build from Dockerfile
 cd reference/recommendation/pytorch
-sudo docker build -t ??? .
+sudo docker build -t mlperf/recommendation:v0.5 .
 ```
 
 ### Steps to download and verify data
@@ -74,7 +74,7 @@ source run_and_time.sh SEED
 ```bash
 sudo nvidia-docker run -i -t --rm --ipc=host \
     --mount "type=bind,source=$(pwd),destination=/mlperf/experiment" \
-    ??? SEED
+    mlperf/recommendation:v0.5 SEED
 ```
 
 # 3. Dataset/Environment
