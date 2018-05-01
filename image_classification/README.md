@@ -2,6 +2,11 @@
 This benchmark uses a RNN to classify images. This is a fork of https://github.com/tensorflow/models/tree/master/official/resnet. 
 
 
+## Disclaimer
+
+The current timing scripts do not time all of the data pre-processing. The preprocessing done as described in the dataset section is not included in the timing. [Some of the preprocessing](https://github.com/tensorflow/models/blob/master/official/resnet/imagenet_preprocessing.py), though, is including in the timing. This is an artifact of the difficulty and lack of automation in the data processing and downloading and will be remedied in the future.  
+
+
 # 2. Directions
 ### Steps to configure machine
 
@@ -89,9 +94,6 @@ We use Imagenet (http://image-net.org/):
 The dataset is extensively preprocessed, in several ways including image processing and, batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format. There is also cropping and augmentation, mean color subtraction, bounding boxes etc.
 
 For more information on preprocessing, see this file and documentation:
-
-https://github.com/tensorflow/models/blob/master/official/resnet/imagenet_preprocessing.py
-
 https://github.com/tensorflow/models/tree/master/research/inception#getting-started
 
 ### Training and test data separation
