@@ -1,7 +1,11 @@
-TODO
+# 1. Problem 
+This benchmark uses a RNN to classify images. This is a fork of https://github.com/tensorflow/models/tree/master/official/resnet. 
 
 
-Dependencies:
+# 2. Directions
+### Steps to configure machine
+
+To setup the machine for resnet;
 
 
     # Install docker
@@ -51,12 +55,18 @@ Dependencies:
 
     ssh-keyscan github.com >> ~/.ssh/known_hosts
     git clone git@github.com:mlperf/reference.git
-    
 
-Running:
 
-Note: we assume that imagenet pre-processed has already been mounted at `/imn` ... In the future, we will have data download and pre-processing scripts. 
+### Steps to download and verify data
+Unfortunately this has not been well automated, yet. Please refer to the instructions here:
 
+
+https://github.com/tensorflow/models/tree/master/research/inception#getting-started
+
+
+### Steps to run and time
+
+We assume that imagenet pre-processed has already been mounted at `/imn`. 
 
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
     SEED=2
@@ -67,3 +77,62 @@ For reference,
 
     $ ls /imn
     imagenet  lost+found
+
+# 3. Dataset/Environment
+### Publication/Attribution
+We use Imagenet (http://image-net.org/): 
+       
+    O. Russakovsky, J. Deng, H. Su, J. Krause, S. Satheesh, S. Ma,
+    Z. Huang, A. Karpathy, A. Khosla, M. Bernstein, et al. Imagenet
+    large scale visual recognition challenge. arXiv:1409.0575, 2014.
+
+
+### Data preprocessing
+The dataset is extensively preprocessed, primarily in two ways: (1) image processing, and (2) batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format. 
+
+### Training and test data separation
+TODO
+
+### Training data order
+TODO 
+
+### Test data order
+TODO
+
+
+# 4. Model
+### Publication/Attribution
+
+See the following papers for more background:
+
+[1] [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
+
+[2] [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027.pdf) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
+
+
+### Structure & Loss
+
+In brief, this is a 50 layer v1 RNN. Refer to [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf) for the layer structure and loss function.
+
+
+### Weight and bias initialization
+
+Weight initialization is done as described here in [Delving Deep into Rectifiers: Surpassing Human-Level Performance on ImageNet Classification](https://arxiv.org/abs/1502.01852).
+
+
+### Optimizer
+We use a Momentum based optimizer. The momentum and learning rate are scaled based on the batch size. 
+
+
+# 5. Quality
+### Quality metric
+Percent of correct classifications on Image Net. 
+
+### Quality target
+We run to 0.749 accuracy (74.9% correct classifications). 
+
+### Evaluation frequency
+We evaluate after every epoch.
+
+### Evaluation thoroughness
+Every test exmaple is used each time.
