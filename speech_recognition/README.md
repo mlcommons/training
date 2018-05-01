@@ -9,6 +9,7 @@ Assume sufficiently recent NVIDIA driver is installed.
 The following instructions modify `reference/install_cuda_docker.sh` script to install cuda 9.0 instead of 9.1 in addition to installing and configuring docker and nvidia-docker.
 
 First, get cuda 9.0:
+
     wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/cuda-repo-ubuntu1604_9.0.176-1_amd64.deb
     sudo dpkg -i cuda-repo-ubuntu1604_9.0.176-1_amd64.deb
     sudo apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub
@@ -16,6 +17,7 @@ First, get cuda 9.0:
     sudo apt-get install cuda-libraries-9-0    
 
 Next, install docker:
+
     sudo apt-get install apt-transport-https ca-certificates curl software-properties-common
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     sudo apt-key fingerprint 0EBFCD88
@@ -27,6 +29,7 @@ Next, install docker:
 
 
 Next, nvidia-docker2:
+
     curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
     distribution=$(. /etc/os-release;echo $ID$VERSION_ID) && curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
     sudo apt-get update
@@ -59,6 +62,8 @@ For example, for the pytorch framework:
     
 NOTE: remember to modify paths in `docker/run-dev.sh` as appropriate (e.g., replace line 3 with the base path for the repo `~/mlperf/reference/speech_recognition` or similar).
 
+The model will run until the specified target accuracy is achieved or 10 full epochs have elapsed, whichever is sooner. The maximum number of epochs, along with other network parameters, can be viewed and modified in `pytorch/params.py`.
+
 # 3. Dataset/Environment
 ### Publication/Attribution
 ["OpenSLR LibriSpeech Corpus"](http://www.openslr.org/12/) provides over 1000 hours of speech data in the form of raw audio.
@@ -79,48 +84,91 @@ Summary: Sampled Audio Spectrograms -> 2 CNN layers -> 5 Bi-Directional GRU laye
 Details:
 
   (module): DeepSpeech (
+
     (conv): Sequential (
+
       (0): Conv2d(1, 32, kernel_size=(41, 11), stride=(2, 2))
+
       (1): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True)
+
       (2): Hardtanh (min_val=0, max_val=20, inplace)
+
       (3): Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1))
+
       (4): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True)
+
       (5): Hardtanh (min_val=0, max_val=20, inplace)
+
     )
+
     (rnns): Sequential (
+
       (0): BatchRNN (
+
         (rnn): GRU(672, 800, bidirectional=True)
+
       )
+
       (1): BatchRNN (
+
         (batch_norm): SequenceWise (
+
         BatchNorm1d(800, eps=1e-05, momentum=0.1, affine=True))
+
         (rnn): GRU(800, 800, bidirectional=True)
+
       )
+
       (2): BatchRNN (
+
         (batch_norm): SequenceWise (
+
         BatchNorm1d(800, eps=1e-05, momentum=0.1, affine=True))
+
         (rnn): GRU(800, 800, bidirectional=True)
+
       )
+
       (3): BatchRNN (
+
         (batch_norm): SequenceWise (
+
         BatchNorm1d(800, eps=1e-05, momentum=0.1, affine=True))
+
         (rnn): GRU(800, 800, bidirectional=True)
+
       )
+
       (4): BatchRNN (
+
         (batch_norm): SequenceWise (
+
         BatchNorm1d(800, eps=1e-05, momentum=0.1, affine=True))
+
         (rnn): GRU(800, 800, bidirectional=True)
+
       )
+
     )
+
     (fc): Sequential (
+
       (0): SequenceWise (
+
       Sequential (
+
         (0): BatchNorm1d(800, eps=1e-05, momentum=0.1, affine=True)
+
         (1): Linear (800 -> 29)
+
       ))
+
     )
+
     (inference_log_softmax): InferenceBatchLogSoftmax (
+
     )
+
   )
 
 # 5. Quality
