@@ -3,6 +3,10 @@
 
 This problem uses Attention mechanisms to do language translation.
 
+## Disclaimer
+
+This benchmark can be higher variance than expected. This implementation and results are still preliminary, modifications may be made in the near future. 
+
 
 # 2. Directions
 ### Steps to configure machine
