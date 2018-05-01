@@ -58,8 +58,7 @@ To setup the machine for resnet;
 
 
 ### Steps to download and verify data
-Unfortunately this has not been well automated, yet. Please refer to the instructions here:
-
+Unfortunately data downloading and preprocess is a somewhat cumbersome process. Please refer to the instructions here:
 
 https://github.com/tensorflow/models/tree/master/research/inception#getting-started
 
@@ -88,17 +87,22 @@ We use Imagenet (http://image-net.org/):
 
 
 ### Data preprocessing
-The dataset is extensively preprocessed, primarily in two ways: (1) image processing, and (2) batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format. 
+The dataset is extensively preprocessed, in several ways including image processing and, batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format. There is also cropping and augmentation, mean color subtraction, bounding boxes etc.
+
+For more information on preprocessing, see this file and documentation:
+
+https://github.com/tensorflow/models/blob/master/official/resnet/imagenet_preprocessing.py
+
+https://github.com/tensorflow/models/tree/master/research/inception#getting-started
 
 ### Training and test data separation
-TODO
+This is proivded by the imagenet dataset and original authors.
 
 ### Training data order
-TODO 
+Each epoch goes over all the training data, shuffled every epoch.  
 
 ### Test data order
-TODO
-
+We use all the data for evaluation. We don't provide an order for of data traversal for evaluation.
 
 # 4. Model
 ### Publication/Attribution
@@ -121,12 +125,12 @@ Weight initialization is done as described here in [Delving Deep into Rectifiers
 
 
 ### Optimizer
-We use a Momentum based optimizer. The momentum and learning rate are scaled based on the batch size. 
+We use a SGD Momentum based optimizer. The momentum and learning rate are scaled based on the batch size. 
 
 
 # 5. Quality
 ### Quality metric
-Percent of correct classifications on Image Net. 
+Percent of correct classifications on the Image Net test dataset. 
 
 ### Quality target
 We run to 0.749 accuracy (74.9% correct classifications). 
