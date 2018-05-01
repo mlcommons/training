@@ -80,21 +80,26 @@ Run the docker:
 
 # 3. Dataset/Environment
 ### Publication/Attribution
-Cite paper describing dataset plus any additional attribution requested by dataset authors
+WMT17 ende training and evaluation datasets
+
+TODO Authors
+
 ### Data preprocessing
-What preprocessing is done to the the dataset? 
+We combine all the files together and subtokenize the data into a vocabulary.  
+
 ### Training and test data separation
-How is the test set extracted?
+We use the trian and evaluation sets provided explicity by the authors.
+
 ### Training data order
-In what order is the training data traversed?
-### Test data order
-In what order is the test data traversed?
-### Simulation environment (RL models only)
-Describe simulation environment briefly, if applicable. 
+We split the data into 100 blocks, and we shuffle interneraly in the blocks. 
+
+
 # 4. Model
 ### Publication/Attribution
 
 This is an implementation of the Transformer translation model as described in the [Attention is All You Need](https://arxiv.org/abs/1706.03762) paper. Based on the code provided by the authors: [Transformer code](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/models/transformer.py) from [Tensor2Tensor](https://github.com/tensorflow/tensor2tensor).
+
+### Structure 
 
 Transformer is a neural network architecture that solves sequence to sequence problems using attention mechanisms. Unlike traditional neural seq2seq models, Transformer does not involve recurrent connections. The attention mechanism learns dependencies between tokens in two sequences. Since attention weights apply to all tokens in the sequences, the Tranformer model is able to easily capture long-distance depedencies.
 
@@ -102,18 +107,18 @@ Transformer's overall structure follows the standard encoder-decoder pattern. Th
 
 The model also applies embeddings on the input and output tokens, and adds a constant positional encoding. The positional encoding adds information about the position of each token.
 
-### List of layers 
-Brief summary of structure of model
 
 ### Weight and bias initialization
-How are weights and biases intialized
+
+We have two sets of weights to initialize: embeddings and the transformer network. 
+
+The transformer network is initialized using the standard tensorflow variance initalizer. The embedding are initialized using the tensorflow random uniform initializer. 
 
 ### Loss function
-Name/description of loss function used
+Cross entropy loss while taking the padding into consideration, padding is not considered part of loss.
 
 ### Optimizer
-The original authors use the Adam Optimizer.
-
+We use the same optimizer as the original authors, which is the Adam Optimizer. We batch for a single P100 GPU of 4096. 
 
 # 5. Quality
 
