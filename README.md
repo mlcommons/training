@@ -53,4 +53,4 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 
 # Suggestions
 
-We are still very much in the early stages of developing MLPerf and we are looking for areas to improve, partners and contributors. If you find a bug, have recommendations for new benchmarks, or otherwise would like to be involved in the process, please reach out to TODO@. 
+We are still very much in the early stages of developing MLPerf and we are looking for areas to improve, partners and contributors. If you have recommendations for new benchmarks, or otherwise would like to be involved in the process, please reach out to `info@mlperf.org`. For technical bugs or support, email `support@mlperf.org`.
