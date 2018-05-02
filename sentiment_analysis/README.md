@@ -2,7 +2,7 @@
 Sentiment Analysis is a binary classification task. It predicts positive or negative sentiment using raw user text. The IMDB dataset is used for this benchmark.
 # 2. Directions
 ### Steps to configure machine
-Suggested environment : Ubuntu 16.04, 8 CPUs, one P100, 300GB disk
+Suggested environment : Ubuntu 16.04, 8 CPUs, one P100, 20GB disk
 
 The following instructions modify `reference/install_cuda_docker.sh` script to install cuda 8.0 instead of 9.1 in addition to installing and configuring docker and nvidia-docker.
 
