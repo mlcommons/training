@@ -8,7 +8,6 @@ import math
 import numpy as np
 import sys
 import os
-import time
 import random
 import argparse
 
@@ -135,7 +134,6 @@ def train(word_dict,
                     paddle.dataset.imdb.test(word_dict), batch_size=BATCH_SIZE)
 
     def train_loop(main_program):
-        stime = time.time()
         exe.run(fluid.default_startup_program())
 
         for pass_id in xrange(PASS_NUM):
@@ -169,9 +167,7 @@ def train(word_dict,
             print("Epoch =", pass_id, ", train-accuracy =", train_acc, ", train-loss =", train_loss, ", validation-accuracy =", acc_val, ", validation-loss =", avg_loss_val)
 
             if acc_val > target_val_acc:
-                ## Print Wall clock time and exit the program
-                etime = time.time()
-                print("Total time (in seconds) =", etime - stime)
+                ## Exit the program on reaching desired accuracy value
                 break
 
     train_loop(fluid.default_main_program())
