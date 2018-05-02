@@ -15,8 +15,6 @@ nvidia-docker run -it -v `pwd`:/paddle sidgoyal78/paddle:benchmark12042018 /bin/
 cd paddle/
 ```
 
-Inside the container, use `cd paddle` to go to the correct directory.
-
 ### Steps to download and verify data
 It is necessary to run the download and verify scripts inside the docker container.
 
@@ -58,7 +56,7 @@ Test data is evaluated in a fixed order.
 ### Publication/Attribution
 Convolution neural network based on Johnson, R. and Zhang, T. (2014), [Effective use of word order for text categorization with convolutional neural networks](https://arxiv.org/abs/1412.1058), CoRR abs/1412.1058. 
 
-We have also included an LSTM based model from inspired by the following two papers: [Supervised and Semi-Supervised Text Categorization using LSTM for Region Embeddings](https://arxiv.org/abs/1602.02373) and [Semi-supervised Sequence Learning] (https://arxiv.org/abs/1511.01432). In future versions of the benchmark, we intend to update the benchmark to train on a larger dataset. This LSTM based model would be useful for training on larger datasets.
+We have also included an LSTM based model from inspired by the following two papers: [Supervised and Semi-Supervised Text Categorization using LSTM for Region Embeddings](https://arxiv.org/abs/1602.02373) and [Semi-supervised Sequence Learning](https://arxiv.org/abs/1511.01432). In future versions of the benchmark, we intend to update the benchmark to train on a larger dataset. This LSTM based model would be useful for training on larger datasets.
 
 ### List of layers
 The model consists of an embedding layer followed by two sequence convolution layers and cross entropy cost layer.
