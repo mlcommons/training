@@ -104,6 +104,10 @@ Due to the difficulty of training a highly proficient go model, our quality metr
 
 Provided in with this benchmark are records of human games and the quality metric is the percent of the time the model chooses the same move the human chose in each position. Each position is attempted twice by the model (keep in mind the model's choice is non-deterministic). The metric is calculated as the number of correct predictions devided by the number of predictions attempted. 
 
+The particular games we use are from Iyama Yuta 6 Title Celebration, between contestants Murakawa Daisuke, Sakai Hideyuki, Yamada Kimio, Hyakuta Naoki, Yuki Satoshi, and Iyama Yuta.
+
+
+
 ### Quality target
 The quality target is predicting 40% of the moves.
 
