@@ -62,8 +62,10 @@ The python scripts are invoked using the following shell scripts for convenience
 ### Steps to run and time
 
 #### Run and Time
-Run the bash script `run_and_time.sh` with a seed argument to train a convolution based model, using:
+
+Run the bash script `run_and_time.sh` inside `paddle/` with a seed argument to train a convolution based model, using:
 ```
+cd paddle/
 ./run_and_time.sh <seed>
 ```
 
