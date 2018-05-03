@@ -24,10 +24,11 @@ import random
 import sys
 import tarfile
 import urllib
+import urllib.request
+
+import six
 
 import tensorflow as tf
-
-import urllib.request
 
 # Data sources for training/evaluating the transformer translation model.
 # If any of the training sources are changed, then either:
