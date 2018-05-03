@@ -6,7 +6,9 @@ Object detection and segmentation. Metrics are mask and box mAP.
 Standard script.
 
 ### Steps to download and verify data
-Run the provided shell scripts.
+init and update the submodules in this directory.
+
+Run the provided shell scripts *in this directory*.
 
 ### Steps to run and time
 Build the docker container.
