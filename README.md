@@ -35,6 +35,7 @@ These benchmarks have been tested on the following machine configuration:
 * 16 CPUs, one Nvidia P100.
 * Ubuntu 16.04, including docker with nvidia support.
 * 600GB of disk (though many benchmarks do require less disk).
+* Either CPython 2 or CPython 3, depending on benchmark (see Dockerfiles for details).
 
 Generally, a benchmark can be run with the following steps:
 
