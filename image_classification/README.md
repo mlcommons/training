@@ -91,7 +91,7 @@ We use Imagenet (http://image-net.org/):
 
 
 ### Data preprocessing
-The dataset is extensively preprocessed, in several ways including image processing, batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format (a.k.a Tf-records). There is also cropping and augmentation, mean color subtraction, bounding boxes etc.
+The dataset is extensively preprocessed, in several ways including image processing, batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format - [TFRecords](https://www.tensorflow.org/programmers_guide/datasets#consuming_tfrecord_data). There is also cropping and augmentation, mean color subtraction, bounding boxes etc.
 
 For more information on preprocessing, see this file and documentation:
 https://github.com/tensorflow/models/tree/master/research/inception#getting-started
