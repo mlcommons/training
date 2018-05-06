@@ -91,7 +91,7 @@ We use Imagenet (http://image-net.org/):
 
 
 ### Data preprocessing
-The dataset is extensively preprocessed, in several ways including image processing and, batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format. There is also cropping and augmentation, mean color subtraction, bounding boxes etc.
+The dataset is extensively preprocessed, in several ways including image processing, batching and TF formatting. The first pass does conversion and scaling (e.g. png to jpg). The second step is to group images in larger groups and convert into a Tensorflow format - [TFRecords](https://www.tensorflow.org/programmers_guide/datasets#consuming_tfrecord_data). There is also cropping and augmentation, mean color subtraction, bounding boxes etc.
 
 For more information on preprocessing, see this file and documentation:
 https://github.com/tensorflow/models/tree/master/research/inception#getting-started
@@ -110,9 +110,9 @@ We use all the data for evaluation. We don't provide an order for of data traver
 
 See the following papers for more background:
 
-[1] [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
+[1] [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
 
-[2] [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027.pdf) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
+[2] [Identity Mappings in Deep Residual Networks](https://arxiv.org/abs/1603.05027) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
 
 
 ### Structure & Loss
@@ -140,4 +140,4 @@ We run to 0.749 accuracy (74.9% correct classifications).
 We evaluate after every epoch.
 
 ### Evaluation thoroughness
-Every test exmaple is used each time.
+Every test example is used each time.
