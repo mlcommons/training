@@ -4,7 +4,7 @@
 #   run_and_time.sh <random seed 1-5>
 
 THRESHOLD=0.9562
-BASEDIR=$(dirname "$0")
+BASEDIR=$(dirname -- "$0")
 
 # start timing
 start=$(date +%s)
