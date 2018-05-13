@@ -97,7 +97,7 @@ For more information on preprocessing, see this file and documentation:
 https://github.com/tensorflow/models/tree/master/research/inception#getting-started
 
 ### Training and test data separation
-This is proivded by the imagenet dataset and original authors.
+This is provided by the Imagenet dataset and original authors.
 
 ### Training data order
 Each epoch goes over all the training data, shuffled every epoch.  

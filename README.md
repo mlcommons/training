@@ -26,7 +26,7 @@ Each reference implementation provides the following:
 * A Dockerfile which can be used to run the benchmark in a container.
 * A script which downloads the appropriate dataset.
 * A script which runs and times training the model.
-* Documentaiton on the dataset, model, and machine setup.
+* Documentation on the dataset, model, and machine setup.
 
 # Running Benchmarks
 

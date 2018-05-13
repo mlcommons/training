@@ -1,7 +1,7 @@
 # Yomi Server
 
 [Yomi](https://senseis.xmp.net/?Yomi) means reading in Japanese Go jargon, and
-in the context of Minigo, is the name of a kubrnetes workload designed to play
+in the context of Minigo, is the name of a kubernetes workload designed to play
 games against various engines (mostly itself).
 
 TODO(kashomon): describe how this works.

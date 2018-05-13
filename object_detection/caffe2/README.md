@@ -74,11 +74,11 @@ Box: Log loss for true class.
 Mask: per-pixel sigmoid, average binary cross-entropy loss.
 
 ### Optimizer
-Momentum SGD. Weight decay of 0.0001, momenum of 0.9.
+Momentum SGD. Weight decay of 0.0001, momentum of 0.9.
 
 # 5. Quality
 ### Quality metric
-As Mask R-CNN can provide both boxes and masks, we evalute on both box and mask mAP.
+As Mask R-CNN can provide both boxes and masks, we evaluate on both box and mask mAP.
 
 ### Quality target
 Box mAP of 0.377, mask mAP of 0.339

@@ -87,10 +87,10 @@ This benchmark includes both the environment and training for 9x9 go. There are 
 
 ### Structure
 
-This task has a non-trivial network structure, including a search tree. A good overview of the sructure can be found here: https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0. 
+This task has a non-trivial network structure, including a search tree. A good overview of the structure can be found here: https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0. 
 
 ### Weight and bias initialization and Loss Function
-Network weights are initialized randomly. Initializion and loss are described here;
+Network weights are initialized randomly. Initialization and loss are described here;
 ["Mastering the Game of Go with Deep Neural Networks and Tree Search"](https://www.nature.com/articles/nature16961)
 
 ### Optimizer
@@ -98,11 +98,11 @@ We use a MomentumOptimizer to train the primary network.
 
 # 4. Quality
 
-Due to the difficulty of training a highly proficient go model, our quality metric and termination criteria is based on predicting moves from human reference games. Currently published results indicate that it takes weeks of time and/or cluster sized resources to achieve a high level of play. Given more liminited time and resources, it is possible to predict a significant number of moves from professional or near-professional games. 
+Due to the difficulty of training a highly proficient go model, our quality metric and termination criteria is based on predicting moves from human reference games. Currently published results indicate that it takes weeks of time and/or cluster sized resources to achieve a high level of play. Given more limited time and resources, it is possible to predict a significant number of moves from professional or near-professional games. 
 
 ### Quality metric
 
-Provided in with this benchmark are records of human games and the quality metric is the percent of the time the model chooses the same move the human chose in each position. Each position is attempted twice by the model (keep in mind the model's choice is non-deterministic). The metric is calculated as the number of correct predictions devided by the number of predictions attempted. 
+Provided in with this benchmark are records of human games and the quality metric is the percent of the time the model chooses the same move the human chose in each position. Each position is attempted twice by the model (keep in mind the model's choice is non-deterministic). The metric is calculated as the number of correct predictions divided by the number of predictions attempted. 
 
 The particular games we use are from Iyama Yuta 6 Title Celebration, between contestants Murakawa Daisuke, Sakai Hideyuki, Yamada Kimio, Hyakuta Naoki, Yuki Satoshi, and Iyama Yuta.
 
@@ -121,7 +121,7 @@ Informally, we have observed that quality should improve roughly linearly with t
     36h          24%
     60h          34%
 
-Note that quality does not necessarily monotically increase. 
+Note that quality does not necessarily monotonically increase. 
 
 ### Evaluation frequency
 Evaluation should be preformed for every model which is trained (regardless if it wins the "model evaluation" round). 

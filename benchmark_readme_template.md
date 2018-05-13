@@ -26,11 +26,11 @@ Cite paper describing model plus any additional attribution requested by code au
 ### List of layers 
 Brief summary of structure of model
 ### Weight and bias initialization
-How are weights and biases intialized
+How are weights and biases initialized
 ### Loss function
 Name/description of loss function used
 ### Optimizer
-Name of optimzier used
+Name of optimizer used
 # 5. Quality
 ### Quality metric
 What is the target quality metric
