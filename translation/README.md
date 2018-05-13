@@ -90,10 +90,10 @@ We use WMT17 ende training for tranding, and we evaluate using the WMT 2014 Engl
 We combine all the files together and subtokenize the data into a vocabulary.  
 
 ### Training and test data separation
-We use the trian and evaluation sets provided explicity by the authors.
+We use the train and evaluation sets provided explicitly by the authors.
 
 ### Training data order
-We split the data into 100 blocks, and we shuffle interneraly in the blocks. 
+We split the data into 100 blocks, and we shuffle internally in the blocks. 
 
 
 # 4. Model
@@ -103,7 +103,7 @@ This is an implementation of the Transformer translation model as described in t
 
 ### Structure 
 
-Transformer is a neural network architecture that solves sequence to sequence problems using attention mechanisms. Unlike traditional neural seq2seq models, Transformer does not involve recurrent connections. The attention mechanism learns dependencies between tokens in two sequences. Since attention weights apply to all tokens in the sequences, the Tranformer model is able to easily capture long-distance depedencies.
+Transformer is a neural network architecture that solves sequence to sequence problems using attention mechanisms. Unlike traditional neural seq2seq models, Transformer does not involve recurrent connections. The attention mechanism learns dependencies between tokens in two sequences. Since attention weights apply to all tokens in the sequences, the Tranformer model is able to easily capture long-distance dependencies.
 
 Transformer's overall structure follows the standard encoder-decoder pattern. The encoder uses self-attention to compute a representation of the input sequence. The decoder generates the output sequence one token at a time, taking the encoder output and previous decoder-outputted tokens as inputs.
 
