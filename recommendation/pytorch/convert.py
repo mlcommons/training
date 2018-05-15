@@ -11,7 +11,6 @@ from load import implicit_load
 USER_COLUMN = 'user_id'
 ITEM_COLUMN = 'item_id'
 
-NUMBER_NEGATIVES = 100
 
 TRAIN_RATINGS_FILENAME = 'train-ratings.csv'
 TEST_RATINGS_FILENAME = 'test-ratings.csv'
@@ -20,15 +19,21 @@ TEST_NEG_FILENAME = 'test-negative.csv'
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument('path', type=str)
-    parser.add_argument('output', type=str)
+    parser.add_argument('path', type=str,
+                        help='Path to reviews CSV file from MovieLens')
+    parser.add_argument('output', type=str,
+                        help='Output directory for train and test CSV files')
+    parser.add_argument('-n', '--negatives', type=int, default=999,
+                        help='Number of negative samples for each positive'
+                             'test example')
+    parser.add_argument('-s', '--seed', type=int, default=0,
+                        help='Random seed to reproduce same negative samples')
     return parser.parse_args()
 
 
 def main():
-    # TODO: Add random seed as parameter
-    np.random.seed(0)
     args = parse_args()
+    np.random.seed(args.seed)
 
     df = implicit_load(args.path, sort=False)
     grouped = df.groupby(USER_COLUMN)
@@ -64,7 +69,7 @@ def main():
         all_negs = sorted(list(all_negs))  # determinism
 
         test_ratings.append((user, test_item))
-        test_negs.append(list(np.random.choice(all_negs, NUMBER_NEGATIVES)))
+        test_negs.append(list(np.random.choice(all_negs, args.negatives)))
 
     # serialize
     df_train_ratings = pd.DataFrame(list(all_ratings))
