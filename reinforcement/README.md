@@ -64,7 +64,7 @@ To run, this assumes you checked out the repo into $HOME, adjust paths as necess
     NOW=`date "+%F-%T"`
     sudo docker run --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
     
-To change the quality target, modify `params/final.josn` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.josn`.
+To change the quality target, modify `params/final.json` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.josn`.
 
 # 3. Model
 ### Publication/Attribution
