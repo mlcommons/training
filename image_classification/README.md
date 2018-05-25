@@ -1,5 +1,5 @@
 # 1. Problem 
-This benchmark uses a CNN to classify images. This is a fork of https://github.com/tensorflow/models/tree/master/official/resnet. 
+This benchmark uses resnet v1 to classify images. This is a fork of https://github.com/tensorflow/models/tree/master/official/resnet. 
 
 
 ## Disclaimer
