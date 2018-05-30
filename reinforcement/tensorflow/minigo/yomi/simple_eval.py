@@ -37,7 +37,7 @@ def run():
     # Now that we have all the models, we can pit them against eachother them.
     # For now, just pick the last two.
     p1, p2 = None, None
-    if len(models) = 0:
+    if len(models) == 0:
         sys.stderr.write('No models found!\n')
         sys.exit(1)
     elif len(models) == 1:
