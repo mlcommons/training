@@ -96,6 +96,10 @@ def eval_one(rating, items, model, K, use_cuda=True):
 
 def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
               processes=1):
+    if epoch is None:
+        print("Initial evaluation")
+    else:
+        print("Epoch {} evaluation".format(epoch))
     start = datetime.now()
     model.eval()
     if processes > 1:
@@ -150,7 +154,7 @@ def main():
 
     t1 = time.time()
     # Load Data
-    # TODO: Reading CSVs is slow. Could use HDF or Apache Arrow
+    print('Loading data')
     train_dataset = CFTrainDataset(
         os.path.join(args.data, TRAIN_RATINGS_FILENAME), args.negative_samples)
     train_dataloader = torch.utils.data.DataLoader(
