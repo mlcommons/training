@@ -1,3 +1,5 @@
+import argparse
+import warnings
 from torchtext import data
 from torchtext import datasets
 import torch
@@ -52,7 +54,7 @@ def train(model, optimizer, n_epochs, train_iter, test_iter, vocab_size, batch_s
 
 
     for epoch in range(n_epochs):
-        train_loss, train_acc = train_epoch(model, opt, train_iter)
+        train_loss, train_acc = train_epoch(model, optimizer, train_iter)
         
         val_loss, val_acc = test(model, test_iter, quality)
         
@@ -115,7 +117,7 @@ def plot_history(train_history, val_history, title='loss'):
 
 
 
-def main(model, use_cuda, seed, quality):
+def main(use_cuda, seed, quality):
     if use_cuda and not torch.cuda.is_available():
         warnings.warn("CUDA device is not accessible! Setting use_cuda to False.")
         use_cuda = False
