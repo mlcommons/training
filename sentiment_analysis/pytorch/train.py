@@ -24,6 +24,28 @@ def IMDB_dataset(use_cuda=True, batch_size=128, max_len=2470):
     return train_iter, test_iter, len(TEXT.vocab), batch_size
 
 
+class ConvNet(nn.Module):
+    def __init__(self, vocab_size, embedding_size=1024):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.embedding_size = embedding_size
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 1, kernel_size=3),
+            nn.ELU(),
+            nn.MaxPool2d(kernel_size=3),
+        )
+        self.classifier = nn.Linear(279480, 2)
+        
+    def forward(self, sentences):
+        embed_layer = nn.Embedding(self.vocab_size, self.embedding_size, sparse=True)
+        sentences_embedded = embed_layer(sentences)
+        sentences_embedded = sentences_embedded.unsqueeze(1)
+        out = self.features(sentences_embedded)
+        out = out.view(out.size(0), -1)
+        out = self.classifier(out)
+        return F.log_softmax(out, dim=-1)
+
+
 def train(model, optimizer, n_epochs, train_iter, test_iter, vocab_size, batch_size, quality):
     train_log, train_acc_log = [], []
     val_log, val_acc_log = [], []
@@ -99,6 +121,12 @@ def main(model, use_cuda, seed, quality):
         use_cuda = False
 
     train_iter, test_iter, vocab_size, batch_size = IMDB_dataset(use_cuda)
+
+    model = ConvNet(vocab_size)
+    optimizer = torch.optim.RMSprop(model.parameters(), lr=0.001)
+    n_epochs = 3
+
+
     train(model, optimizer, n_epochs, train_iter, test_iter, vocab_size, batch_size, quality)
 
 
