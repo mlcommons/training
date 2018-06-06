@@ -12,6 +12,19 @@ import numpy as np
 
 
 def IMDB_dataset(use_cuda=True, batch_size=128, max_len=2470):
+    """
+    Pytorch generator for IMDB dataset.
+    Args:
+    use_cuda - bool
+    batch_size - int
+    max_len - int - max length of the sentence in train.
+    All smaller sentences will be padded to have length = max_len.
+    All larger sentences will be cropped.
+    Returns:
+    train_iter, test_iter - batch generators
+    len(TEXT.vocab) - vocabulary size. Necessary for the embedding layer
+    batch_size
+    """
     device = "cuda:0" if use_cuda else -1
     # set up fields
     TEXT = data.Field(lower=True, fix_length=max_len, batch_first=True)
@@ -27,6 +40,14 @@ def IMDB_dataset(use_cuda=True, batch_size=128, max_len=2470):
 
 
 class ConvNet(nn.Module):
+    """
+    Architecture:
+    Embedding layer with customizable vocab size and
+    embeding size,
+    2d Convolutional layer, 
+    2d Max Pooling layer,
+    Fully-connected layer
+    """
     def __init__(self, vocab_size, embedding_size=1024):
         super().__init__()
         self.vocab_size = vocab_size
@@ -49,9 +70,11 @@ class ConvNet(nn.Module):
 
 
 def train(model, optimizer, n_epochs, train_iter, test_iter, vocab_size, batch_size, quality):
+    """
+    Performs training with n_epochs steps.
+    """
     train_log, train_acc_log = [], []
     val_log, val_acc_log = [], []
-
 
     for epoch in range(n_epochs):
         train_loss, train_acc = train_epoch(model, optimizer, train_iter)
