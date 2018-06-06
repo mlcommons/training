@@ -97,7 +97,7 @@ Positive training examples are all but the last item each user rated.
 Negative training examples are randomly selected from the unrated items for each user.
 
 The last item each user rated is used as a positive example in the test set.
-A fixed set of 100 unrated items are also selected to calculate hit rate at 10 for predicting the test item.
+A fixed set of 999 unrated items are also selected to calculate hit rate at 10 for predicting the test item.
 
 ### Training data order
 Data is traversed randomly with 4 negative examples selected on average for every positive example.
@@ -111,10 +111,10 @@ The author's original code is available at [hexiangnan/neural_collaborative_filt
 
 # 5. Quality
 ### Quality metric
-Hit rate at 10 (HR@10) with 100 negative items.
+Hit rate at 10 (HR@10) with 999 negative items.
 
 ### Quality target
-HR@10: 0.9562
+HR@10: 0.6289
 
 ### Evaluation frequency
 After every epoch through the training data.
