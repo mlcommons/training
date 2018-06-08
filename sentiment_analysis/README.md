@@ -103,7 +103,7 @@ Adam is used for optimization.
 ### Quality metric
 Average accuracy for all samples in the test set.
 ### Quality target
-Average accuracy of 90.6%
+Average accuracy of 90.0%
 ### Evaluation frequency
 All test samples are evaluated once per epoch.
 ### Evaluation thoroughness
