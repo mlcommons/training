@@ -70,7 +70,7 @@ _EVAL_DATA_SOURCES = [
 # Vocabulary constants
 _TARGET_VOCAB_SIZE = 32768  # Number of subtokens in the vocabulary list.
 _TARGET_THRESHOLD = 327  # Accept vocabulary if size is within this threshold
-_VOCAB_FILE = "vocab.ende.%d" % _TARGET_VOCAB_SIZE
+_VOCAB_FILE = "vocab.ende."
 
 # Strings to inclue in the generated files.
 _PREFIX = "wmt32k"

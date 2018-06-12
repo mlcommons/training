@@ -117,6 +117,7 @@ class Subtokenizer(object):
           reserved_tokens)
       tf.logging.info("Generated vocabulary with %d subtokens." %
                       len(subtoken_list))
+      vocab_file += str(len(subtoken_list))
       _save_vocab_file(vocab_file, subtoken_list)
     return Subtokenizer(vocab_file)
 
@@ -393,12 +394,6 @@ def _generate_subtokens_with_target_vocab_size(
   if reserved_tokens is None:
     reserved_tokens = RESERVED_TOKENS
 
-  if min_count is not None:
-    tf.logging.info("Using min_count=%d to generate vocab with target size %d" %
-                    (min_count, target_size))
-    return _generate_subtokens(
-        token_counts, alphabet, min_count, reserved_tokens=reserved_tokens)
-
   def bisect(min_val, max_val):
     """Recursive function to binary search for subtoken vocabulary."""
     cur_count = (min_val + max_val) // 2
@@ -424,6 +419,12 @@ def _generate_subtokens_with_target_vocab_size(
     if abs(other_val - target_size) < abs(val - target_size):
       return other_subtoken_list
     return subtoken_list
+
+  if min_count is not None:
+    tf.logging.info("Using min_count=%d to generate vocab with target size %d" %
+                    (min_count, target_size))
+    # Perform binary search with enforced minimum value of min_count
+    return bisect(min_count, _MAX_MIN_COUNT)
 
   tf.logging.info("Finding best min_count to get target size of %d" %
                   target_size)
