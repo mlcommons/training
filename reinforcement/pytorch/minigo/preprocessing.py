@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 # SHUFFLE_BUFFER_SIZE = int(2*1e6)
 SHUFFLE_BUFFER_SIZE = goparams.SHUFFLE_BUFFER_SIZE
 
+
 # Constructing tf.Examples
 
 
@@ -54,9 +55,9 @@ def write_dataset(filename, dataset):
 
 
 def read_dataset(batch_size, tf_records, num_repeats=None,
-                    shuffle_records=True, shuffle_examples=True,
-                    shuffle_buffer_size=None,
-                    filter_amount=1.0):
+                 shuffle_records=True, shuffle_examples=True,
+                 shuffle_buffer_size=None,
+                 filter_amount=1.0):
     # if shuffle_buffer_size is None:
     #     shuffle_buffer_size = SHUFFLE_BUFFER_SIZE
     if shuffle_records:
@@ -67,7 +68,6 @@ def read_dataset(batch_size, tf_records, num_repeats=None,
     pool.close()
     pool.join()
     whole_dataset = Data.ConcatDataset(datasets)
-
 
     return whole_dataset
 

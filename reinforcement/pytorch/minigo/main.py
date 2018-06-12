@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ EXAMPLES_PER_RECORD = goparams.EXAMPLES_PER_RECORD
 # How many positions to draw from for our training window.
 # AGZ used the most recent 500k games, which, assuming 250 moves/game = 125M
 # WINDOW_SIZE = 125000000
-#WINDOW_SIZE = 500000
+# WINDOW_SIZE = 500000
 WINDOW_SIZE = goparams.WINDOW_SIZE
 
 
@@ -65,10 +65,10 @@ def _ensure_dir_exists(directory):
     os.makedirs(directory, exist_ok=True)
 
 
-def gtp(load_file: "The path to the network model files"=None,
-        readouts: 'How many simulations to run per move'=10000,
-        #readouts: 'How many simulations to run per move'=2000,
-        cgos_mode: 'Whether to use CGOS time constraints'=False,
+def gtp(load_file: "The path to the network model files" = None,
+        readouts: 'How many simulations to run per move' = 10000,
+        # readouts: 'How many simulations to run per move'=2000,
+        cgos_mode: 'Whether to use CGOS time constraints' = False,
         verbose=1):
     engine = make_gtp_instance(load_file,
                                readouts_per_move=readouts,
@@ -91,8 +91,8 @@ def gtp(load_file: "The path to the network model files"=None,
 
 
 def bootstrap(
-        working_dir: 'tf.estimator working directory. If not set, defaults to a random tmp dir'=None,
-        model_save_path: 'Where to export the first bootstrapped generation'=None):
+        working_dir: 'tf.estimator working directory. If not set, defaults to a random tmp dir' = None,
+        model_save_path: 'Where to export the first bootstrapped generation' = None):
     qmeas.start_time('bootstrap')
     if working_dir is None:
         with tempfile.TemporaryDirectory() as working_dir:
@@ -112,7 +112,7 @@ def train(
         working_dir: 'tf.estimator working directory.',
         chunk_dir: 'Directory where gathered training chunks are.',
         model_save_path: 'Where to export the completed generation.',
-        generation_num: 'Which generation you are training.'=0):
+        generation_num: 'Which generation you are training.' = 0):
     qmeas.start_time('train')
     tf_records = sorted(glob.glob(os.path.join(chunk_dir, '*.tfrecord.zz')))
     tf_records = tf_records[-1 * (WINDOW_SIZE // EXAMPLES_PER_RECORD):]
@@ -128,8 +128,8 @@ def train(
 def validate(
         working_dir: 'tf.estimator working directory',
         *tf_record_dirs: 'Directories where holdout data are',
-        checkpoint_name: 'Which checkpoint to evaluate (None=latest)'=None,
-        validate_name: 'Name for validation set (i.e., selfplay or human)'=None):
+        checkpoint_name: 'Which checkpoint to evaluate (None=latest)' = None,
+        validate_name: 'Name for validation set (i.e., selfplay or human)' = None):
     qmeas.start_time('validate')
     tf_records = []
     with timer("Building lists of holdout files"):
@@ -148,9 +148,9 @@ def validate(
 def evaluate(
         black_model: 'The path to the model to play black',
         white_model: 'The path to the model to play white',
-        output_dir: 'Where to write the evaluation results'='sgf/evaluate',
-        readouts: 'How many readouts to make per move.'=200,
-        games: 'the number of games to play'=20,
+        output_dir: 'Where to write the evaluation results' = 'sgf/evaluate',
+        readouts: 'How many readouts to make per move.' = 200,
+        games: 'the number of games to play' = 20,
         verbose: 'How verbose the players should be (see selfplay)' = 1):
     qmeas.start_time('evaluate')
     _ensure_dir_exists(output_dir)
@@ -166,42 +166,44 @@ def evaluate(
     qmeas.stop_time('evaluate')
     white_count = 0
     for win in winners:
-      if 'W' in win or 'w' in win:
-        white_count += 1
+        if 'W' in win or 'w' in win:
+            white_count += 1
     return white_count * 1.0 / games
 
     # qmeas.report_profiler()
 
+
 def evaluate_evenly(
         black_model: 'The path to the model to play black',
         white_model: 'The path to the model to play white',
-        output_dir: 'Where to write the evaluation results'='sgf/evaluate',
-        readouts: 'How many readouts to make per move.'=200,
-        games: 'the number of games to play'=20,
+        output_dir: 'Where to write the evaluation results' = 'sgf/evaluate',
+        readouts: 'How many readouts to make per move.' = 200,
+        games: 'the number of games to play' = 20,
         verbose: 'How verbose the players should be (see selfplay)' = 1):
-  ''' Returns the white win rate; playes 'games' number of games on both sides. '''
-  try:
-    result = (evaluate(black_model, white_model, output_dir, readouts, games, verbose) + (1 - evaluate(white_model, black_model, output_dir, readouts, games, verbose)))/ 2.0
-  except TypeError:
-    # It is remotely possible that in weird twist of fate results in a type
-    # error... Possibly due to weird corner cases in the evaluation...
-    # Our fall back will be to try agian.
-    result = (evaluate(black_model, white_model, output_dir, readouts, games, verbose) + (1 - evaluate(white_model, black_model, output_dir, readouts, games, verbose)))/ 2.0
-    # should this really happen twice, the world really doesn't
-    # want this to be successful... and we will raise the error.
-    # If this is being run by the main loop harness, then the
-    # effect of raising here will be to keep the newest model and go back to
-    # selfplay.
-  return result
-
+    ''' Returns the white win rate; playes 'games' number of games on both sides. '''
+    try:
+        result = (evaluate(black_model, white_model, output_dir, readouts, games, verbose) + (
+        1 - evaluate(white_model, black_model, output_dir, readouts, games, verbose))) / 2.0
+    except TypeError:
+        # It is remotely possible that in weird twist of fate results in a type
+        # error... Possibly due to weird corner cases in the evaluation...
+        # Our fall back will be to try agian.
+        result = (evaluate(black_model, white_model, output_dir, readouts, games, verbose) + (
+        1 - evaluate(white_model, black_model, output_dir, readouts, games, verbose))) / 2.0
+        # should this really happen twice, the world really doesn't
+        # want this to be successful... and we will raise the error.
+        # If this is being run by the main loop harness, then the
+        # effect of raising here will be to keep the newest model and go back to
+        # selfplay.
+    return result
 
 
 def selfplay(
         load_file: "The path to the network model files",
-        output_dir: "Where to write the games"="data/selfplay",
-        holdout_dir: "Where to write the games"="data/holdout",
-        output_sgf: "Where to write the sgfs"="sgf/",
-        readouts: 'How many simulations to run per move'=100,
+        output_dir: "Where to write the games" = "data/selfplay",
+        holdout_dir: "Where to write the games" = "data/holdout",
+        output_sgf: "Where to write the sgfs" = "sgf/",
+        readouts: 'How many simulations to run per move' = 100,
         verbose: '>=2 will print debug info, >=3 will print boards' = 1,
         resign_threshold: 'absolute value of threshold to resign at' = 0.95,
         holdout_pct: 'how many games to hold out for validation' = 0.05):
@@ -243,10 +245,10 @@ def selfplay(
 
 def selfplay_cache_model(
         network: "The path to the network model files",
-        output_dir: "Where to write the games"="data/selfplay",
-        holdout_dir: "Where to write the games"="data/holdout",
-        output_sgf: "Where to write the sgfs"="sgf/",
-        readouts: 'How many simulations to run per move'=100,
+        output_dir: "Where to write the games" = "data/selfplay",
+        holdout_dir: "Where to write the games" = "data/holdout",
+        output_sgf: "Where to write the sgfs" = "sgf/",
+        readouts: 'How many simulations to run per move' = 100,
         verbose: '>=2 will print debug info, >=3 will print boards' = 1,
         resign_threshold: 'absolute value of threshold to resign at' = 0.95,
         holdout_pct: 'how many games to hold out for validation' = 0.05):
@@ -285,11 +287,10 @@ def selfplay_cache_model(
     qmeas.stop_time('selfplay')
 
 
-
 def gather(
-        input_directory: 'where to look for games'='data/selfplay/',
-        output_directory: 'where to put collected games'='data/training_chunks/',
-        examples_per_record: 'how many tf.examples to gather in each chunk'=EXAMPLES_PER_RECORD):
+        input_directory: 'where to look for games' = 'data/selfplay/',
+        output_directory: 'where to put collected games' = 'data/training_chunks/',
+        examples_per_record: 'how many tf.examples to gather in each chunk' = EXAMPLES_PER_RECORD):
     qmeas.start_time('gather')
     _ensure_dir_exists(output_directory)
     models = [model_dir.strip('/')
@@ -326,7 +327,7 @@ def gather(
         #                                  '{}-{}.tfrecord.zz'.format(model_name, str(i)))
         #     preprocessing.write_tf_examples(
         #         output_record, example_batch, serialize=False)
-        loader = preprocessing.shuffle_examples(examples_per_record,record_files)
+        loader = preprocessing.shuffle_examples(examples_per_record, record_files)
         for i, (feature, pi, outcome) in enumerate(tqdm(loader)):
             torch_dataset = Data.TensorDataset(
                 feature,

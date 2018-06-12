@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,13 +57,13 @@ def translate_sgf_move(player_move, comment):
 
 
 def make_sgf(
-    move_history,
-    result_string,
-    ruleset="Chinese",
-    komi=7.5,
-    white_name=PROGRAM_IDENTIFIER,
-    black_name=PROGRAM_IDENTIFIER,
-    comments=[]
+        move_history,
+        result_string,
+        ruleset="Chinese",
+        komi=7.5,
+        white_name=PROGRAM_IDENTIFIER,
+        black_name=PROGRAM_IDENTIFIER,
+        comments=[]
 ):
     '''Turn a game into SGF.
     Doesn't handle handicap games or positions with incomplete history.

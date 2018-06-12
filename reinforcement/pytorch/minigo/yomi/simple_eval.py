@@ -3,6 +3,8 @@
 import os
 import re
 import json
+
+import sys
 from google.cloud import storage
 from google.oauth2 import service_account
 
@@ -48,7 +50,7 @@ def run():
     play_matches(p1, p2)
 
 
-def play_matches(m1, m2)
+def play_matches(m1, m2):
     """ Play matches against two models """
     pass
 

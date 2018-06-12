@@ -1,3 +1,18 @@
+# Copyright 2018 Google LLC, Cisco Systems Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 """TODO(vbittorf): DO NOT SUBMIT without one-line documentation for goparams.
 TODO(vbittorf): DO NOT SUBMIT without a detailed description of goparams.
 """
@@ -21,28 +36,26 @@ NOWSHORT = base64.b32encode(struct.pack(">I", NOWSEC)).decode('ascii').strip('='
 _PARAMS = None
 
 if 'GOPARAMS' in os.environ:
-  with open(os.environ['GOPARAMS']) as f:
-    _PARAMS = json.load(f)
+    with open(os.environ['GOPARAMS']) as f:
+        _PARAMS = json.load(f)
 else:
-  pass
-  #raise Exception('GOPARAMS not defined. Use GOPARAMS=path/to/json')
+    pass
+    # raise Exception('GOPARAMS not defined. Use GOPARAMS=path/to/json')
 
 
 def _set(name, default):
-  val = default
-  if _PARAMS is not None:
-    if name not in _PARAMS:
-      raise Exception('Key ' + name + ' Not Defined in GOPARAMS config')
-    val = _PARAMS[name]
-  globals()[name] = val
-
+    val = default
+    if _PARAMS is not None:
+        if name not in _PARAMS:
+            raise Exception('Key ' + name + ' Not Defined in GOPARAMS config')
+        val = _PARAMS[name]
+    globals()[name] = val
 
 
 # How many games before the selfplay workers will stop trying to play more.
 _set('MAX_GAMES_PER_GENERATION', 2)
 
 HOME = os.environ['HOME']
-
 
 # Root directory for everything and stuff
 _set('BASE_DIR', '$HOME/results/minigo/current.$HOST.$NOWSHORT/')
@@ -58,7 +71,7 @@ _set('HOLDOUT_PCT', 0.0)
 # number of times to go through the main loop
 _set('NUM_MAIN_ITERATIONS', 5000)
 
-#BOARD_SIZE = 19
+# BOARD_SIZE = 19
 _set('BOARD_SIZE', 9)
 
 # The shuffle buffer size determines how far an example could end up from
@@ -74,10 +87,8 @@ _set('EXAMPLES_PER_RECORD', 10000)
 # How many positions to draw from for our training window.
 # AGZ used the most recent 500k games, which, assuming 250 moves/game = 125M
 # WINDOW_SIZE = 125000000
-#WINDOW_SIZE = 500000
+# WINDOW_SIZE = 500000
 _set('WINDOW_SIZE', 10000000)
-
-
 
 # Set to run the dummy model instead of the real one, for speedups
 _set('DUMMY_MODEL', False)

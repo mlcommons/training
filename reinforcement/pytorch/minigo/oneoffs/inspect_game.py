@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import random
 import features
 import symmetries
 
+
 def initialize_game(sgf_file, load_file, move=1):
     with open(sgf_file) as f:
         sgf_contents = f.read()
@@ -31,6 +32,7 @@ def initialize_game(sgf_file, load_file, move=1):
     player = strategies.MCTSPlayerMixin(dual_net.DualNetwork(load_file))
     player.initialize_game(position_w_context.position)
     return player
+
 
 def analyze_symmetries(sgf_file, load_file):
     with open(sgf_file) as f:

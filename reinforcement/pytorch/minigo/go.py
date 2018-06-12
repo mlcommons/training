@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import coords
 
 import goparams
 
-#N = int(os.environ.get('BOARD_SIZE', 9))
+# N = int(os.environ.get('BOARD_SIZE', 9))
 N = goparams.BOARD_SIZE
 
 # Represent a board as a numpy array, with 0 empty, 1 is black, -1 is white.
@@ -48,9 +48,9 @@ def _check_bounds(c):
 
 
 NEIGHBORS = {(x, y): list(filter(_check_bounds, [
-    (x+1, y), (x-1, y), (x, y+1), (x, y-1)])) for x, y in ALL_COORDS}
+    (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)])) for x, y in ALL_COORDS}
 DIAGONALS = {(x, y): list(filter(_check_bounds, [
-    (x+1, y+1), (x+1, y-1), (x-1, y+1), (x-1, y-1)])) for x, y in ALL_COORDS}
+    (x + 1, y + 1), (x + 1, y - 1), (x - 1, y + 1), (x - 1, y - 1)])) for x, y in ALL_COORDS}
 
 
 class IllegalMove(Exception):
@@ -185,7 +185,7 @@ class LibertyTracker():
             np.ones([N, N], dtype=np.int32)
         self.groups = groups or {}
         self.liberty_cache = liberty_cache if liberty_cache is not None else np.zeros([
-                                                                                      N, N], dtype=np.uint8)
+            N, N], dtype=np.uint8)
         self.max_group_id = max_group_id
 
     def __deepcopy__(self, memodict={}):
@@ -310,14 +310,15 @@ class Position():
         self.ko = ko
         self.recent = recent
         self.board_deltas = board_deltas if board_deltas is not None else np.zeros([
-                                                                                   0, N, N], dtype=np.int8)
+            0, N, N], dtype=np.int8)
         self.to_play = to_play
         self.last_eight = None
 
     def __deepcopy__(self, memodict={}):
         new_board = np.copy(self.board)
         new_lib_tracker = copy.deepcopy(self.lib_tracker)
-        return Position(new_board, self.n, self.komi, self.caps, new_lib_tracker, self.ko, self.recent, self.board_deltas, self.to_play)
+        return Position(new_board, self.n, self.komi, self.caps, new_lib_tracker, self.ko, self.recent,
+                        self.board_deltas, self.to_play)
 
     def __str__(self, colors=True):
         if colors:
@@ -402,7 +403,7 @@ class Position():
         legal_moves[self.board != EMPTY] = 0
         # calculate which spots have 4 stones next to them
         # padding is because the edge always counts as a lost liberty.
-        adjacent = np.ones([N+2, N+2], dtype=np.int8)
+        adjacent = np.ones([N + 2, N + 2], dtype=np.int8)
         adjacent[1:-1, 1:-1] = np.abs(self.board)
         num_adjacent_stones = (adjacent[:-2, 1:-1] + adjacent[1:-1, :-2] +
                                adjacent[2:, 1:-1] + adjacent[1:-1, 2:])

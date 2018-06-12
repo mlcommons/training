@@ -17,7 +17,6 @@ RUN pip3 install virtualenvwrapper
 RUN pip3 install --upgrade numpy scipy sklearn
 RUN pip3 install http://download.pytorch.org/whl/cu90/torch-0.4.0-cp35-cp35m-linux_x86_64.whl
 RUN pip3 install torchvision
-#RUN pip3 install --upgrade numpy scipy sklearn tf-nightly-gpu
 # Mount data into the docker
 ADD . /research/reinforcement
 WORKDIR /research/reinforcement
@@ -26,6 +25,5 @@ WORKDIR /research/reinforcement
 RUN pip3 install --upgrade pip
 RUN pip3 install --upgrade setuptools
 RUN pip3 install -r minigo/requirements.txt
-#RUN pip3 install "tensorflow-gpu>=1.5,<1.6"
 
 ENTRYPOINT ["/bin/bash"]
