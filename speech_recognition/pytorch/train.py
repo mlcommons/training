@@ -71,17 +71,17 @@ def main():
     torch.cuda.manual_seed_all(args.seed)
 
     if params.rnn_type == 'gru' and params.rnn_act_type != 'tanh':
-      print "ERROR: GRU does not currently support activations other than tanh"
+      print("ERROR: GRU does not currently support activations other than tanh")
       sys.exit()
 
     if params.rnn_type == 'rnn' and params.rnn_act_type != 'relu':
-      print "ERROR: We should be using ReLU RNNs"
+      print("ERROR: We should be using ReLU RNNs")
       sys.exit()
 
-    print ("=======================================================")
+    print("=======================================================")
     for arg in vars(args):
-      print "***%s = %s " %  (arg.ljust(25), getattr(args, arg))
-    print ("=======================================================")
+      print("***%s = %s " %  (arg.ljust(25), getattr(args, arg)))
+    print("=======================================================")
 
     save_folder = args.save_folder
 
@@ -151,7 +151,7 @@ def main():
           start_epoch = args.start_epoch
 
         loss_results[:start_epoch], cer_results[:start_epoch], wer_results[:start_epoch] = package['loss_results'][:start_epoch], package[ 'cer_results'][:start_epoch], package['wer_results'][:start_epoch]
-        print loss_results
+        print(loss_results)
         epoch = start_epoch
 
     else:
@@ -279,11 +279,11 @@ def main():
         if params.exit_at_acc and (best_wer <= args.acc):
             break
 
-    print ("=======================================================")
-    print "***Best WER = ", best_wer
+    print("=======================================================")
+    print("***Best WER = ", best_wer)
     for arg in vars(args):
-      print "***%s = %s " %  (arg.ljust(25), getattr(args, arg))
-    print ("=======================================================")
+      print("***%s = %s " %  (arg.ljust(25), getattr(args, arg)))
+    print("=======================================================")
 
 if __name__ == '__main__':
     main()
