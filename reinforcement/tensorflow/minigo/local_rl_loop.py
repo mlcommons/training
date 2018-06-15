@@ -29,7 +29,7 @@ import main
 from tensorflow import gfile
 import subprocess
 
-import qmeas
+from shared import qmeas
 
 
 def rl_loop():
@@ -45,7 +45,7 @@ def rl_loop():
     dual_net.TRAIN_BATCH_SIZE = 16
     dual_net.EXAMPLES_PER_GENERATION = 64
 
-    #monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
+    # monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
     preprocessing.SHUFFLE_BUFFER_SIZE = 1000
 
     # with tempfile.TemporaryDirectory() as base_dir:
@@ -65,56 +65,57 @@ def rl_loop():
         print("Creating random initial weights...")
         main.bootstrap(working_dir, model_save_path)
         for i in range(100):
-          qmeas.start_time('main-loop')
-          print("Playing some games...")
-          # Do two selfplay runs to test gather functionality
-          qmeas.start_time('main-loop-self-play')
-          for j in range(2):
+            qmeas.start_time('main-loop')
+            print("Playing some games...")
+            # Do two selfplay runs to test gather functionality
+            qmeas.start_time('main-loop-self-play')
+            for j in range(2):
+                main.selfplay(
+                    load_file=model_save_path,
+                    output_dir=model_selfplay_dir,
+                    output_sgf=sgf_dir,
+                    holdout_pct=0,
+                    readouts=10)
+            qmeas.stop_time('main-loop-self-play')
+            # Do one holdout run to test validation
+            qmeas.start_time('main-loop-self-play-holdout')
             main.selfplay(
                 load_file=model_save_path,
+                holdout_dir=holdout_dir,
                 output_dir=model_selfplay_dir,
                 output_sgf=sgf_dir,
-                holdout_pct=0,
+                holdout_pct=100,
                 readouts=10)
-          qmeas.stop_time('main-loop-self-play')
-          # Do one holdout run to test validation
-          qmeas.start_time('main-loop-self-play-holdout')
-          main.selfplay(
-              load_file=model_save_path,
-              holdout_dir=holdout_dir,
-              output_dir=model_selfplay_dir,
-              output_sgf=sgf_dir,
-              holdout_pct=100,
-              readouts=10)
-          qmeas.stop_time('main-loop-self-play-holdout')
+            qmeas.stop_time('main-loop-self-play-holdout')
 
-          print("See sgf files here?")
-          sgf_listing = subprocess.check_output(["ls", "-l", sgf_dir + "/full"])
-          print(sgf_listing.decode("utf-8"))
+            print("See sgf files here?")
+            sgf_listing = subprocess.check_output(["ls", "-l", sgf_dir + "/full"])
+            print(sgf_listing.decode("utf-8"))
 
-          print("Gathering game output...")
-          qmeas.start_time('main-loop-gather')
-          main.gather(input_directory=selfplay_dir, output_directory=gather_dir)
-          qmeas.stop_time('main-loop-gather')
-          print("Training on gathered game data...")
-          qmeas.start_time('main-loop-train')
-          main.train(working_dir, gather_dir, next_model_save_file, generation_num=1)
-          qmeas.stop_time('main-loop-train')
-          print("Trying validate on 'holdout' game...")
-          qmeas.start_time('main-loop-validate')
-          main.validate(working_dir, holdout_dir)
-          qmeas.stop_time('main-loop-validate')
-          print("Verifying that new checkpoint is playable...")
-          main.selfplay(
-              load_file=next_model_save_file,
-              holdout_dir=holdout_dir,
-              output_dir=model_selfplay_dir,
-              output_sgf=sgf_dir,
-              readouts=10)
-          qmeas.stop_time('main-loop')
-          qmeas._flush()
+            print("Gathering game output...")
+            qmeas.start_time('main-loop-gather')
+            main.gather(input_directory=selfplay_dir, output_directory=gather_dir)
+            qmeas.stop_time('main-loop-gather')
+            print("Training on gathered game data...")
+            qmeas.start_time('main-loop-train')
+            main.train(working_dir, gather_dir, next_model_save_file, generation_num=1)
+            qmeas.stop_time('main-loop-train')
+            print("Trying validate on 'holdout' game...")
+            qmeas.start_time('main-loop-validate')
+            main.validate(working_dir, holdout_dir)
+            qmeas.stop_time('main-loop-validate')
+            print("Verifying that new checkpoint is playable...")
+            main.selfplay(
+                load_file=next_model_save_file,
+                holdout_dir=holdout_dir,
+                output_dir=model_selfplay_dir,
+                output_sgf=sgf_dir,
+                readouts=10)
+            qmeas.stop_time('main-loop')
+            qmeas._flush()
+
 
 if __name__ == '__main__':
-      qmeas.start()
-      rl_loop()
-      qmeas.end()
+    qmeas.start()
+    rl_loop()
+    qmeas.end()

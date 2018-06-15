@@ -12,50 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
-import glob
-
-import argh
-import os.path
-# import collections
-import random
-# import re
-# import shutil
-import socket
-import sys
-import tempfile
-import time
-
-import torch
-import torch.utils.data as Data
-
-import cloud_logging
-from tqdm import tqdm
-# import gzip
-# import numpy as np
-# import tensorflow as tf
-# from tensorflow import gfile
-
-# import go
-import dual_net
-from gtp_wrapper import make_gtp_instance, MCTSPlayer
-import preprocessing
-import selfplay_mcts
-from utils import logged_timer as timer
-import evaluation
-# import sgf_wrapper
-# import utils
-
-import qmeas
-import goparams
-
-# How many positions we should aggregate per 'chunk'.
-EXAMPLES_PER_RECORD = goparams.EXAMPLES_PER_RECORD
-
-# How many positions to draw from for our training window.
-# AGZ used the most recent 500k games, which, assuming 250 moves/game = 125M
-# WINDOW_SIZE = 125000000
-# WINDOW_SIZE = 500000
 
 """TODO(vbittorf): DO NOT SUBMIT without one-line documentation for predict_moves.
 TODO(vbittorf): DO NOT SUBMIT without a detailed description of predict_moves.
@@ -66,10 +22,8 @@ from __future__ import division
 from __future__ import print_function
 
 import dual_net
-# import strategies
-import sgf_wrapper
-# import evaluation
-from gtp_wrapper import MCTSPlayer
+import shared.sgf_wrapper as sgf_wrapper
+from shared.gtp_wrapper import MCTSPlayer
 import sys
 
 import os

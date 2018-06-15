@@ -15,11 +15,11 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
@@ -30,20 +30,20 @@ import random
 
 import glob
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import tensorflow as tf
 import logging
 
-import goparams
+from shared import goparams
 import predict_games
 
-import qmeas
+from shared import qmeas
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
-#BUCKET_NAME = os.environ['BUCKET_NAME']
+# BUCKET_NAME = os.environ['BUCKET_NAME']
 
-#BASE_DIR = "gs://{}".format(BUCKET_NAME)
+# BASE_DIR = "gs://{}".format(BUCKET_NAME)
 BASE_DIR = goparams.BASE_DIR
 MODELS_DIR = os.path.join(BASE_DIR, 'models')
 SELFPLAY_DIR = os.path.join(BASE_DIR, 'data/selfplay')
@@ -65,7 +65,7 @@ HOLDOUT_PCT = goparams.HOLDOUT_PCT
 
 def print_flags():
     flags = {
-        #'BUCKET_NAME': BUCKET_NAME,
+        # 'BUCKET_NAME': BUCKET_NAME,
         'BASE_DIR': BASE_DIR,
         'MODELS_DIR': MODELS_DIR,
         'SELFPLAY_DIR': SELFPLAY_DIR,
@@ -118,20 +118,21 @@ def evaluate(prev_model, cur_model, readouts=200, verbose=1, resign_threshold=0.
     game_output_dir = os.path.join(SELFPLAY_DIR, cur_model)
     game_holdout_dir = os.path.join(HOLDOUT_DIR, cur_model)
     sgf_dir = os.path.join(SGF_DIR, cur_model)
-    cur_win_pct = main.evaluate_evenly(prev_model_save_path, cur_model_save_path, game_output_dir, readouts=readouts, games=goparams.EVAL_GAMES_PER_SIDE)
+    cur_win_pct = main.evaluate_evenly(prev_model_save_path, cur_model_save_path, game_output_dir, readouts=readouts,
+                                       games=goparams.EVAL_GAMES_PER_SIDE)
 
     print('Evalute Win Pct = ', cur_win_pct)
 
     qmeas.record('evaluate_win_pct', cur_win_pct)
     keep = False
     if cur_win_pct >= goparams.EVAL_WIN_PCT_FOR_NEW_MODEL:
-      qmeas.record('evaluate_choice', 'new')
-      keep = True
+        qmeas.record('evaluate_choice', 'new')
+        keep = True
     else:
-      qmeas.record('evaluate_choice', 'old')
-      keep = False
+        qmeas.record('evaluate_choice', 'old')
+        keep = False
     qmeas.record('eval_summary', {'win_pct': cur_win_pct, 'model': cur_model, 'keep': keep})
-    return keep 
+    return keep
 
 
 def gather():
@@ -147,43 +148,43 @@ def train():
     print("New model will be {}".format(new_model_name))
     load_file = os.path.join(MODELS_DIR, model_name)
     save_file = os.path.join(MODELS_DIR, new_model_name)
-    #try:
+    # try:
     main.train(ESTIMATOR_WORKING_DIR, TRAINING_CHUNK_DIR, save_file,
                generation_num=model_num + 1)
-    #except:
+    # except:
     #    print("Got an error training, muddling on...")
     #    logging.exception("Train error")
     return new_model_name
 
 
 def bury_latest_model():
-  main._ensure_dir_exists(BURY_DIR)
-  main._ensure_dir_exists(BURY_SELFPLAY_DIR)
-  model_num, model_name = get_latest_model()
-  save_file = os.path.join(MODELS_DIR, model_name)
-  cmd = 'mv {}* {}/'.format(save_file, BURY_DIR)
-  # delete any selfplay games from that model too
-  print('Bury CMD: ', cmd)
-  if os.system(cmd) != 0:
-    raise Exception('Failed to bury model: ' + cmd)
-  cmd = 'mv {}* {}/'.format(os.path.join(SELFPLAY_DIR, model_name), BURY_SELFPLAY_DIR)
-  # delete any selfplay games from that model too
-  print('Bury Games CMD: ', cmd)
-  if os.system(cmd) != 0:
-    raise Exception('Failed to bury model: ' + cmd)
-
-  prev_num, prev_model_name = get_latest_model()
-  prev_save_file = os.path.join(MODELS_DIR, prev_model_name)
-
-  suffixes = ['.data-00000-of-00001', '.index', '.meta']
-  new_name = '{:06d}-continue'.format(model_num)
-  new_save_file = os.path.join(MODELS_DIR, new_name)
-
-  for suffix in suffixes:
-    cmd = 'cp {} {}'.format(prev_save_file + suffix, new_save_file + suffix)
-    print('DBUG ', cmd)
+    main._ensure_dir_exists(BURY_DIR)
+    main._ensure_dir_exists(BURY_SELFPLAY_DIR)
+    model_num, model_name = get_latest_model()
+    save_file = os.path.join(MODELS_DIR, model_name)
+    cmd = 'mv {}* {}/'.format(save_file, BURY_DIR)
+    # delete any selfplay games from that model too
+    print('Bury CMD: ', cmd)
     if os.system(cmd) != 0:
-      raise Exception('Failed to copy: ' + cmd)
+        raise Exception('Failed to bury model: ' + cmd)
+    cmd = 'mv {}* {}/'.format(os.path.join(SELFPLAY_DIR, model_name), BURY_SELFPLAY_DIR)
+    # delete any selfplay games from that model too
+    print('Bury Games CMD: ', cmd)
+    if os.system(cmd) != 0:
+        raise Exception('Failed to bury model: ' + cmd)
+
+    prev_num, prev_model_name = get_latest_model()
+    prev_save_file = os.path.join(MODELS_DIR, prev_model_name)
+
+    suffixes = ['.data-00000-of-00001', '.index', '.meta']
+    new_name = '{:06d}-continue'.format(model_num)
+    new_save_file = os.path.join(MODELS_DIR, new_name)
+
+    for suffix in suffixes:
+        cmd = 'cp {} {}'.format(prev_save_file + suffix, new_save_file + suffix)
+        print('DBUG ', cmd)
+        if os.system(cmd) != 0:
+            raise Exception('Failed to copy: ' + cmd)
 
 
 def validate(model_num=None, validate_name=None):
@@ -230,7 +231,7 @@ def rl_loop():
         dual_net.TRAIN_BATCH_SIZE = 16
         dual_net.EXAMPLES_PER_GENERATION = 64
 
-        #monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
+        # monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
         preprocessing.SHUFFLE_BUFFER_SIZE = 1000
 
     qmeas.stop_time('selfplay_wait')
@@ -241,43 +242,39 @@ def rl_loop():
     _, model_name = get_latest_model()
     new_model = train()
 
-
     if goparams.EVALUATE_PUZZLES:
 
-
-      qmeas.start_time('puzzle')
-      new_model_path = os.path.join(MODELS_DIR, new_model)
-      sgf_files = [
-        './benchmark_sgf/9x9_pro_YKSH.sgf',
-        './benchmark_sgf/9x9_pro_IYMD.sgf',
-        './benchmark_sgf/9x9_pro_YSIY.sgf',
-        './benchmark_sgf/9x9_pro_IYHN.sgf',
-      ]
-      result, total_pct = predict_games.report_for_puzzles(new_model_path, sgf_files, 2, tries_per_move=1)
-      print('accuracy = ', total_pct)
-      qmeas.record('puzzle_total', total_pct)
-      qmeas.record('puzzle_result', repr(result))
-      qmeas.record('puzzle_summary', {'results': repr(result), 'total_pct': total_pct, 'model': new_model})
-      qmeas._flush()
-      with open(os.path.join(BASE_DIR, new_model + '-puzzles.txt'), 'w') as f:
-        f.write(repr(result))
-        f.write('\n' + str(total_pct) + '\n')
-      qmeas.stop_time('puzzle')
-      if total_pct >= goparams.TERMINATION_ACCURACY:
-        print('Reaching termination accuracy; ', goparams.TERMINATION_ACCURACY)
-        with open('TERMINATE_FLAG', 'w') as f:
-          f.write(repr(result))
-          f.write('\n' + str(total_pct) + '\n')
-
+        qmeas.start_time('puzzle')
+        new_model_path = os.path.join(MODELS_DIR, new_model)
+        sgf_files = [
+            './benchmark_sgf/9x9_pro_YKSH.sgf',
+            './benchmark_sgf/9x9_pro_IYMD.sgf',
+            './benchmark_sgf/9x9_pro_YSIY.sgf',
+            './benchmark_sgf/9x9_pro_IYHN.sgf',
+        ]
+        result, total_pct = predict_games.report_for_puzzles(new_model_path, sgf_files, 2, tries_per_move=1)
+        print('accuracy = ', total_pct)
+        qmeas.record('puzzle_total', total_pct)
+        qmeas.record('puzzle_result', repr(result))
+        qmeas.record('puzzle_summary', {'results': repr(result), 'total_pct': total_pct, 'model': new_model})
+        qmeas._flush()
+        with open(os.path.join(BASE_DIR, new_model + '-puzzles.txt'), 'w') as f:
+            f.write(repr(result))
+            f.write('\n' + str(total_pct) + '\n')
+        qmeas.stop_time('puzzle')
+        if total_pct >= goparams.TERMINATION_ACCURACY:
+            print('Reaching termination accuracy; ', goparams.TERMINATION_ACCURACY)
+            with open('TERMINATE_FLAG', 'w') as f:
+                f.write(repr(result))
+                f.write('\n' + str(total_pct) + '\n')
 
     if goparams.EVALUATE_MODELS:
-      if not evaluate(model_name, new_model):
-        bury_latest_model()
-
+        if not evaluate(model_name, new_model):
+            bury_latest_model()
 
 
 if __name__ == '__main__':
-    #tf.logging.set_verbosity(tf.logging.INFO)
+    # tf.logging.set_verbosity(tf.logging.INFO)
     seed = int(sys.argv[1])
     iteration = int(sys.argv[2])
     print('Setting random seed, iteration = ', seed, iteration)

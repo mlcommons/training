@@ -17,37 +17,26 @@ import glob
 
 import argh
 import os.path
-# import collections
 import random
-# import re
-# import shutil
 import socket
 import sys
 import tempfile
 import time
 
-import torch
 import torch.utils.data as Data
 
-import cloud_logging
+import shared.cloud_logging as cloud_logging
 from tqdm import tqdm
-# import gzip
-# import numpy as np
-# import tensorflow as tf
-# from tensorflow import gfile
 
-# import go
 import dual_net
-from gtp_wrapper import make_gtp_instance, MCTSPlayer
+from shared.gtp_wrapper import make_gtp_instance, MCTSPlayer
 import preprocessing
-import selfplay_mcts
-from utils import logged_timer as timer
-import evaluation
-# import sgf_wrapper
-# import utils
+import shared.selfplay_mcts as selfplay_mcts
+from shared.utils import logged_timer as timer
+import shared.evaluation as evaluation
 
-import qmeas
-import goparams
+import shared.qmeas as qmeas
+import shared.goparams as goparams
 
 # How many positions we should aggregate per 'chunk'.
 EXAMPLES_PER_RECORD = goparams.EXAMPLES_PER_RECORD

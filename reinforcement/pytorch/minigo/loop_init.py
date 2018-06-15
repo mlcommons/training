@@ -13,29 +13,17 @@
 # limitations under the License.
 
 """Wrapper scripts to ensure that main.py commands are called correctly."""
-# import argh
-# import argparse
-# import cloud_logging
-# import logging
 import os
 import main
-import shipname
-# import sys
-# import time
+import shared.shipname as shipname
 import shutil
 import dual_net
 import preprocessing
 
-# import glob
-
-# from utils import timer
-# from tensorflow import gfile
 import logging
 
-import goparams
-# import predict_moves
-
-import qmeas
+import shared.goparams as goparams
+import shared.qmeas as qmeas
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
 # BUCKET_NAME = os.environ['BUCKET_NAME']

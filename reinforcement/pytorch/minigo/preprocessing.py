@@ -13,20 +13,15 @@
 # limitations under the License.
 
 '''Utilities to create, read, write tf.Examples.'''
-import functools
 import numpy as np
-# import tensorflow as tf
 import random
 
 import torch
 import torch.utils.data as Data
 
-import coords
-import features as features_lib
-import go
-import sgf_wrapper
-
-import goparams
+import shared.features as features_lib
+from shared import go
+from shared import goparams
 
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -58,8 +53,6 @@ def read_dataset(batch_size, tf_records, num_repeats=None,
                  shuffle_records=True, shuffle_examples=True,
                  shuffle_buffer_size=None,
                  filter_amount=1.0):
-    # if shuffle_buffer_size is None:
-    #     shuffle_buffer_size = SHUFFLE_BUFFER_SIZE
     if shuffle_records:
         random.shuffle(tf_records)
 

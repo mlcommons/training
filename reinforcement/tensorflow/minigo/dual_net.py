@@ -30,19 +30,21 @@ from tensorflow.python.training.summary_io import SummaryWriterCache
 from tqdm import tqdm
 from typing import Dict
 
-import features
+from shared import features
 import preprocessing
-import symmetries
-import go
+from shared import symmetries
+from shared import go
 
 # How many positions to look at per generation.
 # Per AGZ, 2048 minibatch * 1k = 2M positions/generation
-#EXAMPLES_PER_GENERATION = 2000000
+# EXAMPLES_PER_GENERATION = 2000000
 EXAMPLES_PER_GENERATION = 100000
 
 # How many positions can fit on a graphics card. 256 for 9s, 16 or 32 for 19s.
 TRAIN_BATCH_SIZE = 16
-#TRAIN_BATCH_SIZE = 256
+
+
+# TRAIN_BATCH_SIZE = 256
 
 
 class DualNetwork():
@@ -225,7 +227,7 @@ def model_fn(features, labels, mode, params, config=None):
     with tf.control_dependencies(update_ops):
         train_op = tf.train.MomentumOptimizer(
             learning_rate, params['momentum']).minimize(
-                combined_cost, global_step=global_step)
+            combined_cost, global_step=global_step)
 
     metric_ops = {
         'accuracy': tf.metrics.accuracy(labels=labels['pi_tensor'],
@@ -315,6 +317,7 @@ def train(working_dir, tf_records, generation_num, **hparams):
 
     def input_fn(): return preprocessing.get_input_tensors(
         TRAIN_BATCH_SIZE, tf_records)
+
     update_ratio_hook = UpdateRatioSessionHook(working_dir)
     estimator.train(input_fn, hooks=[update_ratio_hook], max_steps=max_steps)
 
@@ -327,19 +330,20 @@ def validate(working_dir, tf_records, checkpoint_name=None, **hparams):
     def input_fn(): return preprocessing.get_input_tensors(
         TRAIN_BATCH_SIZE, tf_records, shuffle_buffer_size=1000,
         filter_amount=0.05)
+
     estimator.evaluate(input_fn, steps=1000)
 
 
 def compute_update_ratio(weight_tensors, before_weights, after_weights):
     """Compute the ratio of gradient norm to weight norm."""
     deltas = [after - before for after,
-              before in zip(after_weights, before_weights)]
+                                 before in zip(after_weights, before_weights)]
     delta_norms = [np.linalg.norm(d.ravel()) for d in deltas]
     weight_norms = [np.linalg.norm(w.ravel()) for w in before_weights]
     ratios = [d / w for d, w in zip(delta_norms, weight_norms)]
     all_summaries = [
         tf.Summary.Value(tag='update_ratios/' +
-                         tensor.name, simple_value=ratio)
+                             tensor.name, simple_value=ratio)
         for tensor, ratio in zip(weight_tensors, ratios)]
     return tf.Summary(value=all_summaries)
 

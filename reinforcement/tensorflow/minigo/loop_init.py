@@ -15,11 +15,11 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
@@ -28,21 +28,21 @@ import preprocessing
 
 import glob
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import logging
 
-import goparams
+from shared import goparams
 import predict_moves
 
-import qmeas
+from shared import qmeas
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
-#BUCKET_NAME = os.environ['BUCKET_NAME']
+# BUCKET_NAME = os.environ['BUCKET_NAME']
 
-#BASE_DIR = "gs://{}".format(BUCKET_NAME)
+# BASE_DIR = "gs://{}".format(BUCKET_NAME)
 BASE_DIR = goparams.BASE_DIR
-if os.path.isdir(BASE_DIR): # if it already exists, delete it.
+if os.path.isdir(BASE_DIR):  # if it already exists, delete it.
     shutil.rmtree(BASE_DIR, ignore_errors=True)
 os.system('mkdir ' + BASE_DIR)
 
@@ -65,7 +65,7 @@ HOLDOUT_PCT = goparams.HOLDOUT_PCT
 
 def print_flags():
     flags = {
-        #'BUCKET_NAME': BUCKET_NAME,
+        # 'BUCKET_NAME': BUCKET_NAME,
         'BASE_DIR': BASE_DIR,
         'MODELS_DIR': MODELS_DIR,
         'SELFPLAY_DIR': SELFPLAY_DIR,
@@ -106,16 +106,15 @@ def main_fn():
         dual_net.TRAIN_BATCH_SIZE = 16
         dual_net.EXAMPLES_PER_GENERATION = 64
 
-        #monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
+        # monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
         preprocessing.SHUFFLE_BUFFER_SIZE = 1000
 
     print("Creating random initial weights...")
     bootstrap()
 
 
-
 if __name__ == '__main__':
-    #tf.logging.set_verbosity(tf.logging.INFO)
+    # tf.logging.set_verbosity(tf.logging.INFO)
     qmeas.start(os.path.join(BASE_DIR, 'stats'))
 
     # get TF logger

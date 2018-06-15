@@ -23,9 +23,9 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-import features
-import go
-import symmetries
+import shared.features as features
+import shared.go as go
+import shared.symmetries as symmetries
 import preprocessing
 
 EXAMPLES_PER_GENERATION = 100000

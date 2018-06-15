@@ -13,29 +13,17 @@
 # limitations under the License.
 
 """Wrapper scripts to ensure that main.py commands are called correctly."""
-# import argh
-# import argparse
-# import cloud_logging
-# import logging
 import os
-import shipname
+import shared.shipname as shipname
 import sys
 import time
-# import shutil
-# import dual_net
-# import preprocessing
 import subprocess
 
 import glob
-# from tensorflow import gfile
-
-# from utils import timer
 import logging
 
-import goparams
-# import predict_moves
-
-import qmeas
+import shared.goparams as goparams
+import shared.qmeas as qmeas
 
 SEED = None
 ITERATION = None

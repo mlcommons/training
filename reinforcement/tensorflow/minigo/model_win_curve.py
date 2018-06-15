@@ -15,59 +15,57 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import logging
 
-import qmeas
+from shared import qmeas
 import glob
 
 
 def get_models_from_argv():
-  unglob = sys.argv[1:]
-  models = []
-  for m in unglob:
-    models.extend(glob.glob(m))
-  models = map(lambda s: '.'.join(s.split('.')[:-1]), models)
-  models = list(sorted(list(set(models))))
-  print(models)
-  return models
+    unglob = sys.argv[1:]
+    models = []
+    for m in unglob:
+        models.extend(glob.glob(m))
+    models = map(lambda s: '.'.join(s.split('.')[:-1]), models)
+    models = list(sorted(list(set(models))))
+    print(models)
+    return models
 
 
 if __name__ == '__main__':
-  #qmeas.start()
-  #qmeas.create_main_profiler()
-  #white_model = sys.argv[1]
-  #black_model = sys.argv[2]
-  #print('whtie = ', white_model)
-  #print('black = ', black_model)
+    # qmeas.start()
+    # qmeas.create_main_profiler()
+    # white_model = sys.argv[1]
+    # black_model = sys.argv[2]
+    # print('whtie = ', white_model)
+    # print('black = ', black_model)
 
-  models = get_models_from_argv()
+    models = get_models_from_argv()
 
-  curve = []
+    curve = []
 
-  for i in range(len(models)):
-    output_dir = '/tmp/play_models'
-    os.system('mkdir ' + output_dir);
-    last_win = main.evaluate_evenly(models[i], models[-1], output_dir=output_dir, games=10)
-    curve.append(1 - last_win)
-    print('CURVE:')
-    for i, c in enumerate(curve):
-      print(i, c)
+    for i in range(len(models)):
+        output_dir = '/tmp/play_models'
+        os.system('mkdir ' + output_dir);
+        last_win = main.evaluate_evenly(models[i], models[-1], output_dir=output_dir, games=10)
+        curve.append(1 - last_win)
+        print('CURVE:')
+        for i, c in enumerate(curve):
+            print(i, c)
 
-  for i, v in enumerate(curve):
-    print('{}\t{}'.format(i, v))
+    for i, v in enumerate(curve):
+        print('{}\t{}'.format(i, v))
 
-  #qmeas.record_profiler()
-  #qmeas.end()
-
-
+        # qmeas.record_profiler()
+        # qmeas.end()
