@@ -37,14 +37,12 @@ from shared import go
 
 # How many positions to look at per generation.
 # Per AGZ, 2048 minibatch * 1k = 2M positions/generation
-# EXAMPLES_PER_GENERATION = 2000000
+#EXAMPLES_PER_GENERATION = 2000000
 EXAMPLES_PER_GENERATION = 100000
 
 # How many positions can fit on a graphics card. 256 for 9s, 16 or 32 for 19s.
 TRAIN_BATCH_SIZE = 16
-
-
-# TRAIN_BATCH_SIZE = 256
+#TRAIN_BATCH_SIZE = 256
 
 
 class DualNetwork():
@@ -73,7 +71,7 @@ class DualNetwork():
     def initialize_weights(self, save_file):
         """Initialize the weights from the given save_file.
         Assumes that the graph has been constructed, and the
-        save_file contains weights that match the graph. Used 
+        save_file contains weights that match the graph. Used
         to set the weights to a different version of the player
         without redifining the entire graph."""
         tf.train.Saver().restore(self.sess, save_file)
@@ -99,7 +97,6 @@ class DualNetwork():
 
 def get_inference_input():
     """Set up placeholders for input features/labels.
-
     Returns the feature, output tensors that get passed into model_fn."""
     return (tf.placeholder(tf.float32,
                            [None, go.N, go.N, features.NEW_FEATURES_PLANES],
@@ -110,7 +107,6 @@ def get_inference_input():
 
 def _round_power_of_two(n):
     """Finds the nearest power of 2 to a number.
-
     Thus 84 -> 64, 120 -> 128, etc.
     """
     return 2 ** int(round(math.log(n, 2)))
@@ -118,7 +114,6 @@ def _round_power_of_two(n):
 
 def get_default_hyperparams(**overrides):
     """Returns the hyperparams for the neural net.
-
     In other words, returns a dict whose parameters come from the AGZ
     paper:
       k: number of filters (AlphaGoZero used 256). We use 128 by
@@ -227,7 +222,7 @@ def model_fn(features, labels, mode, params, config=None):
     with tf.control_dependencies(update_ops):
         train_op = tf.train.MomentumOptimizer(
             learning_rate, params['momentum']).minimize(
-            combined_cost, global_step=global_step)
+                combined_cost, global_step=global_step)
 
     metric_ops = {
         'accuracy': tf.metrics.accuracy(labels=labels['pi_tensor'],
@@ -266,7 +261,6 @@ def get_estimator(working_dir, **hparams):
 
 def bootstrap(working_dir, **hparams):
     """Initialize a tf.Estimator run with random initial weights.
-
     Args:
         working_dir: The directory where tf.estimator will drop logs,
             checkpoints, and so on
@@ -291,10 +285,8 @@ def bootstrap(working_dir, **hparams):
 
 def export_model(working_dir, model_path):
     """Take the latest checkpoint and export it to model_path for selfplay.
-
     Assumes that all relevant model files are prefixed by the same name.
     (For example, foo.index, foo.meta and foo.data-00000-of-00001).
-
     Args:
         working_dir: The directory where tf.estimator keeps its checkpoints
         model_path: The path (can be a gs:// path) to export model to
@@ -317,7 +309,6 @@ def train(working_dir, tf_records, generation_num, **hparams):
 
     def input_fn(): return preprocessing.get_input_tensors(
         TRAIN_BATCH_SIZE, tf_records)
-
     update_ratio_hook = UpdateRatioSessionHook(working_dir)
     estimator.train(input_fn, hooks=[update_ratio_hook], max_steps=max_steps)
 
@@ -330,20 +321,19 @@ def validate(working_dir, tf_records, checkpoint_name=None, **hparams):
     def input_fn(): return preprocessing.get_input_tensors(
         TRAIN_BATCH_SIZE, tf_records, shuffle_buffer_size=1000,
         filter_amount=0.05)
-
     estimator.evaluate(input_fn, steps=1000)
 
 
 def compute_update_ratio(weight_tensors, before_weights, after_weights):
     """Compute the ratio of gradient norm to weight norm."""
     deltas = [after - before for after,
-                                 before in zip(after_weights, before_weights)]
+              before in zip(after_weights, before_weights)]
     delta_norms = [np.linalg.norm(d.ravel()) for d in deltas]
     weight_norms = [np.linalg.norm(w.ravel()) for w in before_weights]
     ratios = [d / w for d, w in zip(delta_norms, weight_norms)]
     all_summaries = [
         tf.Summary.Value(tag='update_ratios/' +
-                             tensor.name, simple_value=ratio)
+                         tensor.name, simple_value=ratio)
         for tensor, ratio in zip(weight_tensors, ratios)]
     return tf.Summary(value=all_summaries)
 

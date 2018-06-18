@@ -41,9 +41,9 @@ SEED = None
 ITERATION = None
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
-# BUCKET_NAME = os.environ['BUCKET_NAME']
+#BUCKET_NAME = os.environ['BUCKET_NAME']
 
-# BASE_DIR = "gs://{}".format(BUCKET_NAME)
+#BASE_DIR = "gs://{}".format(BUCKET_NAME)
 BASE_DIR = goparams.BASE_DIR
 
 MODELS_DIR = os.path.join(BASE_DIR, 'models')
@@ -65,7 +65,7 @@ HOLDOUT_PCT = goparams.HOLDOUT_PCT
 
 def print_flags():
     flags = {
-        # 'BUCKET_NAME': BUCKET_NAME,
+        #'BUCKET_NAME': BUCKET_NAME,
         'BASE_DIR': BASE_DIR,
         'MODELS_DIR': MODELS_DIR,
         'SELFPLAY_DIR': SELFPLAY_DIR,
@@ -82,7 +82,6 @@ def print_flags():
 def get_models():
     """Finds all models, returning a list of model number and names
     sorted increasing.
-
     Returns: [(13, 000013-modelname), (17, 000017-modelname), ...etc]
     """
     all_models = gfile.Glob(os.path.join(MODELS_DIR, '*.meta'))
@@ -95,7 +94,6 @@ def get_models():
 
 def get_latest_model():
     """Finds the latest model, returning its model number and name
-
     Returns: (17, 000017-modelname)
     """
     models = get_models()
@@ -104,9 +102,9 @@ def get_latest_model():
     return models[-1]
 
 
+
 def main_():
     """Run the reinforcement learning loop
-
     This tries to create a realistic way to run the reinforcement learning with
     all default parameters.
     """
@@ -121,46 +119,45 @@ def main_():
 
     procs = [
     ]
-
     def count_live_procs():
-        return len(list(filter(lambda proc: proc.poll() is None, procs)))
-
+      return len(list(filter(lambda proc: proc.poll() is None, procs)))
     def start_worker(num_workers):
-        # procs.append(subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE))
-        worker_seed = hash(hash(SEED) + ITERATION) + num_workers
-        cmd = 'GOPARAMS={} python3 selfplay_worker.py {} {}'.format(os.environ['GOPARAMS'], BASE_DIR, worker_seed)
-        procs.append(subprocess.Popen(cmd, shell=True))
+      #procs.append(subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE))
+      worker_seed = hash(hash(SEED) + ITERATION) + num_workers
+      cmd = 'GOPARAMS={} python3 selfplay_worker.py {} {}'.format(os.environ['GOPARAMS'], BASE_DIR, worker_seed)
+      procs.append(subprocess.Popen(cmd, shell=True))
 
     selfplay_dir = os.path.join(SELFPLAY_DIR, model_name)
-
     def count_games():
-        # returns number of games in the selfplay directory
-        if not os.path.exists(os.path.join(SELFPLAY_DIR, model_name)):
-            # directory not existing implies no games have been played yet
-            return 0
-        return len(gfile.Glob(os.path.join(SELFPLAY_DIR, model_name, '*.zz')))
+      # returns number of games in the selfplay directory
+      if not os.path.exists(os.path.join(SELFPLAY_DIR, model_name)):
+        # directory not existing implies no games have been played yet
+        return 0
+      return len(gfile.Glob(os.path.join(SELFPLAY_DIR, model_name, '*.zz')))
+
 
     for i in range(goparams.NUM_PARALLEL_SELFPLAY):
-        print('Starting Worker...')
-        num_workers += 1
-        start_worker(num_workers)
-        time.sleep(1)
+      print('Starting Worker...')
+      num_workers += 1
+      start_worker(num_workers)
+      time.sleep(1)
     sys.stdout.flush()
 
     while count_games() < MAX_GAMES_PER_GENERATION:
         time.sleep(10)
         games = count_games()
         print('Found Games: {}'.format(games))
-        print('selfplaying: {:.2f} games/hour'.format(games / ((time.time() - start_t) / 60 / 60)))
+        print('selfplaying: {:.2f} games/hour'.format(games / ((time.time() - start_t) / 60 / 60) ))
         print('Worker Processes: {}'.format(count_live_procs()))
         sys.stdout.flush()
+
 
     print('Done with selfplay loop.')
 
     time.sleep(10)
 
     for proc in procs:
-        proc.kill()
+      proc.kill()
 
     # Sometimes the workers need extra help...
     time.sleep(5)
@@ -177,13 +174,13 @@ def main_():
     print('There are {} games in the selfplay directory at {}'.format(count_games(), selfplay_dir))
     sys.stdout.flush()
     while count_games() > MAX_GAMES_PER_GENERATION:
-        print('Too many selfplay games ({}/{}) ... deleting one'.format(count_games(), MAX_GAMES_PER_GENERATION))
-        # This will remove exactly one game file from the selfplay directory... or
-        # so we hope :)
-        sys.stdout.flush()
-        os.system('ls {}/* -d | tail -n 1 | xargs rm'.format(selfplay_dir))
-        # unclear if this sleep is necessary...
-        time.sleep(1)
+      print('Too many selfplay games ({}/{}) ... deleting one'.format(count_games(), MAX_GAMES_PER_GENERATION))
+      # This will remove exactly one game file from the selfplay directory... or
+      # so we hope :)
+      sys.stdout.flush()
+      os.system('ls {}/* -d | tail -n 1 | xargs rm'.format(selfplay_dir))
+      # unclear if this sleep is necessary...
+      time.sleep(1)
     print('After cleanup, there are {} games in the selfplay directory at {}'.format(count_games(), selfplay_dir))
     sys.stdout.flush()
 
@@ -191,7 +188,7 @@ def main_():
 
 
 if __name__ == '__main__':
-    # tf.logging.set_verbosity(tf.logging.INFO)
+    #tf.logging.set_verbosity(tf.logging.INFO)
     qmeas.start(os.path.join(BASE_DIR, 'stats'))
 
     SEED = int(sys.argv[1])

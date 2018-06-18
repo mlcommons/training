@@ -39,11 +39,12 @@ from shared import qmeas
 import multiprocessing
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
-# BUCKET_NAME = os.environ['BUCKET_NAME']
+#BUCKET_NAME = os.environ['BUCKET_NAME']
 
-# BASE_DIR = "gs://{}".format(BUCKET_NAME)
-# BASE_DIR = goparams.BASE_DIR
+#BASE_DIR = "gs://{}".format(BUCKET_NAME)
+#BASE_DIR = goparams.BASE_DIR
 BASE_DIR = sys.argv[1]
+
 
 MODELS_DIR = os.path.join(BASE_DIR, 'models')
 SELFPLAY_DIR = os.path.join(BASE_DIR, 'data/selfplay')
@@ -60,7 +61,7 @@ HOLDOUT_PCT = goparams.HOLDOUT_PCT
 
 def print_flags():
     flags = {
-        # 'BUCKET_NAME': BUCKET_NAME,
+        #'BUCKET_NAME': BUCKET_NAME,
         'BASE_DIR': BASE_DIR,
         'MODELS_DIR': MODELS_DIR,
         'SELFPLAY_DIR': SELFPLAY_DIR,
@@ -77,7 +78,6 @@ def print_flags():
 def get_models():
     """Finds all models, returning a list of model number and names
     sorted increasing.
-
     Returns: [(13, 000013-modelname), (17, 000017-modelname), ...etc]
     """
     all_models = gfile.Glob(os.path.join(MODELS_DIR, '*.meta'))
@@ -90,7 +90,6 @@ def get_models():
 
 def get_latest_model():
     """Finds the latest model, returning its model number and name
-
     Returns: (17, 000017-modelname)
     """
     models = get_models()
@@ -159,6 +158,7 @@ def selfplay_cache_model(network, model_name, readouts=goparams.SP_READOUTS, ver
     )
 
 
+
 def gather():
     print("Gathering game output...")
     main.gather(input_directory=SELFPLAY_DIR,
@@ -172,10 +172,10 @@ def train():
     print("New model will be {}".format(new_model_name))
     load_file = os.path.join(MODELS_DIR, model_name)
     save_file = os.path.join(MODELS_DIR, new_model_name)
-    # try:
+    #try:
     main.train(ESTIMATOR_WORKING_DIR, TRAINING_CHUNK_DIR, save_file,
                generation_num=model_num + 1)
-    # except:
+    #except:
     #    print("Got an error training, muddling on...")
     #    logging.exception("Train error")
 
@@ -210,7 +210,7 @@ def echo():
 
 
 def selfplay_hook(args):
-    selfplay(**args)
+  selfplay(**args)
 
 
 def selfplay_laod_model(model_name):
@@ -221,7 +221,6 @@ def selfplay_laod_model(model_name):
 
 def rl_loop():
     """Run the reinforcement learning loop
-
     This tries to create a realistic way to run the reinforcement learning with
     all default parameters.
     """
@@ -234,27 +233,26 @@ def rl_loop():
         dual_net.TRAIN_BATCH_SIZE = 16
         dual_net.EXAMPLES_PER_GENERATION = 64
 
-        # monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
+        #monkeypatch the shuffle buffer size so we don't spin forever shuffling up positions.
         preprocessing.SHUFFLE_BUFFER_SIZE = 1000
 
     _, model_name = get_latest_model()
     network = selfplay_laod_model(model_name)
-
     def count_games():
-        # returns number of games in the selfplay directory
-        if not os.path.exists(os.path.join(SELFPLAY_DIR, model_name)):
-            # directory not existing implies no games have been played yet
-            return 0
-        return len(gfile.Glob(os.path.join(SELFPLAY_DIR, model_name, '*.zz')))
+      # returns number of games in the selfplay directory
+      if not os.path.exists(os.path.join(SELFPLAY_DIR, model_name)):
+        # directory not existing implies no games have been played yet
+        return 0
+      return len(gfile.Glob(os.path.join(SELFPLAY_DIR, model_name, '*.zz')))
 
     while count_games() < goparams.MAX_GAMES_PER_GENERATION:
-        selfplay_cache_model(network, model_name)
+      selfplay_cache_model(network, model_name)
 
     print('Stopping selfplay after finding {} games played.'.format(count_games()))
 
 
 if __name__ == '__main__':
-    # tf.logging.set_verbosity(tf.logging.INFO)
+    #tf.logging.set_verbosity(tf.logging.INFO)
     seed = int(sys.argv[2])
     print('Self play worker: setting random seed = ', seed)
     random.seed(seed)

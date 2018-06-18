@@ -159,7 +159,6 @@ def get_input_tensors(batch_size, tf_records, num_repeats=None,
                       filter_amount=0.05):
     '''Read tf.Records and prepare them for ingestion by dual_net.  See
     `read_tf_records` for parameter documentation.
-
     Returns a dict of tensors (see return value of batch_parse_tf_example)
     '''
     if shuffle_buffer_size is None:
@@ -203,7 +202,6 @@ def _make_tf_example_from_pwc(position_w_context):
 
 def shuffle_tf_examples(gather_size, records_to_shuffle):
     '''Read through tf.Record and yield shuffled, but unparsed tf.Examples
-
     Args:
         gather_size: The number of tf.Examples to be gathered together
         records_to_shuffle: A list of filenames

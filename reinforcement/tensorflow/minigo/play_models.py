@@ -31,22 +31,23 @@ import logging
 from shared import qmeas
 
 if __name__ == '__main__':
-    # qmeas.start()
-    # qmeas.create_main_profiler()
-    white_model = sys.argv[1]
-    black_model = sys.argv[2]
-    print('whtie = ', white_model)
-    print('black = ', black_model)
+  #qmeas.start()
+  #qmeas.create_main_profiler()
+  white_model = sys.argv[1]
+  black_model = sys.argv[2]
+  print('whtie = ', white_model)
+  print('black = ', black_model)
 
-    output_dir = '/tmp/play_models'
-    os.system('mkdir ' + output_dir);
-    winners = main.evaluate_evenly(black_model, white_model, output_dir=output_dir, games=10)
+  output_dir = '/tmp/play_models'
+  os.system('mkdir ' + output_dir);
+  winners = main.evaluate_evenly(black_model, white_model, output_dir=output_dir, games=10)
 
-    print()
-    print()
-    print()
-    print('white = ', white_model)
-    print('black = ', black_model)
-    print('white win pct = ', winners)
-    # qmeas.record_profiler()
-    # qmeas.end()
+  print()
+  print()
+  print()
+  print('white = ', white_model)
+  print('black = ', black_model)
+  print('white win pct = ', winners)
+  #qmeas.record_profiler()
+  #qmeas.end()
+
