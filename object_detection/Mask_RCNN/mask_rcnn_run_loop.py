@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Training and evaluation for Mask_RCNN
+"""Training and evaluation for Mask_RCNN.
 
   This module repeatedly runs 1 training epoch and then evaluation
   ##add explanation for all the options!!!!!!!
@@ -22,16 +22,17 @@
 import functools
 import json
 import os
-import tensorflow as tf
 
+from object_detection import evaluator
 from object_detection import trainer
 from object_detection.builders import dataset_builder
 from object_detection.builders import graph_rewriter_builder
 from object_detection.builders import model_builder
 from object_detection.utils import config_util
 from object_detection.utils import dataset_util
-from object_detection import evaluator
 from object_detection.utils import label_map_util
+
+import tensorflow as tf
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -57,8 +58,8 @@ flags.DEFINE_string('pipeline_config_path', '',
 
 flags.DEFINE_boolean('eval_training_data', False,
                      'If training data should be evaluated for this job.')
-#check point dir is the same as the train dir
-#flags.DEFINE_string('checkpoint_dir', '',
+# check point dir is the same as the train dir
+# flags.DEFINE_string('checkpoint_dir', '',
 #                    'Directory containing checkpoints to evaluate, typically '
 #                    'set to `train_dir` used in the training job.')
 flags.DEFINE_string('eval_dir', '',
@@ -73,13 +74,16 @@ flags.DEFINE_float('mask_min_ap', 1, 'Option to run until the mask average'
                                      'precision reaches this number')
 FLAGS = flags.FLAGS
 
+
 def train(_):
-  #TODO: training 1 epoch
+  # TODO(mehdi): training 1 epoch
   pass
 
-def eval(_):
-  #TODO: evaluating with mask and box metrics
+
+def evaluate(_):
+  # TODO(mehdi): evaluating with mask and box metrics
   pass
+
 
 def main(_):
   assert FLAGS.train_dir, '`train_dir` is missing.'
@@ -100,7 +104,6 @@ def main(_):
                 os.path.join(FLAGS.eval_dir, 'pipeline.config'),
                 overwrite=True)
 
-
   model_config = configs['model']
 
   train_config = configs['train_config']
@@ -112,12 +115,12 @@ def main(_):
   else:
     eval_input_config = configs['eval_input_config']
 
-  train_model_fn = functools.partial( model_builder.build,
-                                      model_config=model_config,
-                                      is_training=True)
-  eval_model_fn = functools.partial( model_builder.build,
+  train_model_fn = functools.partial(model_builder.build,
                                      model_config=model_config,
-                                     is_training=False)
+                                     is_training=True)
+  eval_model_fn = functools.partial(model_builder.build,
+                                    model_config=model_config,
+                                    is_training=False)
 
   def get_next(config):
     return dataset_util.make_initializable_iterator(
@@ -171,8 +174,7 @@ def main(_):
   if FLAGS.run_once:
     eval_config.max_evals = 1
 
-  #TODO: loop to alternate training and evaluation
-
+  # TODO(mehdi): loop to alternate training and evaluation
 
 
 if __name__ == '__main__':
