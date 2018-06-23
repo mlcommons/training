@@ -77,8 +77,7 @@ flags.DEFINE_float('mask_min_ap', 1, 'Option to run until the mask average'
 FLAGS = flags.FLAGS
 
 
-if True:
-#def main(_):
+def main(_):
   assert FLAGS.train_dir, '`train_dir` is missing.'
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
@@ -155,7 +154,7 @@ if True:
                              task_index=task_info.index)
     if task_info.type == 'ps':
       server.join()
-      #return
+      return
 
     worker_job_name = '%s/task:%d' % (task_info.type, task_info.index)
     task = task_info.index
@@ -209,5 +208,5 @@ if True:
     # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
 
 
-#if __name__ == '__main__':
-#  tf.app.run()
+if __name__ == '__main__':
+  tf.app.run()
