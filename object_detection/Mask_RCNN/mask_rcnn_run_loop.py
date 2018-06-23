@@ -121,8 +121,8 @@ def main(_):
     return dataset_util.make_initializable_iterator(
         dataset_builder.build(config)).get_next()
 
-  train_input_dict_fn = get_next(train_input_config)
-  eval_input_dict_fn = get_next(eval_input_config)
+  train_input_dict_fn = functools.partial(get_next, train_input_config)
+  eval_input_dict_fn = functools.partial(get_next, eval_input_config)
 
   env = json.loads(os.environ.get('TF_CONFIG', '{}'))
   cluster_data = env.get('cluster', None)
