@@ -121,9 +121,12 @@ def main(_):
     return dataset_util.make_initializable_iterator(
         dataset_builder.build(config)).get_next()
 
+  # functions to create a tensor input dictionary for both training & evaluation
   train_input_dict_fn = functools.partial(get_next, train_input_config)
   eval_input_dict_fn = functools.partial(get_next, eval_input_config)
 
+  # If not explicitly specified in the constructor and the TF_CONFIG
+  # environment variable is present, load cluster_spec from TF_CONFIG.
   env = json.loads(os.environ.get('TF_CONFIG', '{}'))
   cluster_data = env.get('cluster', None)
   cluster = tf.train.ClusterSpec(cluster_data) if cluster_data else None
