@@ -208,6 +208,7 @@ def main(_):
     train()
     tf.logging.info('Starting to evaluate.')
     eval_metrics = evaluate()
+    print(eval_metrics)
     # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
 
 
