@@ -176,7 +176,7 @@ def main(_):
     eval_graph_rewriter_fn = graph_rewriter_builder.build(
         configs['eval_rewriter_config'], is_training=False)
 
-  if 'num_steps' in train_config:
+  if train_config.num_steps:
     total_num_epochs = train_config.num_steps
     train_config.num_steps = EPOCHS_BETWEEN_EVALS
     total_training_cycle = total_num_epochs//train_config.num_steps
