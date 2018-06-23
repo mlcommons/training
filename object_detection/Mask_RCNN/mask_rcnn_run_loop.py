@@ -175,10 +175,16 @@ def main(_):
     eval_graph_rewriter_fn = graph_rewriter_builder.build(
         configs['eval_rewriter_config'], is_training=False)
 
-  if train_config.num_steps
-  total_num_epochs = train_config.num_steps
-  train_config.num_steps = EPOCHS_BETWEEN_EVALS
-  total_training_cycle = total_num_epochs//train_config.num_steps
+  if 'num_steps' in train_config:
+    total_num_epochs = train_config.num_steps
+    train_config.num_steps = EPOCHS_BETWEEN_EVALS
+    total_training_cycle = total_num_epochs//train_config.num_steps
+  else:
+    # TODO: make it run indef
+    total_num_epochs = 200000
+    train_config.num_steps = EPOCHS_BETWEEN_EVALS
+    total_training_cycle = total_num_epochs//train_config.num_steps
+
 
   def train():
     return trainer.train(train_input_dict_fn, train_model_fn, train_config,
