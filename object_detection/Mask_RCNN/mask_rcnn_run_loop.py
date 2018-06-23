@@ -80,7 +80,6 @@ FLAGS = flags.FLAGS
 def main(_):
   assert FLAGS.train_dir, '`train_dir` is missing.'
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
-  assert FLAGS.checkpoint_dir, '`checkpoint_dir` is missing.'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
 
   FLAGS.checkpoint_dir = FLAGS.train_dir
