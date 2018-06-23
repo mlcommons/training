@@ -34,6 +34,8 @@ from object_detection.utils import label_map_util
 
 import tensorflow as tf
 
+EPOCHS_BETWEEN_EVALS = 1
+
 tf.logging.set_verbosity(tf.logging.INFO)
 
 flags = tf.app.flags
@@ -75,21 +77,13 @@ flags.DEFINE_float('mask_min_ap', 1, 'Option to run until the mask average'
 FLAGS = flags.FLAGS
 
 
-def train(_):
-  # TODO(mehdi): training 1 epoch
-  pass
-
-
-def evaluate(_):
-  # TODO(mehdi): evaluating with mask and box metrics
-  pass
-
-
 def main(_):
   assert FLAGS.train_dir, '`train_dir` is missing.'
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
   assert FLAGS.checkpoint_dir, '`checkpoint_dir` is missing.'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
+
+  FLAGS.checkpoint_dir = FLAGS.train_dir
 
   configs = config_util.get_configs_from_pipeline_file(
       FLAGS.pipeline_config_path)
@@ -174,7 +168,37 @@ def main(_):
   if FLAGS.run_once:
     eval_config.max_evals = 1
 
-  # TODO(mehdi): loop to alternate training and evaluation
+  train_graph_rewriter_fn = eval_graph_rewriter_fn = None
+  if 'graph_rewriter_config' in configs:
+    train_graph_rewriter_fn = graph_rewriter_builder.build(
+        configs['graph_rewriter_config'], is_training=True)
+    eval_graph_rewriter_fn = graph_rewriter_builder.build(
+        configs['eval_rewriter_config'], is_training=False)
+
+  if train_config.num_steps
+  total_num_epochs = train_config.num_steps
+  train_config.num_steps = EPOCHS_BETWEEN_EVALS
+  total_training_cycle = total_num_epochs//train_config.num_steps
+
+  def train():
+    return trainer.train(train_input_dict_fn, train_model_fn, train_config,
+                         master, task, FLAGS.num_clones, worker_replicas,
+                         FLAGS.clone_on_cpu, ps_tasks, worker_job_name,
+                         is_chief, FLAGS.train_dir,
+                         graph_hook_fn=train_graph_rewriter_fn)
+
+  def evaluate():
+    return evaluator.evaluate(eval_input_dict_fn, eval_model_fn, eval_config,
+                              categories, FLAGS.checkpoint_dir, FLAGS.eval_dir,
+                              graph_hook_fn=eval_graph_rewriter_fn)
+
+  for cycle_index in range(total_training_cycle):
+    tf.logging.info('Starting a training cycle: %d/%d',
+                    cycle_index, total_training_cycle)
+    train()
+    tf.logging.info('Starting to evaluate.')
+    eval_metrics = evaluate()
+    # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
 
 
 if __name__ == '__main__':
