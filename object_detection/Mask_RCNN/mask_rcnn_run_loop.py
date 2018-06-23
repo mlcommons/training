@@ -82,7 +82,9 @@ def main(_):
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
 
-  FLAGS.checkpoint_dir = FLAGS.train_dir
+  flags.DEFINE_string('checkpoint_dir', FLAGS.train_dir,
+                      'directory to read checkpoints from '
+                      'which is the same as the train_dir')
 
   configs = config_util.get_configs_from_pipeline_file(
       FLAGS.pipeline_config_path)
