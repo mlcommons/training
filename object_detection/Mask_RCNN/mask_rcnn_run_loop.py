@@ -77,7 +77,8 @@ flags.DEFINE_float('mask_min_ap', 1, 'Option to run until the mask average'
 FLAGS = flags.FLAGS
 
 
-def main(_):
+if True:
+#def main(_):
   assert FLAGS.train_dir, '`train_dir` is missing.'
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
@@ -121,13 +122,13 @@ def main(_):
     return dataset_util.make_initializable_iterator(
         dataset_builder.build(config)).get_next()
 
-  train_input_dict_fn = functools.partial(get_next, train_input_config)
-  eval_input_dict_fn = functools.partial(get_next, eval_input_config)
+  train_input_dict_fn = get_next(train_input_config)
+  eval_input_dict_fn = get_next(eval_input_config)
 
   env = json.loads(os.environ.get('TF_CONFIG', '{}'))
   cluster_data = env.get('cluster', None)
   cluster = tf.train.ClusterSpec(cluster_data) if cluster_data else None
-  task_data = env.get('task', None) or {'type': 'master', 'index': 0}
+  task_data = env.get('task', {'type': 'master', 'index': 0})
   task_info = type('TaskSpec', (object,), task_data)
 
   # Parameters for a single worker.
@@ -208,5 +209,5 @@ def main(_):
     # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
 
 
-if __name__ == '__main__':
-  tf.app.run()
+#if __name__ == '__main__':
+#  tf.app.run()
