@@ -155,7 +155,7 @@ if True:
                              task_index=task_info.index)
     if task_info.type == 'ps':
       server.join()
-      return
+      #return
 
     worker_job_name = '%s/task:%d' % (task_info.type, task_info.index)
     task = task_info.index
