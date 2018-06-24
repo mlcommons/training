@@ -257,6 +257,7 @@ def evaluate(create_input_dict_fn, create_model_fn, eval_config, categories,
   if not evaluator_list:
     evaluator_list = get_evaluators(eval_config, categories)
 
+  print(eval_config.max_evals)
   metrics = eval_util.repeated_checkpoint_run(
       tensor_dict=tensor_dict,
       summary_dir=eval_dir,
