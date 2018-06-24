@@ -184,7 +184,7 @@ def main(_):
     train_config.num_steps = EPOCHS_BETWEEN_EVALS
     total_training_cycle = total_num_epochs//train_config.num_steps
   else:
-    # TODO: make it run indef
+    # TODO(mehdi): make it run indef
     total_num_epochs = 200000
     train_config.num_steps = EPOCHS_BETWEEN_EVALS
     total_training_cycle = total_num_epochs//train_config.num_steps
