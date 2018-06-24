@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from queue import Queue
 from random import shuffle, seed
 import sys
+import pickle
 
 VOCAB_FILE = "vocab.ende.32768"
 
@@ -25,13 +26,13 @@ class TextDataset(Dataset):
         self.prefix = "wmt32k-train-"
     elif self.mode == "eval":
         self.prefix = "wmt32k-dev-"
-    self.suffix = "-of-" + str("{:05}".format(self.total_shards)) + ".pt"
-    
+    self.suffix = "-of-" + str("{:05}".format(self.total_shards)) + ".pkl"
+
     self._BOUNDARY_SCALE = 1.1
-    self._MIN_BOUNDARY = 8    
+    self._MIN_BOUNDARY = 8
     self._create_min_max_boundaries()
     self.bucket_batch_sizes = [int(self.batch_size / x.float()) for x in self.buckets_max]
-    
+
     self.shard_q = Queue()
     self.batches = [[] for batch in range(self.total_buckets)]
     # Initialize bid as total_buckets so that multiple update_data aren't called
@@ -100,8 +101,15 @@ class TextDataset(Dataset):
     """ Loads binary data file using torch.load() API
     which uses pickle for (de)serializing.
     """
+    examples = []
     with open(filepath, "rb") as file:
-      examples = torch.load(file)
+      while True:
+        try:
+          example = pickle.load(file)
+          example = (torch.tensor(example[0]).float(), torch.tensor(example[1]).float())
+          examples.append(example)
+        except EOFError:
+          break
     return examples
 
   def read_new_shard(self):
@@ -157,15 +165,16 @@ class TextDataset(Dataset):
     batch = []
     while (len(self.batches[self.rand_to_orig[self.bid]]) > 0 and
           current_batchsize < max_batchsize):
-      batch.append(self.batches[self.rand_to_orig[self.bid]].pop())
+      example = self.batches[self.rand_to_orig[self.bid]].pop()
+      batch.append(example)
       current_batchsize += 1
     return batch
 
   def get_padded_batch(self):
     batch = self.get_next_batch()
     padded_batch = self.pad_batch(batch)
-    padded_batch = padded_batch = (torch.stack(list(map(list, (zip(*padded_batch))))[0]),
-                        torch.stack(list(map(list, (zip(*padded_batch))))[1]))
+    padded_batch = padded_batch = (torch.stack(list(zip(*padded_batch))[0]),
+                                   torch.stack(list(zip(*padded_batch))[1]))
     return padded_batch
 
   def update_data(self):

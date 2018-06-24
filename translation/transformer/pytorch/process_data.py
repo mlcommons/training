@@ -26,6 +26,7 @@ import tarfile
 import urllib
 import json
 import torch
+import pickle
 
 import six
 import urllib.request
@@ -210,8 +211,9 @@ def download_and_extract(path, url, input_filename, target_filename):
 
 def txt_line_iterator(path):
   """Iterate through lines of file."""
-  with open(path) as f:
+  with open(path, newline="\n") as f:
     for line in f:
+      line = line.replace("\r", " ")
       yield line.strip()
 
 
@@ -271,7 +273,6 @@ def encode_and_save_files(
   Returns:
     List of all files produced.
   """
-  # Create a file for each shard.
   filepaths = [shard_filename(data_dir, tag, n + 1, total_shards)
                for n in range(total_shards)]
 
@@ -279,40 +280,42 @@ def encode_and_save_files(
     print("Files with tag %s already exist." % tag)
     return filepaths
 
+  # Create a file for each shard.
+  file_writers = [open(filepath, 'ab')
+                  for filepath in filepaths]
+
   print("Saving files with tag %s." % tag)
   input_file = raw_files[0]
   target_file = raw_files[1]
 
 
   # Write examples to each shard in round robin order.
-  data_in_shard = [[] for fname in filepaths]
   counter, shard = 0, 0
   for counter, (input_line, target_line) in enumerate(zip(
       txt_line_iterator(input_file), txt_line_iterator(target_file))):
     if counter > 0 and counter % 100000 == 0:
       print("\tSaving case %d." % counter)
 
-    example = (torch.Tensor(subtokenizer.encode(input_line, add_eos=True)),
-               torch.Tensor(subtokenizer.encode(target_line, add_eos=True)))
+    example = (subtokenizer.encode(input_line, add_eos=True),
+               subtokenizer.encode(target_line, add_eos=True))
 
-    data_in_shard[shard].append(example)
+    write_to_shard(example, file_writers[shard])
     shard = (shard + 1) % total_shards
 
-  shard = 0
-  for path in filepaths:
-    shuffle_records(data_in_shard[shard])
-    with open(path, "wb") as file:
-      torch.save(data_in_shard[shard], file)
-    shard += 1
+  for file_writer in file_writers:
+    file_writer.close()
 
-  print("Saved %d Examples", counter)
+  print("Saved %d Examples" % counter)
   return filepaths
 
+def write_to_shard(data, file_writer):
+  """ Appends data to a given shard """
+  pickle.dump(data, file_writer)
 
 def shard_filename(path, tag, shard_num, total_shards):
   """Create filename for data shard."""
   return os.path.join(
-      path, "%s-%s-%.5d-of-%.5d.pt" % (_PREFIX, tag, shard_num, total_shards))
+      path, "%s-%s-%.5d-of-%.5d.pkl" % (_PREFIX, tag, shard_num, total_shards))
 
 def shuffle_records(shard_data):
   random.shuffle(shard_data)
@@ -357,7 +360,7 @@ def main(unused_argv):
   print(compiled_train_files)
   # Tokenize and save data as Examples in the pickle format.
   print("Step 4/4: Preprocessing and saving data")
-  train_files = encode_and_save_files(
+  encode_and_save_files(
       subtokenizer, FLAGS.data_dir, compiled_train_files, _TRAIN_TAG,
       _TRAIN_SHARDS)
   encode_and_save_files(
