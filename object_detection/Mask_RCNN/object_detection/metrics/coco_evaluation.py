@@ -536,7 +536,7 @@ class CocoMaskEvaluator(object_detection_evaluation.DetectionEvaluator):
         'annotations': self._groundtruth_list,
         'images': [{'id': image_id, 'height': shape[1], 'width': shape[2]}
                    for image_id, shape in self._image_id_to_mask_shape_map.
-                   iteritems()],
+                   items()],
         'categories': self._categories
     }
     coco_wrapped_groundtruth = coco_tools.COCOWrapper(
