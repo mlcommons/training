@@ -550,7 +550,7 @@ class CocoMaskEvaluator(object_detection_evaluation.DetectionEvaluator):
         include_metrics_per_category=self._include_metrics_per_category)
     mask_metrics.update(mask_per_category_ap)
     mask_metrics = {'DetectionMasks_'+ key: value
-                    for key, value in mask_metrics.iteritems()}
+                    for key, value in mask_metrics.items()}
     return mask_metrics
 
   def get_estimator_eval_metric_ops(self, image_id, groundtruth_boxes,
