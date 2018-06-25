@@ -174,14 +174,13 @@ def evaluate(create_input_dict_fn, create_model_fn, eval_config, categories,
     metrics: A dictionary containing metric names and values from the latest
       run.
   """
-
-  model = create_model_fn()
-
-  if eval_config.ignore_groundtruth and not eval_config.export_path:
-    logging.fatal('If ignore_groundtruth=True then an export_path is '
-                  'required. Aborting!!!')
-
   with tf.Graph().as_default():
+    model = create_model_fn()
+
+    if eval_config.ignore_groundtruth and not eval_config.export_path:
+      logging.fatal('If ignore_groundtruth=True then an export_path is '
+                    'required. Aborting!!!')
+
     tensor_dict, losses_dict = _extract_predictions_and_losses(
         model=model,
         create_input_dict_fn=create_input_dict_fn,
