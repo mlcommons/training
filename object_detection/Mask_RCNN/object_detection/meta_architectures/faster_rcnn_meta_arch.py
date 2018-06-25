@@ -120,7 +120,7 @@ class FasterRCNNFeatureExtractor(object):
                is_training,
                first_stage_features_stride,
                batch_norm_trainable=False,
-               reuse_weights=None,
+               reuse_weights=tf.AUTO_REUSE,
                weight_decay=0.0):
     """Constructor.
 
