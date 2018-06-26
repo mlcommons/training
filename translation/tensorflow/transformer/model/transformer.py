@@ -23,6 +23,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
 
 from model import attention_layer
 from model import beam_search
@@ -242,6 +243,22 @@ class Transformer(object):
     top_scores = scores[:, 0]
 
     return {"outputs": top_decoded_ids, "scores": top_scores}
+
+  def log_variable_sizes(self):
+    """Print variable names, sizes, and shapes."""
+    var_list = tf.trainable_variables()
+    name_to_var = {v.name: v for v in var_list}
+
+    total_size = 0
+    print("{:<15}{:<15}{:<80}".format(
+        "Size", "Shape", "Variable (sorted by name)"))
+    for v_name in sorted(list(name_to_var)):
+      v = name_to_var[v_name]
+      v_size = int(np.prod(np.array(v.shape.as_list())))
+      print("{:<15}{:<15}{:<80}".format(v_size, str(v.shape), v_name))
+      total_size += v_size
+
+    print("Total number of parameters: %s" % total_size)
 
 
 class LayerNormalization(tf.layers.Layer):

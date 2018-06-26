@@ -53,6 +53,11 @@ def model_fn(features, labels, mode, params):
 
     output = model(inputs, targets)
 
+    # Log all variables once.
+    if not getattr(params, "logged_variables", False):
+      model.log_variable_sizes()
+      params.logged_variables = True
+
     # When in prediction mode, the labels/targets is None. The model output
     # is the prediction
     if mode == tf.estimator.ModeKeys.PREDICT:
