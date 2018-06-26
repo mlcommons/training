@@ -70,11 +70,37 @@ flags.DEFINE_string('eval_dir', '',
 flags.DEFINE_boolean('run_once', False, 'Option to only run a single pass of '
                                         'evaluation. Overrides the `max_evals`'
                                         ' parameter in the provided config.')
-flags.DEFINE_float('box_min_ap', 1, 'Option to run until the box average'
+flags.DEFINE_float('box_min_ap', -1, 'Option to run until the box average'
                                     'precision reaches this number')
-flags.DEFINE_float('mask_min_ap', 1, 'Option to run until the mask average'
+flags.DEFINE_float('mask_min_ap', -1, 'Option to run until the mask average'
                                      'precision reaches this number')
 FLAGS = flags.FLAGS
+
+
+def stopping_criteria_met(eval_metrics, mask_min_ap, box_min_ap):
+  """Returns true if both of the min precision criteria are met in the given
+  evaluation metrics.
+
+  Args:
+    eval_metrics: dict of metrics names as keys and their corresponding values,
+      containing "DetectionMasks_Precision/mAP", and
+      "DetectionBoxes_Precision/mAP" fields.
+    mask_min_ap: minimum desired mask average precision, will be ignored if -1
+    box_min_ap: minimum desired box average precision, will be ignored if -1
+
+  Returns:
+    True if non -1 criteria are met, false o.w.
+  """
+  assert mask_min_ap == -1 or 0 < mask_min_ap < 1
+  assert box_min_ap == -1 or 0 < box_min_ap < 1
+  try:
+    mask_mAP_reached = eval_metrics['DetectionMasks_Precision/mAP']
+    box_mAP_reached = eval_metrics['DetectionBoxes_Precision/mAP']
+  except KeyError as err:
+    raise Exception('eval_metrics dict does not contain the mAP field') from err
+
+  return (mask_min_ap == -1 or mask_mAP_reached > mask_min_ap) & \
+         (box_min_ap == -1 or box_mAP_reached > box_min_ap)
 
 
 def main(_):
@@ -189,7 +215,6 @@ def main(_):
     train_config.num_steps = EPOCHS_BETWEEN_EVALS
     total_training_cycle = total_num_epochs//train_config.num_steps
 
-
   def train():
     return trainer.train(train_input_dict_fn, train_model_fn, train_config,
                          master, task, FLAGS.num_clones, worker_replicas,
@@ -208,6 +233,8 @@ def main(_):
     train()
     tf.logging.info('Starting to evaluate.')
     eval_metrics = evaluate()
+    if stopping_criteria_met(eval_metrics, FLAGS.mask_min_ap, FLAGS.box_min_ap):
+      break
     print(eval_metrics)
     # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
 
