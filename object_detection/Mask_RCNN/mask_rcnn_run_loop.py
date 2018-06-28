@@ -100,7 +100,8 @@ def stopping_criteria_met(eval_metrics, mask_min_ap, box_min_ap):
     raise Exception('eval_metrics dict does not contain the mAP field') from err
 
   return (mask_min_ap == -1 or mask_mAP_reached > mask_min_ap) & \
-         (box_min_ap == -1 or box_mAP_reached > box_min_ap)
+         (box_min_ap == -1 or box_mAP_reached > box_min_ap) & \
+         (mask_min_ap != -1 or box_min_ap != -1)
 
 
 def main(_):
