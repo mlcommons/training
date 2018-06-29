@@ -34,8 +34,6 @@ from object_detection.utils import label_map_util
 
 import tensorflow as tf
 
-EPOCHS_BETWEEN_EVALS = 1
-
 tf.logging.set_verbosity(tf.logging.INFO)
 
 flags = tf.app.flags
@@ -48,7 +46,7 @@ flags.DEFINE_boolean('clone_on_cpu', False,
                      'still be run on the CPU if they have no GPU kernel.')
 flags.DEFINE_integer('worker_replicas', 1, 'Number of worker+trainer '
                                            'replicas.')
-flags.DEFINE_integer('ps_tasks', 0,
+flags.DEFINE_integer('parameter_server_tasks', 0,
                      'Number of parameter server tasks. If None, does not use '
                      'a parameter server.')
 flags.DEFINE_string('train_dir', '',
@@ -60,10 +58,7 @@ flags.DEFINE_string('pipeline_config_path', '',
 
 flags.DEFINE_boolean('eval_training_data', False,
                      'If training data should be evaluated for this job.')
-# check point dir is the same as the train dir
-# flags.DEFINE_string('checkpoint_dir', '',
-#                    'Directory containing checkpoints to evaluate, typically '
-#                    'set to `train_dir` used in the training job.')
+
 flags.DEFINE_string('eval_dir', '',
                     'Directory to write eval summaries to.')
 
@@ -74,6 +69,8 @@ flags.DEFINE_float('box_min_ap', -1, 'Option to run until the box average'
                                     'precision reaches this number')
 flags.DEFINE_float('mask_min_ap', -1, 'Option to run until the mask average'
                                      'precision reaches this number')
+flags.DEFINE_string('epochs_between_evals', 100, 'Number of training epochs to '
+                                                 'run before running eval.')
 FLAGS = flags.FLAGS
 
 
@@ -108,10 +105,6 @@ def main(_):
   assert FLAGS.train_dir, '`train_dir` is missing.'
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
-
-  flags.DEFINE_string('checkpoint_dir', FLAGS.train_dir,
-                      'directory to read checkpoints from '
-                      'which is the same as the train_dir')
 
   configs = config_util.get_configs_from_pipeline_file(
       FLAGS.pipeline_config_path)
@@ -161,7 +154,7 @@ def main(_):
   task_info = type('TaskSpec', (object,), task_data)
 
   # Parameters for a single worker.
-  ps_tasks = 0
+  parameter_server_tasks = 0
   worker_replicas = 1
   worker_job_name = 'lonely_worker'
   task = 0
@@ -172,12 +165,12 @@ def main(_):
     # Number of total worker replicas include "worker"s and the "master".
     worker_replicas = len(cluster_data['worker']) + 1
   if cluster_data and 'ps' in cluster_data:
-    ps_tasks = len(cluster_data['ps'])
+    parameter_server_tasks = len(cluster_data['ps'])
 
-  if worker_replicas > 1 and ps_tasks < 1:
+  if worker_replicas > 1 and parameter_server_tasks < 1:
     raise ValueError('At least 1 ps task is needed for distributed training.')
 
-  if worker_replicas >= 1 and ps_tasks > 0:
+  if worker_replicas >= 1 and parameter_server_tasks > 0:
     # Set up distributed training.
     server = tf.train.Server(tf.train.ClusterSpec(cluster), protocol='grpc',
                              job_name=task_info.type,
@@ -206,26 +199,28 @@ def main(_):
     eval_graph_rewriter_fn = graph_rewriter_builder.build(
         configs['eval_rewriter_config'], is_training=False)
 
+  # setting to run evaluation after EPOCHS_BETWEEN_EVALS epochs of training.
+  # total number of training is set to total_num_epochs provided in the config
   if train_config.num_steps:
-    total_num_epochs = train_config.num_steps
-    train_config.num_steps = EPOCHS_BETWEEN_EVALS
+    total_num_epochs = train_config.num_stepsPOCHS_BETWEEN_EVALS
+    train_config.num_steps = FLAGS.epochs_between_evals
     total_training_cycle = total_num_epochs//train_config.num_steps
   else:
     # TODO(mehdi): make it run indef
     total_num_epochs = 200000
-    train_config.num_steps = EPOCHS_BETWEEN_EVALS
-    total_training_cycle = total_num_epochs//train_config.num_steps
+    train_config.num_steps = FLAGS.epochs_between_evals
+    total_training_cycle = total_num_epochs // train_config.num_steps
 
   def train():
     return trainer.train(train_input_dict_fn, train_model_fn, train_config,
                          master, task, FLAGS.num_clones, worker_replicas,
-                         FLAGS.clone_on_cpu, ps_tasks, worker_job_name,
+                         FLAGS.clone_on_cpu, parameter_server_tasks, worker_job_name,
                          is_chief, FLAGS.train_dir,
                          graph_hook_fn=train_graph_rewriter_fn)
 
   def evaluate():
     return evaluator.evaluate(eval_input_dict_fn, eval_model_fn, eval_config,
-                              categories, FLAGS.checkpoint_dir, FLAGS.eval_dir,
+                              categories, FLAGS.train_dir, FLAGS.eval_dir,
                               graph_hook_fn=eval_graph_rewriter_fn)
 
   for cycle_index in range(total_training_cycle):
