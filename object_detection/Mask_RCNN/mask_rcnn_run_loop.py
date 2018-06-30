@@ -234,12 +234,12 @@ def main(_):
     tf.logging.info('Starting a training cycle: %d/%d',
                     cycle_index, total_training_cycle)
     train()
-    tf.logging.info('Starting to evaluate.')
-    eval_metrics = evaluate()
-    if stopping_criteria_met(eval_metrics, FLAGS.mask_min_ap, FLAGS.box_min_ap):
-      tf.logging.info('Stopping criteria met. Training stopped')
-      break
-    print(eval_metrics)
+    #tf.logging.info('Starting to evaluate.')
+    #eval_metrics = evaluate()
+    #if stopping_criteria_met(eval_metrics, FLAGS.mask_min_ap, FLAGS.box_min_ap):
+    #  tf.logging.info('Stopping criteria met. Training stopped')
+    #  break
+    #print(eval_metrics)
     # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
 
 
