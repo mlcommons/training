@@ -130,6 +130,8 @@ def main(_):
   else:
     eval_input_config = configs['eval_input_config']
 
+  # setting to run evaluation after EPOCHS_BETWEEN_EVALS epochs of training.
+  # total number of training is set to total_num_epochs provided in the config
   if train_config.num_steps:
     total_num_epochs = train_config.num_steps
     train_config.num_steps = FLAGS.epochs_between_evals
@@ -209,11 +211,7 @@ def main(_):
     eval_graph_rewriter_fn = graph_rewriter_builder.build(
         configs['eval_rewriter_config'], is_training=False)
 
-  # setting to run evaluation after EPOCHS_BETWEEN_EVALS epochs of training.
-  # total number of training is set to total_num_epochs provided in the config
-
   def train():
-    print('############################## %d', train_config.num_steps)
     return trainer.train(create_tensor_dict_fn=train_input_dict_fn,
                          create_model_fn=train_model_fn,
                          train_config=train_config, master=master, task=task,
@@ -231,17 +229,14 @@ def main(_):
                               graph_hook_fn=eval_graph_rewriter_fn)
 
   for cycle_index in range(total_training_cycle):
-    print('############################## %d', train_config.num_steps)
     tf.logging.info('Starting a training cycle: %d/%d',
                     cycle_index, total_training_cycle)
     train()
-    #tf.logging.info('Starting to evaluate.')
-    #eval_metrics = evaluate()
-    #if stopping_criteria_met(eval_metrics, FLAGS.mask_min_ap, FLAGS.box_min_ap):
-    #  tf.logging.info('Stopping criteria met. Training stopped')
-    #  break
-    #print(eval_metrics)
-    # TODO: add stopping criteria using 'box_min_ap' and 'mask_min_ap'
+    tf.logging.info('Starting to evaluate.')
+    eval_metrics = evaluate()
+    if stopping_criteria_met(eval_metrics, FLAGS.mask_min_ap, FLAGS.box_min_ap):
+      tf.logging.info('Stopping criteria met. Training stopped')
+      break
 
 
 if __name__ == '__main__':
