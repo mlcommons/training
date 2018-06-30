@@ -69,7 +69,7 @@ flags.DEFINE_float('box_min_ap', -1, 'Option to run until the box average'
                                     'precision reaches this number')
 flags.DEFINE_float('mask_min_ap', -1, 'Option to run until the mask average'
                                      'precision reaches this number')
-flags.DEFINE_integer('epochs_between_evals', 10000, 'Number of training epochs to '
+flags.DEFINE_integer('epochs_between_evals', 1, 'Number of training epochs to '
                                                  'run before running eval.')
 FLAGS = flags.FLAGS
 
