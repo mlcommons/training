@@ -212,7 +212,8 @@ def main(_):
     total_training_cycle = total_num_epochs // train_config.num_steps
 
   def train():
-    return trainer.train(train_input_dict_fn, train_model_fn, train_config,
+    return trainer.train(train_input_dict_fn, train_model_fn,
+                         train_config=train_config,
                          master, task, FLAGS.num_clones, worker_replicas,
                          FLAGS.clone_on_cpu, parameter_server_tasks, worker_job_name,
                          is_chief, FLAGS.train_dir,
