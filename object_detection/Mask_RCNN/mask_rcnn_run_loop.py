@@ -224,6 +224,7 @@ def main(_):
                               graph_hook_fn=eval_graph_rewriter_fn)
 
   for cycle_index in range(total_training_cycle):
+    print('############################## %d', train_config.num_steps)
     tf.logging.info('Starting a training cycle: %d/%d',
                     cycle_index, total_training_cycle)
     train()
