@@ -212,11 +212,15 @@ def main(_):
     total_training_cycle = total_num_epochs // train_config.num_steps
 
   def train():
-    return trainer.train(train_input_dict_fn, train_model_fn,
-                         train_config=train_config,
-                         master, task, FLAGS.num_clones, worker_replicas,
-                         FLAGS.clone_on_cpu, parameter_server_tasks, worker_job_name,
-                         is_chief, FLAGS.train_dir,
+    return trainer.train(train_input_dict_fn=train_input_dict_fn,
+                         train_model_fn=train_model_fn,
+                         train_config=train_config, master=master, task=task,
+                         num_clones=FLAGS.num_clones,
+                         worker_replicas=worker_replicas,
+                         clone_on_cpu=FLAGS.clone_on_cpu,
+                         ps_tasks=parameter_server_tasks,
+                         worker_job_name=worker_job_name,
+                         is_chief=is_chief, train_dir=FLAGS.train_dir,
                          graph_hook_fn=train_graph_rewriter_fn)
 
   def evaluate():
