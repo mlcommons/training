@@ -202,12 +202,12 @@ def main(_):
   # setting to run evaluation after EPOCHS_BETWEEN_EVALS epochs of training.
   # total number of training is set to total_num_epochs provided in the config
   if train_config.num_steps:
-    total_num_epochs = train_config.num_stepsPOCHS_BETWEEN_EVALS
+    total_num_epochs = train_config.num_steps
     train_config.num_steps = FLAGS.epochs_between_evals
-    total_training_cycle = total_num_epochs//train_config.num_steps
+    total_training_cycle = total_num_epochs // train_config.num_steps
   else:
     # TODO(mehdi): make it run indef
-    total_num_epochs = 200000
+    total_num_epochs = 2000000
     train_config.num_steps = FLAGS.epochs_between_evals
     total_training_cycle = total_num_epochs // train_config.num_steps
 
