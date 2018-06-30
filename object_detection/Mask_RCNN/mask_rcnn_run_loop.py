@@ -69,7 +69,7 @@ flags.DEFINE_float('box_min_ap', -1, 'Option to run until the box average'
                                     'precision reaches this number')
 flags.DEFINE_float('mask_min_ap', -1, 'Option to run until the mask average'
                                      'precision reaches this number')
-flags.DEFINE_integer('epochs_between_evals', 100, 'Number of training epochs to '
+flags.DEFINE_integer('epochs_between_evals', 10000, 'Number of training epochs to '
                                                  'run before running eval.')
 FLAGS = flags.FLAGS
 
@@ -207,7 +207,7 @@ def main(_):
     total_training_cycle = total_num_epochs // train_config.num_steps
   else:
     # TODO(mehdi): make it run indef
-    total_num_epochs = 2000000
+    total_num_epochs = 20000000
     train_config.num_steps = FLAGS.epochs_between_evals
     total_training_cycle = total_num_epochs // train_config.num_steps
 
