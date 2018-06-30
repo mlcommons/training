@@ -106,16 +106,6 @@ def main(_):
   assert FLAGS.pipeline_config_path, '`pipeline_config_path` is missing'
   assert FLAGS.eval_dir, '`eval_dir` is missing.'
 
-  if train_config.num_steps:
-    total_num_epochs = train_config.num_steps
-    train_config.num_steps = FLAGS.epochs_between_evals
-    total_training_cycle = total_num_epochs // train_config.num_steps
-  else:
-    # TODO(mehdi): make it run indef
-    total_num_epochs = 20000000
-    train_config.num_steps = FLAGS.epochs_between_evals
-    total_training_cycle = total_num_epochs // train_config.num_steps
-
   configs = config_util.get_configs_from_pipeline_file(
       FLAGS.pipeline_config_path)
   if FLAGS.task == 0:
@@ -139,6 +129,16 @@ def main(_):
     eval_input_config = configs['train_input_config']
   else:
     eval_input_config = configs['eval_input_config']
+
+  if train_config.num_steps:
+    total_num_epochs = train_config.num_steps
+    train_config.num_steps = FLAGS.epochs_between_evals
+    total_training_cycle = total_num_epochs // train_config.num_steps
+  else:
+    # TODO(mehdi): make it run indef
+    total_num_epochs = 20000000
+    train_config.num_steps = FLAGS.epochs_between_evals
+    total_training_cycle = total_num_epochs // train_config.num_steps
 
   train_model_fn = functools.partial(model_builder.build,
                                      model_config=model_config,
