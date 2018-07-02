@@ -25,9 +25,11 @@ import sys
 import tarfile
 import urllib
 
-import tensorflow as tf
-
 import urllib.request
+import logging
+
+logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
+logging.getLogger().setLevel(logging.INFO)
 
 # Data sources for training/evaluating the transformer translation model.
 _TRAIN_DATA_SOURCES = [
@@ -128,16 +130,16 @@ def download_from_url(path, url):
   found_file = find_file(path, filename, max_depth=0)
   if found_file is None:
     filename = os.path.join(path, filename)
-    tf.logging.info("Downloading from %s to %s." % (url, filename))
+    logging.info("Downloading from %s to %s." % (url, filename))
     inprogress_filepath = filename + ".incomplete"
     inprogress_filepath, _ = urllib.request.urlretrieve(
         url, inprogress_filepath, reporthook=download_report_hook)
     # Print newline to clear the carriage return from the download progress.
     print()
-    tf.gfile.Rename(inprogress_filepath, filename)
+    os.rename(inprogress_filepath, filename)
     return filename
   else:
-    tf.logging.info("Already downloaded: %s (at %s)." % (url, found_file))
+    logging.info("Already downloaded: %s (at %s)." % (url, found_file))
     return found_file
 
 
@@ -156,19 +158,19 @@ def download_and_extract(path, url, input_filename, target_filename):
   Raises:
     OSError: if the the download/extraction fails.
   """
-  print('Downloading and extracting data to: ', path)
+  logging.info('Downloading and extracting data to: %s' % path)
   # Check if extracted files already exist in path
   input_file = find_file(path, input_filename)
   target_file = find_file(path, target_filename)
   if input_file and target_file:
-    tf.logging.info("Already downloaded and extracted %s." % url)
+    logging.info("Already downloaded and extracted %s." % url)
     return input_file, target_file
 
   # Download archive file if it doesn't already exist.
   compressed_file = download_from_url(path, url)
 
   # Extract compressed files
-  tf.logging.info("Extracting %s." % compressed_file)
+  logging.info("Extracting %s." % compressed_file)
   with tarfile.open(compressed_file, "r:gz") as corpus_tar:
     corpus_tar.extractall(path)
 
@@ -184,9 +186,9 @@ def download_and_extract(path, url, input_filename, target_filename):
 
 
 def make_dir(path):
-  if not tf.gfile.Exists(path):
-    tf.logging.info("Creating directory %s" % path)
-    tf.gfile.MakeDirs(path)
+  if not os.path.isdir(path):
+    logging.info("Creating directory %s" % path)
+    os.mkdir(path)
 
 
 def main(unused_argv):
