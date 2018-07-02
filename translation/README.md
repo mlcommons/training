@@ -78,11 +78,11 @@ Right now PyTorch and Tensorflow are supported for running transformer so set `$
 
 Run the docker, assuming your checkout lives in `$HOME`. Modify paths as appropriate. 
 
-    cd ~/reference/translation/transformer/$FRAMEWORK
+    cd ~/reference/translation/$FRAMEWORK
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
     SEED=1
     NOW=`date "+%F-%T"`
-    sudo docker run -v $HOME/reference/translation/transformer/raw_data:/raw_data --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
+    sudo docker run -v $HOME/reference/translation/raw_data:/raw_data --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
 
 
 # 3. Dataset/Environment
