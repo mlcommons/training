@@ -18,8 +18,8 @@ import re
 import time
 import unittest
 
-import go
-import utils
+from shared import go
+from shared import utils
 
 assert go.N == 9, "All unit tests must be run with BOARD_SIZE=9"
 

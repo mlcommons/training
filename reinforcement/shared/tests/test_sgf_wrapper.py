@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import go
-from sgf_wrapper import replay_sgf, translate_sgf_move, make_sgf
+from shared import go
+from shared.sgf_wrapper import replay_sgf, translate_sgf_move, make_sgf
 import unittest
 
-import coords
-from tests import test_utils
+from shared import coords
+from shared.tests import test_utils
 
 JAPANESE_HANDICAP_SGF = "(;GM[1]FF[4]CA[UTF-8]AP[CGoban:3]ST[2]RU[Japanese]SZ[9]HA[2]RE[Void]KM[5.50]PW[test_white]PB[test_black]AB[gc][cg];W[ee];B[dg])"
 

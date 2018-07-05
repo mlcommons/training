@@ -12,19 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# import copy
-# import math
+import copy
+import math
 import os
 import random
 import sys
 import time
-import shared.sgf_wrapper as sgf_wrapper
+from shared import sgf_wrapper
 
-import shared.coords as coords
+from shared import coords
+import gtp
 import numpy as np
 from shared.mcts import MCTSNode, MAX_DEPTH
 
-import shared.go as go
+from shared import go
 
 # When to do deterministic move selection.  ~30 moves on a 19x19, ~8 on 9x9
 TEMPERATURE_CUTOFF = int((go.N * go.N) / 12)

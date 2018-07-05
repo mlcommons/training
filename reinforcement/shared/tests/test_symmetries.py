@@ -15,13 +15,13 @@
 import itertools
 import numpy as np
 
-import coords
-import symmetries
-from symmetries import apply_symmetry_feat as apply_f
-from symmetries import apply_symmetry_pi as apply_p
-import go
+from shared import coords
+from shared import symmetries
+from shared.symmetries import apply_symmetry_feat as apply_f
+from shared.symmetries import apply_symmetry_pi as apply_p
+from shared import go
 
-from tests import test_utils
+from shared.tests import test_utils
 
 
 class TestSymmetryOperations(test_utils.MiniGoUnitTest):

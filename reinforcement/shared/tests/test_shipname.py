@@ -14,7 +14,7 @@
 
 import unittest
 
-import shipname
+from shared import shipname
 
 
 class TestShipname(unittest.TestCase):

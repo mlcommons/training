@@ -16,10 +16,10 @@
 
 import gtp
 import sys
-import shared.sgf_wrapper as sgf_wrapper
+from shared import sgf_wrapper
 import itertools
-import shared.go as go
-import shared.coords as coords
+from shared import go
+from shared import coords
 
 
 def parse_message(message):

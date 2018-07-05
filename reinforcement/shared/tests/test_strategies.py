@@ -16,12 +16,12 @@ import unittest
 import unittest.mock as mock
 import numpy as np
 
-import coords
-import go
-from go import Position
-from tests import test_utils
-from mcts import MCTSNode, MAX_DEPTH
-from strategies import MCTSPlayerMixin, time_recommendation
+from shared import coords
+from shared import go
+from shared.go import Position
+from shared.tests import test_utils
+from shared.mcts import MCTSNode, MAX_DEPTH
+from shared.strategies import MCTSPlayerMixin, time_recommendation
 
 ALMOST_DONE_BOARD = test_utils.load_board('''
 .XO.XO.OO
@@ -35,7 +35,7 @@ XXXXXOOOO
 XXXXOOOOO
 ''')
 
-#Tromp taylor means black can win if we hit the move limit.
+# Tromp taylor means black can win if we hit the move limit.
 TT_FTW_BOARD = test_utils.load_board('''
 .XXOOOOOO
 X.XOO...O
@@ -58,6 +58,7 @@ SEND_TWO_RETURN_ONE = go.Position(
             go.PlayerMove(go.WHITE, (0, 8))),
     to_play=go.BLACK
 )
+
 
 class DummyNet():
     def __init__(self, fake_priors=None, fake_value=0):
@@ -125,7 +126,7 @@ class TestMCTSPlayerMixin(test_utils.MiniGoUnitTest):
 
         # With dirichelet noise, majority of density should be in one node.
         max_p = np.max(player.root.child_prior)
-        self.assertGreater(max_p, 3/(go.N ** 2 + 1))
+        self.assertGreater(max_p, 3 / (go.N ** 2 + 1))
 
     def test_pick_moves(self):
         player = initialize_basic_player()
@@ -215,7 +216,7 @@ class TestMCTSPlayerMixin(test_utils.MiniGoUnitTest):
         player = MCTSPlayerMixin(DummyNet())
         endgame = go.Position(
             board=TT_FTW_BOARD,
-            n=MAX_DEPTH-2,
+            n=MAX_DEPTH - 2,
             komi=2.5,
             ko=None,
             recent=(go.PlayerMove(go.BLACK, (0, 1)),

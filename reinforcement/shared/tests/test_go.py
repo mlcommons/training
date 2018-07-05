@@ -15,11 +15,11 @@
 import numpy as np
 import unittest
 
-import coords
-from go import Position, PlayerMove, LibertyTracker, WHITE, BLACK, EMPTY
-import go
-import sgf_wrapper
-from tests import test_utils
+from shared import coords
+from shared.go import Position, PlayerMove, LibertyTracker, WHITE, BLACK, EMPTY
+from shared import go
+from shared import sgf_wrapper
+from shared.tests import test_utils
 
 EMPTY_ROW = '.' * go.N + '\n'
 TEST_BOARD = test_utils.load_board('''
@@ -350,11 +350,11 @@ class TestPosition(test_utils.MiniGoUnitTest):
         nonsuicidal_moves = coords_from_kgs_set('B5 J1 A9')
         for move in suicidal_moves:
             # sanity check my coordinate input
-            assert(position.board[move] == go.EMPTY)
+            assert (position.board[move] == go.EMPTY)
             self.assertTrue(position.is_move_suicidal(move), str(move))
         for move in nonsuicidal_moves:
             # sanity check my coordinate input
-            assert(position.board[move] == go.EMPTY)
+            assert (position.board[move] == go.EMPTY)
             self.assertFalse(position.is_move_suicidal(move), str(move))
 
     def test_legal_moves(self):

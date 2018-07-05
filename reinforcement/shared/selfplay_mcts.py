@@ -13,10 +13,12 @@
 # limitations under the License.
 
 import time
+import numpy as np
 import random
 import sys
 
-import shared.coords as coords
+from shared import coords
+from shared import go
 from shared.gtp_wrapper import MCTSPlayer
 
 SIMULTANEOUS_LEAVES = 8

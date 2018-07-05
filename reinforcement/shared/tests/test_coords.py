@@ -15,9 +15,9 @@
 import unittest
 import numpy
 
-import coords
-import go
-from tests import test_utils
+from shared import coords
+from shared import go
+from shared.tests import test_utils
 
 
 class TestCoords(test_utils.MiniGoUnitTest):

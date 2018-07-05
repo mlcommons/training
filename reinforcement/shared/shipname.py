@@ -16,7 +16,7 @@ import random
 import re
 import petname
 
-import shared.go as go
+from shared import go
 
 MODEL_NUM_REGEX = "^\d{6}"
 MODEL_NAME_REGEX = "^\d{6}(-\w+)+"

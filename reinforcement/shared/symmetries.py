@@ -15,7 +15,7 @@
 import functools
 import numpy as np
 import random
-import shared.go as go
+from shared import go
 
 """
 Allowable symmetries:

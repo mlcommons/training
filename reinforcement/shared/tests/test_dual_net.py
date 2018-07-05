@@ -16,10 +16,10 @@ import os
 import tempfile
 import unittest
 
-import dual_net
-import go
-import preprocessing
-from tests import test_utils
+from pytorch.minigo import dual_net
+from shared import go
+from pytorch.minigo import preprocessing
+from shared.tests import test_utils
 
 fast_hparams = {'k': 1, 'fc_width': 2, 'num_shared_layers': 1}
 dual_net.EXAMPLES_PER_GENERATION = dual_net.TRAIN_BATCH_SIZE

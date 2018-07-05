@@ -21,8 +21,8 @@ import numpy as np
 import collections
 import math
 
-import shared.coords as coords
-import shared.go as go
+from shared import coords
+from shared import go
 
 MAX_DEPTH = (go.N ** 2) * 1.4  # 505 moves for 19x19, 113 for 9x9
 

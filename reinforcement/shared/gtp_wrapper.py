@@ -15,12 +15,12 @@
 import gtp
 import shared.gtp_extensions as gtp_extensions
 
-import shared.coords as coords
+from shared import coords
 import datetime
-import shared.go as go
+from shared import go
 import sys
 import os
-from minigo.dual_net import DualNetwork
+from pytorch.minigo.dual_net import DualNetwork
 from shared.strategies import MCTSPlayerMixin, CGOSPlayerMixin
 
 

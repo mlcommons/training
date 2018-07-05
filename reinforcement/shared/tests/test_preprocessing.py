@@ -17,12 +17,12 @@ import tensorflow as tf
 import numpy as np
 import tempfile
 
-import coords
-import preprocessing
-import features
-import go
+from shared import coords
+from pytorch.minigo import preprocessing
+from shared import features
+from shared import go
 
-from tests import test_utils
+from shared.tests import test_utils
 
 TEST_SGF = "(;CA[UTF-8]SZ[9]PB[Murakawa Daisuke]PW[Iyama Yuta]KM[6.5]HA[0]RE[W+1.5]GM[1];B[fd];W[cf])"
 
@@ -118,6 +118,7 @@ class TestPreprocessing(test_utils.MiniGoUnitTest):
 
         # stuff is shuffled, so sort before checking equality
         def sort_key(nparray_tuple): return nparray_tuple[2]
+
         original_data = sorted(original_data, key=sort_key)
         recovered_data = sorted(recovered_data, key=sort_key)
 

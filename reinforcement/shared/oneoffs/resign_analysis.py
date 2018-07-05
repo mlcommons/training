@@ -20,7 +20,7 @@ import re
 import numpy as np
 from tqdm import tqdm
 
-def crawl(sgf_directory='sgf', print_summary=True): 
+def crawl(sgf_directory='sgf', print_summary=True):
     max_w_upset = {'value': 0}
     max_b_upset = {'value': 0}
 

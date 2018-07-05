@@ -15,9 +15,9 @@
 import itertools
 import numpy as np
 
-import features
-import go
-from tests import test_utils
+from shared import features
+from shared import go
+from shared.tests import test_utils
 
 EMPTY_ROW = '.' * go.N + '\n'
 TEST_BOARD = test_utils.load_board('''
@@ -54,10 +54,11 @@ TEST_POSITION2 = go.Position(
     to_play=go.BLACK,
 )
 
-
 TEST_POSITION3 = go.Position()
 for coord in ((0, 0), (0, 1), (0, 2), (0, 3), (1, 1)):
     TEST_POSITION3.play_move(coord, mutate=True)
+
+
 # resulting position should look like this:
 # X.XO.....
 # .X.......

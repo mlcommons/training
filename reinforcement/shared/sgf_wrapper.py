@@ -20,14 +20,14 @@ Most of the complexity here is dealing with two features of SGF:
 - Plays don't necessarily alternate colors; they can be repeated B or W moves
   This feature is used to handle free handicap placement.
 '''
-# from collections import namedtuple
+from collections import namedtuple
 import numpy as np
 import itertools
 
-import shared.coords as coords
-import shared.go as go
+from shared import coords
+from shared import go
 from shared.go import Position, PositionWithContext
-import shared.utils as utils
+from shared import utils
 import sgf
 
 SGF_TEMPLATE = '''(;GM[1]FF[4]CA[UTF-8]AP[Minigo_sgfgenerator]RU[{ruleset}]
