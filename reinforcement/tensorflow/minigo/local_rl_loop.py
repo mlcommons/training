@@ -24,12 +24,12 @@ import tempfile
 
 import preprocessing
 import dual_net
-import go
+from shared import go
 import main
 from tensorflow import gfile
 import subprocess
 
-import qmeas
+from shared import qmeas
 
 
 def rl_loop():

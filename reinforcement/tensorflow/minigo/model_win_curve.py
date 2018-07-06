@@ -15,20 +15,20 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import logging
 
-import qmeas
+from shared import qmeas
 import glob
 
 

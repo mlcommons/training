@@ -30,10 +30,10 @@ from tensorflow.python.training.summary_io import SummaryWriterCache
 from tqdm import tqdm
 from typing import Dict
 
-import features
+from shared import features
 import preprocessing
-import symmetries
-import go
+from shared import symmetries
+from shared import go
 
 # How many positions to look at per generation.
 # Per AGZ, 2048 minibatch * 1k = 2M positions/generation

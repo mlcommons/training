@@ -9,10 +9,10 @@ from __future__ import print_function
 
 
 import dual_net
-import strategies
-import sgf_wrapper
-import evaluation
-from gtp_wrapper import MCTSPlayer
+from shared import strategies
+from shared import sgf_wrapper
+from shared import evaluation
+from shared.gtp_wrapper import MCTSPlayer
 import sys
 
 import os
