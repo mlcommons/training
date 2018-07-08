@@ -45,15 +45,13 @@ def load_test_ratings(fname):
     def process_line(line):
         tmp = map(int, line.split('\t')[0:2])
         return list(tmp)
-    lines = open(fname, 'r').readlines()
-    ratings = map(process_line, lines)
+    ratings = map(process_line, open(fname, 'r'))
     return list(ratings)
 
 
 def load_test_negs(fname):
     def process_line(line):
-        tmp = map(int, line.split('\t')[1:])
+        tmp = map(int, line.split('\t'))
         return list(tmp)
-    lines = open(fname, 'r').readlines()
-    negs = map(process_line, lines)
+    negs = map(process_line, open(fname, 'r'))
     return list(negs)
