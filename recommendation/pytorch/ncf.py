@@ -2,6 +2,7 @@ import os
 import heapq
 import math
 import time
+from functools import partial
 from datetime import datetime
 from collections import OrderedDict
 from argparse import ArgumentParser
@@ -10,6 +11,7 @@ import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
+from torch import multiprocessing as mp
 
 import utils
 from neumf import NeuMF
@@ -44,15 +46,14 @@ def parse_args():
                         help='manually set random seed for torch')
     parser.add_argument('--threshold', '-t', type=float,
                         help='stop training early at threshold')
+    parser.add_argument('--processes', '-p', type=int, default=1,
+                        help='Number of processes for evaluating model')
     return parser.parse_args()
 
 
 def predict(model, users, items, batch_size=1024, use_cuda=True):
     batches = [(users[i:i + batch_size], items[i:i + batch_size])
                for i in range(0, len(users), batch_size)]
-    model.eval()
-    if use_cuda:
-        model.cuda()
     preds = []
     for user, item in batches:
         def proc(x):
@@ -67,38 +68,52 @@ def predict(model, users, items, batch_size=1024, use_cuda=True):
     return preds
 
 
-def _calculate_hit(ranked, gt_item):
-    return int(gt_item in ranked)
+def _calculate_hit(ranked, test_item):
+    return int(test_item in ranked)
 
 
-def _calculate_ndcg(ranked, gt_item):
+def _calculate_ndcg(ranked, test_item):
     for i, item in enumerate(ranked):
-        if item == gt_item:
+        if item == test_item:
             return math.log(2) / math.log(i + 2)
     return 0.
 
 
 def eval_one(rating, items, model, K, use_cuda=True):
-    u = rating[0]
-    gt_item = rating[1]
-    items.append(gt_item)
-    users = np.full(len(items), u, dtype=np.int64)
+    user = rating[0]
+    test_item = rating[1]
+    items.append(test_item)
+    users = [user] * len(items)
     predictions = predict(model, users, items, use_cuda=use_cuda)
-    map_item_score = {item: pred for item, pred in zip(items, predictions)}
 
+    map_item_score = {item: pred for item, pred in zip(items, predictions)}
     ranked = heapq.nlargest(K, map_item_score, key=map_item_score.get)
-    hit = _calculate_hit(ranked, gt_item)
-    ndcg = _calculate_ndcg(ranked, gt_item)
+
+    hit = _calculate_hit(ranked, test_item)
+    ndcg = _calculate_ndcg(ranked, test_item)
     return hit, ndcg
 
 
-def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None):
+def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
+              processes=1):
+    if epoch is None:
+        print("Initial evaluation")
+    else:
+        print("Epoch {} evaluation".format(epoch))
     start = datetime.now()
-    hits, ndcgs = [], []
-    for rating, items in zip(ratings, negs):
-        hit, ndcg = eval_one(rating, items, model, K, use_cuda=use_cuda)
-        hits.append(hit)
-        ndcgs.append(ndcg)
+    model.eval()
+    if processes > 1:
+        context = mp.get_context('spawn')
+        _eval_one = partial(eval_one, model=model, K=K, use_cuda=use_cuda)
+        with context.Pool(processes=processes) as workers:
+            hits_and_ndcg = workers.starmap(_eval_one, zip(ratings, negs))
+        hits, ndcgs = zip(*hits_and_ndcg)
+    else:
+        hits, ndcgs = [], []
+        for rating, items in zip(ratings, negs):
+            hit, ndcg = eval_one(rating, items, model, K, use_cuda=use_cuda)
+            hits.append(hit)
+            ndcgs.append(ndcg)
 
     hits = np.array(hits, dtype=np.float32)
     ndcgs = np.array(ndcgs, dtype=np.float32)
@@ -139,7 +154,7 @@ def main():
 
     t1 = time.time()
     # Load Data
-    # TODO: Reading CSVs is slow. Could use HDF or Apache Arrow
+    print('Loading data')
     train_dataset = CFTrainDataset(
         os.path.join(args.data, TRAIN_RATINGS_FILENAME), args.negative_samples)
     train_dataloader = torch.utils.data.DataLoader(
@@ -178,7 +193,7 @@ def main():
 
     # Calculate initial Hit Ratio and NDCG
     hits, ndcgs = val_epoch(model, test_ratings, test_negs, args.topk,
-                            use_cuda=use_cuda)
+                            use_cuda=use_cuda, processes=args.processes)
     print('Initial HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f}'
           .format(K=args.topk, hit_rate=np.mean(hits), ndcg=np.mean(ndcgs)))
     for epoch in range(args.epochs):
@@ -213,7 +228,7 @@ def main():
         begin = time.time()
         hits, ndcgs = val_epoch(model, test_ratings, test_negs, args.topk,
                                 use_cuda=use_cuda, output=valid_results_file,
-                                epoch=epoch)
+                                epoch=epoch, processes=args.processes)
         val_time = time.time() - begin
         print('Epoch {epoch}: HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f},'
               ' train_time = {train_time:.2f}, val_time = {val_time:.2f}'

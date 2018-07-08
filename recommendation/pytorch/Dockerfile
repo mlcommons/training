@@ -30,7 +30,7 @@ RUN mkdir github
 WORKDIR /mlperf/github
 RUN git clone --recursive https://github.com/pytorch/pytorch
 WORKDIR /mlperf/github/pytorch
-RUN git checkout e83dd71
+RUN git checkout v0.4.0
 RUN git submodule update --init
 RUN python setup.py clean
 RUN python setup.py install

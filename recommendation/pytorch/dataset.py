@@ -17,8 +17,8 @@ class CFTrainDataset(torch.utils.data.dataset.Dataset):
             return [int(tmp[0]), int(tmp[1]), float(tmp[2]) > 0]
         # these files are a few hundred megs tops
         # TODO: be unlazy? use pandas?
-        lines = open(train_fname, 'r').readlines()[1:]
-        data = list(map(process_line, lines))
+        with open(train_fname, 'r') as file:
+            data = list(map(process_line, file))
         self.nb_users = max(data, key=lambda x: x[0])[0] + 1
         self.nb_items = max(data, key=lambda x: x[1])[1] + 1
 
