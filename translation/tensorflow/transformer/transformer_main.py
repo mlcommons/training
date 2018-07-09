@@ -114,8 +114,10 @@ def get_train_op(loss, params):
     tvars = tf.trainable_variables()
     gradients = optimizer.compute_gradients(
         loss, tvars, colocate_gradients_with_ops=True)
-    train_op = optimizer.apply_gradients(
+    minimize_op = optimizer.apply_gradients(
         gradients, global_step=global_step, name="train")
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    train_op = tf.group(minimize_op, update_ops)
 
     # Save gradient norm to Tensorboard
     tf.summary.scalar("global_norm/gradient_norm",
@@ -264,15 +266,41 @@ def train_schedule(
         break
 
 
+def get_num_gpus(n):
+  """Validates the number of GPUs requested, and returns number of GPUs."""
+  if n is None:
+    return 1 if tf.test.is_gpu_available() else 0
+
+  from tensorflow.python.client import device_lib  # pylint: disable=g-import-not-at-top
+  local_device_protos = device_lib.list_local_devices()
+  total_gpus = sum([1 for d in local_device_protos if d.device_type == "GPU"])
+
+  if n > total_gpus:
+    raise ValueError("Number of GPUs specified by flag --num_gpu is greater "
+                     "than the number of GPUs detected.\n\t--num_gpu: %d, "
+                     "gpus detected: %d" % (n, total_gpus))
+  elif n == -1:
+    return total_gpus
+  else:
+    return n
+
+
 def main(_):
   # Set logging level to INFO to display training progress (logged by the
   # estimator)
   tf.logging.set_verbosity(tf.logging.INFO)
 
-  if FLAGS.params == "base":
+  num_gpus = get_num_gpus(FLAGS.num_gpu)
+  print("Using %d gpus." % num_gpus)
+
+  if FLAGS.params == "base" and num_gpus <= 1:
     params = model_params.TransformerBaseParams
-  elif FLAGS.params == "big":
+  elif FLAGS.params == "base" and num_gpus > 1:
+    params = model_params.TransformerBaseMultiGPUParams
+  elif FLAGS.params == "big" and num_gpus <= 1:
     params = model_params.TransformerBigParams
+  elif FLAGS.params == "big" and num_gpus > 1:
+    params = model_params.TransformerBigMultiGPUParams
   else:
     raise ValueError("Invalid parameter set defined: %s."
                      "Expected 'base' or 'big.'" % FLAGS.params)
@@ -304,9 +332,25 @@ def main(_):
   params.num_cpu_cores = FLAGS.num_cpu_cores
   params.epochs_between_eval = FLAGS.epochs_between_eval
   params.repeat_dataset = single_iteration_train_epochs
+  params.batch_size = FLAGS.batch_size or params.batch_size
+
+  # Set batch size and distribution strategy
+  dist_strat = None
+  if num_gpus > 1:
+    if FLAGS.batch_type == "global":
+      params.batch_size = int(params.batch_size / num_gpus)
+    print("Using batch size %d." % params.batch_size)
+    if FLAGS.all_reduce_alg:
+      dist_strat = tf.contrib.distribute.MirroredStrategy(
+        num_gpus=num_gpus,
+        cross_tower_ops=tf.contrib.distribute.AllReduceCrossTowerOps(
+            FLAGS.all_reduce_alg, num_packs=num_gpus))
+    else:
+      dist_strat = tf.contrib.distribute.MirroredStrategy(num_gpus=num_gpus)
 
   estimator = tf.estimator.Estimator(
-      model_fn=model_fn, model_dir=FLAGS.model_dir, params=params)
+      model_fn=model_fn, model_dir=FLAGS.model_dir, params=params,
+      config=tf.estimator.RunConfig(train_distribute=dist_strat))
   train_schedule(
       estimator, train_eval_iterations, single_iteration_train_steps,
       single_iteration_train_epochs, FLAGS.bleu_source, FLAGS.bleu_ref,
@@ -386,6 +430,36 @@ if __name__ == "__main__":
            "--train_steps or --train_epochs.",
       metavar="<BT>")
 
+  # Multi GPU arguments
+  parser.add_argument(
+      "--num_gpu", "-ng", type=int, default=None,
+      help="How many GPUs to use with the DistributionStrategies API. Must be "
+           "an int between [-1, # of GPUs detected by TensorFlow]. If -1, then "
+           "all of the GPUs are used. If left as None, then the model will run "
+           "on a single GPU (or none if there aren't any).",
+      metavar="<NG>")
+  parser.add_argument(
+      "--batch_type", type=str, default="per_device",
+      choices=["per_device", "global"],
+      help="Defines the batch size given to each device when running with "
+           "multiple GPUs. \"per_device\" indicates that each device should "
+           "get batches with size batch_size. \"global\" indicates that each "
+           "device should get batches with size batch_size/num_gpu.",
+      metavar="<btype>")
+  parser.add_argument(
+      "--batch_size", type=int, default=None,
+      help="Sets the size of each batch. By default, batch_size is defined in "
+           "file model_params.py.",
+      metavar="<bsize>")
+  parser.add_argument(
+      "--all_reduce_alg", type=str, default=None,
+      help="Defines the algorithm to use for performing all-reduce. See "
+           "tf.contrib.distribute.AllReduceCrossTowerOps for more details and "
+           "available options (e.g. \"nccl\" or \"hierarchical_copy\"). As of "
+           "this change, the suggested algorithm for the Transformer model is "
+           "\"hierarchical_copy\". The default algorithm is the default set in "
+           "tf.contrib.distribute.AllReduceCrossTowerOps.",
+      metavar="<bsize>")
 
   parser.add_argument(
       "--random_seed", "-rs", type=int, default=None,

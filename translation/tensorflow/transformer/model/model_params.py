@@ -57,3 +57,14 @@ class TransformerBigParams(TransformerBaseParams):
   hidden_size = 1024
   filter_size = 4096
   num_heads = 16
+
+
+class TransformerBaseMultiGPUParams(TransformerBaseParams):
+  """Parameters for running the base model with multiple GPUS."""
+  learning_rate_warmup_steps = 8000
+
+
+class TransformerBigMultiGPUParams(TransformerBigParams):
+  """Parameters for running the big model with multiple GPUS."""
+  learning_rate_warmup_steps = 8000
+  layer_postprocess_dropout = 0.3
