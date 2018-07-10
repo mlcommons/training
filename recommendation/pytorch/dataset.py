@@ -13,10 +13,7 @@ class CFTrainDataset(torch.utils.data.dataset.Dataset):
     def _load_train_matrix(self, train_fname):
         def process_line(line):
             tmp = line.split('\t')
-            # user, item, rating???
             return [int(tmp[0]), int(tmp[1]), float(tmp[2]) > 0]
-        # these files are a few hundred megs tops
-        # TODO: be unlazy? use pandas?
         with open(train_fname, 'r') as file:
             data = list(map(process_line, file))
         self.nb_users = max(data, key=lambda x: x[0])[0] + 1
@@ -38,9 +35,9 @@ class CFTrainDataset(torch.utils.data.dataset.Dataset):
         else:
             idx = idx // (self.nb_neg + 1)
             u = self.data[idx][0]
-            j = np.random.randint(self.nb_items)
+            j = torch.LongTensor(1).random_(0, self.nb_items).item()
             while (u, j) in self.mat:
-                j = np.random.randint(self.nb_items)
+                j = torch.LongTensor(1).random_(0, self.nb_items).item()
             return u, j, np.zeros(1, dtype=np.float32)
 
 
@@ -48,15 +45,13 @@ def load_test_ratings(fname):
     def process_line(line):
         tmp = map(int, line.split('\t')[0:2])
         return list(tmp)
-    lines = open(fname, 'r').readlines()
-    ratings = map(process_line, lines)
+    ratings = map(process_line, open(fname, 'r'))
     return list(ratings)
 
 
 def load_test_negs(fname):
     def process_line(line):
-        tmp = map(int, line.split('\t')[1:])
+        tmp = map(int, line.split('\t'))
         return list(tmp)
-    lines = open(fname, 'r').readlines()
-    negs = map(process_line, lines)
+    negs = map(process_line, open(fname, 'r'))
     return list(negs)

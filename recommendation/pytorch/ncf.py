@@ -48,6 +48,8 @@ def parse_args():
                         help='stop training early at threshold')
     parser.add_argument('--processes', '-p', type=int, default=1,
                         help='Number of processes for evaluating model')
+    parser.add_argument('--workers', '-w', type=int, default=8,
+                        help='Number of workers for training DataLoader')
     return parser.parse_args()
 
 
@@ -159,7 +161,7 @@ def main():
         os.path.join(args.data, TRAIN_RATINGS_FILENAME), args.negative_samples)
     train_dataloader = torch.utils.data.DataLoader(
             dataset=train_dataset, batch_size=args.batch_size, shuffle=True,
-            num_workers=8, pin_memory=True)
+            num_workers=args.workers, pin_memory=True)
     test_ratings = load_test_ratings(os.path.join(args.data, TEST_RATINGS_FILENAME))  # noqa: E501
     test_negs = load_test_negs(os.path.join(args.data, TEST_NEG_FILENAME))
     nb_users, nb_items = train_dataset.nb_users, train_dataset.nb_items
