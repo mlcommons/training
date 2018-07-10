@@ -3,7 +3,7 @@
 # to use the script:
 #   run_and_time.sh <random seed 1-5>
 
-THRESHOLD=0.6289
+THRESHOLD=0.635
 BASEDIR=$(dirname -- "$0")
 
 # start timing
