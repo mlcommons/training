@@ -276,8 +276,8 @@ def get_num_gpus(n):
   total_gpus = sum([1 for d in local_device_protos if d.device_type == "GPU"])
 
   if n > total_gpus:
-    raise ValueError("Number of GPUs specified by flag --num_gpu is greater "
-                     "than the number of GPUs detected.\n\t--num_gpu: %d, "
+    raise ValueError("Number of GPUs specified by flag --num_gpus is greater "
+                     "than the number of GPUs detected.\n\t--num_gpus: %d, "
                      "gpus detected: %d" % (n, total_gpus))
   elif n == -1:
     return total_gpus
@@ -290,8 +290,8 @@ def main(_):
   # estimator)
   tf.logging.set_verbosity(tf.logging.INFO)
 
-  num_gpus = get_num_gpus(FLAGS.num_gpu)
-  print("Using %d gpus." % num_gpus)
+  num_gpus = get_num_gpus(FLAGS.num_gpus)
+  print("Using %d gpus" % num_gpus)
 
   if FLAGS.params == "base" and num_gpus <= 1:
     params = model_params.TransformerBaseParams
@@ -339,7 +339,8 @@ def main(_):
   if num_gpus > 1:
     if FLAGS.batch_type == "global":
       params.batch_size = int(params.batch_size / num_gpus)
-    print("Using batch size %d." % params.batch_size)
+    print("Using per-device batch size = %d, global batch size = %d"
+          % (params.batch_size, params.batch_size * num_gpus))
     if FLAGS.all_reduce_alg:
       dist_strat = tf.contrib.distribute.MirroredStrategy(
         num_gpus=num_gpus,
@@ -432,7 +433,7 @@ if __name__ == "__main__":
 
   # Multi GPU arguments
   parser.add_argument(
-      "--num_gpu", "-ng", type=int, default=None,
+      "--num_gpus", "-ng", type=int, default=None,
       help="How many GPUs to use with the DistributionStrategies API. Must be "
            "an int between [-1, # of GPUs detected by TensorFlow]. If -1, then "
            "all of the GPUs are used. If left as None, then the model will run "
@@ -444,7 +445,7 @@ if __name__ == "__main__":
       help="Defines the batch size given to each device when running with "
            "multiple GPUs. \"per_device\" indicates that each device should "
            "get batches with size batch_size. \"global\" indicates that each "
-           "device should get batches with size batch_size/num_gpu.",
+           "device should get batches with size batch_size/num_gpus.",
       metavar="<btype>")
   parser.add_argument(
       "--batch_size", type=int, default=None,
