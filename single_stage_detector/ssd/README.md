@@ -1,5 +1,5 @@
 # 1. Problem
-Object detection. Metric is box COCO box mAP (averaged over IoU of 0.5:0.95).
+Object detection.
 
 # 2. Directions
 
@@ -7,16 +7,16 @@ Object detection. Metric is box COCO box mAP (averaged over IoU of 0.5:0.95).
 Standard script.
 
 ### Steps to download data
-'''
+```
 cd reference/single_stage_detector/
 source download_dstaset.sh
-'''
+```
 
 ### Run benchmark.
-'''
+```
 cd reference/single_stage_detector/ssd
 source run_and_time.sh SEED TARGET
-'''
+```
 Where SEED is the random seed for a run, TARGET is the quality target from Section 5 below.
 
 # 3. Dataset/Environment
@@ -34,9 +34,9 @@ Backbone is VGG-D pretrained on ILSVRC 2012 (from torchvision).
 
 # 5. Quality.
 ### Quality metric
-Metric is box COCO box mAP (averaged over IoU of 0.5:0.95), computed over 2017 COCO val data.
+Metric is COCO box mAP (averaged over IoU of 0.5:0.95), computed over 2017 COCO val data.
 
-### Quality target.
+### Quality target
 mAP of 0.212
 
 ### Evaluation frequency
