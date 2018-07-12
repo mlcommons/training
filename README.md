@@ -14,6 +14,7 @@ We provide reference implementations for each of the 7 benchmarks in the MLPerf 
 
 * image_classification - Resnet-50 v1 applied to Imagenet.
 * object_detection - Mask R-CNN applied to COCO. 
+* single_stage_detector - SSD applied to COCO 2017.
 * speech_recognition - DeepSpeech2 applied to Librispeech.
 * translation - Transformer applied to WMT English-German.
 * recommendation - Neural Collaborative Filtering applied to MovieLens 20 Million (ml-20m).
