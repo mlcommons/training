@@ -4,20 +4,47 @@ Object detection.
 # 2. Directions
 
 ### Steps to configure machine
+From Source
+
 Standard script.
+
+From Docker
+1. Checkout the MLPerf repository
+```
+git clone https://github.com/mlperf/reference.git
+```
+2. Install CUDA and Docker
+```
+source reference/install_cuda_docker.sh
+```
+3. Build the docker image for the single stage detection task
+```
+# Build from Dockerfile
+cd reference/single_stage_detector/
+sudo docker build -t mlperf/single_stage_detector .
+```
 
 ### Steps to download data
 ```
 cd reference/single_stage_detector/
-source download_dstaset.sh
+source download_model.sh
+source download_dataset.sh
 ```
 
-### Run benchmark.
+### Steps to run benchmark.
+From Source
+
+Run the run_and_time.sh script
 ```
 cd reference/single_stage_detector/ssd
 source run_and_time.sh SEED TARGET
 ```
-Where SEED is the random seed for a run, TARGET is the quality target from Section 5 below.
+where SEED is the random seed for a run, TARGET is the quality target from Section 5 below.
+
+Docker Image
+```
+sudo nvidia-docker run -v /coco:/coco -t -i --rm --ipc=host mlperf/single_stage_detector ./run_and_time.sh SEED TARGET
+```
 
 # 3. Dataset/Environment
 ### Publiction/Attribution.

@@ -2,7 +2,7 @@
     Load the vgg16 weight and save it to special file
 """
 
-from torchvision.models.vgg import vgg16
+#from torchvision.models.vgg import vgg16
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
