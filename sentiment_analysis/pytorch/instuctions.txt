@@ -1,0 +1,16 @@
+1) sudo apt-get install python-virtualenv
+
+----
+cd pytorch
+
+python -m venv torchenv --without-pip
+source torchenv/bin/activate
+curl https://bootstrap.pypa.io/get-pip.py | python
+
+pip install -r requirements.txt
+
+
+
+python -m venv torchenv_cuda --without-pip
+source torchenv_cuda/bin/activate
+curl https://bootstrap.pypa.io/get-pip.py | python
