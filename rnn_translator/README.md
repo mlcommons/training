@@ -58,7 +58,7 @@ To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you c
 ### Steps to download and verify data
 Download the data using the following command:
 
-    bash download_data.sh
+    bash download_dataset.sh
 
 Verify data with:
 
