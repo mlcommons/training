@@ -39,35 +39,35 @@ Implemented in IMDB_dataset() function - a Pytorch generator for IMDB dataset.
 You have to install conda, 
 pip doesn't work correctly with torch on Linux right now.
 
-
+```
 wget "https://repo.anaconda.com/archive/Anaconda3-5.2.0-Linux-x86_64.sh"
 bash Anaconda-latest-Linux-x86_64.sh
-
+```
 
 ## 2. Create and activate virtual environment using conda:
-
+```
 conda create -n torchenv_conda python=3.6
 source activate torchenv_conda
-
+```
 
 ## 3. Install torch, torchvision and torchtext
 
 Without CUDA (CPU only):
-
+```
 conda install pytorch-cpu torchvision-cpu -c pytorch
 pip install cython
 pip install msgpack
 pip install torchtext
-
+```
 With CUDA 9.0:
-
+```
 conda create -n torchenv_conda_gpu_cuda_9 python=3.6
 source activate torchenv_conda_gpu_cuda_9
 conda install pytorch torchvision cuda90 -c pytorch
 pip install cython
 pip install msgpack
 pip install torchtext
-
+```
 
 If you need to install pytorch for other version of CUDA:
 
@@ -78,9 +78,9 @@ If you need to install pytorch for other version of CUDA:
 Remainder: you have to be loggined into the virtual enviroment you created.
 
 Run: 
-
+```
 python train.py
-
+```
 It will work just on fine on CPU only.
 
 While trying to run the script on GPU, you will get an error "long tensor expected but got cuda.longTensor"
