@@ -214,7 +214,7 @@ def txt_line_iterator(path):
       yield line.strip()
 
 
-def compile_files(raw_dir, raw_files, tag):
+def compile_files(data_dir, raw_files, tag):
   """Compile raw files into a single file for each language.
 
   Args:
@@ -230,8 +230,8 @@ def compile_files(raw_dir, raw_files, tag):
   """
   tf.logging.info("Compiling files with tag %s." % tag)
   filename = "%s-%s" % (_PREFIX, tag)
-  input_compiled_file = os.path.join(raw_dir, filename + ".lang1")
-  target_compiled_file = os.path.join(raw_dir, filename + ".lang2")
+  input_compiled_file = os.path.join(data_dir, filename + ".lang1")
+  target_compiled_file = os.path.join(data_dir, filename + ".lang2")
 
   with tf.gfile.Open(input_compiled_file, mode="w") as input_writer:
     with tf.gfile.Open(target_compiled_file, mode="w") as target_writer:
@@ -381,8 +381,8 @@ def main(unused_argv):
       min_count=None if FLAGS.search else _TRAIN_DATA_MIN_COUNT)
 
   tf.logging.info("Step 3/4: Compiling training and evaluation data")
-  compiled_train_files = compile_files(FLAGS.raw_dir, train_files, _TRAIN_TAG)
-  compiled_eval_files = compile_files(FLAGS.raw_dir, eval_files, _EVAL_TAG)
+  compiled_train_files = compile_files(FLAGS.data_dir, train_files, _TRAIN_TAG)
+  compiled_eval_files = compile_files(FLAGS.data_dir, eval_files, _EVAL_TAG)
 
   # Tokenize and save data as Examples in the TFRecord format.
   tf.logging.info("Step 4/4: Preprocessing and saving data")
