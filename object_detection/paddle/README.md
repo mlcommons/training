@@ -74,7 +74,7 @@ All images will be resized to 300x300. In training stage, images are randomly di
 ### List of layers
 six levels predictions are made in six different scale feature maps. And there are two 3x3 convolutional layers in each feature map, which predict category or a shape offset relative to the prior box(also called anchor), respectively. Thus, we get 38x38x4 + 19x19x6 + 10x10x6 + 5x5x6 + 3x3x4 + 1x1x4 = 8732 detections per class.
 <p align="center">
-<img src="assets/SSD_paper_figure.jpg" height=471 width=1519 hspace='10'/><br />
+<img src="assets/SSD_paper_figure.jpg" height=235 width=759 hspace='10'/><br />
 The Single Shot MultiBox Detector (SSD)
 </p>
 ### Weight and bias initialization
