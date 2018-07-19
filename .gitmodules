@@ -8,3 +8,6 @@
 	path = object_detection/paddle/Paddle
 	url = https://github.com/PaddlePaddle/Paddle.git
 	branch = v0.14.0
+[submodule "object_detection/paddle/models"]
+	path = object_detection/paddle/models
+	url = https://github.com/PaddlePaddle/models.git
