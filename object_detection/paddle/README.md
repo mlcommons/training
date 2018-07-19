@@ -77,17 +77,24 @@ six levels predictions are made in six different scale feature maps. And there a
 <img src="assets/SSD_paper_figure.jpg" height=235 width=759 hspace='10'/><br />
 The Single Shot MultiBox Detector (SSD)
 </p>
+
 ### Weight and bias initialization
 Weights are initialized using Xavier initialization method and biases are initialized to zero.
+
 ### Loss function
 ssd_loss function is used for computing the loss.
+
 ### Optimizer
 RMSProp is used for optimization.
+
 # 5. Quality
+
 ### Quality metric
 Average accuracy for all samples in the test set.
+
 ### Quality target
 After 120 epochs we achieve 73.32% mAP under 11point metric.
+
 ### Evaluation frequency
 All test samples are evaluated once per epoch.
 ### Evaluation thoroughness
