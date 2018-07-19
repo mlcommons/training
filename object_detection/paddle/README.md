@@ -61,16 +61,23 @@ All images will be resized to 300x300. In training stage, images are randomly di
 
 # 4. Model
 ### Publication/Attribution
-SSD: Single Shot MultiBox Detector:
-    @inproceedings{liu2016ssd,
-      title = {{SSD}: Single Shot MultiBox Detector},
-      author = {Liu, Wei and Anguelov, Dragomir and Erhan, Dumitru and Szegedy, Christian and Reed, Scott and Fu, Cheng-Yang and Berg, Alexander C.},
-      booktitle = {ECCV},
-      year = {2016}
+```
+    SSD: Single Shot MultiBox Detector:
+        @inproceedings{liu2016ssd,
+        title = {{SSD}: Single Shot MultiBox Detector},
+        author = {Liu, Wei and Anguelov, Dragomir and Erhan, Dumitru and Szegedy, Christian and Reed, Scott and Fu, Cheng-Yang and Berg, Alexander C.},
+        booktitle = {ECCV},
+        year = {2016}
     }
+```
 
 ### List of layers
-ix levels predictions are made in six different scale feature maps. And there are two 3x3 convolutional layers in each feature map, which predict category or a shape offset relative to the prior box(also called anchor), respectively. Thus, we get 38x38x4 + 19x19x6 + 10x10x6 + 5x5x6 + 3x3x4 + 1x1x4 = 8732 detections per class.### Weight and bias initialization
+six levels predictions are made in six different scale feature maps. And there are two 3x3 convolutional layers in each feature map, which predict category or a shape offset relative to the prior box(also called anchor), respectively. Thus, we get 38x38x4 + 19x19x6 + 10x10x6 + 5x5x6 + 3x3x4 + 1x1x4 = 8732 detections per class.
+<p align="center">
+<img src="assets/SSD_paper_figure.jpg" height=471 width=1519 hspace='10'/><br />
+The Single Shot MultiBox Detector (SSD)
+</p>
+### Weight and bias initialization
 Weights are initialized using Xavier initialization method and biases are initialized to zero.
 ### Loss function
 ssd_loss function is used for computing the loss.
