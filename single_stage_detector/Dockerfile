@@ -15,7 +15,7 @@ RUN python3 -m pip install pycocotools==2.0.0
 # Copy SSD code
 WORKDIR /mlperf
 COPY . .
-
+RUN pip install -r requirements.txt
 # Get VGG model
 RUN ./download_model.sh
 WORKDIR /mlperf/ssd
