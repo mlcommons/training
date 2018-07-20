@@ -92,7 +92,7 @@ All positions should be considered in each evaluation phase.
 
 ## References
 
-Model architecture <https://cisco.app.box.com/file/296021187475> 
+Minigo design doc <https://cisco.app.box.com/file/296021187475> 
 
 AlphaGo <https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0>
 
