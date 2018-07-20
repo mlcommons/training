@@ -11,7 +11,7 @@ Cisco contribution to [MLPerf project](https://github.com/mlperf/reference) on t
 
 This task benchmarks on policy reinforcement learning for the 9x9 version of the boardgame go. The model plays games against itself and uses these games to improve play.
 
-# 2. Directions [^demos]
+# 2. Directions
 
 ### Steps to run and time
 
@@ -25,7 +25,7 @@ To run, this assumes you checked out the repo into `$HOME`, adjust paths as nece
     
 To change the quality target, modify `params/final.json` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.json`.
 
-# 3. Model [^model]
+# 3. Model
 ### Publication/Attribution
 
 This benchmark is based on a fork of the minigo project (https://github.com/tensorflow/minigo); which is inspired by the work done by Deepmind with ["Mastering the Game of Go with Deep Neural Networks and
@@ -90,10 +90,11 @@ Evaluation should be preformed for every model which is trained (regardless if i
 All positions should be considered in each evaluation phase.
 
 
+## References
 
+Model architecture <https://cisco.app.box.com/file/296021187475> 
+AlphaGo <https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0>
 
-[^model]: References: model architecture <https://cisco.app.box.com/file/296021187475> and AlphaGo cheat sheet <https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0>
-
-[^demos]: Demos: presentation <https://cisco.app.box.com/file/300663026391> and video demo <https://cisco.app.box.com/file/303667519873> 
+Demos: presentation <https://cisco.app.box.com/file/300663026391> and video demo <https://cisco.app.box.com/file/303667519873> 
 
 
