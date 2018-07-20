@@ -93,6 +93,7 @@ All positions should be considered in each evaluation phase.
 ## References
 
 Model architecture <https://cisco.app.box.com/file/296021187475> 
+
 AlphaGo <https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0>
 
 Demos: presentation <https://cisco.app.box.com/file/300663026391> and video demo <https://cisco.app.box.com/file/303667519873> 
