@@ -1,7 +1,7 @@
 # MLPerf project
 ## Minigo on pytorch
 
-*By Yingbo Zang and Elizaveta Svitanko*
+*By Yingbo Zhang and Elizaveta Svitanko*
 
 **Cisco AI group, Spring 2018**
 
