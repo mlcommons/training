@@ -51,7 +51,6 @@ def _set(name, default):
         val = _PARAMS[name]
     globals()[name] = val
 
-
 # How many games before the selfplay workers will stop trying to play more.
 _set('MAX_GAMES_PER_GENERATION', 2)
 

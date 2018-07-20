@@ -23,7 +23,6 @@ import os
 from minigo.dual_net import DualNetwork
 from shared.strategies import MCTSPlayerMixin, CGOSPlayerMixin
 
-
 def translate_gtp_colors(gtp_color):
     if gtp_color == gtp.BLACK:
         return go.BLACK

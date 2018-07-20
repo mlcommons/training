@@ -17,7 +17,6 @@
 import os
 import time
 import shared.sgf_wrapper as sgf_wrapper
-
 from shared.gtp_wrapper import MCTSPlayer
 
 SIMULTANEOUS_LEAVES = 8

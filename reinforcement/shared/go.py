@@ -23,9 +23,7 @@ from collections import namedtuple
 import copy
 import itertools
 import numpy as np
-
 from shared import coords
-
 from shared import goparams
 
 # N = int(os.environ.get('BOARD_SIZE', 9))
@@ -50,7 +48,6 @@ NEIGHBORS = {(x, y): list(filter(_check_bounds, [
     (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)])) for x, y in ALL_COORDS}
 DIAGONALS = {(x, y): list(filter(_check_bounds, [
     (x + 1, y + 1), (x + 1, y - 1), (x - 1, y + 1), (x - 1, y - 1)])) for x, y in ALL_COORDS}
-
 
 class IllegalMove(Exception):
     pass

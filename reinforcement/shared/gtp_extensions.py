@@ -21,7 +21,6 @@ import itertools
 import shared.go as go
 import shared.coords as coords
 
-
 def parse_message(message):
     message = gtp.pre_engine(message).strip()
     first, rest = (message.split(" ", 1) + [None])[:2]

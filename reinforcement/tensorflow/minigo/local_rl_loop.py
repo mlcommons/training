@@ -24,7 +24,7 @@ import tempfile
 
 import preprocessing
 import dual_net
-import go
+from shared import go
 import main
 from tensorflow import gfile
 import subprocess

@@ -33,5 +33,4 @@ echo "ENDING TIMING RUN AT $end_fmt"
 result=$(( $end - $start ))
 result_name="reinforcement"
 
-
 echo "RESULT,$result_name,$seed,$result,$USER,$start_fmt"
