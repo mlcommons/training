@@ -1,72 +1,31 @@
+# MLPerf project
+## Minigo on pytorch
+
+*By Yingbo Zang and Elizaveta Svitanko*
+
+**Cisco AI group, Spring 2018**
+
 # 1. Problem 
+
+Cisco contribution to [MLPerf project](https://github.com/mlperf/reference) on the reinforcement learning minigo model written on pytorch. 
+
 This task benchmarks on policy reinforcement learning for the 9x9 version of the boardgame go. The model plays games against itself and uses these games to improve play.
 
-# 2. Directions
-### Steps to configure machine
-To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you can use these commands. This may vary on a different operating system or graphics card.
-
-    # Install docker
-    sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-    sudo apt-key fingerprint 0EBFCD88
-    sudo add-apt-repository    "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
-       $(lsb_release -cs) \
-       stable"
-    sudo apt update
-    # sudo apt install docker-ce -y
-    sudo apt install docker-ce=18.03.0~ce-0~ubuntu -y --allow-downgrades
-
-    # Install nvidia-docker2
-    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey |   sudo apt-key add -
-    curl -s -L https://nvidia.github.io/nvidia-docker/ubuntu16.04/nvidia-docker.list |   sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-    sudo apt-get update
-    sudo apt install nvidia-docker2 -y
-
-
-    sudo tee /etc/docker/daemon.json <<EOF
-    {
-        "runtimes": {
-            "nvidia": {
-                "path": "/usr/bin/nvidia-container-runtime",
-                "runtimeArgs": []
-            }
-        }
-    }
-    EOF
-    sudo pkill -SIGHUP dockerd
-
-    sudo apt install -y bridge-utils
-    sudo service docker stop
-    sleep 1;
-    sudo iptables -t nat -F
-    sleep 1;
-    sudo ifconfig docker0 down
-    sleep 1;
-    sudo brctl delbr docker0
-    sleep 1;
-    sudo service docker start
-
-    ssh-keyscan github.com >> ~/.ssh/known_hosts
-    git clone git@github.com:mlperf/reference.git
-
-### Steps to download and verify data
-Unlike other benchmarks, there is no data to download. All training data comes from games played during benchmarking.
+# 2. Directions [^demos]
 
 ### Steps to run and time
 
-To run, this assumes you checked out the repo into $HOME, adjust paths as necessary.
+To run, this assumes you checked out the repo into `$HOME`, adjust paths as necessary.
 
-    cd ~/reference/reinforcement/tensorflow/
-    IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
+    cd ~/reference/reinforcement/shared/pytorch/
+    IMAGE=`sudo docker build -f Dockerfile.pytorch . | tail -n 1 | awk '{print $3}'`
     SEED=1
     NOW=`date "+%F-%T"`
     sudo docker run --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
     
-To change the quality target, modify `params/final.json` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.josn`.
+To change the quality target, modify `params/final.json` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.json`.
 
-# 3. Model
+# 3. Model [^model]
 ### Publication/Attribution
 
 This benchmark is based on a fork of the minigo project (https://github.com/tensorflow/minigo); which is inspired by the work done by Deepmind with ["Mastering the Game of Go with Deep Neural Networks and
@@ -129,3 +88,12 @@ Evaluation should be preformed for every model which is trained (regardless if i
 
 ### Evaluation thoroughness
 All positions should be considered in each evaluation phase.
+
+
+
+
+[^model]: References: model architecture <https://cisco.app.box.com/file/296021187475> and AlphaGo cheat sheet <https://medium.com/applied-data-science/alphago-zero-explained-in-one-diagram-365f5abf67e0>
+
+[^demos]: Demos: presentation <https://cisco.app.box.com/file/300663026391> and video demo <https://cisco.app.box.com/file/303667519873> 
+
+
