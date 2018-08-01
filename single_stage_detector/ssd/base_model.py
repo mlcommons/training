@@ -9,28 +9,70 @@ import torch
 from torch.autograd import Variable
 from collections import OrderedDict
 
-class VGG16(nn.Module):
-    def __init__(self, cfg):
-        super(VGG16, self).__init__()
-        self.layers = make_layers(cfg)
-        # for i, l in enumerate(self.layers):
-        #     print(i, l)
-        #features = nn.Sequential(*self.layers)
-        self.layer1 = nn.Sequential(*self.layers[:23])
-        self.layer2 = nn.Sequential(*self.layers[23:])
+from torchvision.models.resnet import resnet18, resnet34, resnet50
 
-        self.pool5 = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
-        self.conv6 = nn.Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6)
-        self.conv7 = nn.Conv2d(1024, 1024, kernel_size=1)
+def _ModifyConvStrideDilation(conv, stride=(1, 1), padding=None):
+    conv.stride = stride
+
+    if padding is not None:
+        conv.padding = padding
+
+def _ModifyBlock(block, bottleneck=False, **kwargs):
+    for m in list(block.children()):
+        if bottleneck:
+           _ModifyConvStrideDilation(m.conv2, **kwargs)
+        else:
+           _ModifyConvStrideDilation(m.conv1, **kwargs)
+
+        if m.downsample is not None:
+            # need to make sure no padding for the 1x1 residual connection
+            _ModifyConvStrideDilation(list(m.downsample.children())[0], **kwargs)
+
+class ResNet18(nn.Module):
+    def __init__(self):
+        super().__init__()
+        rn18 = resnet18(pretrained=True)
+
+
+        # discard last Resnet block, avrpooling and classification FC
+        # layer1 = up to and including conv3 block
+        self.layer1 = nn.Sequential(*list(rn18.children())[:6])
+        # layer2 = conv4 block only
+        self.layer2 = nn.Sequential(*list(rn18.children())[6:7])
+
+        # modify conv4 if necessary
+        # Always deal with stride in first block
+        modulelist = list(self.layer2.children())
+        _ModifyBlock(modulelist[0], stride=(1,1))
 
     def forward(self, data):
-        layer4 = self.layer1(data)
-        x = layer4
-        x = self.layer2(x)
-        x  = F.relu(self.conv6(self.pool5(x)))
-        layer7  = F.relu(self.conv7(x))
-        return layer4, layer7
+        layer1_activation = self.layer1(data)
+        x = layer1_activation
+        layer2_activation = self.layer2(x)
 
+        # Only need the output of conv4
+        return [layer2_activation]
+
+class ResNet34(nn.Module):
+    def __init__(self):
+        super().__init__()
+        rn34 = resnet34(pretrained=True)
+
+        # discard last Resnet block, avrpooling and classification FC
+        self.layer1 = nn.Sequential(*list(rn34.children())[:6])
+        self.layer2 = nn.Sequential(*list(rn34.children())[6:7])
+        # modify conv4 if necessary
+        # Always deal with stride in first block
+        modulelist = list(self.layer2.children())
+        _ModifyBlock(modulelist[0], stride=(1,1))
+
+
+    def forward(self, data):
+        layer1_activation = self.layer1(data)
+        x = layer1_activation
+        layer2_activation = self.layer2(x)
+
+        return [layer2_activation]
 
 class L2Norm(nn.Module):
     """
@@ -49,7 +91,7 @@ class L2Norm(nn.Module):
         return self.scale*data*data.pow(2).sum(dim=1, keepdim=True).clamp(min=1e-12).rsqrt()
 
 
-        
+
 def tailor_module(src_model, src_dir, tgt_model, tgt_dir):
     state = torch.load(src_dir)
     src_model.load_state_dict(state)
@@ -58,14 +100,12 @@ def tailor_module(src_model, src_dir, tgt_model, tgt_dir):
     keys1 = src_state.keys()
     keys1 = [k for k in src_state.keys() if k.startswith("features")]
     keys2 = tgt_model.state_dict().keys()
-    
+
     assert len(keys1) == len(keys2)
     state = OrderedDict()
-    
-    #print(len(keys1), len(keys2))
-    #print(keys1)
+
     for k1, k2 in zip(keys1, keys2):
-        print(k1, k2)
+        # print(k1, k2)
         state[k2] = src_state[k1]
     #diff_keys = state.keys() - target_model.state_dict().keys()
     #print("Different Keys:", diff_keys)
@@ -83,7 +123,7 @@ def make_layers(cfg, batch_norm=False):
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
         elif v == 'C':
-            # Notice ceil_mode is true 
+            # Notice ceil_mode is true
             layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
         else:
             conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
@@ -108,7 +148,7 @@ class Loss(nn.Module):
         self.scale_wh = 1.0/dboxes.scale_wh
 
         self.sl1_loss = nn.SmoothL1Loss(reduce=False)
-        self.dboxes = nn.Parameter(dboxes(order="xywh").transpose(0, 1).unsqueeze(dim = 0), 
+        self.dboxes = nn.Parameter(dboxes(order="xywh").transpose(0, 1).unsqueeze(dim = 0),
             requires_grad=False)
         # Two factor are from following links
         # http://jany.st/post/2017-11-05-single-shot-detector-ssd-from-scratch-in-tensorflow.html
@@ -120,7 +160,7 @@ class Loss(nn.Module):
         """
         gxy = self.scale_xy*(loc[:, :2, :] - self.dboxes[:, :2, :])/self.dboxes[:, 2:, ]
         gwh = self.scale_wh*(loc[:, 2:, :]/self.dboxes[:, 2:, :]).log()
-        #print(gxy.sum(), gwh.sum())
+
         return torch.cat((gxy, gwh), dim=1).contiguous()
 
     def forward(self, ploc, plabel, gloc, glabel):
@@ -154,41 +194,13 @@ class Loss(nn.Module):
         neg_num = torch.clamp(3*pos_num, max=mask.size(1)).unsqueeze(-1)
         neg_mask = con_rank < neg_num
 
-        #print(con.shape, mask.shape, neg_mask.shape)
         closs = (con*(mask.float() + neg_mask.float())).sum(dim=1)
 
         # avoid no object detected
         total_loss = sl1 + closs
         num_mask = (pos_num > 0).float()
         pos_num = pos_num.float().clamp(min=1e-6)
-        #print((sl1*num_mask/pos_num).mean().item(), \
-        #     ((con*mask.float()).sum(dim=1)*num_mask/pos_num).mean().item(), \
-        #     ((con*neg_mask.float()).sum(dim=1)*num_mask/pos_num).mean().item(), )
+
         ret = (total_loss*num_mask/pos_num).mean(dim=0)
-        #del mask, vec_gd, sl1, con, con_neg, con_idx, con_rank, neg_num, neg_mask, closs, total_loss, num_mask, pos_num
         return ret
 
-
-if __name__ == "__main__":
-    # For builing model
-    vggt = VGG16([64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'C', \
-                  512, 512, 512, 'M' , 512, 512, 512])
-    #vgg = vgg16()
-    #tailor_module(vgg, "/home/viczhang/.torch/models/vgg16-397923af.pth", vggt, "./vgg_full.pth")
-    ####
-    state_dict = torch.load("./vgg16_reducedfc.pth")
-    state_dict_vgg = vggt.state_dict()
-    assert len(state_dict) == len(state_dict_vgg)
-    state = OrderedDict()
-    for k1, k2 in zip(state_dict.keys(), state_dict_vgg.keys()):
-        state[k2] = state_dict[k1]
-    vggt.load_state_dict(state)
-    torch.save(vggt.state_dict(), "./vgg16n.pth")
-
-    #image = torch.Tensor(1, 3, 300, 300)
-    #ssd300 = SSD300(21)
-    #input_data = Variable(image, requires_grad = True)
-    #loc, label = ssd300(input_data)
-    #print(loc.shape)
-    #print(label.shape)  
-    #loc.sum().backward()
