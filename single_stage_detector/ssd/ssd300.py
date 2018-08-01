@@ -10,13 +10,11 @@ class SSD300(nn.Module):
         vggt: pretrained vgg16 (partial) model
         label_num: number of classes (including background 0)
     """
-    def __init__(self, label_num, backbone='vgg', model_path="./vgg16n.pth"):
+    def __init__(self, label_num, backbone='resnet34', model_path="./resnet34-333f7ec4.pth"):
 
         super(SSD300, self).__init__()
 
         self.label_num = label_num
-
-        self.l2norm4 = L2Norm()
 
         if backbone == 'resnet34':
             self.model = ResNet34()
@@ -24,7 +22,7 @@ class SSD300(nn.Module):
             out_size = 38
             self.out_chan = [out_channels, 512, 512, 256, 256, 256]
         else:
-            print('Invalid backbone chosen')
+            raise ValueError('Invalid backbone chosen')
 
         self._build_additional_features(out_size, self.out_chan)
 
