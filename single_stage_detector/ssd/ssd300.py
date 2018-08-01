@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from base_model import VGG16, L2Norm, ResNet18, ResNet34, ResNet50
+from base_model import ResNet34
 
 class SSD300(nn.Module):
     """
@@ -18,12 +18,7 @@ class SSD300(nn.Module):
 
         self.l2norm4 = L2Norm()
 
-        if backbone == 'resnet18':
-            self.model = ResNet18()
-            out_channels = 256
-            out_size = 38
-            self.out_chan = [out_channels, 512, 512, 256, 256, 128]
-        elif backbone == 'resnet34':
+        if backbone == 'resnet34':
             self.model = ResNet34()
             out_channels = 256
             out_size = 38
