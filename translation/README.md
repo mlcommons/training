@@ -64,17 +64,21 @@ To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you c
 
 ### Steps to download and verify data
 
-Download the data using the following command. Note: this will require a recent version of tensorflow installed.
+Download the data using the following command.
    
     bash download_data.sh
     
 
 
 ### Steps to run and time
+Right now PyTorch and Tensorflow are supported for running transformer so set `$FRAMEWORK` accordingly.
+
+    FRAMEWORK=tensorflow
+    FRAMEWORK=pytorch
 
 Run the docker, assuming your checkout lives in `$HOME`. Modify paths as appropriate. 
 
-    cd ~/reference/translation/tensorflow
+    cd ~/reference/translation/$FRAMEWORK
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
     SEED=1
     NOW=`date "+%F-%T"`
@@ -99,7 +103,7 @@ We split the data into 100 blocks, and we shuffle internally in the blocks.
 # 4. Model
 ### Publication/Attribution
 
-This is an implementation of the Transformer translation model as described in the [Attention is All You Need](https://arxiv.org/abs/1706.03762) paper. Based on the code provided by the authors: [Transformer code](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/models/transformer.py) from [Tensor2Tensor](https://github.com/tensorflow/tensor2tensor).
+This is an implementation of the Transformer translation model as described in the [Attention is All You Need](https://arxiv.org/abs/1706.03762) paper. Based on the code provided by the authors: [Transformer code](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/models/transformer.py) from [Tensor2Tensor](https://github.com/tensorflow/tensor2tensor). The model has been implemented in the PyTorch using same reference implementation.
 
 ### Structure 
 
@@ -114,7 +118,7 @@ The model also applies embeddings on the input and output tokens, and adds a con
 
 We have two sets of weights to initialize: embeddings and the transformer network. 
 
-The transformer network is initialized using the standard tensorflow variance initalizer. The embedding are initialized using the tensorflow random uniform initializer. 
+The transformer network is initialized using the standard variance initalizer. The embedding are initialized using the random initializer with standard deviation of `hidden_size` specified in params.
 
 ### Loss function
 Cross entropy loss while taking the padding into consideration, padding is not considered part of loss.
