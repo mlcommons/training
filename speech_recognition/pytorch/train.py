@@ -123,7 +123,7 @@ def main():
                        labels          = labels,
                        rnn_type        = supported_rnns[rnn_type],
                        audio_conf      = audio_conf,
-                       bidirectional   = True,
+                       bidirectional   = False,
                        rnn_activation  = params.rnn_act_type,
                        bias            = params.bias)
 
