@@ -24,8 +24,8 @@ train_manifest = '../libri_train_manifest.csv' #relative path to train manifest 
 val_manifest = '../libri_val_manifest.csv' #relative path to val manifest is download_dataset is used
 
 # Model parameters
-hidden_size   = 800 # Hidden size of RNNs
-hidden_layers = 5 # Number of RNN layers
+hidden_size   = 2560 # Hidden size of RNNs
+hidden_layers = 3 # Number of RNN layers
 bias          = True  # Use biases
 rnn_type      = 'gru' #Type of the RNN. rnn|gru|lstm are supported
 rnn_act_type  = 'tanh' #Type of the activation within RNN. tanh | relu are supported
@@ -33,10 +33,10 @@ rnn_act_type  = 'tanh' #Type of the activation within RNN. tanh | relu are suppo
 # Training parameters
 epochs          = 10 # Number of training epochs
 learning_anneal = 1.1 # Annealing applied to learning rate every epoch
-lr              = 0.0003 # initial learning rate
+lr              = 0.00075 # initial learning rate
 momentum        = 0.9 # momentum
-max_norm        = 200 # Norm cutoff to prevent explosion of gradients
+max_norm        = 400 # Norm cutoff to prevent explosion of gradients
 l2              = 0 # L2 regularization
-batch_size      = 5 #Batch size for training
+batch_size      = 8 #Batch size for training
 augment         = True # Use random tempo and gain perturbations
 exit_at_acc     = True # Exit at given target accuracy
