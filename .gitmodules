@@ -1,6 +1,6 @@
 [submodule "object_detection/caffe2"]
 	path = object_detection/caffe2/caffe2
-	url = https://github.com/caffe2/caffe2.git
+	url = https://github.com/pytorch/pytorch.git
 [submodule "object_detection/detectron"]
 	path = object_detection/caffe2/detectron
 	url = https://github.com/ddkang/Detectron.git

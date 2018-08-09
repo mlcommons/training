@@ -37,13 +37,13 @@ RUN pip install networkx enum
 
 # Build and install caffe2
 WORKDIR /packages
-RUN git clone https://github.com/caffe2/caffe2.git
+RUN git clone https://github.com/pytorch/pytorch.git caffe2
 WORKDIR /packages/caffe2
-RUN git checkout 3dd56c9580ad7ce6d20a4dd922aaac171acf582a
+RUN git checkout 
 RUN git submodule update --init --recursive ; exit 0
-WORKDIR /packages/caffe2/third_party/aten
-RUN git pull origin master
-RUN git checkout fd0020fff6e9a42de8efa7d94589a9168bf721a6
+#WORKDIR /packages/caffe2/third_party/aten
+#RUN git pull origin master
+#RUN git checkout fd0020fff6e9a42de8efa7d94589a9168bf721a6
 WORKDIR /packages/caffe2
 RUN mkdir build
 WORKDIR /packages/caffe2/build
