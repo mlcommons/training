@@ -32,7 +32,7 @@ RUN pip install h5py \
                 hickle \
                 matplotlib \
                 tqdm \
-                http://download.pytorch.org/whl/cu80/torch-0.2.0.post3-cp27-cp27mu-manylinux1_x86_64.whl \
+                http://download.pytorch.org/whl/cu90/torch-0.4.0-cp27-cp27mu-linnux_x86_64.whl \
                 torchvision \
                 cffi \
                 python-Levenshtein \
@@ -49,7 +49,9 @@ ENV CUDA_HOME "/usr/local/cuda"
 RUN git clone https://github.com/SeanNaren/warp-ctc.git && \
     cd warp-ctc && \
     mkdir -p build && cd build && cmake .. && make && \
-    cd ../pytorch_binding && python setup.py install
+    cd ../pytorch_binding && /bin/bash -c "sed -i '92s/THFloatTensor_size(probs, 2)/THCudaTensor_size(state, probs, 2)/' ./src/binding.cpp" \
+    && /bin/bash -c "sed -i $'s/void\* gpu_workspace = THCudaMalloc(state, gpu_size_bytes);/void\* gpu_workspace\;\\\n    THCudaMalloc(state, \&gpu_workspace, gpu_size_bytes);/' ./src/binding.cpp" \
+    && python setup.py install
 
 # install pytorch audio
 RUN apt-get install -y sox libsox-dev libsox-fmt-all
