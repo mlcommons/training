@@ -1,51 +1,40 @@
 #/bin/bash
 
-# runs benchmark and reports time to convergence
+# This script runs preprocessing on the downloaded data
+# and times (exlcusively) training to the target accuracy.
 
-# to use the script:
+# To use the script:
+# run_and_time.sh <random seed 1-5>
 
-#   run_and_time.sh <random seed 1-5>
-
+TARGET_UNCASED_BLEU_SCORE=25
 
 set -e
 
-# start timing
+# Run preprocessing (not timed)
+# TODO: Seed not currently used but will be in a future PR
+. run_preprocessing.sh ${SEED}
 
-start=$(date +%s)
-start_fmt=$(date +%Y-%m-%d\ %r)
-echo "STARTING TIMING RUN AT $start_fmt"
+# Start timing
+START=$(date +%s)
+START_FMT=$(date +%Y-%m-%d\ %r)
+echo "STARTING TIMING RUN AT ${START_FMT}"
 
+# Run benchmark (training)
+SEED=${1:-1}
 
-# run benchmark
+echo "Running benchmark with seed ${SEED}"
+. run_training.sh ${SEED} ${TARGET_UNCASED_BLEU_SCORE}
 
-seed=${1:-1}
+RET_CODE=$?; if [[ ${RET_CODE} != 0 ]]; then exit ${RET_CODE}; fi
 
-echo "running benchmark with seed $seed"
-# Quality of 5 is roughly 1 epoch
-./run.sh $seed 25
+# End timing
+END=$(date +%s)
+END_FMT=$(date +%Y-%m-%d\ %r)
 
-sleep 3
+echo "ENDING TIMING RUN AT ${END_FMT}"
 
-ret_code=$?; if [[ $ret_code != 0 ]]; then exit $ret_code; fi
-
-
-
-# end timing
-
-end=$(date +%s)
-
-end_fmt=$(date +%Y-%m-%d\ %r)
-
-echo "ENDING TIMING RUN AT $end_fmt"
-
-
-
-# report result
-
-result=$(( $end - $start ))
-
+# Report result
+result=$(( ${END} - ${START} ))
 result_name="transformer"
 
-
-
-echo "RESULT,$result_name,$seed,$result,$USER,$start_fmt"
+echo "RESULT,${RESULT_NAME},${SEED},${RESULT},${USER},${START_FMT}"

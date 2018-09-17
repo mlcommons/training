@@ -12,8 +12,10 @@ ENV PYENV_ROOT $HOME/.pyenv
 ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 RUN apt-get install -y python-setuptools
 RUN apt-get install -y python-pip python3-pip virtualenv htop
-RUN pip3 install --upgrade numpy scipy sklearn tf-nightly-gpu==1.9.0.dev20180419
+RUN pip3 install --upgrade numpy scipy sklearn tensorflow-gpu==1.9.0
 
+ENV LANG C.UTF-8
+ENV LC_ALL C.UTF-8
 
 # Mount data into the docker
 ADD . /research/transformer
