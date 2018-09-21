@@ -15,5 +15,5 @@ python3 official/resnet/imagenet_main.py $RANDOM_SEED --data_dir /imn/imagenet/c
 # To run on 8xV100s, instead run:
 #python3 official/resnet/imagenet_main.py $RANDOM_SEED --data_dir /imn/imagenet/combined/ \
 #   --model_dir $MODEL_DIR --train_epochs 10000 --stop_threshold $QUALITY --batch_size 1024 \
-#   --version 1 --resnet_size 50 --dtype fp16 --num_gpus 8
+#   --version 1 --resnet_size 50 --dtype fp16 --num_gpus 8 \
 #   --epochs_between_evals 4
