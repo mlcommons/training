@@ -85,6 +85,8 @@ def parse_args():
     training = parser.add_argument_group('training setup')
     training.add_argument('--batch-size', default=128, type=int,
                           help='batch size for training')
+    training.add_argument('--iter-size', default=1, type=int,
+                          help='iter size for training')
     training.add_argument('--epochs', default=8, type=int,
                           help='number of total epochs to run')
     training.add_argument('--optimization-config',
@@ -245,6 +247,7 @@ def main():
     trainer_options = dict(
         criterion=criterion,
         grad_clip=args.grad_clip,
+        iter_size=args.iter_size,
         save_path=save_path,
         save_freq=args.save_freq,
         save_info={'config': args, 'tokenizer': tokenizer},

@@ -21,6 +21,7 @@ class Seq2SeqTrainer:
                  save_freq=1000,
                  grad_clip=float('inf'),
                  batch_first=False,
+                 iter_size=1,
                  save_info={},
                  save_path='.',
                  checkpoint_filename='checkpoint%s.pth',
@@ -46,6 +47,7 @@ class Seq2SeqTrainer:
         self.batch_first = batch_first
         self.verbose = verbose
         self.loss = None
+        self.iter_size = iter_size
 
         if cuda:
             self.model = self.model.cuda()
@@ -124,8 +126,12 @@ class Seq2SeqTrainer:
             # measure data loading time
             data_time.update(time.time() - end)
 
+            update = False
+            if i % self.iter_size == self.iter_size - 1:
+                update = True
+
             # do a train/evaluate iteration
-            stats = self.iterate(src, tgt, training=training)
+            stats = self.iterate(src, tgt, update, training=training)
             loss_per_token, loss_per_sentence, num_toks = stats
 
             # measure accuracy and record loss
@@ -186,6 +192,7 @@ class Seq2SeqTrainer:
         src = src, src_length
         tgt = tgt, tgt_length
         self.iterate(src, tgt, update=False, training=training)
+        self.model.zero_grad()
 
     def optimize(self, data_loader):
         torch.set_grad_enabled(True)
@@ -193,6 +200,7 @@ class Seq2SeqTrainer:
         torch.cuda.empty_cache()
         self.preallocate(data_loader, training=True)
         output = self.feed_data(data_loader, training=True)
+        self.model.zero_grad()
         torch.cuda.empty_cache()
         return output
 
@@ -202,6 +210,7 @@ class Seq2SeqTrainer:
         torch.cuda.empty_cache()
         self.preallocate(data_loader, training=False)
         output = self.feed_data(data_loader, training=False)
+        self.model.zero_grad()
         torch.cuda.empty_cache()
         return output
 
