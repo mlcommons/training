@@ -18,6 +18,7 @@ from neumf import NeuMF
 from dataset import CFTrainDataset, load_test_ratings, load_test_negs
 from convert import (TEST_NEG_FILENAME, TEST_RATINGS_FILENAME,
                      TRAIN_RATINGS_FILENAME)
+import mlperf_log
 
 
 def parse_args():
@@ -135,6 +136,8 @@ def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
 
 
 def main():
+    mlperf_log.mlperf_print(key=mlperf_log.RUN_START, benchmark=mlperf_log.NCF)
+
     args = parse_args()
     if args.seed is not None:
         print("Using seed = {}".format(args.seed))
@@ -159,6 +162,9 @@ def main():
     print('Loading data')
     train_dataset = CFTrainDataset(
         os.path.join(args.data, TRAIN_RATINGS_FILENAME), args.negative_samples)
+
+    mlperf_log.mlperf_print(key=mlperf_log.INPUT_BATCH_SIZE, value=args.batch_size, benchmark=mlperf_log.NCF)
+    mlperf_log.mlperf_print(key=mlperf_log.INPUT_ORDER, benchmark=mlperf_log.NCF)  # set shuffle=True in DataLoader
     train_dataloader = torch.utils.data.DataLoader(
             dataset=train_dataset, batch_size=args.batch_size, shuffle=True,
             num_workers=args.workers, pin_memory=True)
@@ -198,6 +204,8 @@ def main():
                             use_cuda=use_cuda, processes=args.processes)
     print('Initial HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f}'
           .format(K=args.topk, hit_rate=np.mean(hits), ndcg=np.mean(ndcgs)))
+
+    success = False
     for epoch in range(args.epochs):
         model.train()
         losses = utils.AverageMeter()
@@ -240,7 +248,11 @@ def main():
         if args.threshold is not None:
             if np.mean(hits) >= args.threshold:
                 print("Hit threshold of {}".format(args.threshold))
-                return 0
+                success = True
+                break
+
+    mlperf_log.mlperf_print(key=mlperf_log.RUN_STOP, value=success, benchmark=mlperf_log.NCF)
+    mlperf_log.mlperf_print(key=mlperf_log.RUN_FINAL, benchmark=mlperf_log.NCF)
 
 
 if __name__ == '__main__':

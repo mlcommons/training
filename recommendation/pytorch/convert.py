@@ -8,6 +8,8 @@ from tqdm import tqdm
 
 from load import implicit_load
 
+import mlperf_log
+
 
 MIN_RATINGS = 20
 
@@ -41,6 +43,11 @@ def main():
 
     print("Loading raw data from {}".format(args.path))
     df = implicit_load(args.path, sort=False)
+
+    # # TODO(robieta): remove before commiting
+    # df = df[df[USER_COLUMN] < 5000]
+    # df.reset_index()
+
     print("Filtering out users with less than {} ratings".format(MIN_RATINGS))
     grouped = df.groupby(USER_COLUMN)
     df = grouped.filter(lambda x: len(x) >= MIN_RATINGS)
@@ -86,6 +93,8 @@ def main():
     df_train_ratings['fake_rating'] = 1
     df_train_ratings.to_csv(os.path.join(args.output, TRAIN_RATINGS_FILENAME),
                             index=False, header=False, sep='\t')
+
+    mlperf_log.mlperf_print(key=mlperf_log.INPUT_SIZE, value=len(df_train_ratings), benchmark=mlperf_log.NCF)
 
     df_test_ratings = pd.DataFrame(test_ratings)
     df_test_ratings['fake_rating'] = 1
