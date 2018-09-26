@@ -15,4 +15,5 @@ python3 -m multiproc train.py \
   --seed $SEED \
   --target-bleu $TARGET \
   --epochs 8 \
+  --iter-size 8 \
   --batch-size 128
