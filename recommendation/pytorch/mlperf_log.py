@@ -33,6 +33,15 @@ EVAL_STOP = "eval_stop"
 
 OPT_NAME = "opt_name"
 
+MODEL_HP_LOSS_FN = "model_hp_loss_fn"
+
+
+# ==============================================================================
+# == Common Values =============================================================
+# ==============================================================================
+BCE = "binary_cross_entropy"
+CCE = "categorical_cross_entropy"
+
 
 # NCF Recommendation
 NCF = "ncf"
@@ -52,6 +61,10 @@ EVAL_HP_NUM_NEG = "eval_hp_num_neg"
 OPT_HP_BETA1 = "opt_hp_beta1"
 OPT_HP_BETA2 = "opt_hp_beta2"
 OPT_HP_EPSILON = "opt_hp_epsilon"
+
+MODEL_HP_MF_DIM = "model_hp_mf_dim"
+MODEL_HP_MLP_LAYER_SIZES = "model_hp_mlp_layer_sizes"
+
 
 
 def get_caller(stack_index=2):

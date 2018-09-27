@@ -205,6 +205,8 @@ def main():
     mlperf_log.ncf_print(key=mlperf_log.OPT_HP_EPSILON, value=epsilon)
     optimizer = torch.optim.Adam(model.parameters(), betas=(beta1, beta2),
                                  lr=args.learning_rate, eps=epsilon)
+
+    mlperf_log.ncf_print(key=mlperf_log.MODEL_HP_LOSS_FN, value=mlperf_log.BCE)
     criterion = nn.BCEWithLogitsLoss()
 
     if use_cuda:
