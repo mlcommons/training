@@ -61,7 +61,7 @@ git clone git@github.com:mlperf/reference.git
 ### Steps to download and prepare data
 The following [script](https://github.com/tensorflow/tpu/blob/master/tools/datasets/imagenet_to_gcs.py)
 was used to create TFRecords from ImageNet data using instructions in the
-[README](https://github.com/tensorflow/models/tree/master/research/inception#getting-started).
+[README](https://github.com/tensorflow/tpu/tree/master/tools/datasets#imagenet_to_gcspy).
 TFRecords can be created directly from [ImageNet](http://image-net.org) or from
 the .tar files downloaded from image-net.org.
 
