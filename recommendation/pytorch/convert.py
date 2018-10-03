@@ -74,18 +74,18 @@ def main():
     test_negs = []
     all_items = set(range(len(original_items)))
 
+    print("Generating {} negative samples for each user"
+          .format(args.negatives))
+    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_NUM_EVAL, value=args.negatives)
+
+    # The default of np.random.choice is replace=True
+    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_SAMPLE_EVAL_REPLACEMENT, value=True)
+
     #===========================================================================
     #== First random operation triggers the clock start. =======================
     #===========================================================================
     mlperf_log.ncf_print(key=mlperf_log.RUN_START)
-
-    print("Generating {} negative samples for each user"
-          .format(args.negatives))
-    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_NUM_EVAL, value=args.negatives)
-    mlperf_log.ncf_print(key=mlperf_log.PREPROC_STEP_EVAL_NEG_GEN)
-
-    # The default of np.random.choice is replace=True
-    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_SAMPLE_EVAL_REPLACEMENT, value=True)
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_EVAL_NEG_GEN)
 
     for user in tqdm(range(len(original_users)), desc='Users', total=len(original_users)):  # noqa: E501
         test_item = user_to_items[user].pop()

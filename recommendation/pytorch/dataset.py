@@ -12,7 +12,7 @@ class CFTrainDataset(torch.utils.data.dataset.Dataset):
         self._load_train_matrix(train_fname)
         self.nb_neg = nb_neg
 
-        mlperf_log.ncf_print(key=mlperf_log.PREPROC_STEP_TRAIN_NEG_GEN, value=nb_neg)
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_TRAIN_NEG_GEN, value=nb_neg)
         mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_SAMPLE_TRAIN_REPLACEMENT)
 
     def _load_train_matrix(self, train_fname):

@@ -47,13 +47,13 @@ CCE = "categorical_cross_entropy"
 NCF = "ncf"
 
 PREPROC_HP_MIN_RATINGS = "preproc_hp_min_ratings"
-PREPROC_HP_NUM_NEG = "preproc_hp_num_neg"
 PREPROC_HP_NUM_EVAL = "preproc_hp_num_eval"
 PREPROC_HP_SAMPLE_EVAL_REPLACEMENT = "preproc_hp_sample_eval_replacement"
-PREPROC_STEP_TRAIN_NEG_GEN = "preproc_step_train_neg_gen"
-PREPROC_STEP_EVAL_NEG_GEN = "preproc_step_eval_neg_gen"
 
+INPUT_HP_NUM_NEG = "input_hp_num_neg"
 INPUT_HP_SAMPLE_TRAIN_REPLACEMENT = "input_hp_sample_train_replacement"
+INPUT_STEP_TRAIN_NEG_GEN = "input_step_train_neg_gen"
+INPUT_STEP_EVAL_NEG_GEN = "input_step_eval_neg_gen"
 
 EVAL_HP_NUM_USERS = "eval_hp_num_users"
 EVAL_HP_NUM_NEG = "eval_hp_num_neg"

@@ -230,8 +230,8 @@ def main():
         model.train()
         losses = utils.AverageMeter()
 
-        mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_NUM_NEG, value=train_dataset.nb_neg)
-        mlperf_log.ncf_print(key=mlperf_log.PREPROC_STEP_TRAIN_NEG_GEN)
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_NUM_NEG, value=train_dataset.nb_neg)
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_TRAIN_NEG_GEN)
         begin = time.time()
         loader = tqdm.tqdm(train_dataloader)
         for batch_index, (user, item, label) in enumerate(loader):
