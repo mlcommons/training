@@ -94,9 +94,11 @@ We use Imagenet (http://image-net.org/):
 
 ### Data preprocessing
 
-There are two parts to the data processing. 1) Download and package images
-for training that takes place once for a given dataset. 2) processing as part
+There are two stages to the data processing. 1) Download and package images
+for training that takes place once for a given dataset. 2) Processing as part
 of training often called the input pipeline.
+
+**Stage 1**
 
 In the first stage, the images are not manipulated other than converting pngs
 to jpegs and a few jpegs encoded with cmyk to rgb. In both instances the quality
@@ -104,6 +106,8 @@ saved is 100. The purpose is to get the images into a format that is faster
 for reading, e.g. TFRecords or LMDB. Some frameworks suggest resizing images as
 part of this phase to reduce I/O. Check the rules to see if resizing or other
 manipulations are allowed and if this stage is on the clock.
+
+**Stage 2**
 
 The second stage takes place as part of training and includes cropping, apply
 bounding boxes, and some basic color augmentation. The [reference model](https://github.com/mlperf/training/blob/master/image_classification/tensorflow/official/resnet/imagenet_preprocessing.py)
