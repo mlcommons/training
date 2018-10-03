@@ -93,13 +93,22 @@ We use Imagenet (http://image-net.org/):
 
 
 ### Data preprocessing
-The dataset is extensively preprocessed, in several ways including image
-processing, batching and TF formatting. The first pass does conversion and
-scaling (e.g. png to jpg). The second step is to group images in larger groups
-and convert into a Tensorflow format -
-[TFRecords](https://www.tensorflow.org/programmers_guide/datasets#consuming_tfrecord_data).
-There is also cropping and augmentation, mean color subtraction, bounding boxes
-etc.
+
+There are two parts to the data processing. 1) Download and package images
+for training that takes place once for a given dataset. 2) processing as part
+of training often called the input pipeline.
+
+In the first stage, the images are not manipulated other than converting pngs
+to jpegs and a few jpegs encoded with cmyk to rgb. In both instances the quality
+saved is 100. The purpose is to get the images into a format that is faster
+for reading, e.g. TFRecords or LMDB. Some frameworks suggest resizing images as
+part of this phase to reduce I/O. Check the rules to see if resizing or other
+manipulations are allowed and if this stage is on the clock.
+
+The second stage takes place as part of training and includes cropping, apply
+bounding boxes, and some basic color augmentation. The [reference model](https://github.com/mlperf/training/blob/master/image_classification/tensorflow/official/resnet/imagenet_preprocessing.py)
+is to be followed.
+
 
 ### Training and test data separation
 This is provided by the Imagenet dataset and original authors.
