@@ -200,9 +200,9 @@ def main():
     mlperf_log.ncf_print(key=mlperf_log.TRAIN_LEARN_RATE, value=args.learning_rate)
     beta1, beta2, epsilon = 0.9, 0.999, 1e-8
     mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")
-    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_BETA1, value=beta1)
-    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_BETA2, value=beta2)
-    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_EPSILON, value=epsilon)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA1, value=beta1)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA2, value=beta2)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_EPSILON, value=epsilon)
     optimizer = torch.optim.Adam(model.parameters(), betas=(beta1, beta2),
                                  lr=args.learning_rate, eps=epsilon)
 

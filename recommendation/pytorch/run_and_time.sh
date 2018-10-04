@@ -8,6 +8,10 @@ set -e
 THRESHOLD=0.635
 BASEDIR=$(dirname -- "$0")
 
+pushd ../../compliance
+PYTHONPATH="${PYTHONPATH}:$(pwd)"
+popd
+
 # start timing
 start=$(date +%s)
 start_fmt=$(date +%Y-%m-%d\ %r)
