@@ -16,7 +16,7 @@ html5lib==0.9999999
 idna==2.6
 Markdown==2.6.11
 numpy==1.14.2
-protobuf==3.5.2.post1
+protobuf==3.6.0
 psutil==5.4.5
 py-cpuinfo==4.0.0
 pyasn1==0.4.2
@@ -30,7 +30,6 @@ six==1.11.0
 sklearn==0.0
 tb-nightly==1.8.0a20180420
 termcolor==1.1.0
-tf-nightly-gpu==1.9.0.dev20180419
 urllib3==1.22
 virtualenv==15.0.1
 Werkzeug==0.14.1
