@@ -19,21 +19,26 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import functools
 import inspect
+import os
 import re
 import time
 import json
 
 from tags import *
 
+ROOT = os.path.split(os.getcwd())[0]
+PATTERN = re.compile("^" + ROOT + "/")
 
 def get_caller(stack_index=2):
   ''' Returns file.py:lineno of your caller. A stack_index of 2 will provide
       the caller of the function calling this function. Notice that stack_index
       of 2 or more will fail if called from global scope. '''
   caller = inspect.getframeinfo(inspect.stack()[stack_index][0])
-  return "%s:%d" % (caller.filename, caller.lineno)
+
+  # Trim the filenames for readability.
+  filename = PATTERN.sub("", caller.filename)
+  return "%s:%d" % (filename, caller.lineno)
 
 
 def _mlperf_print(key, value=None, benchmark=None, stack_offset=0):
