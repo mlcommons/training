@@ -21,14 +21,11 @@ from __future__ import print_function
 
 import inspect
 import os
-import re
 import time
 import json
 
 from tags import *
 
-ROOT = os.path.split(os.path.abspath(__file__))[0]
-PATTERN = re.compile("^" + ROOT + "/")
 
 def get_caller(stack_index=2):
   ''' Returns file.py:lineno of your caller. A stack_index of 2 will provide
@@ -37,8 +34,7 @@ def get_caller(stack_index=2):
   caller = inspect.getframeinfo(inspect.stack()[stack_index][0])
 
   # Trim the filenames for readability.
-  filename = PATTERN.sub("", caller.filename)
-  return "%s:%d" % (filename, caller.lineno)
+  return "%s:%d" % (caller.filename, caller.lineno)
 
 
 def _mlperf_print(key, value=None, benchmark=None, stack_offset=0):
