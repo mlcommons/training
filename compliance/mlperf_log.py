@@ -73,7 +73,7 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0):
 
 
 NCF_TAG_SET = set(NCF_TAGS)
-def ncf_print(key, value=None, stack_offset=0):
+def ncf_print(key, value=None, stack_offset=2):
   if key not in NCF_TAG_SET:
     raise ValueError('Invalid key for MLPerf print: ' + str(key))
   return _mlperf_print(key=key, value=value, benchmark=NCF,
