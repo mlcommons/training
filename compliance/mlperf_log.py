@@ -27,7 +27,7 @@ import json
 
 from tags import *
 
-ROOT = os.path.split(os.getcwd())[0]
+ROOT = os.path.split(os.path.abspath(__file__))[0]
 PATTERN = re.compile("^" + ROOT + "/")
 
 def get_caller(stack_index=2):
