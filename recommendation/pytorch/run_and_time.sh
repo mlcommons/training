@@ -9,7 +9,7 @@ THRESHOLD=0.635
 BASEDIR=$(dirname -- "$0")
 
 pushd ../../compliance
-PYTHONPATH="${PYTHONPATH}:$(pwd)"
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 popd
 
 # start timing
