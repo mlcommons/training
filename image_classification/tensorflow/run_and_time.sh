@@ -14,7 +14,7 @@ echo "STARTING TIMING RUN AT $start_fmt"
 
 # run benchmark
 
-seed=${1:-1}
+seed=${1:-${start}}
 
 echo "running benchmark with seed $seed"
 # Quality of 0.2 is roughly a few hours of work
