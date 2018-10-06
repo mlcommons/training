@@ -4,11 +4,16 @@ import scipy.sparse
 import torch
 import torch.utils.data
 
+import mlperf_log
+
 
 class CFTrainDataset(torch.utils.data.dataset.Dataset):
     def __init__(self, train_fname, nb_neg):
         self._load_train_matrix(train_fname)
         self.nb_neg = nb_neg
+
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_TRAIN_NEG_GEN, value=nb_neg)
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_SAMPLE_TRAIN_REPLACEMENT)
 
     def _load_train_matrix(self, train_fname):
         def process_line(line):

@@ -18,6 +18,7 @@ from neumf import NeuMF
 from dataset import CFTrainDataset, load_test_ratings, load_test_negs
 from convert import (TEST_NEG_FILENAME, TEST_RATINGS_FILENAME,
                      TRAIN_RATINGS_FILENAME)
+import mlperf_log
 
 
 def parse_args():
@@ -93,7 +94,7 @@ def eval_one(rating, items, model, K, use_cuda=True):
 
     hit = _calculate_hit(ranked, test_item)
     ndcg = _calculate_ndcg(ranked, test_item)
-    return hit, ndcg
+    return hit, ndcg, len(predictions)
 
 
 def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
@@ -102,23 +103,32 @@ def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
         print("Initial evaluation")
     else:
         print("Epoch {} evaluation".format(epoch))
+
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_START, value=epoch)
     start = datetime.now()
     model.eval()
     if processes > 1:
         context = mp.get_context('spawn')
         _eval_one = partial(eval_one, model=model, K=K, use_cuda=use_cuda)
         with context.Pool(processes=processes) as workers:
-            hits_and_ndcg = workers.starmap(_eval_one, zip(ratings, negs))
-        hits, ndcgs = zip(*hits_and_ndcg)
+            hits_ndcg_numpred = workers.starmap(_eval_one, zip(ratings, negs))
+        hits, ndcgs, num_preds = zip(*hits_ndcg_numpred)
     else:
-        hits, ndcgs = [], []
+        hits, ndcgs, num_preds = [], [], []
         for rating, items in zip(ratings, negs):
-            hit, ndcg = eval_one(rating, items, model, K, use_cuda=use_cuda)
+            hit, ndcg, num_pred = eval_one(rating, items, model, K, use_cuda=use_cuda)
             hits.append(hit)
             ndcgs.append(ndcg)
+            num_preds.append(num_pred)
 
     hits = np.array(hits, dtype=np.float32)
     ndcgs = np.array(ndcgs, dtype=np.float32)
+
+    assert len(set(num_preds)) == 1
+    num_neg = num_preds[0] - 1  # one true positive, many negatives
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_SIZE, value={"epoch": epoch, "value": len(hits) * (1 + num_neg)})
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_USERS, value=len(hits))
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_NEG, value=num_neg)
 
     end = datetime.now()
     if output is not None:
@@ -135,6 +145,8 @@ def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
 
 
 def main():
+    # Note: The run start is in convert.py
+
     args = parse_args()
     if args.seed is not None:
         print("Using seed = {}".format(args.seed))
@@ -159,6 +171,9 @@ def main():
     print('Loading data')
     train_dataset = CFTrainDataset(
         os.path.join(args.data, TRAIN_RATINGS_FILENAME), args.negative_samples)
+
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_BATCH_SIZE, value=args.batch_size)
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_ORDER)  # set shuffle=True in DataLoader
     train_dataloader = torch.utils.data.DataLoader(
             dataset=train_dataset, batch_size=args.batch_size, shuffle=True,
             num_workers=args.workers, pin_memory=True)
@@ -182,7 +197,16 @@ def main():
         file.write(str(model))
 
     # Add optimizer and loss to graph
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    mlperf_log.ncf_print(key=mlperf_log.TRAIN_LEARN_RATE, value=args.learning_rate)
+    beta1, beta2, epsilon = 0.9, 0.999, 1e-8
+    mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA1, value=beta1)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA2, value=beta2)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_EPSILON, value=epsilon)
+    optimizer = torch.optim.Adam(model.parameters(), betas=(beta1, beta2),
+                                 lr=args.learning_rate, eps=epsilon)
+
+    mlperf_log.ncf_print(key=mlperf_log.MODEL_HP_LOSS_FN, value=mlperf_log.BCE)
     criterion = nn.BCEWithLogitsLoss()
 
     if use_cuda:
@@ -198,10 +222,16 @@ def main():
                             use_cuda=use_cuda, processes=args.processes)
     print('Initial HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f}'
           .format(K=args.topk, hit_rate=np.mean(hits), ndcg=np.mean(ndcgs)))
+
+    success = False
+    mlperf_log.ncf_print(key=mlperf_log.TRAIN_LOOP)
     for epoch in range(args.epochs):
+        mlperf_log.ncf_print(key=mlperf_log.TRAIN_EPOCH, value=epoch)
         model.train()
         losses = utils.AverageMeter()
 
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_NUM_NEG, value=train_dataset.nb_neg)
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_TRAIN_NEG_GEN)
         begin = time.time()
         loader = tqdm.tqdm(train_dataloader)
         for batch_index, (user, item, label) in enumerate(loader):
@@ -231,6 +261,9 @@ def main():
         hits, ndcgs = val_epoch(model, test_ratings, test_negs, args.topk,
                                 use_cuda=use_cuda, output=valid_results_file,
                                 epoch=epoch, processes=args.processes)
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_ACCURACY, value={"epoch": epoch, "value": float(np.mean(hits))})
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_TARGET, value=args.threshold)
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_STOP)
         val_time = time.time() - begin
         print('Epoch {epoch}: HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f},'
               ' train_time = {train_time:.2f}, val_time = {val_time:.2f}'
@@ -240,7 +273,11 @@ def main():
         if args.threshold is not None:
             if np.mean(hits) >= args.threshold:
                 print("Hit threshold of {}".format(args.threshold))
-                return 0
+                success = True
+                break
+
+    mlperf_log.ncf_print(key=mlperf_log.RUN_STOP, value={"success": success})
+    mlperf_log.ncf_print(key=mlperf_log.RUN_FINAL)
 
 
 if __name__ == '__main__':

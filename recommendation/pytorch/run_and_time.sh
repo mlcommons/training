@@ -1,10 +1,16 @@
 #!/bin/bash
+set -e
+
 # runs benchmark and reports time to convergence
 # to use the script:
 #   run_and_time.sh <random seed 1-5>
 
 THRESHOLD=0.635
 BASEDIR=$(dirname -- "$0")
+
+pushd ../../compliance
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+popd
 
 # start timing
 start=$(date +%s)
@@ -15,7 +21,7 @@ echo "STARTING TIMING RUN AT $start_fmt"
 seed=${1:-1}
 
 echo "unzip ml-20m.zip"
-if unzip ml-20m.zip
+if unzip -u ml-20m.zip
 then
     echo "Start processing ml-20m/ratings.csv"
     t0=$(date +%s)
