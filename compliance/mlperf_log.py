@@ -20,29 +20,55 @@ from __future__ import division
 from __future__ import print_function
 
 import inspect
-import time
+import logging
 import json
+import os
 import re
+import sys
+import time
 import uuid
 
 from tags import *
 
+# Set by imagenet_main.py
+ROOT_DIR_RESNET = None
 
 PATTERN = re.compile('[a-zA-Z0-9]+')
 
+LOG_FILE = os.getenv("COMPLIANCE_FILE")
+# create logger with 'spam_application'
+LOGGER = logging.getLogger('mlperf_compliance')
+LOGGER.setLevel(logging.DEBUG)
 
-def get_caller(stack_index=2):
+_STREAM_HANDLER = logging.StreamHandler(stream=sys.stdout)
+_STREAM_HANDLER.setLevel(logging.INFO)
+LOGGER.addHandler(_STREAM_HANDLER)
+
+if LOG_FILE:
+  _FILE_HANDLER = logging.FileHandler(LOG_FILE)
+  _FILE_HANDLER.setLevel(logging.DEBUG)
+  LOGGER.addHandler(_FILE_HANDLER)
+else:
+  _STREAM_HANDLER.setLevel(logging.DEBUG)
+
+
+
+def get_caller(stack_index=2, root_dir=None):
   ''' Returns file.py:lineno of your caller. A stack_index of 2 will provide
       the caller of the function calling this function. Notice that stack_index
       of 2 or more will fail if called from global scope. '''
   caller = inspect.getframeinfo(inspect.stack()[stack_index][0])
 
   # Trim the filenames for readability.
-  return "%s:%d" % (caller.filename, caller.lineno)
+  filename = caller.filename
+  if root_dir is not None:
+    filename = re.sub("^" + root_dir + "/", "", filename)
+  return "%s:%d" % (filename, caller.lineno)
 
 
 def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
-                  tag_set=None, deferred=False):
+                  tag_set=None, deferred=False, root_dir=None,
+                  extra_print=False):
   ''' Prints out an MLPerf Log Line.
 
   key: The MLPerf log key such as 'CLOCK' or 'QUALITY'. See the list of log keys in the spec.
@@ -56,6 +82,9 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
             be assigned as the value of this call and will be returned. The
             caller can then include said unique ID when the value is known
             later.
+  root_dir: Directory prefix which will be trimmed when reporting calling file
+            for compliance logging.
+  extra_print: Print a blank line before logging to clear any text in the line.
 
   Example output:
     :::MLP-1537375353 MINGO[17] (eval.py:42) QUALITY: 43.7
@@ -79,24 +108,37 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
     str_json = json.dumps(value)
     tag = '{key}: {value}'.format(key=key, value=str_json)
 
-  callsite = get_caller(2 + stack_offset)
+  callsite = get_caller(2 + stack_offset, root_dir=root_dir)
   now = int(time.time())
 
   message = ':::MLPv0.5.0 {benchmark} {secs} ({callsite}) {tag}'.format(
       secs=now, benchmark=benchmark, callsite=callsite, tag=tag)
 
-  # And log to tensorflow too
-  print()  # There could be prior text on a line
-  print(message)
+  if extra_print:
+    print() # There could be prior text on a line
+
+  if tag in STDOUT_TAG_SET:
+    LOGGER.info(message)
+  else:
+    LOGGER.debug(message)
 
   return return_value
 
 
 NCF_TAG_SET = set(NCF_TAGS)
-def ncf_print(key, value=None, stack_offset=2, deferred=False):
+def ncf_print(key, value=None, stack_offset=2, deferred=False,
+              extra_print=True):
+  # Extra print is needed for the reference NCF because of tqdm.
   return _mlperf_print(key=key, value=value, benchmark=NCF,
                        stack_offset=stack_offset, tag_set=NCF_TAG_SET,
-                       deferred=deferred)
+                       deferred=deferred, extra_print=extra_print)
+
+
+RESNET_TAG_SET = set(RESNET_TAGS)
+def resnet_print(key, value=None, stack_offset=2, deferred=False):
+  return _mlperf_print(key=key, value=value, benchmark=RESNET,
+                       stack_offset=stack_offset, tag_set=RESNET_TAG_SET,
+                       deferred=deferred, root_dir=ROOT_DIR_RESNET)
 
 
 if __name__ == '__main__':

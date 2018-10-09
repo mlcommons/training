@@ -20,6 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 from _ncf_tags import *
+from _resnet_tags import *
 
 # ==============================================================================
 # == Benchmarks ================================================================
@@ -27,6 +28,9 @@ from _ncf_tags import *
 
 # recommendation/
 NCF = "ncf"
+
+# image_classification/
+RESNET = "resnet"
 
 # translation/
 TRANSFORMER = "transformer"
@@ -66,12 +70,20 @@ RUN_STOP = "run_stop"
 RUN_FINAL = "run_final"
 
 
+# Emit this tag in the place(s) where random seeds are set.
+RUN_SET_RANDOM_SEED = "run_set_random_seed"
+
+
 # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 # Common Values: Constants which are expected to be reported across many models.
 #                These values are included for convenience.
 # //////////////////////////////////////////////////////////////////////////////
 BCE = "binary_cross_entropy"
 CCE = "categorical_cross_entropy"
+
+SGD = "stochastic_gradient_descent"
+
+TRUNCATED_NORMAL = "truncated_normal"
 
 
 # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -118,6 +130,27 @@ INPUT_BATCH_SIZE = "input_batch_size"
 INPUT_ORDER = "input_order"
 
 
+# --------------------------------------
+# -- Data Augmentation and Alteration --
+# --------------------------------------
+
+# ResNet random cropping
+INPUT_CENTRAL_CROP = "input_central_crop"
+
+INPUT_DISTORTED_CROP_MIN_OBJ_COV = "input_distorted_crop_min_object_covered"
+INPUT_DISTORTED_CROP_RATIO_RANGE = "input_distorted_crop_aspect_ratio_range"
+INPUT_DISTORTED_CROP_AREA_RANGE = "input_distorted_crop_area_range"
+INPUT_DISTORTED_CROP_MAX_ATTEMPTS = "input_distorted_crop_max_attempts"
+
+INPUT_MEAN_SUBTRACTION = "input_mean_subtraction"
+
+# Random flip of an image for data augmentation
+INPUT_RANDOM_FLIP = "input_random_flip"
+
+INPUT_RESIZE = "input_resize"
+INPUT_RESIZE_ASPECT_PRESERVING = "input_resize_aspect_preserving"
+
+
 # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 # Opt: Tags for declaring optimizer specific information. Submissions should
 #      declare and log explicit values rather than relying on defaults.
@@ -126,7 +159,8 @@ INPUT_ORDER = "input_order"
 # The name of the optimizer used. (SGD, Adam, etc.)
 OPT_NAME = "opt_name"
 
-OPT_LR = "learning_rate"
+OPT_LR = "opt_learning_rate"
+OPT_MOMENTUM = "opt_momentum"
 
 # beta1, beta2, and epsilon are optimizer hyperparameters associated with the
 # Adam optimizer and its variants (e.g. LazyAdam).
@@ -146,9 +180,6 @@ TRAIN_LOOP = "train_loop"
 
 # The current epoch as said epoch begins training.
 TRAIN_EPOCH = "train_epoch"
-
-# The current learning rate at the start of each epoch.
-TRAIN_LEARN_RATE = "train_learn_rate"
 
 # This tag is used to indicate approximately where checkpoints are written. Some
 # frameworks abstract away checkpoint saving; in such cases simply choose a
@@ -188,6 +219,39 @@ EVAL_STOP = "eval_stop"
 # models, additional benchmark specific subcomponents should also be logged.
 MODEL_HP_LOSS_FN = "model_hp_loss_fn"
 
+MODEL_HP_INITIAL_SHAPE = "model_hp_initial_shape"
+MODEL_HP_FINAL_SHAPE = "model_hp_final_shape"
+
+MODEL_L2_REGULARIZATION = "model_l2_regularization"
+MODEL_EXCLUDE_BN_FROM_L2 = "model_exclude_bn_from_l2"
+
+MODEL_HP_RELU = "model_hp_relu"
+MODEL_HP_CONV2D_FIXED_PADDING = "model_hp_conv2d_fixed_padding"
+MODEL_HP_BATCH_NORM = "model_hp_batch_norm"
+MODEL_HP_DENSE = "model_hp_dense"
+
+
+# ==============================================================================
+# == Stdout tags ===============================================================
+# ==============================================================================
+
+# These tags are always logged to stdout. The rest will be logged to a file if
+# one is available.
+STDOUT_TAG_SET = {
+    RUN_START,
+    RUN_STOP,
+    RUN_FINAL,
+
+    TRAIN_LOOP,
+    TRAIN_EPOCH,
+
+    EVAL_START,
+    EVAL_SIZE,
+    EVAL_TARGET,
+    EVAL_ACCURACY,
+    EVAL_STOP,
+}
+
 
 # ==============================================================================
 # == Benchmark tag sets ========================================================
@@ -218,7 +282,6 @@ NCF_TAGS = (
 
     TRAIN_LOOP,
     TRAIN_EPOCH,
-    TRAIN_LEARN_RATE,
 
     EVAL_START,
     EVAL_SIZE,
@@ -233,3 +296,56 @@ NCF_TAGS = (
     MODEL_HP_MLP_LAYER_SIZES,
 )
 
+RESNET_TAGS = (
+    RUN_START,
+    RUN_STOP,
+    RUN_FINAL,
+    RUN_SET_RANDOM_SEED,
+
+    PREPROC_NUM_TRAIN_EXAMPLES,
+    PREPROC_NUM_EVAL_EXAMPLES,
+
+    INPUT_SIZE,
+    INPUT_BATCH_SIZE,
+    INPUT_ORDER,
+    INPUT_CENTRAL_CROP,
+    INPUT_DISTORTED_CROP_MIN_OBJ_COV,
+    INPUT_DISTORTED_CROP_RATIO_RANGE,
+    INPUT_DISTORTED_CROP_AREA_RANGE,
+    INPUT_DISTORTED_CROP_MAX_ATTEMPTS,
+    INPUT_MEAN_SUBTRACTION,
+    INPUT_RANDOM_FLIP,
+    INPUT_RESIZE,
+    INPUT_RESIZE_ASPECT_PRESERVING,
+
+    OPT_NAME,
+    OPT_LR,
+    OPT_MOMENTUM,
+
+    TRAIN_LOOP,
+    TRAIN_EPOCH,
+
+    EVAL_START,
+    EVAL_SIZE,
+    EVAL_TARGET,
+    EVAL_ACCURACY,
+    EVAL_STOP,
+
+    MODEL_HP_LOSS_FN,
+    MODEL_L2_REGULARIZATION,
+    MODEL_EXCLUDE_BN_FROM_L2,
+
+    MODEL_HP_INITIAL_SHAPE,
+    MODEL_HP_FINAL_SHAPE,
+    MODEL_HP_INITIAL_MAX_POOL,
+    MODEL_HP_BEGIN_BLOCK,
+    MODEL_HP_END_BLOCK,
+    MODEL_HP_BLOCK_TYPE,
+    MODEL_HP_PROJECTION_SHORTCUT,
+    MODEL_HP_SHORTCUT_ADD,
+    MODEL_HP_RELU,
+    MODEL_HP_CONV2D_FIXED_PADDING,
+    MODEL_HP_BATCH_NORM,
+    MODEL_HP_DENSE,
+    MODEL_HP_RESNET_TOPOLOGY,
+)
