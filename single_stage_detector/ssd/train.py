@@ -100,6 +100,10 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold, use_cuda=True):
     E.accumulate()
     E.summarize()
     print("Current AP: {:.5f} AP goal: {:.5f}".format(E.stats[0], threshold))
+
+    # put your model back into training mode
+    model.train()
+
     return (E.stats[0] >= threshold) #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
 
 

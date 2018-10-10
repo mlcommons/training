@@ -307,8 +307,9 @@ class SSDCropping(object):
             min_iou = float("-inf") if min_iou is None else min_iou
             max_iou = float("+inf") if max_iou is None else max_iou
             
-            # Implementation use 50 iteration to find possible candidate
-            for _ in range(50):
+            # Implementation uses 1 iteration to find a possible candidate, this
+            # was shown to produce the same mAP as using more iterations.
+            for _ in range(1):
                 # suze of each sampled path in [0.1, 1] 0.3*0.3 approx. 0.1
                 w = random.uniform(0.3 , 1.0)
                 h = random.uniform(0.3 , 1.0)
