@@ -42,6 +42,8 @@ _NUM_TRAIN_FILES = 1024
 _SHUFFLE_BUFFER = 1500
 
 
+_BASE_LR = 0.128
+
 ###############################################################################
 # Data processing
 ###############################################################################
@@ -95,7 +97,7 @@ def _parse_example_proto(example_serialized):
   feature_map = {
       'image/encoded': tf.FixedLenFeature([], dtype=tf.string,
                                           default_value=''),
-      'image/class/label': tf.FixedLenFeature([1], dtype=tf.int64,
+      'image/class/label': tf.FixedLenFeature([], dtype=tf.int64,
                                               default_value=-1),
       'image/class/text': tf.FixedLenFeature([], dtype=tf.string,
                                              default_value=''),
@@ -127,7 +129,7 @@ def _parse_example_proto(example_serialized):
   return features['image/encoded'], label, bbox
 
 
-def parse_record(raw_record, is_training):
+def parse_record(raw_record, is_training, dtype):
   """Parses a record containing a training example of an image.
 
   The input record is parsed into a label and image, and the image is passed
@@ -137,6 +139,7 @@ def parse_record(raw_record, is_training):
     raw_record: scalar Tensor tf.string containing a serialized
       Example protocol buffer.
     is_training: A boolean denoting whether the input is for training.
+    dtype: data type to use for images/features.
 
   Returns:
     Tuple with processed image tensor and one-hot-encoded label tensor.
@@ -150,13 +153,13 @@ def parse_record(raw_record, is_training):
       output_width=_DEFAULT_IMAGE_SIZE,
       num_channels=_NUM_CHANNELS,
       is_training=is_training)
-
-  label = tf.one_hot(tf.reshape(label, shape=[]), _NUM_CLASSES)
+  image = tf.cast(image, dtype)
 
   return image, label
 
 
-def input_fn(is_training, data_dir, batch_size, num_epochs=1):
+def input_fn(is_training, data_dir, batch_size, num_epochs=1, num_gpus=None,
+             dtype=tf.float32):
   """Input function which provides batches for train or eval.
 
   Args:
@@ -164,6 +167,8 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1):
     data_dir: The directory containing the input data.
     batch_size: The number of samples per batch.
     num_epochs: The number of epochs to repeat the dataset.
+    num_gpus: The number of gpus used for training.
+    dtype: Data type to use for images/features
 
   Returns:
     A dataset that can be used for iteration.
@@ -179,8 +184,15 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1):
   dataset = dataset.flat_map(tf.data.TFRecordDataset)
 
   return resnet_run_loop.process_record_dataset(
-      dataset, is_training, batch_size, _SHUFFLE_BUFFER, parse_record,
-      num_epochs
+      dataset=dataset,
+      is_training=is_training,
+      batch_size=batch_size,
+      shuffle_buffer=_SHUFFLE_BUFFER,
+      parse_record_fn=parse_record,
+      num_epochs=num_epochs,
+      num_gpus=num_gpus,
+      examples_per_epoch=_NUM_IMAGES['train'] if is_training else None,
+      dtype=dtype
   )
 
 
@@ -278,7 +290,7 @@ def imagenet_model_fn(features, labels, mode, params):
   learning_rate_fn = resnet_run_loop.learning_rate_with_decay(
       batch_size=params['batch_size'], batch_denom=256,
       num_images=_NUM_IMAGES['train'], boundary_epochs=[30, 60, 80, 90],
-      decay_rates=[1, 0.1, 0.01, 0.001, 1e-4])
+      decay_rates=[1, 0.1, 0.01, 0.001, 1e-4], base_lr=_BASE_LR)
 
   return resnet_run_loop.resnet_model_fn(
       features=features,
@@ -302,7 +314,8 @@ def main(argv):
       resnet_size_choices=[18, 34, 50, 101, 152, 200])
 
   parser.set_defaults(
-      train_epochs=100
+      train_epochs=90,
+      version=1
   )
 
   flags = parser.parse_args(args=argv[2:])

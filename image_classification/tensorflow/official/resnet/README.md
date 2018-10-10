@@ -8,31 +8,23 @@ See the following papers for more background:
 
 [2] [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027.pdf) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
 
-In code v1 refers to the resnet defined in [1], while v2 correspondingly refers to [2]. The principle difference between the two versions is that v1 applies batch normalization and activation after convolution, while v2 applies batch normalization, then activation, and finally convolution. A schematic comparison is presented in Figure 1 (left) of [2].
+In code, v1 refers to the ResNet defined in [1] but where a stride 2 is used on
+the 3x3 conv rather than the first 1x1 in the bottleneck. This change results
+in higher and more stable accuracy with less epochs than the original v1 and has
+shown to scale to higher batch sizes with minimal degradation in accuracy.
+There is no originating paper and the first mention we are aware of was in the
+[torch version of ResNetv1](https://github.com/facebook/fb.resnet.torch). Most
+popular v1 implementations are this implementation which we call ResNetv1.5. In
+testing we found v1.5 requires ~12% more compute to train and has 6% reduced
+throughput for inference compared to ResNetv1. Comparing the v1 model to the
+v1.5 model, which has happened in blog posts, is an apples-to-oranges
+comparison especially in regards to hardware or platform performance. CIFAR-10
+ResNet does not use the bottleneck and is not impacted by these nuances.
 
-Please proceed according to which dataset you would like to train/evaluate on:
-
-
-## CIFAR-10
-
-### Setup
-
-You simply need to have the latest version of TensorFlow installed.
-First make sure you've [added the models folder to your Python path](/official/#running-the-models); otherwise you may encounter an error like `ImportError: No module named official.resnet`.
-
-Then download and extract the CIFAR-10 data from Alex's website, specifying the location with the `--data_dir` flag. Run the following:
-
-```
-python cifar10_download_and_extract.py
-```
-
-Then to train the model, run the following:
-
-```
-python cifar10_main.py
-```
-
-Use `--data_dir` to specify the location of the CIFAR-10 data used in the previous step. There are more flag options as described in `cifar10_main.py`.
+v2 refers to [2]. The principle difference between the two versions is that v1
+applies batch normalization and activation after convolution, while v2 applies
+batch normalization, then activation, and finally convolution. A schematic
+comparison is presented in Figure 1 (left) of [2].
 
 
 ## ImageNet

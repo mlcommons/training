@@ -40,7 +40,8 @@ from official.utils.misc import model_helpers
 # Functions for input processing.
 ################################################################################
 def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
-                           parse_record_fn, num_epochs=1):
+                           parse_record_fn, num_epochs=1, num_gpus=None,
+                           examples_per_epoch=None, dtype=tf.float32):
   """Given a Dataset with raw records, return an iterator over the records.
 
   Args:
@@ -53,6 +54,9 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
     parse_record_fn: A function that takes a raw record and returns the
       corresponding (image, label) pair.
     num_epochs: The number of epochs to repeat the dataset.
+    num_gpus: The number of gpus used for training.
+    examples_per_epoch: The number of examples in an epoch.
+    dtype: Data type to use for images/features.
 
   Returns:
     Dataset of (image, label) pairs ready for iteration.
@@ -75,7 +79,7 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   # batch_size is almost always much greater than the number of CPU cores.
   dataset = dataset.apply(
       tf.contrib.data.map_and_batch(
-          lambda value: parse_record_fn(value, is_training),
+          lambda value: parse_record_fn(value, is_training, dtype),
           batch_size=batch_size,
           num_parallel_batches=1))
 
@@ -85,7 +89,7 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   # critical training path. Setting buffer_size to tf.contrib.data.AUTOTUNE
   # allows DistributionStrategies to adjust how many batches to fetch based
   # on how many devices are present.
-  dataset.prefetch(buffer_size=tf.contrib.data.AUTOTUNE)
+  dataset = dataset.prefetch(buffer_size=tf.contrib.data.AUTOTUNE)
 
   return dataset
 
@@ -119,7 +123,8 @@ def get_synth_input_fn(height, width, num_channels, num_classes):
 # Functions for running training/eval/validation loops for the model.
 ################################################################################
 def learning_rate_with_decay(
-    batch_size, batch_denom, num_images, boundary_epochs, decay_rates):
+    batch_size, batch_denom, num_images, boundary_epochs, decay_rates,
+    base_lr=0.1):
   """Get a learning rate that decays step-wise as training progresses.
 
   Args:
@@ -133,13 +138,14 @@ def learning_rate_with_decay(
     decay_rates: list of floats representing the decay rates to be used
       for scaling the learning rate. It should have one more element
       than `boundary_epochs`, and all elements should have the same type.
+    base_lr: Initial learning rate scaled based on batch_denom.
 
   Returns:
     Returns a function that takes a single argument - the number of batches
     trained so far (global_step)- and returns the learning rate to be used
     for training the next batch.
   """
-  initial_learning_rate = 0.1 * batch_size / batch_denom
+  initial_learning_rate = base_lr * batch_size / batch_denom
   batches_per_epoch = num_images / batch_size
 
   # Multiply the learning rate by 0.1 at 100, 150, and 200 epochs.
@@ -147,8 +153,12 @@ def learning_rate_with_decay(
   vals = [initial_learning_rate * decay for decay in decay_rates]
 
   def learning_rate_fn(global_step):
-    global_step = tf.cast(global_step, tf.int32)
-    return tf.train.piecewise_constant(global_step, boundaries, vals)
+    lr = tf.train.piecewise_constant(global_step, boundaries, vals)
+    warmup_steps = int(batches_per_epoch * 5)
+    warmup_lr = (
+        initial_learning_rate * tf.cast(global_step, tf.float32) / tf.cast(
+        warmup_steps, tf.float32))
+    return tf.cond(global_step < warmup_steps, lambda: warmup_lr, lambda: lr)
 
   return learning_rate_fn
 
@@ -198,6 +208,9 @@ def resnet_model_fn(features, labels, mode, model_class,
   # Generate a summary node for the images
   tf.summary.image('images', features, max_outputs=6)
 
+  # Checks that features/images have same data type being used for calculations.
+  assert features.dtype == dtype
+
   features = tf.cast(features, dtype)
 
   model = model_class(resnet_size, data_format, version=version, dtype=dtype)
@@ -224,8 +237,8 @@ def resnet_model_fn(features, labels, mode, model_class,
         })
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
-  cross_entropy = tf.losses.softmax_cross_entropy(
-      logits=logits, onehot_labels=labels)
+  cross_entropy = tf.losses.sparse_softmax_cross_entropy(
+      logits=logits, labels=labels)
 
   # Create a tensor named cross_entropy for logging purposes.
   tf.identity(cross_entropy, name='cross_entropy')
@@ -278,19 +291,20 @@ def resnet_model_fn(features, labels, mode, model_class,
   else:
     train_op = None
 
-  if not tf.contrib.distribute.has_distribution_strategy():
-    accuracy = tf.metrics.accuracy(
-        tf.argmax(labels, axis=1), predictions['classes'])
-  else:
-    # Metrics are currently not compatible with distribution strategies during
-    # training. This does not affect the overall performance of the model.
-    accuracy = (tf.no_op(), tf.constant(0))
+  accuracy = tf.metrics.accuracy(labels, predictions['classes'])
+  accuracy_top_5 = tf.metrics.mean(tf.nn.in_top_k(predictions=logits,
+                                                  targets=labels,
+                                                  k=5,
+                                                  name='top_5_op'))
 
-  metrics = {'accuracy': accuracy}
+  metrics = {'accuracy': accuracy,
+             'accuracy_top_5': accuracy_top_5}
 
   # Create a tensor named train_accuracy for logging purposes
   tf.identity(accuracy[1], name='train_accuracy')
+  tf.identity(accuracy_top_5[1], name='train_accuracy_top_5')
   tf.summary.scalar('train_accuracy', accuracy[1])
+  tf.summary.scalar('train_accuracy_top_5', accuracy_top_5[1])
 
   return tf.estimator.EstimatorSpec(
       mode=mode,
@@ -401,6 +415,8 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           data_dir=flags.data_dir,
           batch_size=per_device_batch_size(flags.batch_size, flags.num_gpus),
           num_epochs=flags.epochs_between_evals,
+          num_gpus=flags.num_gpus,
+          dtype=flags.dtype
       )
 
     classifier.train(input_fn=input_fn_train, hooks=train_hooks,
@@ -414,6 +430,7 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           data_dir=flags.data_dir,
           batch_size=per_device_batch_size(flags.batch_size, flags.num_gpus),
           num_epochs=1,
+          dtype=flags.dtype
       )
 
     # flags.max_train_steps is generally associated with testing and profiling.
