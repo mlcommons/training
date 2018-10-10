@@ -18,7 +18,7 @@ seed=${1:-1}
 
 echo "running benchmark with seed $seed"
 # Quality of 0.2 is roughly a few hours of work
-# 0.759 is the final target quality
+# 0.749 is the final target quality
 # Changed from 74.9:
 #   https://github.com/mlperf/policies/issues/72
 ./run.sh $seed 0.749 |& tee /tmp/resnet_run_${seed}.log
