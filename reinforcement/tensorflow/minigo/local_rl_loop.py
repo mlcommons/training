@@ -29,12 +29,11 @@ import main
 from tensorflow import gfile
 import subprocess
 
-import qmeas
+from shared import qmeas
 
 
 def rl_loop():
     """Run the reinforcement learning loop
-
     This is meant to be more of an integration test than a realistic way to run
     the reinforcement learning.
     """

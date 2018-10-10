@@ -15,11 +15,11 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
@@ -30,15 +30,15 @@ import random
 
 import glob
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import tensorflow as tf
 import logging
 
-import goparams
+from shared import goparams
 import predict_games
 
-import qmeas
+from shared import qmeas
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
 #BUCKET_NAME = os.environ['BUCKET_NAME']
@@ -82,7 +82,6 @@ def print_flags():
 def get_models():
     """Finds all models, returning a list of model number and names
     sorted increasing.
-
     Returns: [(13, 000013-modelname), (17, 000017-modelname), ...etc]
     """
     all_models = gfile.Glob(os.path.join(MODELS_DIR, '*.meta'))
@@ -95,7 +94,6 @@ def get_models():
 
 def get_latest_model():
     """Finds the latest model, returning its model number and name
-
     Returns: (17, 000017-modelname)
     """
     models = get_models()
@@ -131,7 +129,7 @@ def evaluate(prev_model, cur_model, readouts=200, verbose=1, resign_threshold=0.
       qmeas.record('evaluate_choice', 'old')
       keep = False
     qmeas.record('eval_summary', {'win_pct': cur_win_pct, 'model': cur_model, 'keep': keep})
-    return keep 
+    return keep
 
 
 def gather():
@@ -217,7 +215,6 @@ def echo():
 
 def rl_loop():
     """Run the reinforcement learning loop
-
     This tries to create a realistic way to run the reinforcement learning with
     all default parameters.
     """

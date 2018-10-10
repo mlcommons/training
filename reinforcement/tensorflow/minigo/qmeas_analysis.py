@@ -15,6 +15,7 @@ import math
 
 import sys
 
+
 def str_timer(t):
   return '{}: {:.3f} / {} ({:.3f})'.format(t['name'], t['time'], t['run'], t['total'])
 
