@@ -197,7 +197,7 @@ def main():
         file.write(str(model))
 
     # Add optimizer and loss to graph
-    mlperf_log.ncf_print(key=mlperf_log.TRAIN_LEARN_RATE, value=args.learning_rate)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_LR, value=args.learning_rate)
     beta1, beta2, epsilon = 0.9, 0.999, 1e-8
     mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")
     mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA1, value=beta1)
