@@ -42,14 +42,14 @@ DEFERRED_INFO_PATTERN = re.compile("^\[([0-9\.]+)\]\[([0-9\.e\-]+)\]")
 
 
 def main():
-  raw_log_lines = {}
+  raw_log_lines = set()
   for line in sys.stdin:
     line = line.strip()
     # Do not repeat lines that are written to multiple sources. The timestamp
     # guarantees lines are not improperly dropped.
     if not PREFIX.match(line) or line in raw_log_lines:
       continue
-    raw_log_lines.append(line)
+    raw_log_lines.add(line)
 
   raw_log_lines = sorted(raw_log_lines)
 
