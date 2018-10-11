@@ -26,6 +26,8 @@ echo "running benchmark with seed $seed"
 sleep 3 
 ret_code=$?; if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 
+# stitch logs back together
+cat ${COMPLIANCE_FILE} ${CONSOLE_LOG} | python log_stitch.py | tee "/tmp/resnet_submission_${seed}.log"
 
 # end timing
 end=$(date +%s)
