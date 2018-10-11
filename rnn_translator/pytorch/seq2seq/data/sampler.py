@@ -1,5 +1,8 @@
 import torch
 from torch.utils.data.sampler import Sampler
+
+from mlperf_compliance import mlperf_log
+
 from seq2seq.utils import get_world_size, get_rank
 
 
@@ -25,6 +28,8 @@ class BucketingSampler(Sampler):
             * self.global_batch_size
 
     def __iter__(self):
+        mlperf_log.gnmt_print(key=mlperf_log.INPUT_ORDER)
+
         # deterministically shuffle based on epoch
         g = torch.Generator()
         g.manual_seed(self.epoch)
