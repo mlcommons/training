@@ -286,7 +286,8 @@ def resnet_model_fn(features, labels, mode, model_class,
     tf.identity(learning_rate, name='learning_rate')
     tf.summary.scalar('learning_rate', learning_rate)
 
-    mlperf_log.resnet_print(key=mlperf_log.OPT_NAME, value=mlperf_log.SGD)
+    mlperf_log.resnet_print(key=mlperf_log.OPT_NAME,
+                            value=mlperf_log.SGD_WITH_MOMENTUM)
     mlperf_log.resnet_print(key=mlperf_log.OPT_MOMENTUM, value=momentum)
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate,
@@ -432,6 +433,10 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
   mlperf_log.resnet_print(key=mlperf_log.TRAIN_LOOP)
   success = False
   for i in range(flags.train_epochs // flags.epochs_between_evals):
+    # Data for epochs_between_evals (i.e. 4 epochs between evals) worth of
+    # epochs is concatenated and run as a single block inside a session. For
+    # this reason we declare all of the epochs that will be run at the start.
+    # Submitters may report in a way which is reasonable for their control flow.
     for j in range(flags.epochs_between_evals):
       mlperf_log.resnet_print(key=mlperf_log.TRAIN_EPOCH,
                               value=i * flags.epochs_between_evals + j)
@@ -443,7 +448,8 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
     _log_cache = []
     def formatter(x):
       """Abuse side effects to get tensors out of the model_fn."""
-      if _log_cache: _log_cache.pop()
+      if _log_cache:
+        _log_cache.pop()
       _log_cache.append(x.copy())
       return str(x)
 

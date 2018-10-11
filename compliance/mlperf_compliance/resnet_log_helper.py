@@ -57,12 +57,14 @@ def log_projection(input_tensor, output_tensor):
       value=_in_out_shape(input_tensor, output_tensor))
 
 
-def log_conv2d(input_tensor, output_tensor, stride, filters, initializer):
+def log_conv2d(input_tensor, output_tensor, stride, filters, initializer,
+               use_bias):
   mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_CONV2D_FIXED_PADDING,
                           value=_in_out_shape(input_tensor, output_tensor))
   mlperf_log.resnet_print(
       key=mlperf_log.MODEL_HP_CONV2D_FIXED_PADDING,
-      value={"stride": stride, "filters": filters, "initializer": initializer})
+      value={"stride": stride, "filters": filters, "initializer": initializer,
+             "use_bias": use_bias})
 
 
 def log_batch_norm(input_tensor, output_tensor, momentum, epsilon, center,

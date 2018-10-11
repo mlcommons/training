@@ -109,7 +109,7 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format):
 
   resnet_log_helper.log_conv2d(
       input_tensor=inputs_for_logging, output_tensor=outputs, stride=strides,
-      filters=filters, initializer=mlperf_log.TRUNCATED_NORMAL)
+      filters=filters, initializer=mlperf_log.TRUNCATED_NORMAL, use_bias=False)
 
   return outputs
 

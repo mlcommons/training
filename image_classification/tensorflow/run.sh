@@ -12,7 +12,6 @@ pushd ../../compliance
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 popd
 
-export COMPLIANCE_FILE="/tmp/resnet_compliance_${RANDOM_SEED}.log"
 MODEL_DIR="/tmp/resnet_imagenet_${RANDOM_SEED}"
 
 python3 official/resnet/imagenet_main.py $RANDOM_SEED --data_dir /imn/imagenet/combined/  \
