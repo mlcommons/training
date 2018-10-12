@@ -29,6 +29,9 @@ import numpy.random
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from mlperf_compliance import mlperf_log
+from mlperf_compliance import tf_mlperf_log
+
 import compute_bleu
 from data_download import VOCAB_FILE
 from model import transformer
@@ -97,12 +100,26 @@ def get_learning_rate(learning_rate, hidden_size, learning_rate_warmup_steps):
 def get_train_op(loss, params):
   """Generate training operation that updates variables based on loss."""
   with tf.variable_scope("get_train_op"):
+    mlperf_log.transformer_print(
+        key=mlperf_log.OPT_LR_WARMUP_STEPS,
+        value=params.learning_rate_warmup_steps)
     learning_rate = get_learning_rate(
         params.learning_rate, params.hidden_size,
         params.learning_rate_warmup_steps)
+    log_id = mlperf_log.resnet_print(key=mlperf_log.OPT_LR, deferred=True)
+    learning_rate = tf_mlperf_log.log_deferred(op=learning_rate, log_id=log_id,
+                                               every_n=100)
 
     # Create optimizer. Use LazyAdamOptimizer from TF contrib, which is faster
     # than the TF core Adam optimizer.
+    mlperf_log.transformer_print(key=mlperf_log.OPT_NAME,
+                                 value=mlperf_log.LAZY_ADAM)
+    mlperf_log.transformer_print(key=mlperf_log.OPT_HP_ADAM_BETA1,
+                                 value=params.optimizer_adam_beta1)
+    mlperf_log.transformer_print(key=mlperf_log.OPT_HP_ADAM_BETA2,
+                                 value=params.optimizer_adam_beta2)
+    mlperf_log.transformer_print(key=mlperf_log.OPT_HP_ADAM_EPSILON,
+                                 value=params.optimizer_adam_epsilon)
     optimizer = tf.contrib.opt.LazyAdamOptimizer(
         learning_rate,
         beta1=params.optimizer_adam_beta1,
@@ -245,13 +262,18 @@ def train_schedule(
       train_eval_iterations = INF
 
   # Loop training/evaluation/bleu cycles
+  mlperf_log.transformer_print(key=mlperf_log.TRAIN_LOOP)
   for i in xrange(train_eval_iterations):
     print("Starting iteration", i + 1)
+
+    mlperf_log.transformer_print(key=mlperf_log.TRAIN_EPOCH,
+                                 value=i * single_iteration_train_epochs + 1)
 
     # Train the model for single_iteration_train_steps or until the input fn
     # runs out of examples (if single_iteration_train_steps is None).
     estimator.train(dataset.train_input_fn, steps=single_iteration_train_steps)
 
+    mlperf_log.transformer_print(key=mlperf_log.EVAL_START)
     eval_results = estimator.evaluate(dataset.eval_input_fn)
     print("Evaluation results (iter %d/%d):" % (i + 1, train_eval_iterations),
           eval_results)
@@ -262,12 +284,27 @@ def train_schedule(
       if bleu_threshold is not None and uncased_score > bleu_threshold:
         bleu_writer.close()
         break
+      mlperf_log.transformer_print(key=mlperf_log.EVAL_TARGET, value=bleu_threshold)
+      mlperf_log.transformer_print(key=mlperf_log.EVAL_ACCURACY, value=uncased_score)
+    mlperf_log.transformer_print(key=mlperf_log.EVAL_STOP)
 
 
 def main(_):
   # Set logging level to INFO to display training progress (logged by the
   # estimator)
   tf.logging.set_verbosity(tf.logging.INFO)
+
+  mlperf_log.transformer_print(key=mlperf_log.RUN_START)
+
+  # Set random seed.
+  if FLAGS.random_seed is None:
+    raise Exception('No Random seed given')
+  print('Setting random seed = ', FLAGS.random_seed)
+  seed = FLAGS.random_seed
+  mlperf_log.transformer_print(key=mlperf_log.RUN_SET_RANDOM_SEED, value=seed)
+  random.seed(seed)
+  tf.set_random_seed(seed)
+  numpy.random.seed(seed)
 
   if FLAGS.params == "base":
     params = model_params.TransformerBaseParams
@@ -312,8 +349,15 @@ def main(_):
       single_iteration_train_epochs, FLAGS.bleu_source, FLAGS.bleu_ref,
       FLAGS.bleu_threshold)
 
+  mlperf_log.transformer_print(key=mlperf_log.RUN_STOP)
+  mlperf_log.transformer(key=mlperf_log.RUN_FINAL)
+
 
 if __name__ == "__main__":
+
+  mlperf_log.ROOT_DIR_TRANSFORMER = os.path.normpath(
+      os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+
   parser = argparse.ArgumentParser()
   parser.add_argument(
       "--data_dir", "-dd", type=str, default="/tmp/translate_ende",
@@ -392,13 +436,5 @@ if __name__ == "__main__":
       help="the random seed to use", metavar="<SEED>")
 
   FLAGS, unparsed = parser.parse_known_args()
-  print('Setting random seed = ', FLAGS.random_seed)
-  if FLAGS.random_seed is None:
-    raise Exception('No Random seed given')
-  seed = FLAGS.random_seed
-  random.seed(seed)
-  tf.set_random_seed(seed)
-  numpy.random.seed(seed)
-
 
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

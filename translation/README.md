@@ -57,9 +57,10 @@ To setup the environment on Ubuntu 16.04 (16 CPUs, one P100, 100 GB disk), you c
     sleep 1;
     sudo service docker start
 
+    # Clone and change work directory to the mlperf training repository
     ssh-keyscan github.com >> ~/.ssh/known_hosts
-    git clone git@github.com:mlperf/reference.git
-
+    git clone git@github.com:mlperf/training.git
+    cd training
 
 
 ### Steps to download and verify data
@@ -72,13 +73,18 @@ Download the data using the following command. Note: this will require a recent 
 
 ### Steps to run and time
 
-Run the docker, assuming your checkout lives in `$HOME`. Modify paths as appropriate. 
+Run the docker container, assuming you are at the root directory of mlperf/trainiing repository. 
 
-    cd ~/reference/translation/tensorflow
+    cd translation/tensorflow
     IMAGE=`sudo docker build . | tail -n 1 | awk '{print $3}'`
     SEED=1
     NOW=`date "+%F-%T"`
-    sudo docker run -v $HOME/reference/translation/raw_data:/raw_data --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
+    sudo docker run \
+        --runtime=nvidia \
+        -v $(pwd)/translation/raw_data:/raw_data \
+        -v $(pwd)/compliance:/mlperf/training/compliance \
+        -e "MLPERF_COMPLIANCE_PKG=/mlperf/training/compliance" \
+        -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
 
 
 # 3. Dataset/Environment
