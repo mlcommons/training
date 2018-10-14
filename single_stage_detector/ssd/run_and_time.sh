@@ -3,6 +3,10 @@
 # to use the script:
 #   run_and_time.sh <random seed> <target threshold>
 
+pushd ../../compliance
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+popd
+
 SEED=${1:-1}
 TARGET=${2:-0.212}
 

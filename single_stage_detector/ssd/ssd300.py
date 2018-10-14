@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from base_model import ResNet34
+import mlperf_log
 
 class SSD300(nn.Module):
     """
@@ -21,6 +22,7 @@ class SSD300(nn.Module):
             out_channels = 256
             out_size = 38
             self.out_chan = [out_channels, 512, 512, 256, 256, 256]
+            mlperf_log.ssd_print(key=mlperf_log.BACKBONE, value='resnet34')
         else:
             raise ValueError('Invalid backbone chosen')
 
