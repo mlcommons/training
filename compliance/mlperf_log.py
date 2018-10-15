@@ -140,6 +140,13 @@ def resnet_print(key, value=None, stack_offset=2, deferred=False):
                        stack_offset=stack_offset, tag_set=RESNET_TAG_SET,
                        deferred=deferred, root_dir=ROOT_DIR_RESNET)
 
+SSD_TAG_SET = set(SSD_TAGS)
+def ssd_print(key, value=None, stack_offset=2, deferred=False,
+              extra_print=True):
+  # Extra print is needed for the reference NCF because of tqdm.
+  return _mlperf_print(key=key, value=value, benchmark=SSD,
+                       stack_offset=stack_offset, tag_set=SSD_TAG_SET,
+                       deferred=deferred, extra_print=extra_print)
 
 if __name__ == '__main__':
   _mlperf_print('eval_accuracy', {'epoch': 7, 'accuracy': 43.7}, NCF)
