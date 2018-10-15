@@ -19,8 +19,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from _ncf_tags import *
-from _resnet_tags import *
+from ._ncf_tags import *
+from ._resnet_tags import *
 
 # ==============================================================================
 # == Benchmarks ================================================================

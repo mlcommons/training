@@ -28,7 +28,7 @@ import sys
 import time
 import uuid
 
-from tags import *
+from .tags import *
 
 # Set by imagenet_main.py
 ROOT_DIR_RESNET = None
