@@ -18,7 +18,8 @@ from neumf import NeuMF
 from dataset import CFTrainDataset, load_test_ratings, load_test_negs
 from convert import (TEST_NEG_FILENAME, TEST_RATINGS_FILENAME,
                      TRAIN_RATINGS_FILENAME)
-import mlperf_log
+
+from mlperf_compliance import mlperf_log
 
 
 def parse_args():

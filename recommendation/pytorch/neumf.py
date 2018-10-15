@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import mlperf_log
+from mlperf_compliance import mlperf_log
 
 
 class NeuMF(nn.Module):

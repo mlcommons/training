@@ -4,7 +4,7 @@ import scipy.sparse
 import torch
 import torch.utils.data
 
-import mlperf_log
+from mlperf_compliance import mlperf_log
 
 
 class CFTrainDataset(torch.utils.data.dataset.Dataset):

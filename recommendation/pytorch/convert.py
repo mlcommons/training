@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from load import implicit_load
 
-import mlperf_log
+from mlperf_compliance import mlperf_log
 
 
 MIN_RATINGS = 20

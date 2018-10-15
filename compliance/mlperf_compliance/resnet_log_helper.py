@@ -19,7 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import mlperf_log
+from . import mlperf_log
 
 
 def _get_shape(input_tensor):
