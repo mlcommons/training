@@ -58,7 +58,7 @@ def dboxes300_coco():
 
 
 def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
-              epoch, use_cuda=True):
+              iteration, use_cuda=True):
     from pycocotools.cocoeval import COCOeval
     print("")
     model.eval()
@@ -119,8 +119,9 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
 
     current_accuracy = E.stats[0]
     mlperf_log.ssd_print(key=mlperf_log.EVAL_SIZE, value=idx+1)
-    mlperf_log.ssd_print(key=mlperf_log.EVAL_ACCURACY, value={"epoch": epoch,
-        "value": current_accuracy})
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_ACCURACY,
+                         value={"iteration": iteration,
+                                "value": current_accuracy})
     mlperf_log.ssd_print(key=mlperf_log.EVAL_TARGET, value=threshold)
 
     return current_accuracy>= threshold #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
@@ -231,11 +232,11 @@ def train300_mlperf_coco(args):
                     torch.save({"model" : ssd300.state_dict(), "label_map": train_coco.label_info},
                                 "./models/iter_{}.pt".format(iter_num))
 
-                mlperf_log.ssd_print(key=mlperf_log.EVAL_START, value=epoch)
+                mlperf_log.ssd_print(key=mlperf_log.EVAL_START, value=iter_num)
                 if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
-                             args.threshold, epoch):
+                             args.threshold, iter_num):
                     return True
-                mlperf_log.ssd_print(key=mlperf_log.EVAL_STOP, value=epoch)
+                mlperf_log.ssd_print(key=mlperf_log.EVAL_STOP, value=iter_num)
 
             iter_num += 1
     return False
