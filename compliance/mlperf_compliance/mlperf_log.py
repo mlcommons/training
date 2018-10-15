@@ -109,9 +109,9 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
     tag = '{key}: {value}'.format(key=key, value=str_json)
 
   callsite = get_caller(2 + stack_offset, root_dir=root_dir)
-  now = int(time.time())
+  now = time.time()
 
-  message = ':::MLPv0.5.0 {benchmark} {secs} ({callsite}) {tag}'.format(
+  message = ':::MLPv0.5.0 {benchmark} {secs:.9f} ({callsite}) {tag}'.format(
       secs=now, benchmark=benchmark, callsite=callsite, tag=tag)
 
   if extra_print:

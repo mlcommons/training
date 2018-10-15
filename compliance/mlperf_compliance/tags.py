@@ -83,6 +83,10 @@ CCE = "categorical_cross_entropy"
 
 SGD = "stochastic_gradient_descent"
 
+# Some conventions distinguish between "vanilla" SGD and SGD with momentum
+# (where vanilla SGD would be the specific case of momentum=0)
+SGD_WITH_MOMENTUM = "stochastic_gradient_descent_with_momentum"
+
 TRUNCATED_NORMAL = "truncated_normal"
 
 
