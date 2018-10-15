@@ -7,11 +7,6 @@ set -e
 # Register the model as a source root
 export PYTHONPATH="$(pwd):${PYTHONPATH}"
 
-# register the compliance dir as a source root
-pushd ../../compliance
-export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-popd
-
 MODEL_DIR="/tmp/resnet_imagenet_${RANDOM_SEED}"
 
 python3 official/resnet/imagenet_main.py $RANDOM_SEED --data_dir /imn/imagenet/combined/  \

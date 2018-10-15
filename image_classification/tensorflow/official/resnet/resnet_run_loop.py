@@ -28,8 +28,8 @@ import os
 
 import tensorflow as tf  # pylint: disable=g-bad-import-order
 
-import mlperf_log
-import tf_mlperf_log
+from mlperf_compliance import mlperf_log
+from mlperf_compliance import tf_mlperf_log
 from official.resnet import resnet_model
 from official.utils.arg_parsers import parsers
 from official.utils.export import export

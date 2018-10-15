@@ -25,7 +25,7 @@ import random
 import numpy.random
 import tensorflow as tf  # pylint: disable=g-bad-import-order
 
-import mlperf_log
+from mlperf_compliance import mlperf_log
 from official.resnet import imagenet_preprocessing
 from official.resnet import resnet_model
 from official.resnet import resnet_run_loop

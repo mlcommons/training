@@ -37,7 +37,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-import mlperf_log
+from mlperf_compliance import mlperf_log
 
 
 _R_MEAN = 123.68

@@ -33,8 +33,8 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-import mlperf_log
-import resnet_log_helper
+from mlperf_compliance import mlperf_log
+from mlperf_compliance import resnet_log_helper
 
 
 _BATCH_NORM_DECAY = 0.9
