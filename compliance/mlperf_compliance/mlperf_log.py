@@ -125,8 +125,15 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
   return return_value
 
 
+MINIGO_TAG_SET = set(MINIGO_TAGS)
+def minigo_print(key, value=None, stack_offset=1, deferred=False):
+  return _mlperf_print(key=key, value=value, benchmark=MINIGO,
+                       stack_offset=stack_offset, tag_set=MINIGO_TAG_SET,
+                       deferred=deferred)
+
+
 NCF_TAG_SET = set(NCF_TAGS)
-def ncf_print(key, value=None, stack_offset=2, deferred=False,
+def ncf_print(key, value=None, stack_offset=1, deferred=False,
               extra_print=True):
   # Extra print is needed for the reference NCF because of tqdm.
   return _mlperf_print(key=key, value=value, benchmark=NCF,
@@ -135,10 +142,18 @@ def ncf_print(key, value=None, stack_offset=2, deferred=False,
 
 
 RESNET_TAG_SET = set(RESNET_TAGS)
-def resnet_print(key, value=None, stack_offset=2, deferred=False):
+def resnet_print(key, value=None, stack_offset=1, deferred=False):
   return _mlperf_print(key=key, value=value, benchmark=RESNET,
                        stack_offset=stack_offset, tag_set=RESNET_TAG_SET,
                        deferred=deferred, root_dir=ROOT_DIR_RESNET)
+
+
+SSD_TAG_SET = set(SSD_TAGS)
+def ssd_print(key, value=None, stack_offset=1, deferred=False,
+              extra_print=True):
+  return _mlperf_print(key=key, value=value, benchmark=SSD,
+                       stack_offset=stack_offset, tag_set=SSD_TAG_SET,
+                       deferred=deferred, extra_print=extra_print)
 
 
 if __name__ == '__main__':

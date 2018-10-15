@@ -21,16 +21,23 @@ from __future__ import print_function
 
 from ._ncf_tags import *
 from ._resnet_tags import *
+from ._ssd_tags import *
 
 # ==============================================================================
 # == Benchmarks ================================================================
 # ==============================================================================
+
+# reinforcement/
+MINIGO = "minigo"
 
 # recommendation/
 NCF = "ncf"
 
 # image_classification/
 RESNET = "resnet"
+
+# single_stage_detector/
+SSD = "ssd"
 
 # translation/
 TRANSFORMER = "transformer"
@@ -166,6 +173,8 @@ OPT_NAME = "opt_name"
 OPT_LR = "opt_learning_rate"
 OPT_MOMENTUM = "opt_momentum"
 
+OPT_WEIGHT_DECAY = "opt_weight_decay"
+
 # beta1, beta2, and epsilon are optimizer hyperparameters associated with the
 # Adam optimizer and its variants (e.g. LazyAdam).
 OPT_HP_ADAM_BETA1 = "opt_hp_Adam_beta1"
@@ -261,6 +270,22 @@ STDOUT_TAG_SET = {
 # == Benchmark tag sets ========================================================
 # ==============================================================================
 
+MINIGO_TAGS = (
+    RUN_START,
+    RUN_STOP,
+    RUN_FINAL,
+    RUN_SET_RANDOM_SEED,
+
+    TRAIN_LOOP,
+    TRAIN_EPOCH,
+
+    EVAL_START,
+    EVAL_SIZE,
+    EVAL_TARGET,
+    EVAL_ACCURACY,
+    EVAL_STOP,
+)
+
 NCF_TAGS = (
     RUN_START,
     RUN_STOP,
@@ -352,4 +377,26 @@ RESNET_TAGS = (
     MODEL_HP_BATCH_NORM,
     MODEL_HP_DENSE,
     MODEL_HP_RESNET_TOPOLOGY,
+)
+
+SSD_TAGS = (
+    RUN_START,
+    RUN_STOP,
+    RUN_FINAL,
+    INPUT_BATCH_SIZE,
+    INPUT_ORDER,
+    BACKBONE,
+    NMS_THRESHOLD,
+    NMS_MAX_DETECTIONS,
+    OPT_NAME,
+    OPT_LR,
+    OPT_MOMENTUM,
+    OPT_WEIGHT_DECAY,
+    TRAIN_LOOP,
+    TRAIN_EPOCH,
+    EVAL_START,
+    EVAL_SIZE,
+    EVAL_TARGET,
+    EVAL_ACCURACY,
+    EVAL_STOP,
 )
