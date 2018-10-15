@@ -142,5 +142,5 @@ def resnet_print(key, value=None, stack_offset=2, deferred=False):
 
 
 if __name__ == '__main__':
-  _mlperf_print('eval_accuracy', {'epoch': 7, 'accuracy': 43.7}, NCF)
-  _mlperf_print('train_batch_size', 1024, NCF)
+  ncf_print(EVAL_ACCURACY, {'epoch': 7, 'accuracy': 43.7})
+  ncf_print(INPUT_SIZE, 1024)
