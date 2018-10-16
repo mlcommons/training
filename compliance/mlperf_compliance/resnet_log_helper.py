@@ -21,6 +21,7 @@ from __future__ import print_function
 
 from . import mlperf_log
 
+_STACK_OFFSET = 2
 
 def _get_shape(input_tensor):
   return "({})".format(", ".join(
@@ -34,35 +35,44 @@ def _in_out_shape(input_tensor, output_tensor):
 def log_max_pool(input_tensor, output_tensor):
   mlperf_log.resnet_print(
       key=mlperf_log.MODEL_HP_INITIAL_MAX_POOL, value=_in_out_shape(
-      input_tensor=input_tensor, output_tensor=output_tensor))
+      input_tensor=input_tensor, output_tensor=output_tensor),
+      stack_offset=_STACK_OFFSET)
 
 
 def log_begin_block(input_tensor, block_type):
   mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_BEGIN_BLOCK,
-                          value={"block_type": block_type})
+                          value={"block_type": block_type},
+                          stack_offset=_STACK_OFFSET)
   mlperf_log.resnet_print(
       key=mlperf_log.MODEL_HP_RESNET_TOPOLOGY,
-      value=" Block Input: {}".format(_get_shape(input_tensor)))
+      value=" Block Input: {}".format(_get_shape(input_tensor)),
+      stack_offset=_STACK_OFFSET)
 
 
 def log_end_block(output_tensor):
   mlperf_log.resnet_print(
       key=mlperf_log.MODEL_HP_END_BLOCK,
-      value=" Block Output: {}".format(_get_shape(output_tensor)))
+      value=" Block Output: {}".format(_get_shape(output_tensor)),
+      stack_offset=_STACK_OFFSET)
 
 
 def log_projection(input_tensor, output_tensor):
   mlperf_log.resnet_print(
       key=mlperf_log.MODEL_HP_PROJECTION_SHORTCUT,
-      value=_in_out_shape(input_tensor, output_tensor))
+      value=_in_out_shape(input_tensor, output_tensor),
+      stack_offset=_STACK_OFFSET)
 
 
-def log_conv2d(input_tensor, output_tensor, stride, filters, initializer):
+def log_conv2d(input_tensor, output_tensor, stride, filters, initializer,
+               use_bias):
   mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_CONV2D_FIXED_PADDING,
-                          value=_in_out_shape(input_tensor, output_tensor))
+                          value=_in_out_shape(input_tensor, output_tensor),
+                          stack_offset=_STACK_OFFSET)
   mlperf_log.resnet_print(
       key=mlperf_log.MODEL_HP_CONV2D_FIXED_PADDING,
-      value={"stride": stride, "filters": filters, "initializer": initializer})
+      value={"stride": stride, "filters": filters, "initializer": initializer,
+             "use_bias": use_bias},
+      stack_offset=_STACK_OFFSET)
 
 
 def log_batch_norm(input_tensor, output_tensor, momentum, epsilon, center,
@@ -70,4 +80,5 @@ def log_batch_norm(input_tensor, output_tensor, momentum, epsilon, center,
   assert _get_shape(input_tensor) == _get_shape(output_tensor)
   mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_BATCH_NORM, value={
     "shape": _get_shape(input_tensor), "momentum": momentum, "epsilon": epsilon,
-    "center": center, "scale": scale, "training": training})
+    "center": center, "scale": scale, "training": training},
+                          stack_offset=_STACK_OFFSET)

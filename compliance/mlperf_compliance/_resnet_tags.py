@@ -22,6 +22,17 @@ from __future__ import print_function
 
 BOTTLENECK_BLOCK = "bottleneck_block"
 
+# The ResNet reference specifies that evaluation occurs once every four epochs.
+# This can result in a quantization penalty for batch sizes which converge on
+# certain epochs. For instance a batch size which tends to converge on epoch 81
+# or 82 would be unduly punished by evaluating at epochs 80 and 84. In order to
+# address this, submissions may select an offset between 0 and 3 for the first
+# evaluation. So in the example above, the submitter could select an offset of
+# 1. In that case the first evaluation would occur on epoch 2, with later
+# evaluations correspondingly offset. Because this would trigger an eval on
+# epoch 82, the submission in this example can exit at a natural time.
+EVAL_EPOCH_OFFSET = "eval_offset"
+
 # ==============================================================================
 # == Topology ==================================================================
 # ==============================================================================

@@ -28,12 +28,17 @@ import os
 
 import tensorflow as tf  # pylint: disable=g-bad-import-order
 
+from mlperf_compliance import mlperf_log
+from mlperf_compliance import tf_mlperf_log
 from official.resnet import resnet_model
 from official.utils.arg_parsers import parsers
 from official.utils.export import export
 from official.utils.logs import hooks_helper
 from official.utils.logs import logger
 from official.utils.misc import model_helpers
+
+
+_NUM_EXAMPLES_NAME = "num_examples"
 
 
 ################################################################################
@@ -68,6 +73,7 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   if is_training:
     # Shuffle the records. Note that we shuffle before repeating to ensure
     # that the shuffling respects epoch boundaries.
+    mlperf_log.resnet_print(key=mlperf_log.INPUT_ORDER)
     dataset = dataset.shuffle(buffer_size=shuffle_buffer)
 
   # If we are training over multiple epochs before evaluating, repeat the
@@ -222,10 +228,13 @@ def resnet_model_fn(features, labels, mode, model_class,
   # fp32 for numerical stability.
   logits = tf.cast(logits, tf.float32)
 
+  num_examples_metric = tf_mlperf_log.sum_metric(tensor=tf.shape(logits)[0], name=_NUM_EXAMPLES_NAME)
+
   predictions = {
       'classes': tf.argmax(logits, axis=1),
       'probabilities': tf.nn.softmax(logits, name='softmax_tensor')
   }
+
 
   if mode == tf.estimator.ModeKeys.PREDICT:
     # Return the predictions and the specification for serving a SavedModel
@@ -237,6 +246,7 @@ def resnet_model_fn(features, labels, mode, model_class,
         })
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
+  mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_LOSS_FN, value=mlperf_log.CCE)
   cross_entropy = tf.losses.sparse_softmax_cross_entropy(
       logits=logits, labels=labels)
 
@@ -250,7 +260,12 @@ def resnet_model_fn(features, labels, mode, model_class,
     return 'batch_normalization' not in name
   loss_filter_fn = loss_filter_fn or exclude_batch_norm
 
+  mlperf_log.resnet_print(key=mlperf_log.MODEL_EXCLUDE_BN_FROM_L2,
+                          value=not loss_filter_fn('batch_normalization'))
+
   # Add weight decay to the loss.
+  mlperf_log.resnet_print(key=mlperf_log.MODEL_L2_REGULARIZATION,
+                          value=weight_decay)
   l2_loss = weight_decay * tf.add_n(
       # loss is computed using fp32 for numerical stability.
       [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
@@ -263,10 +278,17 @@ def resnet_model_fn(features, labels, mode, model_class,
 
     learning_rate = learning_rate_fn(global_step)
 
+    log_id = mlperf_log.resnet_print(key=mlperf_log.OPT_LR, deferred=True)
+    learning_rate = tf_mlperf_log.log_deferred(op=learning_rate, log_id=log_id,
+                                               every_n=100)
+
     # Create a tensor named learning_rate for logging purposes
     tf.identity(learning_rate, name='learning_rate')
     tf.summary.scalar('learning_rate', learning_rate)
 
+    mlperf_log.resnet_print(key=mlperf_log.OPT_NAME,
+                            value=mlperf_log.SGD_WITH_MOMENTUM)
+    mlperf_log.resnet_print(key=mlperf_log.OPT_MOMENTUM, value=momentum)
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate,
         momentum=momentum
@@ -287,7 +309,7 @@ def resnet_model_fn(features, labels, mode, model_class,
       minimize_op = optimizer.minimize(loss, global_step)
 
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    train_op = tf.group(minimize_op, update_ops)
+    train_op = tf.group(minimize_op, update_ops, num_examples_metric[1])
   else:
     train_op = None
 
@@ -298,7 +320,8 @@ def resnet_model_fn(features, labels, mode, model_class,
                                                   name='top_5_op'))
 
   metrics = {'accuracy': accuracy,
-             'accuracy_top_5': accuracy_top_5}
+             'accuracy_top_5': accuracy_top_5,
+             _NUM_EXAMPLES_NAME: num_examples_metric}
 
   # Create a tensor named train_accuracy for logging purposes
   tf.identity(accuracy[1], name='train_accuracy')
@@ -360,6 +383,8 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
       This is only used if flags.export_dir is passed.
   """
 
+  mlperf_log.resnet_print(key=mlperf_log.RUN_START)
+
   # Using the Winograd non-fused algorithms provides a small performance boost.
   os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 
@@ -381,9 +406,13 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
         num_gpus=flags.num_gpus
     )
 
+  mlperf_log.resnet_print(key=mlperf_log.RUN_SET_RANDOM_SEED, value=seed)
   run_config = tf.estimator.RunConfig(train_distribute=distribution,
-                                      session_config=session_config, tf_random_seed=seed)
+                                      session_config=session_config,
+                                      tf_random_seed=seed)
 
+  mlperf_log.resnet_print(key=mlperf_log.INPUT_BATCH_SIZE,
+                          value=flags.batch_size)
   classifier = tf.estimator.Estimator(
       model_fn=model_function, model_dir=flags.model_dir, config=run_config,
       params={
@@ -401,11 +430,38 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
   else:
     benchmark_logger = None
 
-  for _ in range(flags.train_epochs // flags.epochs_between_evals):
+  mlperf_log.resnet_print(key=mlperf_log.TRAIN_LOOP)
+
+  # The reference performs the first evaluation on the fourth epoch. (offset
+  # eval by 3 epochs)
+  mlperf_log.resnet_print(key=mlperf_log.EVAL_EPOCH_OFFSET, value=3)
+  success = False
+  for i in range(flags.train_epochs // flags.epochs_between_evals):
+    # Data for epochs_between_evals (i.e. 4 epochs between evals) worth of
+    # epochs is concatenated and run as a single block inside a session. For
+    # this reason we declare all of the epochs that will be run at the start.
+    # Submitters may report in a way which is reasonable for their control flow.
+    for j in range(flags.epochs_between_evals):
+      mlperf_log.resnet_print(key=mlperf_log.TRAIN_EPOCH,
+                              value=i * flags.epochs_between_evals + j)
     train_hooks = hooks_helper.get_train_hooks(
         flags.hooks,
         batch_size=flags.batch_size,
         benchmark_log_dir=flags.benchmark_log_dir)
+
+    _log_cache = []
+    def formatter(x):
+      """Abuse side effects to get tensors out of the model_fn."""
+      if _log_cache:
+        _log_cache.pop()
+      _log_cache.append(x.copy())
+      return str(x)
+
+    compliance_hook = tf.train.LoggingTensorHook(
+      tensors={_NUM_EXAMPLES_NAME: _NUM_EXAMPLES_NAME},
+      every_n_iter=int(1e10),
+      at_end=True,
+      formatter=formatter)
 
     print('Starting a training cycle.')
 
@@ -419,8 +475,11 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           dtype=flags.dtype
       )
 
-    classifier.train(input_fn=input_fn_train, hooks=train_hooks,
+    classifier.train(input_fn=input_fn_train, hooks=train_hooks + [compliance_hook],
                      max_steps=flags.max_train_steps)
+
+    train_examples = int(_log_cache.pop()[_NUM_EXAMPLES_NAME])
+    mlperf_log.resnet_print(key=mlperf_log.INPUT_SIZE, value=train_examples)
 
     print('Starting to evaluate.')
     # Evaluate the model and print results
@@ -433,6 +492,8 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           dtype=flags.dtype
       )
 
+
+    mlperf_log.resnet_print(key=mlperf_log.EVAL_START)
     # flags.max_train_steps is generally associated with testing and profiling.
     # As a result it is frequently called with synthetic data, which will
     # iterate forever. Passing steps=flags.max_train_steps allows the eval
@@ -441,6 +502,10 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
     # global_step count.
     eval_results = classifier.evaluate(input_fn=input_fn_eval,
                                        steps=flags.max_train_steps)
+    mlperf_log.resnet_print(key=mlperf_log.EVAL_STOP)
+    mlperf_log.resnet_print(key=mlperf_log.EVAL_SIZE, value=int(eval_results[_NUM_EXAMPLES_NAME]))
+    mlperf_log.resnet_print(key=mlperf_log.EVAL_ACCURACY, value=float(eval_results['accuracy']))
+    mlperf_log.resnet_print(key=mlperf_log.EVAL_TARGET, value=flags.stop_threshold)
     print(eval_results)
 
     if benchmark_logger:
@@ -448,13 +513,11 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
 
     if model_helpers.past_stop_threshold(
         flags.stop_threshold, eval_results['accuracy']):
+      success = True
       break
 
-  if flags.export_dir is not None:
-    # Exports a saved model for the given classifier.
-    input_receiver_fn = export.build_tensor_serving_input_receiver_fn(
-        shape, batch_size=flags.batch_size)
-    classifier.export_savedmodel(flags.export_dir, input_receiver_fn)
+  mlperf_log.resnet_print(key=mlperf_log.RUN_STOP, value={"success": success})
+  mlperf_log.resnet_print(key=mlperf_log.RUN_FINAL)
 
 
 class ResnetArgParser(argparse.ArgumentParser):
