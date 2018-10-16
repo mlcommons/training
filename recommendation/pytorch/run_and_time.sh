@@ -28,6 +28,7 @@ then
 
     echo "Start training"
     t0=$(date +%s)
+        export COMPLIANCE_FILE="/tmp/ncf_submission_${t0}.log"
 	python $BASEDIR/ncf.py ml-20m -l 0.0005 -b 2048 --layers 256 256 128 64 -f 64 \
 		--seed $seed --threshold $THRESHOLD --processes 10
     t1=$(date +%s)
