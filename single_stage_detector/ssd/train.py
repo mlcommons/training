@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
     parser.add_argument('--evaluation', nargs='*', type=int,
-                        default=[120000, 160000, 180000, 200000, 220000,
+                        default=[100, 120000, 160000, 180000, 200000, 220000,
                                  240000],
                         help='iterations at which to evaluate')
     return parser.parse_args()
@@ -49,11 +49,21 @@ def show_memusage(device=0):
 def dboxes300_coco():
     figsize = 300
     feat_size = [38, 19, 10, 5, 3, 1]
+    mlperf_log.ssd_print(key=mlperf_log.FEATURE_SIZES, value=feat_size)
+
     steps = [8, 16, 32, 64, 100, 300]
+    mlperf_log.ssd_print(key=mlperf_log.STEPS, value=feat_size)
+
     # use the scales here: https://github.com/amdegroot/ssd.pytorch/blob/master/data/config.py
     scales = [21, 45, 99, 153, 207, 261, 315]
+    mlperf_log.ssd_print(key=mlperf_log.SCALES, value=scales)
+
     aspect_ratios = [[2], [2, 3], [2, 3], [2, 3], [2], [2]]
+    mlperf_log.ssd_print(key=mlperf_log.ASPECT_RATIOS, value=aspect_ratios)
+
     dboxes = DefaultBoxes(figsize, feat_size, steps, scales, aspect_ratios)
+    mlperf_log.ssd_print(key=mlperf_log.NUM_DEFAULTS,
+                         value=len(dboxes.default_boxes))
     return dboxes
 
 
@@ -134,8 +144,11 @@ def train300_mlperf_coco(args):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     dboxes = dboxes300_coco()
     encoder = Encoder(dboxes)
-    train_trans = SSDTransformer(dboxes, (300, 300), val=False)
-    val_trans = SSDTransformer(dboxes, (300, 300), val=True)
+
+    input_size = 300
+    train_trans = SSDTransformer(dboxes, (input_size, input_size), val=False)
+    val_trans = SSDTransformer(dboxes, (input_size, input_size), val=True)
+    mlperf_log.ssd_print(key=mlperf_log.INPUT_SIZE, value=input_size)
 
     val_annotate = os.path.join(args.data, "annotations/instances_val2017.json")
     val_coco_root = os.path.join(args.data, "val2017")

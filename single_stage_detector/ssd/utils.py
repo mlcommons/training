@@ -16,6 +16,8 @@ import time
 import bz2
 import pickle
 from math import sqrt, ceil
+import mlperf_log
+
 
 # This function is from https://github.com/kuangliu/pytorch-ssd.
 def calc_iou_tensor(box1, box2):
@@ -244,7 +246,7 @@ class DefaultBoxes(object):
             for w, h in all_sizes:
                 for i, j in itertools.product(range(sfeat), repeat=2):
                     cx, cy = (j+0.5)/fk[idx], (i+0.5)/fk[idx]
-                    self.default_boxes.append((cx, cy, w, h)) 
+                    self.default_boxes.append((cx, cy, w, h))
 
         self.dboxes = torch.tensor(self.default_boxes)
         self.dboxes.clamp_(min=0, max=1)
@@ -291,6 +293,11 @@ class SSDCropping(object):
             # no IoU requirements
             (None, None),
         )
+        # Implementation uses 1 iteration to find a possible candidate, this
+        # was shown to produce the same mAP as using more iterations.
+        self.num_cropping_iterations = 1
+        mlperf_log.ssd_print(key=mlperf_log.NUM_CROPPING_ITERATIONS,
+                             value=self.num_cropping_iterations)
 
     def __call__(self, img, img_size, bboxes, labels):
        
@@ -306,10 +313,8 @@ class SSDCropping(object):
             min_iou, max_iou = mode
             min_iou = float("-inf") if min_iou is None else min_iou
             max_iou = float("+inf") if max_iou is None else max_iou
-            
-            # Implementation uses 1 iteration to find a possible candidate, this
-            # was shown to produce the same mAP as using more iterations.
-            for _ in range(1):
+
+            for _ in range(self.num_cropping_iterations):
                 # suze of each sampled path in [0.1, 1] 0.3*0.3 approx. 0.1
                 w = random.uniform(0.3 , 1.0)
                 h = random.uniform(0.3 , 1.0)
@@ -409,6 +414,8 @@ class LightingNoice(object):
 class RandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
+        mlperf_log.ssd_print(key=mlperf_log.RANDOM_FLIP_PROBABILITY,
+                             value=self.p)
 
     def __call__(self, image, bboxes):
         if random.random() < self.p:
@@ -449,8 +456,14 @@ class SSDTransformer(object):
 
         # All Pytorch Tensor will be normalized
         # https://discuss.pytorch.org/t/how-to-preprocess-input-for-pre-trained-networks/683
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                               std=[0.229, 0.224, 0.225])
+        normalization_mean = [0.485, 0.456, 0.406]
+        normalization_std = [0.229, 0.224, 0.225]
+        mlperf_log.ssd_print(key=mlperf_log.DATA_NORMALIZATION_MEAN,
+                             value=normalization_mean)
+        mlperf_log.ssd_print(key=mlperf_log.DATA_NORMALIZATION_STD,
+                             value=normalization_std)
+        self.normalize = transforms.Normalize(mean=normalization_mean,
+                                               std=normalization_std)
         #self.normalize = transforms.Normalize(mean = [104.0, 117.0, 123.0],
         #                                      std = [1.0, 1.0, 1.0])
 

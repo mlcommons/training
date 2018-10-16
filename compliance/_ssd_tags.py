@@ -23,6 +23,20 @@ from __future__ import print_function
 # Pretrained classifer model
 BACKBONE = "backbone"
 
+FEATURE_SIZES = "feature_sizes"
+STEPS = "steps"
+SCALES = "scales"
+ASPECT_RATIOS = "aspect_ratios"
+NUM_DEFAULTS_PER_CELL = "num_defaults_per_cell"
+LOC_CONF_OUT_CHANNELS = "loc_conf_out_channels"
+NUM_DEFAULTS = "num_default_boxes"
+
 # Overlap threshold for NMS
 NMS_THRESHOLD = "nms_threshold"
 NMS_MAX_DETECTIONS = "nms_max_detections"
+
+# data pipeline
+NUM_CROPPING_ITERATIONS = "num_cropping_iterations"
+RANDOM_FLIP_PROBABILITY = "random_flip_probability"
+DATA_NORMALIZATION_MEAN = "data_normalization_mean"
+DATA_NORMALIZATION_STD = "data_normalization_std"
