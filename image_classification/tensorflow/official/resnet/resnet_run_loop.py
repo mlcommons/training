@@ -431,6 +431,9 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
     benchmark_logger = None
 
   mlperf_log.resnet_print(key=mlperf_log.TRAIN_LOOP)
+
+  # The reference performs the first evaluation on the fourth epoch.
+  mlperf_log.resnet_print(key=mlperf_log.EVAL_EPOCH_OFFSET, value=4)
   success = False
   for i in range(flags.train_epochs // flags.epochs_between_evals):
     # Data for epochs_between_evals (i.e. 4 epochs between evals) worth of
