@@ -16,10 +16,6 @@
 :::MLPv0.5.0 ncf 1539646351.002785444 (./ncf.py:205) opt_hp_Adam_beta2: 0.999
 :::MLPv0.5.0 ncf 1539646351.003184795 (./ncf.py:206) opt_hp_Adam_epsilon: 1e-08
 :::MLPv0.5.0 ncf 1539646351.003669262 (./ncf.py:210) model_hp_loss_fn: "binary_cross_entropy"
-:::MLPv0.5.0 ncf 1539646355.468760490 (./ncf.py:108) eval_start
-:::MLPv0.5.0 ncf 1539646440.021394014 (./ncf.py:130) eval_size: {"epoch": null, "value": 138493000}
-:::MLPv0.5.0 ncf 1539646440.022042274 (./ncf.py:131) eval_hp_num_users: 138493
-:::MLPv0.5.0 ncf 1539646440.022473812 (./ncf.py:132) eval_hp_num_neg: 999
 :::MLPv0.5.0 ncf 1539646440.028930187 (./ncf.py:228) train_loop
 :::MLPv0.5.0 ncf 1539646440.029454708 (./ncf.py:230) train_epoch: 0
 :::MLPv0.5.0 ncf 1539646440.029996157 (./ncf.py:234) input_hp_num_neg: 4
