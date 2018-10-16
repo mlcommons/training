@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
     parser.add_argument('--evaluation', nargs='*', type=int,
-                        default=[100, 120000, 160000, 180000, 200000, 220000,
+                        default=[120000, 160000, 180000, 200000, 220000,
                                  240000],
                         help='iterations at which to evaluate')
     return parser.parse_args()
