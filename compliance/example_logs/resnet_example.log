@@ -5,7 +5,7 @@
 :::MLPv0.5.0 resnet 1539716221.922842503 (resnet_run_loop.py:409) run_set_random_seed: 1539716216
 :::MLPv0.5.0 resnet 1539716221.923823118 (resnet_run_loop.py:415) input_batch_size: 64
 :::MLPv0.5.0 resnet 1539716221.925445318 (resnet_run_loop.py:433) train_loop
-:::MLPv0.5.0 resnet 1539716221.925973892 (resnet_run_loop.py:436) eval_offset: 4
+:::MLPv0.5.0 resnet 1539716221.925973892 (resnet_run_loop.py:436) eval_offset: 3
 :::MLPv0.5.0 resnet 1539716221.926461697 (resnet_run_loop.py:445) train_epoch: 0
 :::MLPv0.5.0 resnet 1539716221.926892757 (resnet_run_loop.py:445) train_epoch: 1
 :::MLPv0.5.0 resnet 1539716221.927357674 (resnet_run_loop.py:445) train_epoch: 2
