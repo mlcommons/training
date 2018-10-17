@@ -28,10 +28,16 @@ import sys
 import time
 import uuid
 
-from .tags import *
+from mlperf_compliance.tags import *
+
+ROOT_DIR_GNMT = None
 
 # Set by imagenet_main.py
 ROOT_DIR_RESNET = None
+
+# Set by transformer_main.py and process_data.py
+ROOT_DIR_TRANSFORMER = None
+
 
 PATTERN = re.compile('[a-zA-Z0-9]+')
 
@@ -154,6 +160,13 @@ def ssd_print(key, value=None, stack_offset=1, deferred=False,
   return _mlperf_print(key=key, value=value, benchmark=SSD,
                        stack_offset=stack_offset, tag_set=SSD_TAG_SET,
                        deferred=deferred, extra_print=extra_print)
+
+
+TRANSFORMER_TAG_SET = set(TRANSFORMER_TAGS)
+def transformer_print(key, value=None, stack_offset=2, deferred=False):
+  return _mlperf_print(key=key, value=value, benchmark=TRANSFORMER,
+                       stack_offset=stack_offset, tag_set=TRANSFORMER_TAG_SET,
+                       deferred=deferred, root_dir=ROOT_DIR_TRANSFORMER)
 
 
 MASKRCNN_TAG_SET = set(MASKRCNN_TAGS)
