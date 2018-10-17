@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
-import math
+# import copy
+# import math
 import os
 import random
 import sys
 import time
-import sgf_wrapper
+import shared.sgf_wrapper as sgf_wrapper
 
-import coords
-import gtp
+import shared.coords as coords
 import numpy as np
-from mcts import MCTSNode, MAX_DEPTH
+from shared.mcts import MCTSNode, MAX_DEPTH
 
-import go
+import shared.go as go
 
 # When to do deterministic move selection.  ~30 moves on a 19x19, ~8 on 9x9
 TEMPERATURE_CUTOFF = int((go.N * go.N) / 12)
@@ -36,7 +35,6 @@ def time_recommendation(move_num, seconds_per_move=5, time_limit=15*60,
     '''Given the current move number and the 'desired' seconds per move, return
     how much time should actually be used. This is intended specifically for
     CGOS time controls, which has an absolute 15-minute time limit.
-
     The strategy is to spend the maximum possible moves using seconds_per_move,
     and then switch to an exponentially decaying time usage, calibrated so that
     we have enough time for an infinite number of moves.'''
@@ -150,7 +148,6 @@ class MCTSPlayerMixin:
 
     def pick_move(self):
         '''Picks a move to play, based on MCTS readout statistics.
-
         Highest N is most robust indicator. In the early stage of the game, pick
         a move weighted by visit count; later on, pick the absolute max.'''
         if self.root.position.n > self.temp_threshold:

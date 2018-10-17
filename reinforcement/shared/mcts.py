@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,16 @@
 # limitations under the License.
 
 """Monte Carlo Tree Search implementation.
-
 All terminology here (Q, U, N, p_UCT) uses the same notation as in the
 AlphaGo (AG) paper.
 """
 
 import numpy as np
 import collections
-import random
 import math
 
-import coords
-import go
+import shared.coords as coords
+import shared.go as go
 
 MAX_DEPTH = (go.N ** 2) * 1.4  # 505 moves for 19x19, 113 for 9x9
 
@@ -39,7 +37,6 @@ def D_NOISE_ALPHA(): return 0.03 * 361 / (go.N ** 2)
 
 class DummyNode(object):
     """A fake node of a MCTS search tree.
-
     This node is intended to be a placeholder for the root node, which would
     otherwise have no parent node. If all nodes have parents, code becomes
     simpler."""
@@ -52,11 +49,9 @@ class DummyNode(object):
 
 class MCTSNode(object):
     """A node of a MCTS search tree.
-
     A node knows how to compute the action scores of all of its children,
     so that a decision can be made about which move to explore next. Upon
     selecting a move, the children dictionary is updated with a new node.
-
     position: A go.Position instance
     fmove: A move (coordinate) that led to this position, a a flattened coord
             (raw number between 0-N^2, with None a pass)
@@ -153,7 +148,6 @@ class MCTSNode(object):
 
     def add_virtual_loss(self, up_to):
         """Propagate a virtual loss up to the root node.
-
         Args:
             up_to: The node to propagate until. (Keep track of this! You'll
                 need it to reverse the virtual loss later.)
@@ -177,7 +171,6 @@ class MCTSNode(object):
 
     def revert_visits(self, up_to):
         """Revert visit increments.
-
         Sometimes, repeated calls to select_leaf return the same node.
         This is rare and we're okay with the wasted computation to evaluate
         the position multiple times by the dual_net. But select_leaf has the
@@ -213,7 +206,6 @@ class MCTSNode(object):
 
     def backup_value(self, value, up_to):
         """Propagates a value estimation up to the root node.
-
         Args:
             value: the value to be propagated (1 = black wins, -1 = white wins)
             up_to: the node to propagate until.
@@ -227,6 +219,8 @@ class MCTSNode(object):
         '''True if the last two moves were Pass or if the position is at a move
         greater than the max depth.
         '''
+        # print("game over", self.position.is_game_over())
+        # print("n", self.position.n)
         return self.position.is_game_over() or self.position.n >= MAX_DEPTH
 
     def inject_noise(self):
@@ -279,7 +273,10 @@ class MCTSNode(object):
         p_rel = p_delta / self.child_prior
         # Dump out some statistics
         output = []
+        # try:
         output.append("{q:.4f}\n".format(q=self.Q))
+        # except:
+        #     output.append("{q:.4f}\n".format(q=self.Q[0]))
         output.append(self.most_visited_path())
         output.append(
             "move:  action      Q      U      P    P-Dir    N  soft-N  p-delta  p-rel\n")

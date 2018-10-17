@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,17 +13,15 @@
 # limitations under the License.
 
 import gtp
-import gtp_extensions
+import shared.gtp_extensions as gtp_extensions
 
-import coords
+import shared.coords as coords
 import datetime
-import go
-import random
+import shared.go as go
 import sys
 import os
-from dual_net import DualNetwork
-from strategies import MCTSPlayerMixin, CGOSPlayerMixin
-
+from minigo.dual_net import DualNetwork
+from shared.strategies import MCTSPlayerMixin, CGOSPlayerMixin
 
 def translate_gtp_colors(gtp_color):
     if gtp_color == gtp.BLACK:

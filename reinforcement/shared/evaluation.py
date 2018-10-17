@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,17 +16,14 @@
 
 import os
 import time
-import sgf_wrapper
-
-from gtp_wrapper import MCTSPlayer
-import goparams
+import shared.sgf_wrapper as sgf_wrapper
+from shared.gtp_wrapper import MCTSPlayer
 
 SIMULTANEOUS_LEAVES = 8
 
 
 def play_match(black_net, white_net, games, readouts, sgf_dir, verbosity):
     """Plays matches between two neural nets.
-
     black_net: Instance of minigo.DualNetwork, a wrapper around a tensorflow
         convolutional network.
     white_net: Instance of the minigo.DualNetwork.
@@ -103,4 +100,3 @@ def play_match(black_net, white_net, games, readouts, sgf_dir, verbosity):
                                                                    timeper,
                                                                    dur))
     return winners
-

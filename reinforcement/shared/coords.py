@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,7 @@
 # limitations under the License.
 
 """Logic for dealing with coordinates.
-
 This introduces some helpers and terminology that are used throughout MiniGo.
-
 MiniGo Coordinate: This is a tuple of the form (row, column) that is indexed
     starting out at (0, 0) from the upper-left.
 Flattened Coordinate: this is a number ranging from 0 - N^2 (so N^2+1
@@ -29,9 +27,7 @@ KGS Coordinate: Human-readable coordinate string indexed from bottom left, with
     its similarity with 'l' (lowercase 'L').
 PYGTP Coordinate: Tuple coordinate indexed starting at 1,1 from bottom-left
     in the format (column, row)
-
 So, for a 19x19,
-
 Coord Type      upper_left      upper_right     pass
 -------------------------------------------------------
 minigo coord    (0, 0)          (0, 18)         None
@@ -43,7 +39,7 @@ pygtp           (1, 19)         (19, 19)        (0, 0)
 
 import gtp
 
-import go
+from shared import go
 
 # We provide more than 19 entries here in case of boards larger than 19 x 19.
 _SGF_COLUMNS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'

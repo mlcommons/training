@@ -30,10 +30,10 @@ from tensorflow.python.training.summary_io import SummaryWriterCache
 from tqdm import tqdm
 from typing import Dict
 
-import features
+from shared import features
 import preprocessing
-import symmetries
-import go
+from shared import symmetries
+from shared import go
 
 # How many positions to look at per generation.
 # Per AGZ, 2048 minibatch * 1k = 2M positions/generation
@@ -71,7 +71,7 @@ class DualNetwork():
     def initialize_weights(self, save_file):
         """Initialize the weights from the given save_file.
         Assumes that the graph has been constructed, and the
-        save_file contains weights that match the graph. Used 
+        save_file contains weights that match the graph. Used
         to set the weights to a different version of the player
         without redifining the entire graph."""
         tf.train.Saver().restore(self.sess, save_file)
@@ -97,7 +97,6 @@ class DualNetwork():
 
 def get_inference_input():
     """Set up placeholders for input features/labels.
-
     Returns the feature, output tensors that get passed into model_fn."""
     return (tf.placeholder(tf.float32,
                            [None, go.N, go.N, features.NEW_FEATURES_PLANES],
@@ -108,7 +107,6 @@ def get_inference_input():
 
 def _round_power_of_two(n):
     """Finds the nearest power of 2 to a number.
-
     Thus 84 -> 64, 120 -> 128, etc.
     """
     return 2 ** int(round(math.log(n, 2)))
@@ -116,7 +114,6 @@ def _round_power_of_two(n):
 
 def get_default_hyperparams(**overrides):
     """Returns the hyperparams for the neural net.
-
     In other words, returns a dict whose parameters come from the AGZ
     paper:
       k: number of filters (AlphaGoZero used 256). We use 128 by
@@ -264,7 +261,6 @@ def get_estimator(working_dir, **hparams):
 
 def bootstrap(working_dir, **hparams):
     """Initialize a tf.Estimator run with random initial weights.
-
     Args:
         working_dir: The directory where tf.estimator will drop logs,
             checkpoints, and so on
@@ -289,10 +285,8 @@ def bootstrap(working_dir, **hparams):
 
 def export_model(working_dir, model_path):
     """Take the latest checkpoint and export it to model_path for selfplay.
-
     Assumes that all relevant model files are prefixed by the same name.
     (For example, foo.index, foo.meta and foo.data-00000-of-00001).
-
     Args:
         working_dir: The directory where tf.estimator keeps its checkpoints
         model_path: The path (can be a gs:// path) to export model to

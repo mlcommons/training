@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ LOGGING_PROJECT = os.environ.get('LOGGING_PROJECT', '')
 
 def configure(project=LOGGING_PROJECT):
     """Configures cloud logging
-
     This is called for all main calls. If a $LOGGING_PROJECT is environment
     variable configured, then STDERR and STDOUT are redirected to cloud
     logging.

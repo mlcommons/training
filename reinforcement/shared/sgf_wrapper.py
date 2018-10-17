@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,21 +14,20 @@
 
 '''
 Code to extract a series of positions + their next moves from an SGF.
-
 Most of the complexity here is dealing with two features of SGF:
 - Stones can be added via "play move" or "add move", the latter being used
   to configure L+D puzzles, but also for initial handicap placement.
 - Plays don't necessarily alternate colors; they can be repeated B or W moves
   This feature is used to handle free handicap placement.
 '''
-from collections import namedtuple
+# from collections import namedtuple
 import numpy as np
 import itertools
 
-import coords
-import go
-from go import Position, PositionWithContext
-import utils
+import shared.coords as coords
+import shared.go as go
+from shared.go import Position, PositionWithContext
+import shared.utils as utils
 import sgf
 
 SGF_TEMPLATE = '''(;GM[1]FF[4]CA[UTF-8]AP[Minigo_sgfgenerator]RU[{ruleset}]
@@ -58,18 +57,16 @@ def translate_sgf_move(player_move, comment):
 
 
 def make_sgf(
-    move_history,
-    result_string,
-    ruleset="Chinese",
-    komi=7.5,
-    white_name=PROGRAM_IDENTIFIER,
-    black_name=PROGRAM_IDENTIFIER,
-    comments=[]
+        move_history,
+        result_string,
+        ruleset="Chinese",
+        komi=7.5,
+        white_name=PROGRAM_IDENTIFIER,
+        black_name=PROGRAM_IDENTIFIER,
+        comments=[]
 ):
     '''Turn a game into SGF.
-
     Doesn't handle handicap games or positions with incomplete history.
-
     Args:
         move_history: iterable of PlayerMoves
         result_string: "B+R", "W+0.5", etc.
@@ -142,11 +139,9 @@ def maybe_correct_next(pos, next_node):
 def replay_sgf(sgf_contents):
     '''
     Wrapper for sgf files, returning go.PositionWithContext instances.
-
     It does NOT return the very final position, as there is no follow up.
     To get the final position, call pwc.position.play_move(pwc.next_move)
     on the last PositionWithContext returned.
-
     Example usage:
     with open(filename) as f:
         for position_w_context in replay_sgf(f.read()):

@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,16 +17,15 @@ Features used by AlphaGo Zero, in approximate order of importance.
 Feature                 # Notes
 Stone History           16 The stones of each color during the last 8 moves.
 Ones                    1  Constant plane of 1s
-All features with 8 planes are 1-hot encoded, with plane i marked with 1 
+All features with 8 planes are 1-hot encoded, with plane i marked with 1
 only if the feature was equal to i. Any features >= 8 would be marked as 8.
-
 This file includes the features from the first paper as DEFAULT_FEATURES
 and the features from AGZ as NEW_FEATURES.
 """
 
 import numpy as np
-import go
-from utils import product
+import shared.go as go
+from shared.utils import product
 
 # Resolution/truncation limit for one-hot features
 P = 8

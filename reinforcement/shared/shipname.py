@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import random
 import re
 import petname
 
-import go
+import shared.go as go
 
 MODEL_NUM_REGEX = "^\d{6}"
 MODEL_NAME_REGEX = "^\d{6}(-\w+)+"
@@ -35,7 +35,6 @@ def generate(model_num):
 
 def detect_model_num(string):
     """Takes a string related to a model name and extract its model number.
-
     For example:
         '000000-bootstrap.index' => 0
     """
@@ -48,7 +47,6 @@ def detect_model_num(string):
 
 def detect_model_name(string):
     """Takes a string related to a model name and extract its model name.
-
     For example:
         '000000-bootstrap.index' => '000000-bootstrap'
     """

@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,20 +17,16 @@ A board is a NxN numpy array.
 A Coordinate is a tuple index into the board.
 A Move is a (Coordinate c | None).
 A PlayerMove is a (Color, Move) tuple
-
 (0, 0) is considered to be the upper left corner of the board, and (18, 0) is the lower left.
 '''
 from collections import namedtuple
 import copy
 import itertools
 import numpy as np
-import os
+from shared import coords
+from shared import goparams
 
-import coords
-
-import goparams
-
-#N = int(os.environ.get('BOARD_SIZE', 9))
+# N = int(os.environ.get('BOARD_SIZE', 9))
 N = goparams.BOARD_SIZE
 
 # Represent a board as a numpy array, with 0 empty, 1 is black, -1 is white.
@@ -49,10 +45,9 @@ def _check_bounds(c):
 
 
 NEIGHBORS = {(x, y): list(filter(_check_bounds, [
-    (x+1, y), (x-1, y), (x, y+1), (x, y-1)])) for x, y in ALL_COORDS}
+    (x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)])) for x, y in ALL_COORDS}
 DIAGONALS = {(x, y): list(filter(_check_bounds, [
-    (x+1, y+1), (x+1, y-1), (x-1, y+1), (x-1, y-1)])) for x, y in ALL_COORDS}
-
+    (x + 1, y + 1), (x + 1, y - 1), (x - 1, y + 1), (x - 1, y - 1)])) for x, y in ALL_COORDS}
 
 class IllegalMove(Exception):
     pass
@@ -75,10 +70,8 @@ def replay_position(position, result):
     '''
     Wrapper for a go.Position which replays its history.
     Assumes an empty start position! (i.e. no handicap, and history must be exhaustive.)
-
     Result must be passed in, since a resign cannot be inferred from position
     history alone.
-
     for position_w_context in replay_position(position):
         print(position_w_context.position)
     '''
@@ -188,7 +181,7 @@ class LibertyTracker():
             np.ones([N, N], dtype=np.int32)
         self.groups = groups or {}
         self.liberty_cache = liberty_cache if liberty_cache is not None else np.zeros([
-                                                                                      N, N], dtype=np.uint8)
+            N, N], dtype=np.uint8)
         self.max_group_id = max_group_id
 
     def __deepcopy__(self, memodict={}):
@@ -313,14 +306,15 @@ class Position():
         self.ko = ko
         self.recent = recent
         self.board_deltas = board_deltas if board_deltas is not None else np.zeros([
-                                                                                   0, N, N], dtype=np.int8)
+            0, N, N], dtype=np.int8)
         self.to_play = to_play
         self.last_eight = None
 
     def __deepcopy__(self, memodict={}):
         new_board = np.copy(self.board)
         new_lib_tracker = copy.deepcopy(self.lib_tracker)
-        return Position(new_board, self.n, self.komi, self.caps, new_lib_tracker, self.ko, self.recent, self.board_deltas, self.to_play)
+        return Position(new_board, self.n, self.komi, self.caps, new_lib_tracker, self.ko, self.recent,
+                        self.board_deltas, self.to_play)
 
     def __str__(self, colors=True):
         if colors:
@@ -405,7 +399,7 @@ class Position():
         legal_moves[self.board != EMPTY] = 0
         # calculate which spots have 4 stones next to them
         # padding is because the edge always counts as a lost liberty.
-        adjacent = np.ones([N+2, N+2], dtype=np.int8)
+        adjacent = np.ones([N + 2, N + 2], dtype=np.int8)
         adjacent[1:-1, 1:-1] = np.abs(self.board)
         num_adjacent_stones = (adjacent[:-2, 1:-1] + adjacent[1:-1, :-2] +
                                adjacent[2:, 1:-1] + adjacent[1:-1, 2:])

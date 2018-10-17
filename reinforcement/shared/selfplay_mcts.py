@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import go
 import time
-import numpy as np
 import random
 import sys
 
-import coords
-import go
-from gtp_wrapper import MCTSPlayer
+import shared.coords as coords
+from shared.gtp_wrapper import MCTSPlayer
 
 SIMULTANEOUS_LEAVES = 8
 

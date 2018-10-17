@@ -1,4 +1,4 @@
-# Copyright 2018 Google LLC
+# Copyright 2018 Google LLC, Cisco Systems Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 import gtp
 import sys
-import sgf_wrapper
+import shared.sgf_wrapper as sgf_wrapper
 import itertools
-import go
-import coords
-
+import shared.go as go
+import shared.coords as coords
 
 def parse_message(message):
     message = gtp.pre_engine(message).strip()

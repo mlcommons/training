@@ -7,15 +7,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
 import dual_net
-import strategies
-import sgf_wrapper
-import evaluation
-from gtp_wrapper import MCTSPlayer
+from shared import strategies
+from shared import sgf_wrapper
+from shared import evaluation
+from shared.gtp_wrapper import MCTSPlayer
 
 import os
 import glob
+
 
 def main():
   # model_path = '/usr/local/google/home/vbittorf/Documents/minigo/20hour1000game/models/000002-nassau'

@@ -14,13 +14,11 @@
 
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 
-
 import glob
 import random
 import sys
 import os
 import main
-
 
 # K is how strongly a match should influence ELOs, 32 is ICC default
 # K = 32.0
@@ -153,5 +151,4 @@ if __name__ == '__main__':
     print()
     print_elos(elos, games, out_file)
     print()
-
 
