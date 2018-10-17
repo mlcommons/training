@@ -15,11 +15,11 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
@@ -28,14 +28,14 @@ import preprocessing
 import numpy
 import random
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import tensorflow as tf
 import logging
 
-import goparams
+from shared import goparams
 
-import qmeas
+from shared import qmeas
 import multiprocessing
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.

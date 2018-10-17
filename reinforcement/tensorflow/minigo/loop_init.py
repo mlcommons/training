@@ -19,7 +19,7 @@ import cloud_logging
 import logging
 import os
 import main
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
@@ -28,14 +28,14 @@ import preprocessing
 
 import glob
 
-from utils import timer
+from shared.utils import timer
 from tensorflow import gfile
 import logging
 
-import goparams
+from shared import goparams
 import predict_moves
 
-import qmeas
+from shared import qmeas
 
 # Pull in environment variables. Run `source ./cluster/common` to set these.
 #BUCKET_NAME = os.environ['BUCKET_NAME']

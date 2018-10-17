@@ -18,12 +18,12 @@ import numpy as np
 import tensorflow as tf
 import random
 
-import coords
-import features as features_lib
-import go
-import sgf_wrapper
+from shared import coords
+from shared import features as features_lib
+from shared import go
+from shared import sgf_wrapper
 
-import goparams
+from shared import goparams
 
 TF_RECORD_CONFIG = tf.python_io.TFRecordOptions(
     tf.python_io.TFRecordCompressionType.ZLIB)

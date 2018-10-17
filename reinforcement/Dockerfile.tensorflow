@@ -17,7 +17,11 @@ RUN pip3 install virtualenvwrapper
 RUN pip3 install --upgrade numpy scipy sklearn tf-nightly-gpu
 #RUN pip3 install --upgrade numpy scipy sklearn tf-nightly-gpu
 # Mount data into the docker
-ADD . /research/reinforcement
+ADD tensorflow/minigo /research/reinforcement/minigo
+ADD shared /research/reinforcement/shared
+ADD run.sh /research/reinforcement
+ADD run_and_time.sh /research/reinforcement
+ENV PYTHONPATH /research/reinforcement
 WORKDIR /research/reinforcement
 # RUN /bin/bash env_setup.sh
 

@@ -6,4 +6,4 @@ set -e
 SEED=$1
 mkdir -p /research/results/minigo/final/
 cd /research/reinforcement/minigo
-bash loop_main.sh params/final.json $SEED
+bash loop_main.sh /research/reinforcement/shared/params/final.json $SEED

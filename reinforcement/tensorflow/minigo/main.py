@@ -23,25 +23,25 @@ import socket
 import sys
 import tempfile
 import time
-import cloud_logging
+from shared import cloud_logging
 from tqdm import tqdm
 import gzip
 import numpy as np
 import tensorflow as tf
 from tensorflow import gfile
 
-import go
+from shared import go
 import dual_net
-from gtp_wrapper import make_gtp_instance, MCTSPlayer
+from shared.gtp_wrapper import make_gtp_instance, MCTSPlayer
 import preprocessing
-import selfplay_mcts
-from utils import logged_timer as timer
-import evaluation
-import sgf_wrapper
-import utils
+from shared import selfplay_mcts
+from shared.utils import logged_timer as timer
+from shared import evaluation
+from shared import sgf_wrapper
+from shared import utils
 
-import qmeas
-import goparams
+from shared import qmeas
+from shared import goparams
 
 # How many positions we should aggregate per 'chunk'.
 EXAMPLES_PER_RECORD = goparams.EXAMPLES_PER_RECORD

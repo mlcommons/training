@@ -15,10 +15,10 @@
 """Wrapper scripts to ensure that main.py commands are called correctly."""
 import argh
 import argparse
-import cloud_logging
+from shared import cloud_logging
 import logging
 import os
-import shipname
+from shared import shipname
 import sys
 import time
 import shutil
@@ -29,13 +29,13 @@ import subprocess
 import glob
 from tensorflow import gfile
 
-from utils import timer
+from shared.utils import timer
 import logging
 
-import goparams
+from shared import goparams
 import predict_moves
 
-import qmeas
+from shared import qmeas
 
 SEED = None
 ITERATION = None
