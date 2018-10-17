@@ -19,7 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from . import mlperf_log
+from mlperf_compliance import mlperf_log
 
 _STACK_OFFSET = 2
 
