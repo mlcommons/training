@@ -131,6 +131,13 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
   return return_value
 
 
+GNMT_TAG_SET = set(GNMT_TAGS)
+def gnmt_print(key, value=None, stack_offset=1, deferred=False):
+  return _mlperf_print(key=key, value=value, benchmark=GNMT,
+                       stack_offset=stack_offset, tag_set=GNMT_TAG_SET,
+                       deferred=deferred, root_dir=ROOT_DIR_GNMT)
+
+
 MINIGO_TAG_SET = set(MINIGO_TAGS)
 def minigo_print(key, value=None, stack_offset=1, deferred=False):
   return _mlperf_print(key=key, value=value, benchmark=MINIGO,
