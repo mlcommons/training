@@ -170,7 +170,7 @@ def ssd_print(key, value=None, stack_offset=1, deferred=False,
 
 
 TRANSFORMER_TAG_SET = set(TRANSFORMER_TAGS)
-def transformer_print(key, value=None, stack_offset=2, deferred=False):
+def transformer_print(key, value=None, stack_offset=1, deferred=False):
   return _mlperf_print(key=key, value=value, benchmark=TRANSFORMER,
                        stack_offset=stack_offset, tag_set=TRANSFORMER_TAG_SET,
                        deferred=deferred, root_dir=ROOT_DIR_TRANSFORMER)
