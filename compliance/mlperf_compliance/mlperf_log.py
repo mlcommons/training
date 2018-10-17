@@ -156,6 +156,14 @@ def ssd_print(key, value=None, stack_offset=1, deferred=False,
                        deferred=deferred, extra_print=extra_print)
 
 
+MASKRCNN_TAG_SET = set(MASKRCNN_TAGS)
+def maskrcnn_print(key, value=None, stack_offset=1, deferred=False,
+              extra_print=True):
+  return _mlperf_print(key=key, value=value, benchmark=MASKRCNN,
+                       stack_offset=stack_offset, tag_set=MASKRCNN_TAG_SET,
+                       deferred=deferred, extra_print=extra_print)
+
+
 if __name__ == '__main__':
   ncf_print(EVAL_ACCURACY, {'epoch': 7, 'accuracy': 43.7})
   ncf_print(INPUT_SIZE, 1024)

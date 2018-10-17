@@ -27,7 +27,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/mlperf/training/tree/master/compliance",
-    packages=setuptools.find_packages(),
+    packages=['mlperf_compliance'],
     classifiers=[
       "Programming Language :: Python :: 2",
       "Programming Language :: Python :: 3",

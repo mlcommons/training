@@ -39,6 +39,9 @@ RESNET = "resnet"
 # single_stage_detector/
 SSD = "ssd"
 
+# object_detection/
+MASKRCNN = "maskrcnn"
+
 # translation/
 TRANSFORMER = "transformer"
 
@@ -395,6 +398,33 @@ SSD_TAGS = (
     OPT_WEIGHT_DECAY,
     TRAIN_LOOP,
     TRAIN_EPOCH,
+    EVAL_START,
+    EVAL_SIZE,
+    EVAL_TARGET,
+    EVAL_ACCURACY,
+    EVAL_STOP,
+)
+
+MASKRCNN_TAGS = (
+    RUN_START,
+    RUN_STOP,
+    RUN_FINAL,
+
+    INPUT_BATCH_SIZE,
+    INPUT_ORDER,
+
+    BACKBONE,
+    NMS_THRESHOLD,
+    NMS_MAX_DETECTIONS,
+
+    OPT_NAME,
+    OPT_LR,
+    OPT_MOMENTUM,
+    OPT_WEIGHT_DECAY,
+
+    TRAIN_LOOP,
+    TRAIN_EPOCH,
+
     EVAL_START,
     EVAL_SIZE,
     EVAL_TARGET,
