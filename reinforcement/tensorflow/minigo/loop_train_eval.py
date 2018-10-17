@@ -40,6 +40,8 @@ import predict_games
 
 import qmeas
 
+from mlperf_compliance import mlperf_log
+
 # Pull in environment variables. Run `source ./cluster/common` to set these.
 #BUCKET_NAME = os.environ['BUCKET_NAME']
 
@@ -255,6 +257,12 @@ def rl_loop():
       ]
       result, total_pct = predict_games.report_for_puzzles(new_model_path, sgf_files, 2, tries_per_move=1)
       print('accuracy = ', total_pct)
+      mlperf_log.minigo_print(key=mlperf_log.EVAL_ACCURACY,
+                              value={"iteration": iteration, "value": total_pct})
+      mlperf_log.minigo_print(key=mlperf_log.EVAL_TARGET,
+                              value=goparams.TERMINATION_ACCURACY)
+
+
       qmeas.record('puzzle_total', total_pct)
       qmeas.record('puzzle_result', repr(result))
       qmeas.record('puzzle_summary', {'results': repr(result), 'total_pct': total_pct, 'model': new_model})
@@ -265,6 +273,10 @@ def rl_loop():
       qmeas.stop_time('puzzle')
       if total_pct >= goparams.TERMINATION_ACCURACY:
         print('Reaching termination accuracy; ', goparams.TERMINATION_ACCURACY)
+
+        mlperf_log.minigo_print(key=mlperf_log.RUN_STOP,
+                                value={"success": True})
+
         with open('TERMINATE_FLAG', 'w') as f:
           f.write(repr(result))
           f.write('\n' + str(total_pct) + '\n')
@@ -302,3 +314,4 @@ if __name__ == '__main__':
     log.addHandler(fh)
     rl_loop()
     qmeas.end()
+    mlperf_log.minigo_print(key=mlperf_log.EVAL_STOP, value=iteration)

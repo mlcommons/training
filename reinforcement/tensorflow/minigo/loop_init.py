@@ -37,6 +37,8 @@ import predict_moves
 
 import qmeas
 
+from mlperf_compliance import mlperf_log
+
 # Pull in environment variables. Run `source ./cluster/common` to set these.
 #BUCKET_NAME = os.environ['BUCKET_NAME']
 
@@ -130,5 +132,9 @@ if __name__ == '__main__':
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     log.addHandler(fh)
+
+    # mlperf logging for starting the entire run
+    mlperf_log.minigo_print(key=mlperf_log.RUN_START)
+
     main_fn()
     qmeas.end()

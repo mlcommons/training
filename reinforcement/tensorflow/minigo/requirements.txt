@@ -14,3 +14,4 @@ httplib2
 google-cloud-storage
 google-auth
 oauth2client==4.1
+mlperf_compliance==0.0.2
