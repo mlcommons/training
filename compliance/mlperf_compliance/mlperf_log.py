@@ -156,7 +156,7 @@ def ssd_print(key, value=None, stack_offset=1, deferred=False,
                        deferred=deferred, extra_print=extra_print)
 
 
-MASKRCNN_TAG_SET = set(MASK_RCNN_TAGS)
+MASKRCNN_TAG_SET = set(MASKRCNN_TAGS)
 def maskrcnn_print(key, value=None, stack_offset=1, deferred=False,
               extra_print=True):
   return _mlperf_print(key=key, value=value, benchmark=MASKRCNN,
