@@ -52,7 +52,7 @@ def dboxes300_coco():
     mlperf_log.ssd_print(key=mlperf_log.FEATURE_SIZES, value=feat_size)
 
     steps = [8, 16, 32, 64, 100, 300]
-    mlperf_log.ssd_print(key=mlperf_log.STEPS, value=feat_size)
+    mlperf_log.ssd_print(key=mlperf_log.STEPS, value=steps)
 
     # use the scales here: https://github.com/amdegroot/ssd.pytorch/blob/master/data/config.py
     scales = [21, 45, 99, 153, 207, 261, 315]
