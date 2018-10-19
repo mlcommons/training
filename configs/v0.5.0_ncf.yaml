@@ -1,0 +1,13 @@
+- TAG_EVAL_CHECK:
+    NAME: reached_target_quality
+    TAG: eval_accuracy
+    CODE: "v['value'] >= 0.635"
+    EXPECT: AT_LEAST_ONE
+
+- TAG_EVAL_CHECK:
+    NAME: benchmark_check
+    TAG: .*
+    CODE: "ll.benchmark == 'ncf'"
+    EXPECT: ALL
+
+

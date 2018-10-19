@@ -1,0 +1,79 @@
+- EXACTLY_ONE: run_start
+- EXACTLY_ONE: run_stop
+- EXACTLY_ONE: run_final
+
+- TAGS_PAIR:
+    FIRST: run_init
+    SECOND: run_clear_caches
+
+- TAGS_PAIR:
+    FIRST: run_clear_caches
+    SECOND: run_start
+
+- TAGS_PAIR:
+    FIRST: run_start
+    SECOND: run_stop
+
+- TAGS_PAIR:
+    FIRST: run_stop
+    SECOND: run_final
+
+- TAGS_COUNT_SAME:
+  - train_loop
+  - train_epoch
+  - train_learn_rate
+ 
+- TAGS_COUNT_SAME:
+  - eval_start
+  - eval_size
+  - eval_target
+  - eval_accuracy
+  - eval_stop
+
+- TAG_EVAL_CHECK:
+    NAME: has_eval_epoch
+    TAG: eval_accuracy
+    CODE: "'epoch' in v and 'value' in v"
+    EXPECT: ALL
+
+- TAG_EVAL_CHECK:
+    NAME: version_check
+    TAG: .*
+    CODE: "ll.version_str == 'v0.5.0'"
+    EXPECT: ALL
+
+- TAG_EVAL_CHECK:
+    NAME: each_eval_has_0th_epoch_and_value
+    TAG: eval_accuracy|eval_size|eval_target
+    CODE: "v['epoch'] == 0"
+    EXPECT: AT_LEAST_ONE
+
+- TAG_EVAL_CHECK:
+    NAME: each_eval_has_0th_epoch
+    TAG: eval_start|eval_stop
+    CODE: "v == 0"
+    EXPECT: AT_LEAST_ONE
+
+- TAG_EVAL_CHECK:
+    NAME: is_a_benchmark
+    TAG: eval_start|eval_stop
+    CODE: "ll.benchmark in ['ncf', 'ssd', 'resnet', 'gnmt', 'minigo', 'maskrcnn']"
+    EXPECT: AT_LEAST_ONE
+
+- TAGS_PAIR:
+    FIRST: run_start
+    SECOND: input_size
+
+- TAGS_PAIR:
+    FIRST: run_start
+    SECOND: input_shard
+
+- TAGS_PAIR:
+    FIRST: run_start
+    SECOND: input_batch
+
+- TAGS_PAIR:
+    FIRST: run_start
+    SECOND: input_order
+
+

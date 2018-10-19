@@ -1,0 +1,46 @@
+- EXACTLY_ONE: run_start
+- EXACTLY_ONE: run_stop
+- EXACTLY_ONE: run_final
+
+- TAGS_PAIR:
+    FIRST: run_start
+    SECOND: run_stop
+
+- TAGS_PAIR:
+    FIRST: run_stop
+    SECOND: run_final
+
+- TAGS_COUNT_SAME:
+  - eval_start
+  - eval_accuracy
+  - eval_stop
+
+- TAG_EVAL_CHECK:
+    NAME: has_eval_epoch
+    TAG: eval_accuracy
+    CODE: "'epoch' in v and 'value' in v"
+    EXPECT: ALL
+
+- TAG_EVAL_CHECK:
+    NAME: each_eval_accuracy_has_0th_epoch
+    TAG: eval_accuracy
+    CODE: "v['epoch'] == 0"
+    EXPECT: AT_LEAST_ONE
+
+- TAG_EVAL_CHECK:
+    NAME: each_eval_start_has_0th_epoch
+    TAG: eval_start
+    CODE: "v == 0"
+    EXPECT: AT_LEAST_ONE
+
+- TAG_EVAL_CHECK:
+    NAME: each_eval_stop_has_0th_epoch
+    TAG: eval_stop
+    CODE: "v == 0"
+    EXPECT: AT_LEAST_ONE
+
+- TAG_EVAL_CHECK:
+    NAME: is_a_benchmark
+    TAG: eval_start|eval_stop
+    CODE: "ll.benchmark in ['ncf', 'ssd', 'resnet', 'gnmt', 'minigo', 'maskrcnn']"
+    EXPECT: AT_LEAST_ONE
