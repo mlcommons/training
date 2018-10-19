@@ -29,6 +29,8 @@ import six
 import tensorflow as tf
 import urllib.request
 
+from mlperf_compliance import mlperf_log
+
 from utils import tokenizer
 
 # Data sources for training/evaluating the transformer translation model.
@@ -301,6 +303,13 @@ def encode_and_save_files(
   for tmp_name, final_name in zip(tmp_filepaths, filepaths):
     tf.gfile.Rename(tmp_name, final_name)
 
+  if tag == _TRAIN_TAG:
+    mlperf_log.transformer_print(key=mlperf_log.PREPROC_NUM_TRAIN_EXAMPLES,
+                                 value=counter)
+  elif tag == _EVAL_TAG:
+    mlperf_log.transformer_print(key=mlperf_log.PREPROC_NUM_EVAL_EXAMPLES,
+                                 value=counter)
+
   tf.logging.info("Saved %d Examples", counter)
   return filepaths
 
@@ -386,18 +395,24 @@ def main(unused_argv):
 
   # Tokenize and save data as Examples in the TFRecord format.
   tf.logging.info("Step 4/4: Preprocessing and saving data")
+  mlperf_log.transformer_print(key=mlperf_log.PREPROC_TOKENIZE_TRAINING)
   train_tfrecord_files = encode_and_save_files(
       subtokenizer, FLAGS.data_dir, compiled_train_files, _TRAIN_TAG,
       _TRAIN_SHARDS)
+  mlperf_log.transformer_print(key=mlperf_log.PREPROC_TOKENIZE_EVAL)
   encode_and_save_files(
       subtokenizer, FLAGS.data_dir, compiled_eval_files, _EVAL_TAG,
       _EVAL_SHARDS)
 
+  mlperf_log.transformer_print(key=mlperf_log.INPUT_ORDER)
   for fname in train_tfrecord_files:
     shuffle_records(fname)
 
 
 if __name__ == "__main__":
+
+  mlperf_log.ROOT_DIR_TRANSFORMER = os.path.dirname(os.path.realpath(__file__))
+
   parser = argparse.ArgumentParser()
   parser.add_argument(
       "--data_dir", "-dd", type=str, default="/tmp/translate_ende",
