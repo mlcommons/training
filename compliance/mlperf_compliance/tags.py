@@ -162,6 +162,8 @@ INPUT_ORDER = "input_order"
 # ResNet random cropping
 INPUT_CENTRAL_CROP = "input_central_crop"
 
+INPUT_CROP_USES_BBOXES = "input_crop_uses_bboxes"
+
 INPUT_DISTORTED_CROP_MIN_OBJ_COV = "input_distorted_crop_min_object_covered"
 INPUT_DISTORTED_CROP_RATIO_RANGE = "input_distorted_crop_aspect_ratio_range"
 INPUT_DISTORTED_CROP_AREA_RANGE = "input_distorted_crop_area_range"
