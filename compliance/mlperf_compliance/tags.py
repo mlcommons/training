@@ -154,6 +154,9 @@ INPUT_BATCH_SIZE = "input_batch_size"
 # should simply provide a good starting point to an interested party.
 INPUT_ORDER = "input_order"
 
+# The shard size (in items) when shuffling in the input pipeline.
+INPUT_SHARD = "input_shard"
+
 
 # --------------------------------------
 # -- Data Augmentation and Alteration --
@@ -302,6 +305,7 @@ GNMT_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     OPT_NAME,
     OPT_LR,
@@ -339,6 +343,7 @@ MASKRCNN_TAGS = (
 
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     BACKBONE,
     NMS_THRESHOLD,
@@ -365,6 +370,8 @@ MINIGO_TAGS = (
     RUN_FINAL,
     RUN_SET_RANDOM_SEED,
 
+    INPUT_SHARD,
+
     TRAIN_LOOP,
     TRAIN_EPOCH,
 
@@ -387,6 +394,7 @@ NCF_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
     INPUT_HP_NUM_NEG,
     INPUT_HP_SAMPLE_TRAIN_REPLACEMENT,
     INPUT_STEP_TRAIN_NEG_GEN,
@@ -426,6 +434,7 @@ RESNET_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
     INPUT_CENTRAL_CROP,
     INPUT_CROP_USES_BBOXES,
     INPUT_DISTORTED_CROP_MIN_OBJ_COV,
@@ -478,6 +487,7 @@ SSD_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     BACKBONE,
     FEATURE_SIZES,
@@ -525,6 +535,7 @@ TRANSFORMER_TAGS = (
     INPUT_BATCH_SIZE,
     INPUT_MAX_LENGTH,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     OPT_NAME,
     OPT_LR,
