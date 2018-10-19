@@ -105,7 +105,9 @@ def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
     else:
         print("Epoch {} evaluation".format(epoch))
 
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_START, value=epoch)
+    if epoch is not None:
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_START, value=epoch)
+
     start = datetime.now()
     model.eval()
     if processes > 1:
@@ -127,9 +129,10 @@ def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
 
     assert len(set(num_preds)) == 1
     num_neg = num_preds[0] - 1  # one true positive, many negatives
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_SIZE, value={"epoch": epoch, "value": len(hits) * (1 + num_neg)})
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_USERS, value=len(hits))
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_NEG, value=num_neg)
+    if epoch is not None:
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_SIZE, value={"epoch": epoch, "value": len(hits) * (1 + num_neg)})
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_USERS, value=len(hits))
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_NEG, value=num_neg)
 
     end = datetime.now()
     if output is not None:
