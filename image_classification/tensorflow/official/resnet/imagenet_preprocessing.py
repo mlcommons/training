@@ -89,9 +89,11 @@ def _decode_crop_and_flip(image_buffer, num_channels):
                           value=max_attempts)
   mlperf_log.resnet_print(key=mlperf_log.INPUT_CROP_USES_BBOXES, value=False)
 
+  bbox = tf.constant([0.0, 0.0, 1.0, 1.0],
+                     dtype=tf.float32, shape=[1, 1, 4])   #From the entire image
   sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
       tf.image.extract_jpeg_shape(image_buffer),
-      bounding_boxes=None,
+      bounding_boxes=bbox,
       min_object_covered=min_object_covered,
       aspect_ratio_range=aspect_ratio_range,
       area_range=area_range,
