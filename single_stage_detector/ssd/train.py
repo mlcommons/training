@@ -68,7 +68,7 @@ def dboxes300_coco():
 
 
 def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
-              iteration, use_cuda=True):
+              epoch, iteration, use_cuda=True):
     from pycocotools.cocoeval import COCOeval
     print("")
     model.eval()
@@ -82,6 +82,9 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
                          value=overlap_threshold)
     mlperf_log.ssd_print(key=mlperf_log.NMS_MAX_DETECTIONS,
                          value=nms_max_detections)
+
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_START, value=epoch)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_START, value=iteration)
 
     start = time.time()
     for idx, image_id in enumerate(coco.img_keys):
@@ -128,12 +131,18 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
     model.train()
 
     current_accuracy = E.stats[0]
-    mlperf_log.ssd_print(key=mlperf_log.EVAL_SIZE, value=idx+1)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_SIZE, value=idx + 1)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_SIZE, value=idx + 1)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_ACCURACY,
+                         value={"epoch": epoch,
+                                "value": current_accuracy})
     mlperf_log.ssd_print(key=mlperf_log.EVAL_ACCURACY,
                          value={"iteration": iteration,
                                 "value": current_accuracy})
     mlperf_log.ssd_print(key=mlperf_log.EVAL_TARGET, value=threshold)
-
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_TARGET, value=threshold)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_STOP, value=epoch)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_STOP, value=iteration)
     return current_accuracy>= threshold #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
 
 
@@ -162,6 +171,7 @@ def train300_mlperf_coco(args):
     #print("Number of labels: {}".format(train_coco.labelnum))
     train_dataloader = DataLoader(train_coco, batch_size=args.batch_size, shuffle=True, num_workers=4)
     # set shuffle=True in DataLoader
+    # mlperf_log.ssd_print(key=mlperf_log.SHARD, value=None)
     mlperf_log.ssd_print(key=mlperf_log.INPUT_ORDER)
     mlperf_log.ssd_print(key=mlperf_log.INPUT_BATCH_SIZE, value=args.batch_size)
 
@@ -245,11 +255,11 @@ def train300_mlperf_coco(args):
                     torch.save({"model" : ssd300.state_dict(), "label_map": train_coco.label_info},
                                 "./models/iter_{}.pt".format(iter_num))
 
-                mlperf_log.ssd_print(key=mlperf_log.EVAL_START, value=iter_num)
+
                 if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
-                             args.threshold, iter_num):
+                             args.threshold, epoch,iter_num):
                     return True
-                mlperf_log.ssd_print(key=mlperf_log.EVAL_STOP, value=iter_num)
+
 
             iter_num += 1
     return False
@@ -269,8 +279,6 @@ def main():
 
     # start timing here
     mlperf_log.ssd_print(key=mlperf_log.RUN_START)
-    # check eval target
-    mlperf_log.ssd_print(key=mlperf_log.EVAL_TARGET, value=args.threshold)
 
     success = train300_mlperf_coco(args)
 
