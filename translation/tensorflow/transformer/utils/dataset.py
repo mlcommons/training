@@ -55,6 +55,8 @@ import os
 
 import tensorflow as tf
 
+from mlperf_compliance import mlperf_log
+
 # Use the number of training files as the shuffle buffer.
 _FILE_SHUFFLE_BUFFER = 100
 # Buffer size for reading records from a TFRecord file. Each training file is
@@ -209,6 +211,7 @@ def _read_and_batch_from_files(
 
   if shuffle:
     # Shuffle filenames
+    mlperf_log.transformer_print(key=mlperf_log.INPUT_ORDER)
     dataset = dataset.shuffle(buffer_size=_FILE_SHUFFLE_BUFFER)
 
   # Read files and interleave results. When training, the order of the examples
@@ -226,6 +229,10 @@ def _read_and_batch_from_files(
   dataset = dataset.filter(lambda x, y: _filter_max_length((x, y), max_length))
 
   # Batch such that each batch has examples of similar length.
+  mlperf_log.transformer_print(key=mlperf_log.INPUT_BATCH_SIZE,
+                               value=batch_size)
+  mlperf_log.transformer_print(key=mlperf_log.INPUT_MAX_LENGTH,
+                               value=max_length)
   dataset = _batch_examples(dataset, batch_size, max_length)
   dataset = dataset.repeat(repeat)
 

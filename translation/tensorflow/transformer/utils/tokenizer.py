@@ -28,6 +28,9 @@ import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from mlperf_compliance import mlperf_log
+
+
 PAD = "<pad>"
 PAD_ID = 0
 EOS = "<EOS>"
@@ -117,6 +120,8 @@ class Subtokenizer(object):
           reserved_tokens)
       tf.logging.info("Generated vocabulary with %d subtokens." %
                       len(subtoken_list))
+      mlperf_log.transformer_print(key=mlperf_log.PREPROC_VOCAB_SIZE,
+                                   value=len(subtoken_list))
       _save_vocab_file(vocab_file, subtoken_list)
     return Subtokenizer(vocab_file)
 
