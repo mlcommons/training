@@ -35,6 +35,7 @@ def check_clock(loglines):
          raise CCError('Runtime is less than or equal to zero. (time between run_start and run_stop)')
      if delta_t > 60 * 60 * 24 * 365:
          raise CCError('Runtime (time between run_start and run_stop) exceeds one year... assuming this is wrong.')
+     return delta_t
 
 
 def check_exactly_one_tag(loglines, tag):

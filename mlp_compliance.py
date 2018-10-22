@@ -79,9 +79,7 @@ def check_log(loglines):
     return True
 
 
-def main():
-    filename = sys.argv[1]
-
+def l1_check_file(filename):
     loglines, errors = mlp_parser.parse_file(filename)
 
     if len(errors) > 0:
@@ -91,16 +89,29 @@ def main():
             print('  ^^ ', error)
         print()
         print('FAILED: log lines had parsing errors.')
-        sys.exit(1)
+        return False, 0, 0
 
-    status = check_log(loglines)
+    
+    check_ok = check_log(loglines)
 
-    if not status:
+    if not check_ok:
         print('FAILED: compliance errors.')
-        sys.exit(1)
+        return False, 0, 0
+
+    dt = mlp_common_checks.check_clock(loglines)
+    print('SUCCESS: logs are compliant.')
+    return True, dt, 0
+
+
+def main():
+    filename = sys.argv[1]
+
+    status, dt, qual = l1_check_file(filename)
+    
+    if status:
+        print('Measured time: ', dt)
     else:
-        print('SUCCESS: logs are compliant.')
-        sys.exit(0)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
