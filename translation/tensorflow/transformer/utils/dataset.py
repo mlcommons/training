@@ -243,7 +243,7 @@ def _read_and_batch_from_files(
 
 def train_input_fn(params):
   """Load and return dataset of batched examples for use during training."""
-  file_pattern = os.path.join(getattr(params, "data_dir", ""), "*train*")
+  file_pattern = os.path.join(getattr(params, "data_dir", ""), "*encoded-train*")
   return _read_and_batch_from_files(
       file_pattern, params.batch_size, params.max_length, params.num_cpu_cores,
       shuffle=True, repeat=params.repeat_dataset)
@@ -251,7 +251,7 @@ def train_input_fn(params):
 
 def eval_input_fn(params):
   """Load and return dataset of batched examples for use during evaluation."""
-  file_pattern = os.path.join(getattr(params, "data_dir", ""), "*dev*")
+  file_pattern = os.path.join(getattr(params, "data_dir", ""), "*encoded-dev*")
   return _read_and_batch_from_files(
       file_pattern, params.batch_size, params.max_length, params.num_cpu_cores,
       shuffle=False, repeat=1)
