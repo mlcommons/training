@@ -244,7 +244,7 @@ EVAL_STOP = "eval_stop"
 
 # The observed accuracy of the model at a given iteration. This is only for
 # models which evaluate at certain iterations instead of epochs.
-EVAL_ITERATION_ACCURACY = "iteration_eval_accuracy"
+EVAL_ITERATION_ACCURACY = "eval_iteration_accuracy"
 
 # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 #  Model: Tags for logging topology specific information.
