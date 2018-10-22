@@ -11,6 +11,8 @@ import torch.utils.data.distributed
 import torch.distributed as dist
 import torch.optim
 
+from mlperf_compliance import mlperf_log
+
 from seq2seq import models
 from seq2seq.train.smoothing import LabelSmoothing
 from seq2seq.data.dataset import ParallelDataset
@@ -159,19 +161,30 @@ def build_criterion(vocab_size, padding_idx, smoothing):
         loss_weight = torch.ones(vocab_size)
         loss_weight[padding_idx] = 0
         criterion = nn.CrossEntropyLoss(weight=loss_weight, size_average=False)
+        mlperf_log.gnmt_print(key=mlperf_log.MODEL_HP_LOSS_FN,
+                              value='Cross Entropy')
     else:
         logging.info(f'building SmoothingLoss (smoothing: {smoothing})')
         criterion = LabelSmoothing(padding_idx, smoothing)
+        mlperf_log.gnmt_print(key=mlperf_log.MODEL_HP_LOSS_FN,
+                              value='Cross Entropy with label smoothing')
+        mlperf_log.gnmt_print(key=mlperf_log.MODEL_HP_LOSS_SMOOTHING,
+                              value=smoothing)
 
     return criterion
 
 
 def main():
+    mlperf_log.ROOT_DIR_GNMT = os.path.dirname(os.path.abspath(__file__))
+    mlperf_log.LOGGER.propagate = False
+    mlperf_log.gnmt_print(key=mlperf_log.RUN_START)
+
     args = parse_args()
     print(args)
 
     if not args.cudnn:
         torch.backends.cudnn.enabled = False
+    mlperf_log.gnmt_print(key=mlperf_log.RUN_SET_RANDOM_SEED)
     if args.seed:
         torch.manual_seed(args.seed + args.rank)
 
@@ -201,6 +214,10 @@ def main():
     tokenizer = Tokenizer(os.path.join(args.dataset_dir, config.VOCAB_FNAME))
 
     # build datasets
+    mlperf_log.gnmt_print(key=mlperf_log.PREPROC_TOKENIZE_TRAINING)
+    mlperf_log.gnmt_print(key=mlperf_log.TRAIN_HP_MAX_SEQ_LEN,
+                          value=args.max_length_train)
+
     train_data = ParallelDataset(
         src_fname=os.path.join(args.dataset_dir, config.SRC_TRAIN_FNAME),
         tgt_fname=os.path.join(args.dataset_dir, config.TGT_TRAIN_FNAME),
@@ -210,6 +227,9 @@ def main():
         sort=False,
         max_size=args.max_size)
 
+    mlperf_log.gnmt_print(key=mlperf_log.PREPROC_NUM_TRAIN_EXAMPLES,
+                          value=len(train_data))
+
     val_data = ParallelDataset(
         src_fname=os.path.join(args.dataset_dir, config.SRC_VAL_FNAME),
         tgt_fname=os.path.join(args.dataset_dir, config.TGT_VAL_FNAME),
@@ -217,6 +237,8 @@ def main():
         min_len=args.min_length_val,
         max_len=args.max_length_val,
         sort=True)
+
+    mlperf_log.gnmt_print(key=mlperf_log.PREPROC_TOKENIZE_EVAL)
 
     test_data = ParallelDataset(
         src_fname=os.path.join(args.dataset_dir, config.SRC_TEST_FNAME),
@@ -226,7 +248,11 @@ def main():
         max_len=args.max_length_val,
         sort=False)
 
+    mlperf_log.gnmt_print(key=mlperf_log.PREPROC_NUM_EVAL_EXAMPLES,
+                          value=len(test_data))
+
     vocab_size = tokenizer.vocab_size
+    mlperf_log.gnmt_print(key=mlperf_log.PREPROC_VOCAB_SIZE, value=vocab_size)
 
     # build GNMT model
     model_config = dict(vocab_size=vocab_size, math=args.math,
@@ -291,6 +317,12 @@ def main():
                                          drop_last=True,
                                          distributed=distributed)
 
+    mlperf_log.gnmt_print(key=mlperf_log.INPUT_BATCH_SIZE,
+                          value=args.batch_size * args.world_size)
+    mlperf_log.gnmt_print(key=mlperf_log.INPUT_SIZE,
+                          value=train_loader.sampler.num_samples)
+
+
     val_loader = val_data.get_loader(batch_size=args.eval_batch_size,
                                      batch_first=batch_first,
                                      shuffle=False,
@@ -305,9 +337,15 @@ def main():
                                        drop_last=False,
                                        distributed=False)
 
+    mlperf_log.gnmt_print(key=mlperf_log.EVAL_SIZE,
+                          value=len(test_loader.sampler))
+
     # training loop
     best_loss = float('inf')
+    mlperf_log.gnmt_print(key=mlperf_log.TRAIN_LOOP)
     for epoch in range(args.start_epoch, args.epochs):
+        mlperf_log.gnmt_print(key=mlperf_log.TRAIN_EPOCH,
+                              value=epoch)
         logging.info(f'Starting epoch {epoch}')
 
         if distributed:
@@ -325,6 +363,7 @@ def main():
             is_best = val_loss < best_loss
             best_loss = min(val_loss, best_loss)
 
+            mlperf_log.gnmt_print(key=mlperf_log.TRAIN_CHECKPOINT)
             trainer.save(save_all=args.save_all, is_best=is_best)
 
             logging.info(f'Epoch: {epoch}\t'
@@ -341,6 +380,7 @@ def main():
 
         if args.rank == 0 and not args.disable_eval:
             logging.info(f'Running evaluation on test set')
+            mlperf_log.gnmt_print(key=mlperf_log.EVAL_START, value=epoch)
 
             model.eval()
             torch.cuda.empty_cache()
@@ -423,6 +463,11 @@ def main():
                     break_training[0] = 1
 
             torch.cuda.empty_cache()
+            mlperf_log.gnmt_print(key=mlperf_log.EVAL_ACCURACY,
+                                  value={"epoch": epoch, "value": bleu})
+            mlperf_log.gnmt_print(key=mlperf_log.EVAL_TARGET,
+                                  value=args.target_bleu)
+            mlperf_log.gnmt_print(key=mlperf_log.EVAL_STOP)
 
         if distributed:
             dist.broadcast(break_training, 0)
@@ -430,6 +475,10 @@ def main():
         logging.info(f'Finished epoch {epoch}')
         if break_training:
             break
+
+    mlperf_log.gnmt_print(key=mlperf_log.RUN_STOP,
+                         value={"success": bool(break_training)})
+    mlperf_log.gnmt_print(key=mlperf_log.RUN_FINAL)
 
 if __name__ == '__main__':
     main()

@@ -1,5 +1,7 @@
 import torch.nn as nn
 
+from mlperf_compliance import mlperf_log
+
 import seq2seq.data.config as config
 from .seq2seq_base import Seq2Seq
 from .decoder import ResidualRecurrentDecoder
@@ -12,6 +14,13 @@ class GNMT(Seq2Seq):
                  share_embedding=False):
 
         super(GNMT, self).__init__(batch_first=batch_first)
+
+        mlperf_log.gnmt_print(key=mlperf_log.MODEL_HP_NUM_LAYERS,
+                              value=num_layers)
+        mlperf_log.gnmt_print(key=mlperf_log.MODEL_HP_HIDDEN_SIZE,
+                              value=hidden_size)
+        mlperf_log.gnmt_print(key=mlperf_log.MODEL_HP_DROPOUT,
+                              value=dropout)
 
         if share_embedding:
             embedder = nn.Embedding(vocab_size, hidden_size, padding_idx=config.PAD)
