@@ -51,7 +51,7 @@ _CHANNEL_MEANS = [_R_MEAN, _G_MEAN, _B_MEAN]
 _RESIZE_MIN = 256
 
 
-def _decode_crop_and_flip(image_buffer, bbox, num_channels):
+def _decode_crop_and_flip(image_buffer, num_channels):
   """Crops the given image to a random part of the image, and randomly flips.
 
   We use the fused decode_and_crop op, which performs better than the two ops
@@ -60,9 +60,6 @@ def _decode_crop_and_flip(image_buffer, bbox, num_channels):
 
   Args:
     image_buffer: scalar string Tensor representing the raw JPEG image buffer.
-    bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
-      where each coordinate is [0, 1) and the coordinates are arranged as
-      [ymin, xmin, ymax, xmax].
     num_channels: Integer depth of the image buffer for decoding.
 
   Returns:
@@ -90,7 +87,10 @@ def _decode_crop_and_flip(image_buffer, bbox, num_channels):
                           value=area_range)
   mlperf_log.resnet_print(key=mlperf_log.INPUT_DISTORTED_CROP_MAX_ATTEMPTS,
                           value=max_attempts)
+  mlperf_log.resnet_print(key=mlperf_log.INPUT_CROP_USES_BBOXES, value=False)
 
+  bbox = tf.constant([0.0, 0.0, 1.0, 1.0],
+                     dtype=tf.float32, shape=[1, 1, 4])   #From the entire image
   sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
       tf.image.extract_jpeg_shape(image_buffer),
       bounding_boxes=bbox,
@@ -251,7 +251,7 @@ def _resize_image(image, height, width):
       align_corners=False)
 
 
-def preprocess_image(image_buffer, bbox, output_height, output_width,
+def preprocess_image(image_buffer, output_height, output_width,
                      num_channels, is_training=False):
   """Preprocesses the given image.
 
@@ -261,9 +261,6 @@ def preprocess_image(image_buffer, bbox, output_height, output_width,
 
   Args:
     image_buffer: scalar string Tensor representing the raw JPEG image buffer.
-    bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
-      where each coordinate is [0, 1) and the coordinates are arranged as
-      [ymin, xmin, ymax, xmax].
     output_height: The height of the image after preprocessing.
     output_width: The width of the image after preprocessing.
     num_channels: Integer depth of the image buffer for decoding.
@@ -275,7 +272,7 @@ def preprocess_image(image_buffer, bbox, output_height, output_width,
   """
   if is_training:
     # For training, we want to randomize some of the distortions.
-    image = _decode_crop_and_flip(image_buffer, bbox, num_channels)
+    image = _decode_crop_and_flip(image_buffer, num_channels)
 
     mlperf_log.resnet_print(key=mlperf_log.INPUT_RESIZE,
                             value=[output_height, output_width])
