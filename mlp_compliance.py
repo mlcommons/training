@@ -6,12 +6,15 @@ error at any pharse.
 
 from __future__ import print_function
 
+import os
 import sys
 import yaml
 
 import mlp_common_checks
 import mlp_parser
 
+
+CONFIG_DIR = os.path.dirname(os.path.abspath(__file__)) + '/configs/'
 
 def common_checks(loglines):
     ''' Preforms common checks which all benchmark logs should pass. '''
@@ -59,7 +62,7 @@ def check_log(loglines):
     if not common_checks(loglines):
         return False
 
-    if not configured_checks(loglines, 'configs/v0.5.0_level1.yaml'):
+    if not configured_checks(loglines, CONFIG_DIR + '/v0.5.0_level1.yaml'):
         return False
 
     #benchmark = loglines[0].benchmark
