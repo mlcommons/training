@@ -29,17 +29,25 @@ def common_checks(loglines):
 def do_check(loglines, check):
     check_key = list(check.keys())[0] 
 
+    def check_it(call, *args):
+        try:
+            call(*args)
+            return True
+        except mlp_common_checks.CCError as e:
+            print('FAIL: ', e)
+            return False
+
     if check_key == 'EXACTLY_ONE':
-        mlp_common_checks.check_exactly_one_tag(loglines, check['EXACTLY_ONE'])
+        return check_it(mlp_common_checks.check_exactly_one_tag, loglines, check['EXACTLY_ONE'])
     elif check_key == 'TAG_EVAL_CHECK':
         d = check['TAG_EVAL_CHECK']
-        mlp_common_checks.check_eval_tag(loglines, d['NAME'], d['TAG'], d['CODE'], d['EXPECT'])
+        return check_it(mlp_common_checks.check_eval_tag, loglines, d['NAME'], d['TAG'], d['CODE'], d['EXPECT'])
     elif check_key == 'TAGS_PAIR':
         d = check['TAGS_PAIR']
-        mlp_common_checks.check_tags_pair(loglines, d['FIRST'], d['SECOND'])
+        return check_it(mlp_common_checks.check_tags_pair, loglines, d['FIRST'], d['SECOND'])
     elif check_key == 'TAGS_COUNT_SAME':
         d = check['TAGS_COUNT_SAME']
-        mlp_common_checks.check_tags_count_same(loglines, d)
+        return check_it(mlp_common_checks.check_tags_count_same, loglines, d)
     else:
         raise Exception('Unknown check: ', check)
 
@@ -48,19 +56,16 @@ def configured_checks(loglines, config_file):
     with open(config_file) as f:
         checks = yaml.load(f)
 
+    l = []
     for check in checks:
-        try:
-            do_check(loglines, check)
-        except mlp_common_checks.CCError as e:
-            print('FAIL: ', e)
-            return False
-    return True
+        l.append(do_check(loglines, check))
+    return False not in l
 
 
 
 def check_log(loglines):
-    if not common_checks(loglines):
-        return False
+    #if not common_checks(loglines):
+    #    return False
 
     if not configured_checks(loglines, CONFIG_DIR + '/v0.5.0_level1.yaml'):
         return False

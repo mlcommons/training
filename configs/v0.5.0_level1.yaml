@@ -24,19 +24,7 @@
 - TAG_EVAL_CHECK:
     NAME: each_eval_accuracy_has_0th_epoch
     TAG: eval_accuracy
-    CODE: "v['epoch'] == 0"
-    EXPECT: AT_LEAST_ONE
-
-- TAG_EVAL_CHECK:
-    NAME: each_eval_start_has_0th_epoch
-    TAG: eval_start
-    CODE: "v == 0"
-    EXPECT: AT_LEAST_ONE
-
-- TAG_EVAL_CHECK:
-    NAME: each_eval_stop_has_0th_epoch
-    TAG: eval_stop
-    CODE: "v == 0"
+    CODE: "v['epoch'] == 0 and ll.benchmark not in ['resnet', 'ssd']"
     EXPECT: AT_LEAST_ONE
 
 - TAG_EVAL_CHECK:
