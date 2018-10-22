@@ -154,6 +154,9 @@ INPUT_BATCH_SIZE = "input_batch_size"
 # should simply provide a good starting point to an interested party.
 INPUT_ORDER = "input_order"
 
+# The shard size (in items) when shuffling in the input pipeline.
+INPUT_SHARD = "input_shard"
+
 
 # --------------------------------------
 # -- Data Augmentation and Alteration --
@@ -161,6 +164,8 @@ INPUT_ORDER = "input_order"
 
 # ResNet random cropping
 INPUT_CENTRAL_CROP = "input_central_crop"
+
+INPUT_CROP_USES_BBOXES = "input_crop_uses_bboxes"
 
 INPUT_DISTORTED_CROP_MIN_OBJ_COV = "input_distorted_crop_min_object_covered"
 INPUT_DISTORTED_CROP_RATIO_RANGE = "input_distorted_crop_aspect_ratio_range"
@@ -300,6 +305,7 @@ GNMT_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     OPT_NAME,
     OPT_LR,
@@ -337,6 +343,7 @@ MASKRCNN_TAGS = (
 
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     BACKBONE,
     NMS_THRESHOLD,
@@ -363,6 +370,8 @@ MINIGO_TAGS = (
     RUN_FINAL,
     RUN_SET_RANDOM_SEED,
 
+    INPUT_SHARD,
+
     TRAIN_LOOP,
     TRAIN_EPOCH,
 
@@ -385,6 +394,7 @@ NCF_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
     INPUT_HP_NUM_NEG,
     INPUT_HP_SAMPLE_TRAIN_REPLACEMENT,
     INPUT_STEP_TRAIN_NEG_GEN,
@@ -424,7 +434,9 @@ RESNET_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
     INPUT_CENTRAL_CROP,
+    INPUT_CROP_USES_BBOXES,
     INPUT_DISTORTED_CROP_MIN_OBJ_COV,
     INPUT_DISTORTED_CROP_RATIO_RANGE,
     INPUT_DISTORTED_CROP_AREA_RANGE,
@@ -475,6 +487,7 @@ SSD_TAGS = (
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     BACKBONE,
     FEATURE_SIZES,
@@ -522,9 +535,11 @@ TRANSFORMER_TAGS = (
     INPUT_BATCH_SIZE,
     INPUT_MAX_LENGTH,
     INPUT_ORDER,
+    INPUT_SHARD,
 
     OPT_NAME,
     OPT_LR,
+    OPT_LR_WARMUP_STEPS,
     OPT_HP_ADAM_BETA1,
     OPT_HP_ADAM_BETA2,
     OPT_HP_ADAM_EPSILON,
@@ -540,11 +555,11 @@ TRANSFORMER_TAGS = (
     MODEL_HP_INITIALIZER_GAIN,
     MODEL_HP_VOCAB_SIZE,
     MODEL_HP_NUM_HIDDEN_LAYERS,
+    MODEL_HP_EMBEDDING_SHARED_WEIGHTS,
     MODEL_HP_ATTENTION_DENSE,
-    MODEL_HP_ATTENTION_NUM_HEADS,
     MODEL_HP_ATTENTION_DROPOUT,
-    MODEL_HP_FFN_DENSE,
-    MODEL_HP_FFN_FILTER,
+    MODEL_HP_FFN_OUTPUT_DENSE,
+    MODEL_HP_FFN_FILTER_DENSE,
     MODEL_HP_RELU_DROPOUT,
     MODEL_HP_LAYER_POSTPROCESS_DROPOUT,
     MODEL_HP_NORM,

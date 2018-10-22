@@ -31,9 +31,14 @@ import uuid
 from mlperf_compliance.tags import *
 
 ROOT_DIR_GNMT = None
+ROOT_DIR_MASKRCNN = None
+ROOT_DIR_MINIGO = None
+ROOT_DIR_NCF = None
 
 # Set by imagenet_main.py
 ROOT_DIR_RESNET = None
+
+ROOT_DIR_SSD = None
 
 # Set by transformer_main.py and process_data.py
 ROOT_DIR_TRANSFORMER = None
@@ -138,11 +143,20 @@ def gnmt_print(key, value=None, stack_offset=1, deferred=False):
                        deferred=deferred, root_dir=ROOT_DIR_GNMT)
 
 
+MASKRCNN_TAG_SET = set(MASKRCNN_TAGS)
+def maskrcnn_print(key, value=None, stack_offset=1, deferred=False,
+    extra_print=True):
+  return _mlperf_print(key=key, value=value, benchmark=MASKRCNN,
+                       stack_offset=stack_offset, tag_set=MASKRCNN_TAG_SET,
+                       deferred=deferred, extra_print=extra_print,
+                       root_dir=ROOT_DIR_MASKRCNN)
+
+
 MINIGO_TAG_SET = set(MINIGO_TAGS)
 def minigo_print(key, value=None, stack_offset=1, deferred=False):
   return _mlperf_print(key=key, value=value, benchmark=MINIGO,
                        stack_offset=stack_offset, tag_set=MINIGO_TAG_SET,
-                       deferred=deferred)
+                       deferred=deferred, root_dir=ROOT_DIR_MINIGO)
 
 
 NCF_TAG_SET = set(NCF_TAGS)
@@ -151,7 +165,8 @@ def ncf_print(key, value=None, stack_offset=1, deferred=False,
   # Extra print is needed for the reference NCF because of tqdm.
   return _mlperf_print(key=key, value=value, benchmark=NCF,
                        stack_offset=stack_offset, tag_set=NCF_TAG_SET,
-                       deferred=deferred, extra_print=extra_print)
+                       deferred=deferred, extra_print=extra_print,
+                       root_dir=ROOT_DIR_NCF)
 
 
 RESNET_TAG_SET = set(RESNET_TAGS)
@@ -166,7 +181,8 @@ def ssd_print(key, value=None, stack_offset=1, deferred=False,
               extra_print=True):
   return _mlperf_print(key=key, value=value, benchmark=SSD,
                        stack_offset=stack_offset, tag_set=SSD_TAG_SET,
-                       deferred=deferred, extra_print=extra_print)
+                       deferred=deferred, extra_print=extra_print,
+                       root_dir=ROOT_DIR_SSD)
 
 
 TRANSFORMER_TAG_SET = set(TRANSFORMER_TAGS)
@@ -174,14 +190,6 @@ def transformer_print(key, value=None, stack_offset=1, deferred=False):
   return _mlperf_print(key=key, value=value, benchmark=TRANSFORMER,
                        stack_offset=stack_offset, tag_set=TRANSFORMER_TAG_SET,
                        deferred=deferred, root_dir=ROOT_DIR_TRANSFORMER)
-
-
-MASKRCNN_TAG_SET = set(MASKRCNN_TAGS)
-def maskrcnn_print(key, value=None, stack_offset=1, deferred=False,
-              extra_print=True):
-  return _mlperf_print(key=key, value=value, benchmark=MASKRCNN,
-                       stack_offset=stack_offset, tag_set=MASKRCNN_TAG_SET,
-                       deferred=deferred, extra_print=extra_print)
 
 
 if __name__ == '__main__':

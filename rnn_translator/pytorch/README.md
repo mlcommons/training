@@ -73,14 +73,17 @@ Verify data with:
 
 ### Steps specific to the pytorch version to run and time
 
-    cd pytorch
     sudo docker build . --rm -t gnmt:latest
     SEED=1
     NOW=`date "+%F-%T"`
-    sudo nvidia-docker run -it --rm --ipc=host -v $HOME/reference/rnn-translation/data:/data gnmt:latest "./run_and_time.sh" $SEED |tee benchmark-$NOW.log
+    sudo nvidia-docker run -it --rm --ipc=host \
+      -v $(pwd)/../data:/data \
+      gnmt:latest "./run_and_time.sh" $SEED |tee benchmark-$NOW.log
 
 ### one can control which GPUs are used with the NV_GPU variable
-    sudo NV_GPU=0 nvidia-docker run -it --rm --ipc=host -v $HOME/reference/rnn-translation/data:/data gnmt:latest "./run_and_time.sh" $SEED |tee benchmark-$NOW.log
+    sudo NV_GPU=0 nvidia-docker run -it --rm --ipc=host \ 
+      -v $(pwd)/../data:/data \ 
+      gnmt:latest "./run_and_time.sh" $SEED |tee benchmark-$NOW.log
 
 # 3. Dataset/Environment
 ### Publication/Attribution

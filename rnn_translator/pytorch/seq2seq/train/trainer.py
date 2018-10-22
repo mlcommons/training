@@ -8,6 +8,8 @@ import torch
 import torch.optim
 import torch.utils.data
 
+from mlperf_compliance import mlperf_log
+
 from seq2seq.train.distributed import DistributedDataParallel as DDP
 from seq2seq.train.fp_optimizers import Fp16Optimizer, Fp32Optimizer
 from seq2seq.utils import AverageMeter
@@ -62,9 +64,19 @@ class Seq2SeqTrainer:
             self.fp_optimizer = Fp32Optimizer(self.model, grad_clip)
             params = self.model.parameters()
 
-        opt_name= opt_config['optimizer']
+        opt_name = opt_config['optimizer']
         lr = opt_config['lr']
         self.optimizer = torch.optim.__dict__[opt_name](params, lr=lr)
+        mlperf_log.gnmt_print(key=mlperf_log.OPT_NAME,
+                              value=opt_name)
+        mlperf_log.gnmt_print(key=mlperf_log.OPT_LR,
+                              value=lr)
+        mlperf_log.gnmt_print(key=mlperf_log.OPT_HP_ADAM_BETA1,
+                              value=self.optimizer.defaults['betas'][0])
+        mlperf_log.gnmt_print(key=mlperf_log.OPT_HP_ADAM_BETA2,
+                              value=self.optimizer.defaults['betas'][1])
+        mlperf_log.gnmt_print(key=mlperf_log.OPT_HP_ADAM_EPSILON,
+                              value=self.optimizer.defaults['eps'])
 
     def iterate(self, src, tgt, update=True, training=True):
         src, src_length = src
