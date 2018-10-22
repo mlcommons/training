@@ -21,7 +21,6 @@ https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/utils/beam
 import tensorflow as tf
 from tensorflow.python.util import nest
 
-from mlperf_compliance import mlperf_log
 
 # Default value for INF
 INF = 1. * 1e7
@@ -413,14 +412,6 @@ def sequence_beam_search(
     sequence scores [batch_size, beam_size]
   """
   batch_size = tf.shape(initial_ids)[0]
-  mlperf_log.transformer_print(
-      key=mlperf_log.MODEL_HP_SEQ_BEAM_SEARCH,
-      value={
-        "vocab_size": vocab_size,
-        "batch_size": batch_size,
-        "beam_size": beam_size,
-        "alpha": alpha,
-        "max_decode_length": max_decode_length})
   sbs = SequenceBeamSearch(symbols_to_logits_fn, vocab_size, batch_size,
                            beam_size, alpha, max_decode_length, eos_id)
   return sbs.search(initial_ids, initial_cache)

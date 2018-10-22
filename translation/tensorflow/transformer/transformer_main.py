@@ -350,7 +350,7 @@ def main(_):
       FLAGS.bleu_threshold)
 
   mlperf_log.transformer_print(key=mlperf_log.RUN_STOP)
-  mlperf_log.transformer(key=mlperf_log.RUN_FINAL)
+  mlperf_log.transformer_print(key=mlperf_log.RUN_FINAL)
 
 
 if __name__ == "__main__":

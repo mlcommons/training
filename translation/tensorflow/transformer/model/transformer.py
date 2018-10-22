@@ -237,6 +237,13 @@ class Transformer(object):
     cache["encoder_decoder_attention_bias"] = encoder_decoder_attention_bias
 
     # Use beam search to find the top beam_size sequences and scores.
+    mlperf_log.transformer_print(
+      key=mlperf_log.MODEL_HP_SEQ_BEAM_SEARCH,
+      value={
+        "vocab_size": self.params.vocab_size,
+        "beam_size": self.params.beam_size,
+        "alpha": self.params.alpha,
+        "extra_decode_length": self.params.extra_decode_length})
     decoded_ids, scores = beam_search.sequence_beam_search(
         symbols_to_logits_fn=symbols_to_logits_fn,
         initial_ids=initial_ids,
