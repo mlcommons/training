@@ -257,8 +257,9 @@ def rl_loop():
       ]
       result, total_pct = predict_games.report_for_puzzles(new_model_path, sgf_files, 2, tries_per_move=1)
       print('accuracy = ', total_pct)
+      # minor change as MLPerf expect epoch to starts to start from 0 instead of 1
       mlperf_log.minigo_print(key=mlperf_log.EVAL_ACCURACY,
-                              value={"iteration": iteration, "value": total_pct})
+                              value={"epoch": iteration - 1, "value": total_pct})
       mlperf_log.minigo_print(key=mlperf_log.EVAL_TARGET,
                               value=goparams.TERMINATION_ACCURACY)
 
