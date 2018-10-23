@@ -20,7 +20,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="mlperf_compliance",
-    version="0.0.7",
+    version="0.0.8",
     author="Taylor Robie",
     author_email="taylorrobie@google.com",
     description="Tools for logging MLPerf compliance tags.",
