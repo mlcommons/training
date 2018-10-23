@@ -1,0 +1,103 @@
+:::MLPv0.5.0 ssd 1540247495.296750784 (train.py:277) run_start
+:::MLPv0.5.0 ssd 1540247495.484981537 (train.py:52) feature_sizes: [38, 19, 10, 5, 3, 1]
+:::MLPv0.5.0 ssd 1540247495.485468149 (train.py:55) steps: [8, 16, 32, 64, 100, 300]
+:::MLPv0.5.0 ssd 1540247495.485914469 (train.py:59) scales: [21, 45, 99, 153, 207, 261, 315]
+:::MLPv0.5.0 ssd 1540247495.486357212 (train.py:62) aspect_ratios: [[2], [2, 3], [2, 3], [2, 3], [2], [2]]
+:::MLPv0.5.0 ssd 1540247495.492438316 (train.py:66) num_default_boxes: 8732
+:::MLPv0.5.0 ssd 1540247495.492895126 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:307) num_cropping_iterations: 1
+:::MLPv0.5.0 ssd 1540247495.493321180 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:430) random_flip_probability: 0.5
+:::MLPv0.5.0 ssd 1540247495.493689537 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:475) data_normalization_mean: [0.485, 0.456, 0.406]
+:::MLPv0.5.0 ssd 1540247495.494050026 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:477) data_normalization_std: [0.229, 0.224, 0.225]
+:::MLPv0.5.0 ssd 1540247495.494496346 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:307) num_cropping_iterations: 1
+:::MLPv0.5.0 ssd 1540247495.494894266 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:430) random_flip_probability: 0.5
+:::MLPv0.5.0 ssd 1540247495.495255232 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:475) data_normalization_mean: [0.485, 0.456, 0.406]
+:::MLPv0.5.0 ssd 1540247495.495614767 (/home/n/GitHub/training/single_stage_detector/ssd/utils.py:477) data_normalization_std: [0.229, 0.224, 0.225]
+:::MLPv0.5.0 ssd 1540247495.495964527 (train.py:156) input_size: 300
+:::MLPv0.5.0 ssd 1540247507.248809814 (train.py:170) input_shard
+:::MLPv0.5.0 ssd 1540247507.249204636 (train.py:171) input_order
+:::MLPv0.5.0 ssd 1540247507.249577284 (train.py:172) input_batch_size: 32
+:::MLPv0.5.0 ssd 1540247507.579035759 (/home/n/GitHub/training/single_stage_detector/ssd/ssd300.py:22) backbone: "resnet34"
+:::MLPv0.5.0 ssd 1540247507.579440355 (/home/n/GitHub/training/single_stage_detector/ssd/ssd300.py:27) loc_conf_out_channels: [256, 512, 512, 256, 256, 256]
+:::MLPv0.5.0 ssd 1540247507.596049309 (/home/n/GitHub/training/single_stage_detector/ssd/ssd300.py:39) num_defaults_per_cell: [4, 6, 6, 6, 4, 4]
+:::MLPv0.5.0 ssd 1540247508.969627857 (train.py:193) opt_name: "SGD"
+:::MLPv0.5.0 ssd 1540247508.970012665 (train.py:194) opt_learning_rate: 0.001
+:::MLPv0.5.0 ssd 1540247508.970359087 (train.py:195) opt_momentum: 0.9
+:::MLPv0.5.0 ssd 1540247508.970699310 (train.py:197) opt_weight_decay: 0.0005
+:::MLPv0.5.0 ssd 1540247508.971044302 (train.py:205) train_loop
+:::MLPv0.5.0 ssd 1540247508.971385717 (train.py:207) train_epoch: 0
+:::MLPv0.5.0 ssd 1540248445.739219666 (train.py:207) train_epoch: 1
+:::MLPv0.5.0 ssd 1540249385.273350477 (train.py:207) train_epoch: 2
+:::MLPv0.5.0 ssd 1540250321.425246000 (train.py:207) train_epoch: 3
+:::MLPv0.5.0 ssd 1540251258.187723875 (train.py:207) train_epoch: 4
+:::MLPv0.5.0 ssd 1540252194.437596321 (train.py:207) train_epoch: 5
+:::MLPv0.5.0 ssd 1540253130.675116301 (train.py:207) train_epoch: 6
+:::MLPv0.5.0 ssd 1540254067.046112537 (train.py:207) train_epoch: 7
+:::MLPv0.5.0 ssd 1540255002.359492779 (train.py:207) train_epoch: 8
+:::MLPv0.5.0 ssd 1540255937.986558199 (train.py:207) train_epoch: 9
+:::MLPv0.5.0 ssd 1540256873.417140484 (train.py:207) train_epoch: 10
+:::MLPv0.5.0 ssd 1540257808.319952726 (train.py:207) train_epoch: 11
+:::MLPv0.5.0 ssd 1540258743.776263475 (train.py:207) train_epoch: 12
+:::MLPv0.5.0 ssd 1540259679.752927542 (train.py:207) train_epoch: 13
+:::MLPv0.5.0 ssd 1540260615.683235645 (train.py:207) train_epoch: 14
+:::MLPv0.5.0 ssd 1540261552.390225649 (train.py:207) train_epoch: 15
+:::MLPv0.5.0 ssd 1540262489.468440056 (train.py:207) train_epoch: 16
+:::MLPv0.5.0 ssd 1540263425.589217424 (train.py:207) train_epoch: 17
+:::MLPv0.5.0 ssd 1540264361.546042204 (train.py:207) train_epoch: 18
+:::MLPv0.5.0 ssd 1540265297.222844839 (train.py:207) train_epoch: 19
+:::MLPv0.5.0 ssd 1540266233.569544554 (train.py:207) train_epoch: 20
+:::MLPv0.5.0 ssd 1540267169.144786119 (train.py:207) train_epoch: 21
+:::MLPv0.5.0 ssd 1540268105.018629551 (train.py:207) train_epoch: 22
+:::MLPv0.5.0 ssd 1540269041.111955166 (train.py:207) train_epoch: 23
+:::MLPv0.5.0 ssd 1540269977.069438934 (train.py:207) train_epoch: 24
+:::MLPv0.5.0 ssd 1540270912.911368132 (train.py:207) train_epoch: 25
+:::MLPv0.5.0 ssd 1540271848.584961176 (train.py:207) train_epoch: 26
+:::MLPv0.5.0 ssd 1540272785.012038708 (train.py:207) train_epoch: 27
+:::MLPv0.5.0 ssd 1540273721.774573088 (train.py:207) train_epoch: 28
+:::MLPv0.5.0 ssd 1540274658.045384407 (train.py:207) train_epoch: 29
+:::MLPv0.5.0 ssd 1540275593.669971943 (train.py:207) train_epoch: 30
+:::MLPv0.5.0 ssd 1540276529.381466866 (train.py:207) train_epoch: 31
+:::MLPv0.5.0 ssd 1540277465.441329241 (train.py:207) train_epoch: 32
+:::MLPv0.5.0 ssd 1540278159.841326237 (train.py:82) nms_threshold: 0.5
+:::MLPv0.5.0 ssd 1540278159.841703176 (train.py:84) nms_max_detections: 200
+:::MLPv0.5.0 ssd 1540278159.841991186 (train.py:86) eval_start: 32
+:::MLPv0.5.0 ssd 1540278624.957715034 (train.py:133) eval_size: 4952
+:::MLPv0.5.0 ssd 1540278624.958045244 (train.py:136) eval_accuracy: {"epoch": 32, "value": 0.1767261512048043}
+:::MLPv0.5.0 ssd 1540278624.958331823 (train.py:139) eval_iteration_accuracy: {"iteration": 120000, "value": 0.1767261512048043}
+:::MLPv0.5.0 ssd 1540278624.958611488 (train.py:140) eval_target: 0.212
+:::MLPv0.5.0 ssd 1540278624.958888054 (train.py:141) eval_stop: 32
+:::MLPv0.5.0 ssd 1540278859.034478188 (train.py:207) train_epoch: 33
+:::MLPv0.5.0 ssd 1540279776.504349232 (train.py:207) train_epoch: 34
+:::MLPv0.5.0 ssd 1540280694.871150732 (train.py:207) train_epoch: 35
+:::MLPv0.5.0 ssd 1540281612.904750109 (train.py:207) train_epoch: 36
+:::MLPv0.5.0 ssd 1540282530.138573885 (train.py:207) train_epoch: 37
+:::MLPv0.5.0 ssd 1540283448.168450356 (train.py:207) train_epoch: 38
+:::MLPv0.5.0 ssd 1540284366.526405096 (train.py:207) train_epoch: 39
+:::MLPv0.5.0 ssd 1540285283.962305069 (train.py:207) train_epoch: 40
+:::MLPv0.5.0 ssd 1540286201.935405970 (train.py:207) train_epoch: 41
+:::MLPv0.5.0 ssd 1540287120.724055529 (train.py:207) train_epoch: 42
+:::MLPv0.5.0 ssd 1540288037.873018026 (train.py:207) train_epoch: 43
+:::MLPv0.5.0 ssd 1540288640.754241705 (train.py:217) opt_learning_rate: 0.0001
+:::MLPv0.5.0 ssd 1540288641.213376760 (train.py:82) nms_threshold: 0.5
+:::MLPv0.5.0 ssd 1540288641.213843822 (train.py:84) nms_max_detections: 200
+:::MLPv0.5.0 ssd 1540288641.214268446 (train.py:86) eval_start: 43
+:::MLPv0.5.0 ssd 1540289130.900609016 (train.py:133) eval_size: 4952
+:::MLPv0.5.0 ssd 1540289130.900934935 (train.py:136) eval_accuracy: {"epoch": 43, "value": 0.18708427961724622}
+:::MLPv0.5.0 ssd 1540289130.901222467 (train.py:139) eval_iteration_accuracy: {"iteration": 160000, "value": 0.18708427961724622}
+:::MLPv0.5.0 ssd 1540289130.901501417 (train.py:140) eval_target: 0.212
+:::MLPv0.5.0 ssd 1540289130.901779413 (train.py:141) eval_stop: 43
+:::MLPv0.5.0 ssd 1540289443.537181616 (train.py:207) train_epoch: 44
+:::MLPv0.5.0 ssd 1540290361.537575960 (train.py:207) train_epoch: 45
+:::MLPv0.5.0 ssd 1540291280.019073248 (train.py:207) train_epoch: 46
+:::MLPv0.5.0 ssd 1540292198.773092508 (train.py:207) train_epoch: 47
+:::MLPv0.5.0 ssd 1540293115.953065872 (train.py:207) train_epoch: 48
+:::MLPv0.5.0 ssd 1540294034.054209709 (train.py:207) train_epoch: 49
+:::MLPv0.5.0 ssd 1540294139.414384604 (train.py:82) nms_threshold: 0.5
+:::MLPv0.5.0 ssd 1540294139.414769411 (train.py:84) nms_max_detections: 200
+:::MLPv0.5.0 ssd 1540294139.415052652 (train.py:86) eval_start: 49
+:::MLPv0.5.0 ssd 1540294574.994000435 (train.py:133) eval_size: 4952
+:::MLPv0.5.0 ssd 1540294574.994378567 (train.py:136) eval_accuracy: {"epoch": 49, "value": 0.2228821952756952}
+:::MLPv0.5.0 ssd 1540294574.994705200 (train.py:139) eval_iteration_accuracy: {"iteration": 180000, "value": 0.2228821952756952}
+:::MLPv0.5.0 ssd 1540294574.995025396 (train.py:140) eval_target: 0.212
+:::MLPv0.5.0 ssd 1540294574.995343685 (train.py:141) eval_stop: 49
+:::MLPv0.5.0 ssd 1540294575.562962294 (train.py:282) run_stop: {"success": true}
+:::MLPv0.5.0 ssd 1540294575.563240528 (train.py:283) run_final
