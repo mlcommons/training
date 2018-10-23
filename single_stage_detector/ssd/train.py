@@ -9,7 +9,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import time
 import numpy as np
-
+from mlperf_compliance import mlperf_log
 
 def parse_args():
     parser = ArgumentParser(description="Train Single Shot MultiBox Detector"
@@ -33,7 +33,8 @@ def parse_args():
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
     parser.add_argument('--evaluation', nargs='*', type=int,
-                        default=[120000, 160000, 180000, 200000, 220000, 240000],
+                        default=[120000, 160000, 180000, 200000, 220000,
+                                 240000],
                         help='iterations at which to evaluate')
     return parser.parse_args()
 
@@ -48,21 +49,42 @@ def show_memusage(device=0):
 def dboxes300_coco():
     figsize = 300
     feat_size = [38, 19, 10, 5, 3, 1]
+    mlperf_log.ssd_print(key=mlperf_log.FEATURE_SIZES, value=feat_size)
+
     steps = [8, 16, 32, 64, 100, 300]
+    mlperf_log.ssd_print(key=mlperf_log.STEPS, value=steps)
+
     # use the scales here: https://github.com/amdegroot/ssd.pytorch/blob/master/data/config.py
     scales = [21, 45, 99, 153, 207, 261, 315]
+    mlperf_log.ssd_print(key=mlperf_log.SCALES, value=scales)
+
     aspect_ratios = [[2], [2, 3], [2, 3], [2, 3], [2], [2]]
+    mlperf_log.ssd_print(key=mlperf_log.ASPECT_RATIOS, value=aspect_ratios)
+
     dboxes = DefaultBoxes(figsize, feat_size, steps, scales, aspect_ratios)
+    mlperf_log.ssd_print(key=mlperf_log.NUM_DEFAULTS,
+                         value=len(dboxes.default_boxes))
     return dboxes
 
 
-def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold, use_cuda=True):
+def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
+              epoch, iteration, use_cuda=True):
     from pycocotools.cocoeval import COCOeval
     print("")
     model.eval()
     if use_cuda:
         model.cuda()
     ret = []
+
+    overlap_threshold = 0.50
+    nms_max_detections = 200
+    mlperf_log.ssd_print(key=mlperf_log.NMS_THRESHOLD,
+                         value=overlap_threshold)
+    mlperf_log.ssd_print(key=mlperf_log.NMS_MAX_DETECTIONS,
+                         value=nms_max_detections)
+
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_START, value=epoch)
+
     start = time.time()
     for idx, image_id in enumerate(coco.img_keys):
         img, (htot, wtot), _, _ = coco[idx]
@@ -75,7 +97,10 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold, use_cuda=True):
             ploc, plabel = model(inp)
 
             try:
-                result = encoder.decode_batch(ploc, plabel, 0.50, 200)[0]
+                result = encoder.decode_batch(ploc, plabel,
+                                              overlap_threshold,
+                                              nms_max_detections)[0]
+
             except:
                 #raise
                 print("")
@@ -104,7 +129,17 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold, use_cuda=True):
     # put your model back into training mode
     model.train()
 
-    return (E.stats[0] >= threshold) #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
+    current_accuracy = E.stats[0]
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_SIZE, value=idx + 1)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_ACCURACY,
+                         value={"epoch": epoch,
+                                "value": current_accuracy})
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_ITERATION_ACCURACY,
+                         value={"iteration": iteration,
+                                "value": current_accuracy})
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_TARGET, value=threshold)
+    mlperf_log.ssd_print(key=mlperf_log.EVAL_STOP, value=epoch)
+    return current_accuracy>= threshold #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
 
 
 
@@ -114,8 +149,11 @@ def train300_mlperf_coco(args):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     dboxes = dboxes300_coco()
     encoder = Encoder(dboxes)
-    train_trans = SSDTransformer(dboxes, (300, 300), val=False)
-    val_trans = SSDTransformer(dboxes, (300, 300), val=True)
+
+    input_size = 300
+    train_trans = SSDTransformer(dboxes, (input_size, input_size), val=False)
+    val_trans = SSDTransformer(dboxes, (input_size, input_size), val=True)
+    mlperf_log.ssd_print(key=mlperf_log.INPUT_SIZE, value=input_size)
 
     val_annotate = os.path.join(args.data, "annotations/instances_val2017.json")
     val_coco_root = os.path.join(args.data, "val2017")
@@ -128,6 +166,11 @@ def train300_mlperf_coco(args):
 
     #print("Number of labels: {}".format(train_coco.labelnum))
     train_dataloader = DataLoader(train_coco, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    # set shuffle=True in DataLoader
+    mlperf_log.ssd_print(key=mlperf_log.INPUT_SHARD, value=None)
+    mlperf_log.ssd_print(key=mlperf_log.INPUT_ORDER)
+    mlperf_log.ssd_print(key=mlperf_log.INPUT_BATCH_SIZE, value=args.batch_size)
+
 
     ssd300 = SSD300(train_coco.labelnum)
     if args.checkpoint is not None:
@@ -141,29 +184,46 @@ def train300_mlperf_coco(args):
     if use_cuda:
         loss_func.cuda()
 
-    optim = torch.optim.SGD(ssd300.parameters(), lr=1e-3, momentum=0.9, weight_decay=5e-4)
+    current_lr = 1e-3
+    current_momentum = 0.9
+    current_weight_decay = 5e-4
+    optim = torch.optim.SGD(ssd300.parameters(), lr=current_lr,
+                            momentum=current_momentum,
+                            weight_decay=current_weight_decay)
+    mlperf_log.ssd_print(key=mlperf_log.OPT_NAME, value="SGD")
+    mlperf_log.ssd_print(key=mlperf_log.OPT_LR, value=current_lr)
+    mlperf_log.ssd_print(key=mlperf_log.OPT_MOMENTUM, value=current_momentum)
+    mlperf_log.ssd_print(key=mlperf_log.OPT_WEIGHT_DECAY,
+                         value=current_weight_decay)
+
     print("epoch", "nbatch", "loss")
 
     iter_num = args.iteration
     avg_loss = 0.0
     inv_map = {v:k for k,v in val_coco.label_map.items()}
 
+    mlperf_log.ssd_print(key=mlperf_log.TRAIN_LOOP)
     for epoch in range(args.epochs):
-
+        mlperf_log.ssd_print(key=mlperf_log.TRAIN_EPOCH, value=epoch)
         for nbatch, (img, img_size, bbox, label) in enumerate(train_dataloader):
 
             if iter_num == 160000:
+                current_lr = 1e-4
                 print("")
                 print("lr decay step #1")
                 for param_group in optim.param_groups:
-                    param_group['lr'] = 1e-4
+                    param_group['lr'] = current_lr
+                mlperf_log.ssd_print(key=mlperf_log.OPT_LR,
+                                     value=current_lr)
 
             if iter_num == 200000:
+                current_lr = 1e-5
                 print("")
                 print("lr decay step #2")
                 for param_group in optim.param_groups:
-                    param_group['lr'] = 1e-5
-
+                    param_group['lr'] = current_lr
+                mlperf_log.ssd_print(key=mlperf_log.OPT_LR,
+                                     value=current_lr)
             if use_cuda:
                 img = img.cuda()
             img = Variable(img, requires_grad=True)
@@ -191,10 +251,14 @@ def train300_mlperf_coco(args):
                     torch.save({"model" : ssd300.state_dict(), "label_map": train_coco.label_info},
                                 "./models/iter_{}.pt".format(iter_num))
 
-                if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map, args.threshold):
-                    return
+
+                if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
+                             args.threshold, epoch,iter_num):
+                    return True
+
 
             iter_num += 1
+    return False
 
 def main():
     args = parse_args()
@@ -207,9 +271,16 @@ def main():
         torch.manual_seed(args.seed)
         np.random.seed(seed=args.seed)
 
-
     torch.backends.cudnn.benchmark = True
-    train300_mlperf_coco(args)
+
+    # start timing here
+    mlperf_log.ssd_print(key=mlperf_log.RUN_START)
+
+    success = train300_mlperf_coco(args)
+
+    # end timing here
+    mlperf_log.ssd_print(key=mlperf_log.RUN_STOP, value={"success": success})
+    mlperf_log.ssd_print(key=mlperf_log.RUN_FINAL)
 
 if __name__ == "__main__":
     main()

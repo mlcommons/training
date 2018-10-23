@@ -10,3 +10,4 @@ pytz==2018.5
 six==1.11.0
 torch==0.4.0
 torchvision==0.2.1
+mlperf_compliance==0.0.7
