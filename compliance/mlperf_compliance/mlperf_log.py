@@ -79,7 +79,7 @@ def get_caller(stack_index=2, root_dir=None):
 
 def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
                   tag_set=None, deferred=False, root_dir=None,
-                  extra_print=False):
+                  extra_print=False, prefix=""):
   ''' Prints out an MLPerf Log Line.
 
   key: The MLPerf log key such as 'CLOCK' or 'QUALITY'. See the list of log keys in the spec.
@@ -96,6 +96,8 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
   root_dir: Directory prefix which will be trimmed when reporting calling file
             for compliance logging.
   extra_print: Print a blank line before logging to clear any text in the line.
+  prefix: String with which to prefix the log message. Useful for
+          differentiating raw lines if stitching will be required.
 
   Example output:
     :::MLP-1537375353 MINGO[17] (eval.py:42) QUALITY: 43.7
@@ -122,8 +124,8 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
   callsite = get_caller(2 + stack_offset, root_dir=root_dir)
   now = time.time()
 
-  message = ':::MLPv0.5.0 {benchmark} {secs:.9f} ({callsite}) {tag}'.format(
-      secs=now, benchmark=benchmark, callsite=callsite, tag=tag)
+  message = '{prefix}:::MLPv0.5.0 {benchmark} {secs:.9f} ({callsite}) {tag}'.format(
+      prefix=prefix, secs=now, benchmark=benchmark, callsite=callsite, tag=tag)
 
   if extra_print:
     print() # There could be prior text on a line
@@ -137,7 +139,7 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
 
 
 GNMT_TAG_SET = set(GNMT_TAGS)
-def gnmt_print(key, value=None, stack_offset=1, deferred=False):
+def gnmt_print(key, value=None, stack_offset=1, deferred=False, prefix=""):
   return _mlperf_print(key=key, value=value, benchmark=GNMT,
                        stack_offset=stack_offset, tag_set=GNMT_TAG_SET,
                        deferred=deferred, root_dir=ROOT_DIR_GNMT)
@@ -145,51 +147,54 @@ def gnmt_print(key, value=None, stack_offset=1, deferred=False):
 
 MASKRCNN_TAG_SET = set(MASKRCNN_TAGS)
 def maskrcnn_print(key, value=None, stack_offset=1, deferred=False,
-    extra_print=True):
+    extra_print=True, prefix=""):
   return _mlperf_print(key=key, value=value, benchmark=MASKRCNN,
                        stack_offset=stack_offset, tag_set=MASKRCNN_TAG_SET,
                        deferred=deferred, extra_print=extra_print,
-                       root_dir=ROOT_DIR_MASKRCNN)
+                       root_dir=ROOT_DIR_MASKRCNN, prefix=prefix)
 
 
 MINIGO_TAG_SET = set(MINIGO_TAGS)
-def minigo_print(key, value=None, stack_offset=1, deferred=False):
+def minigo_print(key, value=None, stack_offset=1, deferred=False, prefix=""):
   return _mlperf_print(key=key, value=value, benchmark=MINIGO,
                        stack_offset=stack_offset, tag_set=MINIGO_TAG_SET,
-                       deferred=deferred, root_dir=ROOT_DIR_MINIGO)
+                       deferred=deferred, root_dir=ROOT_DIR_MINIGO,
+                       prefix=prefix)
 
 
 NCF_TAG_SET = set(NCF_TAGS)
 def ncf_print(key, value=None, stack_offset=1, deferred=False,
-              extra_print=True):
+              extra_print=True, prefix=""):
   # Extra print is needed for the reference NCF because of tqdm.
   return _mlperf_print(key=key, value=value, benchmark=NCF,
                        stack_offset=stack_offset, tag_set=NCF_TAG_SET,
                        deferred=deferred, extra_print=extra_print,
-                       root_dir=ROOT_DIR_NCF)
+                       root_dir=ROOT_DIR_NCF, prefix=prefix)
 
 
 RESNET_TAG_SET = set(RESNET_TAGS)
-def resnet_print(key, value=None, stack_offset=1, deferred=False):
+def resnet_print(key, value=None, stack_offset=1, deferred=False, prefix=""):
   return _mlperf_print(key=key, value=value, benchmark=RESNET,
                        stack_offset=stack_offset, tag_set=RESNET_TAG_SET,
-                       deferred=deferred, root_dir=ROOT_DIR_RESNET)
+                       deferred=deferred, root_dir=ROOT_DIR_RESNET,
+                       prefix=prefix)
 
 
 SSD_TAG_SET = set(SSD_TAGS)
 def ssd_print(key, value=None, stack_offset=1, deferred=False,
-              extra_print=True):
+              extra_print=True, prefix=""):
   return _mlperf_print(key=key, value=value, benchmark=SSD,
                        stack_offset=stack_offset, tag_set=SSD_TAG_SET,
                        deferred=deferred, extra_print=extra_print,
-                       root_dir=ROOT_DIR_SSD)
+                       root_dir=ROOT_DIR_SSD, prefix=prefix)
 
 
 TRANSFORMER_TAG_SET = set(TRANSFORMER_TAGS)
-def transformer_print(key, value=None, stack_offset=1, deferred=False):
+def transformer_print(key, value=None, stack_offset=1, deferred=False, prefix=""):
   return _mlperf_print(key=key, value=value, benchmark=TRANSFORMER,
                        stack_offset=stack_offset, tag_set=TRANSFORMER_TAG_SET,
-                       deferred=deferred, root_dir=ROOT_DIR_TRANSFORMER)
+                       deferred=deferred, root_dir=ROOT_DIR_TRANSFORMER,
+                       prefix=prefix)
 
 
 if __name__ == '__main__':
