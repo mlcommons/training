@@ -1,0 +1,321 @@
+:::MLPv0.5.0 transformer 1540162324.994276524 (/research/transformer/transformer/utils/tokenizer.py:124) preproc_vocab_size: 33945
+:::MLPv0.5.0 transformer 1540162450.167269707 (process_data.py:401) preproc_tokenize_training
+:::MLPv0.5.0 transformer 1540163428.059505224 (process_data.py:310) preproc_num_train_examples: 4590100
+:::MLPv0.5.0 transformer 1540163428.060509443 (process_data.py:405) preproc_tokenize_eval
+:::MLPv0.5.0 transformer 1540163428.621408224 (process_data.py:313) preproc_num_eval_examples: 2999
+:::MLPv0.5.0 transformer 1540163428.621853590 (process_data.py:410) input_order
+:::MLPv0.5.0 transformer 1540163449.691991329 (transformer/transformer_main.py:297) run_start
+:::MLPv0.5.0 transformer 1540163449.692862988 (transformer/transformer_main.py:304) run_set_random_seed: 2
+:::MLPv0.5.0 transformer 1540163449.716707468 (transformer/transformer_main.py:265) train_loop
+:::MLPv0.5.0 transformer 1540163449.717206955 (transformer/transformer_main.py:270) train_epoch: 1
+:::MLPv0.5.0 transformer 1540163449.742014408 (transformer/utils/dataset.py:214) input_order
+:::MLPv0.5.0 transformer 1540163451.717829704 (transformer/utils/dataset.py:233) input_batch_size: 4096
+:::MLPv0.5.0 transformer 1540163451.718518496 (transformer/utils/dataset.py:235) input_max_length: 256
+:::MLPv0.5.0 transformer 1540163451.771491051 (transformer/model/transformer.py:329) model_hp_hidden_layers: 6
+:::MLPv0.5.0 transformer 1540163451.773145676 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.774487972 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.775346279 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.776855469 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.778006792 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.778817415 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.780228615 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.781350851 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.782176495 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.783667088 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.784811020 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.785632849 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.787060261 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.788174868 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.789005518 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.790612459 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.791688204 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.792539120 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.793747663 (transformer/model/transformer.py:375) model_hp_hidden_layers: 6
+:::MLPv0.5.0 transformer 1540163451.794943810 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.796146393 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.797228813 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.798022270 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.799474716 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.800677299 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.801744223 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.802543163 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.803942919 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.805092812 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.806146383 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.806974888 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.808425903 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.809659004 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.810729980 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.811496496 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.812979460 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.814120531 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.815118790 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.815845251 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.817215919 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.818325043 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163451.819329977 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.820070744 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163451.821154833 (transformer/model/transformer.py:86) model_hp_initializer_gain: 1.0
+:::MLPv0.5.0 transformer 1540163451.839358330 (transformer/model/embedding_layer.py:44) model_hp_embedding_shared_weights: {"hidden_size": 1024, "vocab_size": 33708}
+:::MLPv0.5.0 transformer 1540163451.908639908 (transformer/model/transformer.py:131) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163451.934574366 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163452.257557154 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.337143421 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.348361492 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163452.438897848 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.506397486 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.524144173 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163452.733340263 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.814461470 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.826511145 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163452.905025244 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.960735083 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163452.975103378 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163453.147939205 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.214643955 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.224860668 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163453.300303221 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.357008696 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.371753931 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163453.543892145 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.610384941 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.619683743 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163453.695387363 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.822834730 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163453.837886572 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163454.012785196 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.079986095 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.090157986 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163454.165228128 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.221589565 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.236289024 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163454.409221888 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.482175827 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.493749619 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163454.570529461 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.627123356 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.641829252 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163454.687949896 (transformer/model/transformer.py:165) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.710837126 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163454.888214827 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.956219196 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163454.965571165 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163455.139278412 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.206198931 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.215554237 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163455.283019543 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.442173719 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.452601194 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163455.624706745 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.691376209 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.700614691 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163455.874642611 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.941510439 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163455.950906277 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163456.018810272 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.071361303 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.081343651 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163456.255067587 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.322180510 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.331932306 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163456.509680748 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.578001022 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.587587118 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163456.656583309 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.708747149 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163456.718968153 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163457.019196749 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.085077524 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.094688654 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163457.267333746 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.333486080 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.342519522 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163457.409902334 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.461977005 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.471942186 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163457.644854546 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.711721659 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.721094131 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163457.893023968 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.959999323 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163457.969610214 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163458.039027452 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.090861559 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.101022482 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163458.275614262 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.343387365 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.352867126 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163458.525217295 (transformer/model/attention_layer.py:145) model_hp_attention_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.705563068 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.715019941 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163458.783035278 (transformer/model/ffn_layer.py:79) model_hp_relu_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.835107565 (transformer/model/transformer.py:310) model_hp_layer_postprocess_dropout: 0.1
+:::MLPv0.5.0 transformer 1540163458.844930172 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163458.935093164 (transformer/transformer_main.py:105) opt_learning_rate_warmup_steps: 16000
+:::MLPv0.5.0 resnet 1540163458.941318989 (transformer/transformer_main.py:109) opt_learning_rate: "DEFERRED: 40864ca4-805d-4008-9e66-a75bd348bbb2"
+:::MLPv0.5.0 transformer 1540163458.956010103 (transformer/transformer_main.py:116) opt_name: "lazy_adam"
+:::MLPv0.5.0 transformer 1540163458.956612825 (transformer/transformer_main.py:118) opt_hp_Adam_beta1: 0.9
+:::MLPv0.5.0 transformer 1540163458.957199574 (transformer/transformer_main.py:120) opt_hp_Adam_beta2: 0.997
+:::MLPv0.5.0 transformer 1540163458.957775116 (transformer/transformer_main.py:122) opt_hp_Adam_epsilon: 1e-09
+:::MLPv0.5.0 transformer 1540163771.789920807 (transformer/transformer_main.py:276) eval_start
+:::MLPv0.5.0 transformer 1540163771.824838638 (transformer/utils/dataset.py:233) input_batch_size: 4096
+:::MLPv0.5.0 transformer 1540163771.825469017 (transformer/utils/dataset.py:235) input_max_length: 256
+:::MLPv0.5.0 transformer 1540163771.870923281 (transformer/model/transformer.py:329) model_hp_hidden_layers: 6
+:::MLPv0.5.0 transformer 1540163771.871991158 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.872850418 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.873471022 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.874552011 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.875357151 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.875960827 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.877061605 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.877895594 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.878509521 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.879586935 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.880368233 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.880983591 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.882039547 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.882877350 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.883482695 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.884704590 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.885553122 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.886172295 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.887103081 (transformer/model/transformer.py:375) model_hp_hidden_layers: 6
+:::MLPv0.5.0 transformer 1540163771.888028622 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.888929129 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.889773846 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.890383482 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.891557932 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.892495632 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.893414259 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.894039154 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.895207882 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.896135092 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.896980047 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.897602320 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.898811102 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.899724483 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.900576830 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.901219130 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.902406693 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.903304338 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.904141426 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.904766083 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.905874968 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.906691790 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163771.907471418 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.908058643 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163771.908860207 (transformer/model/transformer.py:86) model_hp_initializer_gain: 1.0
+:::MLPv0.5.0 transformer 1540163771.914595366 (transformer/model/embedding_layer.py:44) model_hp_embedding_shared_weights: {"hidden_size": 1024, "vocab_size": 33708}
+:::MLPv0.5.0 transformer 1540163771.953263044 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163772.189844131 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163773.161872387 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163773.404692411 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163773.537589073 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163773.774503708 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163773.906104803 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163774.143991232 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163774.275642395 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163774.511872768 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163774.641521215 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163774.952124119 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163775.082620859 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163775.144805908 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163775.381481171 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163775.620438576 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163775.734408379 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163775.971329689 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163776.204575300 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163776.415591002 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163776.651551723 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163776.885919809 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163776.999481440 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163777.235857725 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163777.468041897 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163777.581671953 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163777.817977428 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163778.165188074 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163778.279955864 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163778.516842365 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163778.754333973 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163778.868127584 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163808.575453043 (transformer/model/transformer.py:329) model_hp_hidden_layers: 6
+:::MLPv0.5.0 transformer 1540163808.576550484 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.577507734 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.578201056 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.579296589 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.580200434 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.580857992 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.582792521 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.584795475 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.586210489 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.588609695 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.590617657 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.591955900 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.594294071 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.596094608 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.597478151 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.599972486 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.601675034 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.602938652 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.604787350 (transformer/model/transformer.py:375) model_hp_hidden_layers: 6
+:::MLPv0.5.0 transformer 1540163808.606591702 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.608377695 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.609962702 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.611144304 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.613280535 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.615019560 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.616609573 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.617788553 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.619975805 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.621628046 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.623124599 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.624249220 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.626292706 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.627936363 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.629445314 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.630511999 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.632411718 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.633982182 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.635392666 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.636455297 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.638359785 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.639916897 (transformer/model/attention_layer.py:53) model_hp_attention_dense: {"num_heads": 16, "hidden_size": 1024, "use_bias": false}
+:::MLPv0.5.0 transformer 1540163808.641340733 (transformer/model/ffn_layer.py:47) model_hp_ffn_filter_dense: {"filter_size": 4096, "activation": "relu", "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.642377615 (transformer/model/ffn_layer.py:53) model_hp_ffn_output_dense: {"hidden_size": 1024, "use_bias": true}
+:::MLPv0.5.0 transformer 1540163808.643835306 (transformer/model/transformer.py:86) model_hp_initializer_gain: 1.0
+:::MLPv0.5.0 transformer 1540163808.653244019 (transformer/model/embedding_layer.py:44) model_hp_embedding_shared_weights: {"hidden_size": 1024, "vocab_size": 33708}
+:::MLPv0.5.0 transformer 1540163808.733140469 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163809.036541939 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163809.192373753 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163809.470629215 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163809.618392467 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163809.857673645 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163809.987521887 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163810.220119953 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163810.690550804 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163810.925928831 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163811.057040930 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163811.286390781 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163811.417021036 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163811.525882244 (transformer/model/transformer.py:246) model_hp_sequence_beam_search: {"alpha": 0.6, "beam_size": 4, "vocab_size": 33708, "extra_decode_length": 50}
+:::MLPv0.5.0 transformer 1540163811.891464233 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163812.250663280 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163812.507604361 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163812.628617764 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163812.893787146 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163813.143983603 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163813.270271301 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163813.788026333 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163814.114398718 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163814.273809910 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163814.609064817 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163814.925914526 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163815.050555706 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163815.313972473 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163815.719568729 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163815.842684031 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163816.104905605 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163816.357908726 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540163816.481626034 (transformer/model/transformer.py:274) model_hp_norm: {"hidden_size": 1024}
+:::MLPv0.5.0 transformer 1540164189.806729317 (transformer/transformer_main.py:352) run_stop
+:::MLPv0.5.0 transformer 1540164189.807685614 (transformer/transformer_main.py:353) run_final
