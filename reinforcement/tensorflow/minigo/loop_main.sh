@@ -12,7 +12,7 @@ FILE="TERMINATE_FLAG"
 rm -f $FILE
 
 GOPARAMS=$1 python3 loop_init.py
-for i in {1..1000};
+for i in {0..1000};
 do
 GOPARAMS=$1 python3 loop_selfplay.py $SEED $i 2>&1
 
