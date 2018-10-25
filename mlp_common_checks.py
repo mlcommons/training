@@ -42,6 +42,12 @@ def check_exactly_one_tag(loglines, tag):
     find_tag(loglines, tag, expect=1)
 
 
+def check_at_least_one_tag(loglines, tag):
+    l = find_tag(loglines, tag)
+    if len(l) < 1:
+            raise CCError('Expected at least 1 copy of tag \'{}\''.format(tag))
+
+
 def _check_eval(ll, name, tag, code):
     try:
         return eval(code.strip(), {}, {'ll': ll, 'v': ll.value})

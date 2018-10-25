@@ -1,0 +1,13 @@
+
+- EXACTLY_ONE: run_clear_caches
+
+- AT_LEAST_ONE: train_loop
+- AT_LEAST_ONE: train_epoch
+- AT_LEAST_ONE: train_learn_rate
+
+- AT_LEAST_ONE: eval_start
+- AT_LEAST_ONE: eval_size
+- AT_LEAST_ONE: eval_target
+- AT_LEAST_ONE: eval_accuracy
+- AT_LEAST_ONE: eval_stop
+
