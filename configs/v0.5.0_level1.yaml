@@ -30,5 +30,5 @@
 - TAG_EVAL_CHECK:
     NAME: is_a_benchmark
     TAG: eval_start|eval_stop
-    CODE: "ll.benchmark in ['ncf', 'ssd', 'resnet', 'gnmt', 'minigo', 'maskrcnn']"
+    CODE: "ll.benchmark in ['ncf', 'ssd', 'resnet', 'gnmt', 'minigo', 'maskrcnn', 'transformer']"
     EXPECT: AT_LEAST_ONE
