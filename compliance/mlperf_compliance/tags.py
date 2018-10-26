@@ -24,7 +24,7 @@ from mlperf_compliance._ncf_tags import *
 from mlperf_compliance._resnet_tags import *
 from mlperf_compliance._ssd_tags import *
 from mlperf_compliance._transformer_tags import *
-
+from mlperf_compliance._maskrcnn_tags import *
 
 # ==============================================================================
 # == Benchmarks ================================================================
@@ -366,6 +366,23 @@ MASKRCNN_TAGS = (
     EVAL_TARGET,
     EVAL_ACCURACY,
     EVAL_STOP,
+    INPUT_MEAN_SUBTRACTION,
+    INPUT_NORMALIZATION_STD,
+    INPUT_RESIZE,
+    INPUT_RESIZE_ASPECT_PRESERVING,
+    MIN_IMAGE_SIZE,
+    MAX_IMAGE_SIZE,
+    RUN_SET_RANDOM_SEED,
+    INPUT_RANDOM_FLIP,
+    RANDOM_FLIP_PROBABILITY,
+    FG_IOU_THRESHOLD,
+    BG_IOU_THRESHOLD,
+    RPN_PRE_NMS_TOP_N_TRAIN,
+    RPN_PRE_NMS_TOP_N_TEST,
+    RPN_POST_NMS_TOP_N_TRAIN,
+    RPN_POST_NMS_TOP_N_TEST,
+    BATCH_SIZE_TEST,
+    ASPECT_RATIOS,
 )
 
 MINIGO_TAGS = (

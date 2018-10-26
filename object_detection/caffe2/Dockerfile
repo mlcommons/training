@@ -22,7 +22,7 @@ RUN apt-get install -y --no-install-recommends \
       python-pip
 RUN apt-get install -y --no-install-recommends libgflags-dev
 RUN pip install setuptools
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip==9.0.3
 RUN pip install \
       future \
       numpy \
