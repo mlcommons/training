@@ -21,8 +21,6 @@ from __future__ import print_function
 
 INPUT_MAX_LENGTH = "input_max_length"
 
-OPT_LR_WARMUP_STEPS = "opt_learning_rate_warmup_steps"
-
 MODEL_HP_INITIALIZER_GAIN = "model_hp_initializer_gain"
 MODEL_HP_VOCAB_SIZE = "model_hp_vocab_size"
 MODEL_HP_NUM_HIDDEN_LAYERS = "model_hp_hidden_layers"

@@ -157,6 +157,9 @@ INPUT_ORDER = "input_order"
 # The shard size (in items) when shuffling in the input pipeline.
 INPUT_SHARD = "input_shard"
 
+# The number of samples iver which BN stats are computed for normalization during training
+INPUT_BN_SPAN = "input_bn_span"
+
 
 # --------------------------------------
 # -- Data Augmentation and Alteration --
@@ -200,6 +203,9 @@ OPT_HP_ADAM_BETA1 = "opt_hp_Adam_beta1"
 OPT_HP_ADAM_BETA2 = "opt_hp_Adam_beta2"
 OPT_HP_ADAM_EPSILON = "opt_hp_Adam_epsilon"
 
+# The number of warm-up steps (SGD).
+OPT_LR_WARMUP_STEPS = "opt_learning_rate_warmup_steps"
+
 
 # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 #  Train: Tags for control flow during model training.
@@ -237,8 +243,8 @@ EVAL_TARGET = "eval_target"
 # The observed accuracy of the model at a given epoch.
 EVAL_ACCURACY = "eval_accuracy"
 
-# This tag should be emitted when the model has determined that it has met the
-# target quality set by the reference.
+# This tag should be emitted whenever the submission ends an evaluation pass
+# for a given set of weights.
 EVAL_STOP = "eval_stop"
 
 
@@ -313,6 +319,7 @@ GNMT_TAGS = (
 
     OPT_NAME,
     OPT_LR,
+    OPT_LR_WARMUP_STEPS,
     OPT_HP_ADAM_BETA1,
     OPT_HP_ADAM_BETA2,
     OPT_HP_ADAM_EPSILON,
@@ -466,9 +473,11 @@ RESNET_TAGS = (
     INPUT_RANDOM_FLIP,
     INPUT_RESIZE,
     INPUT_RESIZE_ASPECT_PRESERVING,
+    INPUT_BN_SPAN,
 
     OPT_NAME,
     OPT_LR,
+    OPT_LR_WARMUP_STEPS,
     OPT_MOMENTUM,
 
     TRAIN_LOOP,
@@ -509,6 +518,7 @@ SSD_TAGS = (
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
     INPUT_SHARD,
+    INPUT_BN_SPAN,
 
     BACKBONE,
     FEATURE_SIZES,
@@ -530,6 +540,7 @@ SSD_TAGS = (
     OPT_LR,
     OPT_MOMENTUM,
     OPT_WEIGHT_DECAY,
+    OPT_LR_WARMUP_STEPS,
 
     TRAIN_LOOP,
     TRAIN_EPOCH,
