@@ -3,7 +3,7 @@
 
 - AT_LEAST_ONE: train_loop
 - AT_LEAST_ONE: train_epoch
-- AT_LEAST_ONE: train_learn_rate
+- AT_LEAST_ONE: opt_learning_rate
 
 - AT_LEAST_ONE: eval_start
 - AT_LEAST_ONE: eval_size

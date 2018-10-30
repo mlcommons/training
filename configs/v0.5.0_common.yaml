@@ -19,11 +19,6 @@
     SECOND: run_final
 
 - TAGS_COUNT_SAME:
-  - train_loop
-  - train_epoch
-  - train_learn_rate
- 
-- TAGS_COUNT_SAME:
   - eval_start
   - eval_size
   - eval_target

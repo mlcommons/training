@@ -1,6 +1,5 @@
 - AT_LEAST_ONE: input_max_length
 - AT_LEAST_ONE: model_hp_initializer_gain
-- AT_LEAST_ONE: model_hp_vocab_size
 - AT_LEAST_ONE: model_hp_hidden_layers
 - AT_LEAST_ONE: model_hp_embedding_shared_weights
 - AT_LEAST_ONE: model_hp_attention_dense
