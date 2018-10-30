@@ -89,6 +89,9 @@ RUN_FINAL = "run_final"
 # Emit this tag in the place(s) where random seeds are set.
 RUN_SET_RANDOM_SEED = "run_set_random_seed"
 
+# Emit this tag when training data has been purged from volatile caches prior
+# to run start.
+RUN_CLEAR_CACHES = "run_clear_caches"
 
 # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 # Common Values: Constants which are expected to be reported across many models.
@@ -305,6 +308,7 @@ GNMT_TAGS = (
     RUN_STOP,
     RUN_FINAL,
     RUN_SET_RANDOM_SEED,
+    RUN_CLEAR_CACHES,
 
     PREPROC_VOCAB_SIZE,
     PREPROC_TOKENIZE_TRAINING,
@@ -351,6 +355,7 @@ MASKRCNN_TAGS = (
     RUN_START,
     RUN_STOP,
     RUN_FINAL,
+    RUN_CLEAR_CACHES,
 
     INPUT_BATCH_SIZE,
     INPUT_ORDER,
@@ -397,6 +402,7 @@ MINIGO_TAGS = (
     RUN_STOP,
     RUN_FINAL,
     RUN_SET_RANDOM_SEED,
+    RUN_CLEAR_CACHES,
 
     INPUT_SHARD,
 
@@ -414,6 +420,7 @@ NCF_TAGS = (
     RUN_START,
     RUN_STOP,
     RUN_FINAL,
+    RUN_CLEAR_CACHES,
 
     PREPROC_HP_MIN_RATINGS,
     PREPROC_HP_NUM_EVAL,
@@ -455,6 +462,7 @@ RESNET_TAGS = (
     RUN_STOP,
     RUN_FINAL,
     RUN_SET_RANDOM_SEED,
+    RUN_CLEAR_CACHES,
 
     PREPROC_NUM_TRAIN_EXAMPLES,
     PREPROC_NUM_EVAL_EXAMPLES,
@@ -513,6 +521,7 @@ SSD_TAGS = (
     RUN_START,
     RUN_STOP,
     RUN_FINAL,
+    RUN_CLEAR_CACHES,
 
     INPUT_SIZE,
     INPUT_BATCH_SIZE,
@@ -558,6 +567,7 @@ TRANSFORMER_TAGS = (
     RUN_STOP,
     RUN_FINAL,
     RUN_SET_RANDOM_SEED,
+    RUN_CLEAR_CACHES,
 
     PREPROC_NUM_TRAIN_EXAMPLES,
     PREPROC_NUM_EVAL_EXAMPLES,
