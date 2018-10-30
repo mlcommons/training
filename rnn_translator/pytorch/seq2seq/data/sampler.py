@@ -44,6 +44,7 @@ class BucketingSampler(Sampler):
             # begin shards
             batches_in_shard = 80
             shard_size = self.global_batch_size * batches_in_shard
+            mlperf_log.gnmt_print(key=mlperf_log.INPUT_SHARD, value=shard_size)
             nshards = (self.num_samples + shard_size - 1) // shard_size
 
             lengths = self.dataset.lengths[indices]
