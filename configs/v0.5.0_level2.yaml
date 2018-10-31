@@ -1,5 +1,5 @@
 
-- EXACTLY_ONE: run_clear_caches
+- AT_LEAST_ONE: run_clear_caches
 
 - AT_LEAST_ONE: train_loop
 - AT_LEAST_ONE: train_epoch
