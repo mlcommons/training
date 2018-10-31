@@ -55,7 +55,7 @@ RUN make install
 WORKDIR /packages
 RUN git clone https://github.com/ddkang/Detectron.git detectron
 WORKDIR /packages/detectron
-RUN git checkout benchmarking
+RUN git checkout logging
 WORKDIR /packages/detectron/lib
 RUN make
 WORKDIR /packages/detectron/lib/datasets/data
