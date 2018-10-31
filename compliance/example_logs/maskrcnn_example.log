@@ -1,0 +1,56 @@
+:::MLPv0.5.0 maskrcnn 1539750515.765330076 (tools/train_net.py:118) run_start
+:::MLPv0.5.0 maskrcnn 1539750516.290738106 (tools/train_net.py:138) input_order
+:::MLPv0.5.0 maskrcnn 1539750516.291054010 (tools/train_net.py:139) input_batch_size: 2
+:::MLPv0.5.0 maskrcnn 1539750516.291338921 (tools/train_net.py:141) backbone: "resnet50"
+:::MLPv0.5.0 maskrcnn 1539750516.291623116 (tools/train_net.py:143) nms_threshold: 0.7
+:::MLPv0.5.0 maskrcnn 1539750516.291877985 (tools/train_net.py:145) nms_max_detections: 1000
+:::MLPv0.5.0 maskrcnn 1539750516.292135000 (tools/train_net.py:147) opt_name: "SGD"
+:::MLPv0.5.0 maskrcnn 1539750516.292406082 (tools/train_net.py:148) opt_learning_rate: 0.0025
+:::MLPv0.5.0 maskrcnn 1539750516.292665005 (tools/train_net.py:149) opt_momentum: 0.9
+:::MLPv0.5.0 maskrcnn 1539750516.292920113 (tools/train_net.py:150) opt_weight_decay: 0.0001
+:::MLPv0.5.0 maskrcnn 1539750706.894923925 (tools/train_net.py:185) train_loop
+:::MLPv0.5.0 ssd 1539750706.895559072 (tools/train_net.py:187) train_epoch: 0
+:::MLPv0.5.0 maskrcnn 1539776108.684009075 (tools/train_net.py:331) eval_start: 0
+:::MLPv0.5.0 maskrcnn 1539777064.580348969 (tools/train_net.py:346) eval_accuracy: {"box": 0.20439446211977153, "epoch": 0, "mask": 0.20278728848992628}
+:::MLPv0.5.0 maskrcnn 1539777064.584446907 (tools/train_net.py:347) eval_stop: 0
+:::MLPv0.5.0 ssd 1539777064.586055994 (tools/train_net.py:208) train_epoch: 1
+:::MLPv0.5.0 maskrcnn 1539803010.613064051 (tools/train_net.py:331) eval_start: 1
+:::MLPv0.5.0 maskrcnn 1539803899.001374960 (tools/train_net.py:346) eval_accuracy: {"box": 0.24607702508046048, "epoch": 1, "mask": 0.23422841633809072}
+:::MLPv0.5.0 maskrcnn 1539803899.006392956 (tools/train_net.py:347) eval_stop: 1
+:::MLPv0.5.0 ssd 1539803899.009839058 (tools/train_net.py:208) train_epoch: 2
+:::MLPv0.5.0 maskrcnn 1539829927.730047941 (tools/train_net.py:331) eval_start: 2
+:::MLPv0.5.0 maskrcnn 1539830801.368571997 (tools/train_net.py:346) eval_accuracy: {"box": 0.27142243122355836, "epoch": 2, "mask": 0.25608198585436726}
+:::MLPv0.5.0 maskrcnn 1539830801.371514082 (tools/train_net.py:347) eval_stop: 2
+:::MLPv0.5.0 ssd 1539830801.373388052 (tools/train_net.py:208) train_epoch: 3
+:::MLPv0.5.0 maskrcnn 1539856862.845088959 (tools/train_net.py:331) eval_start: 3
+:::MLPv0.5.0 maskrcnn 1539857720.526376963 (tools/train_net.py:346) eval_accuracy: {"box": 0.28698164525657177, "epoch": 3, "mask": 0.27234434642578115}
+:::MLPv0.5.0 maskrcnn 1539857720.528892994 (tools/train_net.py:347) eval_stop: 3
+:::MLPv0.5.0 ssd 1539857720.530884027 (tools/train_net.py:208) train_epoch: 4
+:::MLPv0.5.0 maskrcnn 1539883830.865226984 (tools/train_net.py:331) eval_start: 4
+:::MLPv0.5.0 maskrcnn 1539884697.775495052 (tools/train_net.py:346) eval_accuracy: {"box": 0.292927377706958, "epoch": 4, "mask": 0.2762386982829035}
+:::MLPv0.5.0 maskrcnn 1539884697.777089119 (tools/train_net.py:347) eval_stop: 4
+:::MLPv0.5.0 ssd 1539884697.780483961 (tools/train_net.py:208) train_epoch: 5
+:::MLPv0.5.0 maskrcnn 1539910835.106542110 (tools/train_net.py:331) eval_start: 5
+:::MLPv0.5.0 maskrcnn 1539911730.889216900 (tools/train_net.py:346) eval_accuracy: {"box": 0.3035562191777175, "epoch": 5, "mask": 0.2840803085918418}
+:::MLPv0.5.0 maskrcnn 1539911730.892611980 (tools/train_net.py:347) eval_stop: 5
+:::MLPv0.5.0 ssd 1539911730.895409107 (tools/train_net.py:208) train_epoch: 6
+:::MLPv0.5.0 maskrcnn 1539937933.675041914 (tools/train_net.py:331) eval_start: 6
+:::MLPv0.5.0 maskrcnn 1539938798.908713102 (tools/train_net.py:346) eval_accuracy: {"box": 0.3109885288722591, "epoch": 6, "mask": 0.28898033873248047}
+:::MLPv0.5.0 maskrcnn 1539938798.917917013 (tools/train_net.py:347) eval_stop: 6
+:::MLPv0.5.0 ssd 1539938798.950735092 (tools/train_net.py:208) train_epoch: 7
+:::MLPv0.5.0 maskrcnn 1539964858.565743923 (tools/train_net.py:331) eval_start: 7
+:::MLPv0.5.0 maskrcnn 1539965732.472093105 (tools/train_net.py:346) eval_accuracy: {"box": 0.30762085834959957, "epoch": 7, "mask": 0.2871664125573329}
+:::MLPv0.5.0 maskrcnn 1539965732.478980064 (tools/train_net.py:347) eval_stop: 7
+:::MLPv0.5.0 ssd 1539965732.484929085 (tools/train_net.py:208) train_epoch: 8
+:::MLPv0.5.0 maskrcnn 1539992183.756046057 (tools/train_net.py:331) eval_start: 8
+:::MLPv0.5.0 maskrcnn 1539993040.915997982 (tools/train_net.py:346) eval_accuracy: {"box": 0.3667726261407453, "epoch": 8, "mask": 0.33159603580978625}
+:::MLPv0.5.0 maskrcnn 1539993040.961757898 (tools/train_net.py:347) eval_stop: 8
+:::MLPv0.5.0 ssd 1539993040.972374916 (tools/train_net.py:208) train_epoch: 9
+:::MLPv0.5.0 maskrcnn 1540019690.726131916 (tools/train_net.py:331) eval_start: 9
+:::MLPv0.5.0 maskrcnn 1540020529.075299025 (tools/train_net.py:346) eval_accuracy: {"box": 0.37104823464575076, "epoch": 9, "mask": 0.3355168287353466}
+:::MLPv0.5.0 maskrcnn 1540020529.091855049 (tools/train_net.py:347) eval_stop: 9
+:::MLPv0.5.0 ssd 1540020529.092520952 (tools/train_net.py:208) train_epoch: 10
+:::MLPv0.5.0 maskrcnn 1540047296.266064882 (tools/train_net.py:331) eval_start: 10
+:::MLPv0.5.0 maskrcnn 1540048134.104079008 (tools/train_net.py:346) eval_accuracy: {"box": 0.3772108535031596, "epoch": 10, "mask": 0.3389911310821223}
+:::MLPv0.5.0 maskrcnn 1540048134.109066010 (tools/train_net.py:347) eval_stop: 10
+:::MLPv0.5.0 ssd 1540048134.127074957 (tools/train_net.py:208) train_epoch: 11
