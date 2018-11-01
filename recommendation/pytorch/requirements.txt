@@ -2,3 +2,4 @@ tqdm==4.20.0
 scipy
 pandas
 mlperf_compliance==0.0.6
+xlrd

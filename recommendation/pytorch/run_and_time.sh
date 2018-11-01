@@ -19,16 +19,23 @@ seed=${1:-1}
 echo "unzip ml-20m.zip"
 if unzip -u ml-20m.zip
 then
-    echo "Start processing ml-20m/ratings.csv"
+    echo "Duplicating each entry and changing to new user ID..."
+    python $BASEDIR/multiply_users.py ml-20m/ratings.csv 2
+    echo "Duplicating each entry and changing to new item ID..."
+    python $BASEDIR/multiply_items.py ml-20m/ratings_users_expanded.csv 2
+    echo "Copying expanded file (2x users 2x items) to ./ml-20m_2xui..."
+    mkdir -p ml-20m_2xui
+    cp ./ml-20m/ratings_users_expanded_items_expanded.csv ./ml-20m_2xui/ratings.csv
+    echo "Start processing ml-20m_2xui/ratings.csv"
     t0=$(date +%s)
-	python $BASEDIR/convert.py ml-20m/ratings.csv ml-20m --negatives 999
+	python $BASEDIR/convert.py ml-20m_2xui/ratings.csv ml-20m_2xui --negatives 999
     t1=$(date +%s)
 	delta=$(( $t1 - $t0 ))
-    echo "Finish processing ml-20m/ratings.csv in $delta seconds"
+    echo "Finish processing ml-20m_2xui/ratings.csv in $delta seconds"
 
     echo "Start training"
     t0=$(date +%s)
-	python $BASEDIR/ncf.py ml-20m -l 0.0005 -b 2048 --layers 256 256 128 64 -f 64 \
+	python $BASEDIR/ncf.py ml-20m_2xui -l 0.0005 -b 2048 --layers 512 512 512 512 -f 64 \
 		--seed $seed --threshold $THRESHOLD --processes 10
     t1=$(date +%s)
 	delta=$(( $t1 - $t0 ))
