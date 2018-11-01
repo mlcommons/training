@@ -1,5 +1,4 @@
 
-- AT_LEAST_ONE: bottleneck_block
 - AT_LEAST_ONE: eval_offset
 - AT_LEAST_ONE: model_hp_initial_max_pool
 - AT_LEAST_ONE: model_hp_begin_block
