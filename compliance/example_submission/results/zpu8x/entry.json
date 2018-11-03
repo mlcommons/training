@@ -1,0 +1,29 @@
+{
+    "division": "open",    
+    "status": "on-premise",    
+    "hardware": "1 ZPU",    
+    "framework": "TensorFlow 1.12",    
+    "power": "https://mlperf.org/",    
+    "notes": "ZPUs are the best",    
+    "interconnect": "InfiniBand ring",    
+    "os": "Ubuntu 18.10",    
+    "libraries": "cuDNN 7.3",    
+    "compilers": "N/A",    
+    "nodes": [
+            {
+                "num_nodes": 1,
+                "cpu": "Skylake X",
+                "num_cores": 18,
+                "num_vcpus": 0,
+                "accelerator": "zpu",
+                "num_accelerators": 8,
+                "sys_mem_size": 512,
+                "sys_storage_type": "SSD",
+                "sys_storage_size": 1024,
+                "cpu_accel_interconnect": "zpu-intercon",
+                "network_card": "100 Gb InfiniBand",
+                "num_network_cards": 1,
+                "notes": "this is not a real product" 
+            }
+    ]
+}
