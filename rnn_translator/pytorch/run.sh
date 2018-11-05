@@ -6,7 +6,7 @@ DATASET_DIR='/data'
 RESULTS_DIR='gnmt_wmt16'
 
 SEED=${1:-"1"}
-TARGET=${2:-"22.00"}
+TARGET=${2:-"21.80"}
 
 # run training
 python3 -m multiproc train.py \
