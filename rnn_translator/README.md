@@ -4,7 +4,6 @@ This problem uses recurrent neural network to do language translation.
 
 ### Recommended setup
 * [nvidia-docker](https://github.com/NVIDIA/nvidia-docker)
-* [pytorch/pytorch:0.4_cuda9_cudnn7 container](https://hub.docker.com/r/pytorch/pytorch/tags/)
 
 # 2. Directions
 ### Steps to configure machine
@@ -144,7 +143,7 @@ BLEU score on newstest2014 dataset.
 BLEU scores reported by [sacrebleu](https://pypi.org/project/sacrebleu/) package
 
 ### Quality target
-Uncased BLEU score of 22.00.
+Uncased BLEU score of 21.80.
 
 ### Evaluation frequency
 Evaluation of BLEU score is done after every epoch.

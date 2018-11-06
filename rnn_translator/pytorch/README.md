@@ -165,7 +165,7 @@ BLEU score on newstest2014 dataset.
 BLEU scores reported by [sacrebleu](https://pypi.org/project/sacrebleu/) package
 
 ### Quality target
-Uncased BLEU score of 22.00.
+Uncased BLEU score of 21.80.
 
 ### Evaluation frequency
 Evaluation of BLEU score is done after every epoch.
