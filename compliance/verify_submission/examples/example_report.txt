@@ -1,0 +1,165 @@
+MLPERF SUBMISSION REPORT
+========================
+
+
+SUMMARY
+-------
+
+Passed checks: 135
+Failed checks: 0
+Errors: 0
+Note: the Errors indicate certain checks being skipped or early terminated due to errors. The errors are likely caused by failed checks above.
+
+PASSED CHECKS
+-------------
+
+Path exists: ../../example_submission/results
+Path exists: ../../example_submission/code
+Path exists: ../../example_submission/submission.json
+../../example_submission/code/resnet name is in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt', 'ncf', 'minigo', 'shared'].
+Path exists: ../../example_submission/code/resnet/README.md
+Path exists: ../../example_submission/code/resnet/preproc_dataset.sh
+../../example_submission/code/ncf name is in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt', 'ncf', 'minigo', 'shared'].
+Path exists: ../../example_submission/code/ncf/README.md
+Path exists: ../../example_submission/code/ncf/preproc_dataset.sh
+Path exists: ../../example_submission/results/zpu1x/entry.json
+../../example_submission/results/zpu1x/resnet name is in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt', 'ncf', 'minigo'].
+Path exists: ../../example_submission/code/resnet/setup_zpu1x.sh
+Path exists: ../../example_submission/code/resnet/run_and_time_zpu1x.sh
+Path exists: ../../example_submission/results/zpu1x/resnet/result_0.txt
+Path exists: ../../example_submission/results/zpu1x/resnet/result_1.txt
+Path exists: ../../example_submission/results/zpu1x/resnet/result_2.txt
+Path exists: ../../example_submission/results/zpu1x/resnet/result_3.txt
+Path exists: ../../example_submission/results/zpu1x/resnet/result_4.txt
+../../example_submission/results/zpu1x/ncf name is in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt', 'ncf', 'minigo'].
+Path exists: ../../example_submission/code/ncf/setup_zpu1x.sh
+Path exists: ../../example_submission/code/ncf/run_and_time_zpu1x.sh
+Path exists: ../../example_submission/results/zpu1x/ncf/result_0.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_1.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_2.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_3.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_4.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_5.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_6.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_7.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_8.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_9.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_10.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_11.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_12.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_13.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_14.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_15.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_16.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_17.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_18.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_19.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_20.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_21.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_22.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_23.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_24.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_25.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_26.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_27.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_28.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_29.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_30.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_31.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_32.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_33.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_34.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_35.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_36.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_37.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_38.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_39.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_40.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_41.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_42.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_43.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_44.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_45.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_46.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_47.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_48.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_49.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_50.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_51.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_52.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_53.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_54.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_55.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_56.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_57.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_58.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_59.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_60.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_61.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_62.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_63.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_64.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_65.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_66.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_67.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_68.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_69.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_70.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_71.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_72.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_73.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_74.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_75.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_76.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_77.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_78.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_79.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_80.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_81.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_82.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_83.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_84.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_85.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_86.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_87.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_88.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_89.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_90.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_91.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_92.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_93.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_94.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_95.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_96.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_97.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_98.txt
+Path exists: ../../example_submission/results/zpu1x/ncf/result_99.txt
+Path exists: ../../example_submission/results/zpu8x/entry.json
+../../example_submission/results/zpu8x/resnet name is in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt', 'ncf', 'minigo'].
+Path exists: ../../example_submission/code/resnet/setup_zpu8x.sh
+Path exists: ../../example_submission/code/resnet/run_and_time_zpu8x.sh
+Path exists: ../../example_submission/results/zpu8x/resnet/result_0.txt
+Path exists: ../../example_submission/results/zpu8x/resnet/result_1.txt
+Path exists: ../../example_submission/results/zpu8x/resnet/result_2.txt
+Path exists: ../../example_submission/results/zpu8x/resnet/result_3.txt
+Path exists: ../../example_submission/results/zpu8x/resnet/result_4.txt
+Keys in submission metadata match expected.
+Keys in entry zpu1x metadata match expected.
+Keys in entry zpu1x node metadata match expected.
+Keys in entry zpu8x metadata match expected.
+Keys in entry zpu8x node metadata match expected.
+
+FAILED CHECKS
+-------------
+
+
+ERRORS
+------
+
+
+RESULTS
+-------
+
+org,division,status,hardware,framework,power,notes,resnet,ssd,maskrcnn,transformer,gnmt,ncf,minigo
+Test Inc.,open,on-premise,1 ZPU,TensorFlow 1.12,https://mlperf.org/,ZPUs are the best,12.0,-,-,-,-,44.2916666667,-
+Test Inc.,open,on-premise,1 ZPU,TensorFlow 1.12,https://mlperf.org/,ZPUs are the best,7.0,-,-,-,-,-,-
