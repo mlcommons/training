@@ -11,11 +11,11 @@ where `${KEY_NAME}` is the name of your key files. You can give any valid file n
 
 In the generated files, the private key should be named `${KEY_NAME}`, the public key is named `${KEY_NAME}.pub`.
 
-## Install:
+## Install
 
 ```
-git clone --recurse-submodules https://github.com/CiscoAI/mlperf-submission-helper
-cd mlperf-submission-helper
+git clone --recurse-submodules https://github.com/mlperf/training.git
+cd training/compliance/verify_submission
 
 # If you need encryption/decryption:
 pip install -r crypto_requirements.txt
