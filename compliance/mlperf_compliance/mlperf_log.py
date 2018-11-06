@@ -130,7 +130,7 @@ def _mlperf_print(key, value=None, benchmark=None, stack_offset=0,
   if extra_print:
     print() # There could be prior text on a line
 
-  if tag in STDOUT_TAG_SET:
+  if key in STDOUT_TAG_SET:
     LOGGER.info(message)
   else:
     LOGGER.debug(message)

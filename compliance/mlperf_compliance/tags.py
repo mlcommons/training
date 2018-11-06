@@ -276,6 +276,11 @@ MODEL_HP_BATCH_NORM = "model_hp_batch_norm"
 MODEL_HP_DENSE = "model_hp_dense"
 
 
+
+
+# A tag for logging parameters and events not required yet
+EXTRA_TAG = "extra"
+
 # ==============================================================================
 # == Stdout tags ===============================================================
 # ==============================================================================
@@ -348,7 +353,9 @@ GNMT_TAGS = (
     MODEL_HP_LOSS_SMOOTHING,
     MODEL_HP_NUM_LAYERS,
     MODEL_HP_HIDDEN_SIZE,
-    MODEL_HP_DROPOUT
+    MODEL_HP_DROPOUT,
+
+    EXTRA_TAG
 )
 
 MASKRCNN_TAGS = (
@@ -395,6 +402,8 @@ MASKRCNN_TAGS = (
     RPN_POST_NMS_TOP_N_TEST,
     BATCH_SIZE_TEST,
     ASPECT_RATIOS,
+
+    EXTRA_TAG
 )
 
 MINIGO_TAGS = (
@@ -414,6 +423,8 @@ MINIGO_TAGS = (
     EVAL_TARGET,
     EVAL_ACCURACY,
     EVAL_STOP,
+
+    EXTRA_TAG
 )
 
 NCF_TAGS = (
@@ -455,6 +466,8 @@ NCF_TAGS = (
     MODEL_HP_LOSS_FN,
     MODEL_HP_MF_DIM,
     MODEL_HP_MLP_LAYER_SIZES,
+
+    EXTRA_TAG
 )
 
 RESNET_TAGS = (
@@ -515,6 +528,8 @@ RESNET_TAGS = (
     MODEL_HP_BATCH_NORM,
     MODEL_HP_DENSE,
     MODEL_HP_RESNET_TOPOLOGY,
+
+    EXTRA_TAG
 )
 
 SSD_TAGS = (
@@ -560,6 +575,8 @@ SSD_TAGS = (
     EVAL_ACCURACY,
     EVAL_STOP,
     EVAL_ITERATION_ACCURACY,
+
+    EXTRA_TAG
 )
 
 TRANSFORMER_TAGS = (
@@ -607,6 +624,8 @@ TRANSFORMER_TAGS = (
     MODEL_HP_LAYER_POSTPROCESS_DROPOUT,
     MODEL_HP_NORM,
     MODEL_HP_SEQ_BEAM_SEARCH,
+
+    EXTRA_TAG
 )
 
 ALL_USED_TAGS.update(GNMT_TAGS)
