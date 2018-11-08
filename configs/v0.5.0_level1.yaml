@@ -10,11 +10,6 @@
     FIRST: run_stop
     SECOND: run_final
 
-- TAGS_COUNT_SAME:
-  - eval_start
-  - eval_accuracy
-  - eval_stop
-
 - TAG_EVAL_CHECK:
     NAME: has_eval_epoch
     TAG: eval_accuracy
