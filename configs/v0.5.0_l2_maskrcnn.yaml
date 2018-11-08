@@ -1,1 +1,4 @@
 # No checks
+
+- EXACTLY_ONE: run_start
+- EXACTLY_ONE: run_stop
