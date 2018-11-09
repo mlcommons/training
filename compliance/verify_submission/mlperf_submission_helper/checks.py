@@ -236,7 +236,7 @@ class SubmissionChecks(object):
       raise Exception('Unknown division: {}'.format(division))
     level, dt, _, success = self.get_compliance(log_file)
     if int(level) != expected_level:
-      print('Error Level {} does not match needed level {}:{}'.
+      raise Exception('Error Level {} does not match needed level {}:{}'.
             format(level, expected_level, log_file))
 
     # Sets failure to converge to "infinite time" per the rules
