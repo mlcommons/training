@@ -189,6 +189,7 @@ class SubmissionChecks(object):
                 os.path.dirname(__file__), "mlp_compliance/mlp_compliance.py")
         output_str = subprocess.check_output(
                 ["python", mlp_compliance_script, "--level", str(level), log_file])
+        output_str = output_str.decode('utf-8')
         success_flag = False
         result_time = None
         for line in output_str.split("\n"):
