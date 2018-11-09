@@ -130,6 +130,13 @@ def l1_check_file(filename):
     print('SUCCESS: logs are L1 compliant.')
     return True, dt, accuracy, eval_target
 
+def l1_check_file_w_starttime(filename):
+    loglines, errors = mlp_parser.parse_file(filename)
+    success, dt, accuracy, eval_target = l1_check_file(filename)
+    # Get start time to order logs
+    start = mlp_common_checks.find_tag(loglines, 'run_start', expect=1)[0]
+
+    return start.timestamp, success, dt, accuracy, eval_target
 
 def check_loglines_l2(loglines):
     l1_check_ok = check_log(loglines)
@@ -176,6 +183,13 @@ def l2_check_file(filename):
     print('SUCCESS: logs are L2 compliant.')
     return True, dt, accuracy, eval_target
 
+def l2_check_file_w_starttime(filename):
+    loglines, errors = mlp_parser.parse_file(filename)
+    success, dt, accuracy, eval_target = l2_check_file(filename)
+    # Get start time to order logs
+    start = mlp_common_checks.find_tag(loglines, 'run_start', expect=1)[0]
+
+    return start.timestamp, success, dt, accuracy, eval_target
 
 def main():
     parser = argparse.ArgumentParser(description='Lint MLPerf Compliance Logs.')
