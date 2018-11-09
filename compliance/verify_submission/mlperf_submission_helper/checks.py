@@ -204,20 +204,15 @@ class SubmissionChecks(object):
 
   def get_compliance(self, filename):
     """Get the compliance level of the output file."""
-    if filename.startswith('/'):
-      output_file = filename
-    else:
-      output_file = os.path.join(self.workspace, filename)
-
-    print('Running Compliance Check on {}'.format(output_file))
+    print('Running Compliance Check on {}'.format(filename))
     print('#' * 80)
-    status, dt, qual, target = mlp_compliance.l2_check_file(output_file)
+    status, dt, qual, target = mlp_compliance.l2_check_file(filename)
     print('#' * 80)
 
     if status:
       level = '2'
     else:
-      status, dt, qual, target = mlp_compliance.l1_check_file(output_file)
+      status, dt, qual, target = mlp_compliance.l1_check_file(filename)
       print('#' * 80)
       if status:
         level = '1'
@@ -227,8 +222,24 @@ class SubmissionChecks(object):
     success = status and qual and target and qual >= target
     return level, dt, qual, success
 
-  # use submodule mlp_compliance (https://github.com/bitfort/mlp_compliance)
   def verify_and_extract_time(self, log_file, division, result_name):
+    """Verifies and result and returns timing.
+
+    Uses submodule mlp_compliance (https://github.com/bitfort/mlp_compliance)
+
+    Args:
+      log_file: Absolute path to result file.
+      division: open, closed
+      result_name: name of the benchmark, ncf, ssd, etc
+
+    Returns:
+      Time for the result or `INFINITE_TIME` if not a success
+
+    Raises:
+      Exception: If expected compliance level is not hit or cannot figure
+      out expected compliance level.
+
+    """
     expected_level = constants.DIVISION_COMPLIANCE_CHECK_LEVEL.get(division,
                                                                    None)
     print(result_name)
@@ -237,7 +248,7 @@ class SubmissionChecks(object):
     level, dt, _, success = self.get_compliance(log_file)
     if int(level) != expected_level:
       raise Exception('Error Level {} does not match needed level {}:{}'.
-            format(level, expected_level, log_file))
+                      format(level, expected_level, log_file))
 
     # Sets failure to converge to "infinite time" per the rules
     if success and dt:

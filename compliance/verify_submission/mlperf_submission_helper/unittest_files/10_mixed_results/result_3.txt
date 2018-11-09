@@ -1,0 +1,127 @@
+:::MLPv0.5.0 ncf 1541638530.669874907 (data_preprocessing.py:139) preproc_hp_min_ratings : 20
+:::MLPv0.5.0 ncf 1541638561.582758665 (data_preprocessing.py:155) preproc_hp_num_eval : 999
+:::MLPv0.5.0 ncf 1541638561.583793640 (data_preprocessing.py:158) preproc_hp_sample_eval_replacement : true
+:::MLPv0.5.0 ncf 1541638591.467878819 (data_preprocessing.py:514) run_clear_caches 
+:::MLPv0.5.0 ncf 1541638592.953894854 (data_preprocessing.py:516) run_start 
+:::MLPv0.5.0 ncf 1541638593.117671490 (neumf_model.py:189) model_hp_mf_dim : 64
+:::MLPv0.5.0 ncf 1541638593.118999958 (neumf_model.py:191) model_hp_mlp_layer_sizes : [256, 256, 128, 64]
+:::MLPv0.5.0 ncf 1541638593.267966270 (neumf_model.py:118) opt_name : "adam"
+:::MLPv0.5.0 ncf 1541638593.269155025 (neumf_model.py:120) opt_learning_rate : 0.00395706
+:::MLPv0.5.0 ncf 1541638593.270237923 (neumf_model.py:122) opt_hp_Adam_beta1 : 0.779661
+:::MLPv0.5.0 ncf 1541638593.271331310 (neumf_model.py:124) opt_hp_Adam_beta2 : 0.895586
+:::MLPv0.5.0 ncf 1541638593.272338390 (neumf_model.py:126) opt_hp_Adam_epsilon : 1.45039e-07
+:::MLPv0.5.0 ncf 1541638593.273343563 (neumf_model.py:135) model_hp_loss_fn : "binary_cross_entropy"
+:::MLPv0.5.0 ncf 1541638594.289401293 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638594.290200949 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638594.290861845 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638597.900661469 (ncf_main.py:243) train_loop 
+:::MLPv0.5.0 ncf 1541638597.901683331 (ncf_main.py:250) train_epoch : 0
+:::MLPv0.5.0 ncf 1541638602.874284029 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638612.318328619 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638612.545264959 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638612.546017408 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638612.547684908 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638613.459522009 (data_async_generation.py:240) input_step_eval_neg_gen 
+:::MLPv0.5.0 ncf 1541638629.239745617 (ncf_main.py:288) eval_start : 0
+:::MLPv0.5.0 ncf 1541638633.120075226 (data_async_generation.py:320) eval_size : 138493000
+:::MLPv0.5.0 ncf 1541638650.751036882 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638650.751998901 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638650.752789736 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638660.243846655 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638661.108375072 (ncf_main.py:296) eval_target : {"epoch": 0, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638661.110687017 (ncf_main.py:298) eval_accuracy : {"epoch": 0, "value": 0.5356444120407104}
+:::MLPv0.5.0 ncf 1541638661.112533808 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 0, "value": 999}
+:::MLPv0.5.0 ncf 1541638661.114323378 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638661.116151333 (ncf_main.py:307) eval_stop : 0
+:::MLPv0.5.0 ncf 1541638661.120820045 (ncf_main.py:250) train_epoch : 1
+:::MLPv0.5.0 ncf 1541638671.748719931 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638671.960242510 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638671.961034775 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638671.962643623 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638672.878739595 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638672.879523277 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638672.880466938 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638682.686112642 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638684.642664671 (ncf_main.py:288) eval_start : 1
+:::MLPv0.5.0 ncf 1541638694.102167130 (ncf_main.py:296) eval_target : {"epoch": 1, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638694.103220463 (ncf_main.py:298) eval_accuracy : {"epoch": 1, "value": 0.58757483959198}
+:::MLPv0.5.0 ncf 1541638694.104175806 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 1, "value": 999}
+:::MLPv0.5.0 ncf 1541638694.105296612 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638694.106267929 (ncf_main.py:307) eval_stop : 1
+:::MLPv0.5.0 ncf 1541638694.108056545 (ncf_main.py:250) train_epoch : 2
+:::MLPv0.5.0 ncf 1541638696.770808697 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638696.993099689 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638696.994022369 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638696.995660305 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638697.932561159 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638697.933469534 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638697.934192419 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638707.198048353 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638709.624096394 (ncf_main.py:288) eval_start : 2
+:::MLPv0.5.0 ncf 1541638718.868647099 (ncf_main.py:296) eval_target : {"epoch": 2, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638718.869473219 (ncf_main.py:298) eval_accuracy : {"epoch": 2, "value": 0.6153596043586731}
+:::MLPv0.5.0 ncf 1541638718.870290279 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 2, "value": 999}
+:::MLPv0.5.0 ncf 1541638718.871115923 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638718.871890306 (ncf_main.py:307) eval_stop : 2
+:::MLPv0.5.0 ncf 1541638718.873318911 (ncf_main.py:250) train_epoch : 3
+:::MLPv0.5.0 ncf 1541638720.698725700 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638720.934088707 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638720.934892416 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638720.936585903 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638721.895664454 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638721.896656513 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638721.897491693 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638731.439008951 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638733.294950485 (ncf_main.py:288) eval_start : 3
+:::MLPv0.5.0 ncf 1541638742.417784929 (ncf_main.py:296) eval_target : {"epoch": 3, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638742.418863773 (ncf_main.py:298) eval_accuracy : {"epoch": 3, "value": 0.628912627696991}
+:::MLPv0.5.0 ncf 1541638742.419747114 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 3, "value": 999}
+:::MLPv0.5.0 ncf 1541638742.420757294 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638742.421626806 (ncf_main.py:307) eval_stop : 3
+:::MLPv0.5.0 ncf 1541638742.423120737 (ncf_main.py:250) train_epoch : 4
+:::MLPv0.5.0 ncf 1541638744.673100710 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638744.884420156 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638744.885207415 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638744.886749744 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638745.789624929 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638745.790396929 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638745.791196823 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638754.539904833 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638757.667276859 (ncf_main.py:288) eval_start : 4
+:::MLPv0.5.0 ncf 1541638766.667538404 (ncf_main.py:296) eval_target : {"epoch": 4, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638766.668629646 (ncf_main.py:298) eval_accuracy : {"epoch": 4, "value": 0.621605396270752}
+:::MLPv0.5.0 ncf 1541638766.669639111 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 4, "value": 999}
+:::MLPv0.5.0 ncf 1541638766.670649767 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638766.671548367 (ncf_main.py:307) eval_stop : 4
+:::MLPv0.5.0 ncf 1541638766.673167944 (ncf_main.py:250) train_epoch : 5
+:::MLPv0.5.0 ncf 1541638768.128195047 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638768.342603207 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638768.343390465 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638768.345059395 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638769.266900301 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638769.267585278 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638769.268135786 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638778.495992899 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638781.054627657 (ncf_main.py:288) eval_start : 5
+:::MLPv0.5.0 ncf 1541638789.908996582 (ncf_main.py:296) eval_target : {"epoch": 5, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638789.910017729 (ncf_main.py:298) eval_accuracy : {"epoch": 5, "value": 0.6323857307434082}
+:::MLPv0.5.0 ncf 1541638789.910892725 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 5, "value": 999}
+:::MLPv0.5.0 ncf 1541638789.911787748 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638789.912686586 (ncf_main.py:307) eval_stop : 5
+:::MLPv0.5.0 ncf 1541638789.914197445 (ncf_main.py:250) train_epoch : 6
+:::MLPv0.5.0 ncf 1541638791.479794741 (data_async_generation.py:296) input_order 
+:::MLPv0.5.0 ncf 1541638791.693878889 (data_async_generation.py:314) input_size : 99385344
+:::MLPv0.5.0 ncf 1541638791.694731474 (data_async_generation.py:316) input_batch_size : 98304
+:::MLPv0.5.0 ncf 1541638791.696250677 (data_async_generation.py:347) input_order 
+:::MLPv0.5.0 ncf 1541638792.597578764 (data_async_generation.py:227) input_step_train_neg_gen 
+:::MLPv0.5.0 ncf 1541638792.598493814 (data_async_generation.py:229) input_hp_num_neg : 4
+:::MLPv0.5.0 ncf 1541638792.599245071 (data_async_generation.py:233) input_hp_sample_train_replacement : true
+:::MLPv0.5.0 ncf 1541638801.734756708 (data_async_generation.py:277) input_order 
+:::MLPv0.5.0 ncf 1541638804.306957722 (ncf_main.py:288) eval_start : 6
+:::MLPv0.5.0 ncf 1541638813.269903660 (ncf_main.py:296) eval_target : {"epoch": 6, "value": 0.635}
+:::MLPv0.5.0 ncf 1541638813.270980597 (ncf_main.py:298) eval_accuracy : {"epoch": 6, "value": 0.6393969655036926}
+:::MLPv0.5.0 ncf 1541638813.271996021 (ncf_main.py:301) eval_hp_num_neg : {"epoch": 6, "value": 999}
+:::MLPv0.5.0 ncf 1541638813.272984028 (ncf_main.py:305) eval_hp_num_users : 138493
+:::MLPv0.5.0 ncf 1541638813.273951769 (ncf_main.py:307) eval_stop : 6
+:::MLPv0.5.0 ncf 1541638813.275540352 (ncf_main.py:322) run_stop : {"success": true}
+:::MLPv0.5.0 ncf 1541638818.417414188 (ncf_main.py:328) run_final 
