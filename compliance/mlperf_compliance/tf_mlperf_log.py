@@ -51,7 +51,8 @@ def log_deferred(op, log_id, every_n=1, first_n=None):
   if not first_n is not None and first_n == 1:
     return tf.Print(op, [tf.timestamp(), op], message=prefix, first_n=1)
 
-  counter = tf.Variable(tf.zeros(shape=(), dtype=tf.int32) - 1)
+  counter = tf.Variable(tf.zeros(shape=(), dtype=tf.int32) - 1,
+                        aggregation=tf.VariableAggregation.MEAN)
   increment = tf.assign_add(counter, 1, use_locking=True)
   return tf.cond(
       tf.equal(tf.mod(increment, every_n), 0),
@@ -69,7 +70,8 @@ def sum_metric(tensor, name):
       tf.GraphKeys.LOCAL_VARIABLES,
       tf.GraphKeys.METRIC_VARIABLES,
     ],
-    name="{}_total".format(name)
+    name="{}_total".format(name),
+    aggregation=tf.VariableAggregation.SUM
   )
 
   update_op = tf.identity(tf.assign_add(sum_var, tensor))
