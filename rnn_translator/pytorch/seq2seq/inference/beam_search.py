@@ -1,20 +1,33 @@
 import torch
-
 from mlperf_compliance import mlperf_log
 
 from seq2seq.data.config import BOS
 from seq2seq.data.config import EOS
+from seq2seq.utils import gnmt_print
 
 
-class SequenceGenerator(object):
-    def __init__(self,
-                 model,
-                 beam_size=5,
-                 max_seq_len=100,
-                 cuda=False,
-                 len_norm_factor=0.6,
-                 len_norm_const=5,
+class SequenceGenerator:
+    """
+    Generator for the autoregressive inference with beam search decoding.
+    """
+    def __init__(self, model, beam_size=5, max_seq_len=100, cuda=False,
+                 len_norm_factor=0.6, len_norm_const=5,
                  cov_penalty_factor=0.1):
+        """
+        Constructor for the SequenceGenerator.
+
+        Beam search decoding supports coverage penalty and length
+        normalization. For details, refer to Section 7 of the GNMT paper
+        (https://arxiv.org/pdf/1609.08144.pdf).
+
+        :param model: model which implements generate method
+        :param beam_size: decoder beam size
+        :param max_seq_len: maximum decoder sequence length
+        :param cuda: whether to use cuda
+        :param len_norm_factor: length normalization factor
+        :param len_norm_const: length normalization constant
+        :param cov_penalty_factor: coverage penalty factor
+        """
 
         self.model = model
         self.cuda = cuda
@@ -26,18 +39,31 @@ class SequenceGenerator(object):
 
         self.batch_first = self.model.batch_first
 
-        mlperf_log.gnmt_print(key=mlperf_log.EVAL_HP_BEAM_SIZE,
-                              value=self.beam_size)
-        mlperf_log.gnmt_print(key=mlperf_log.EVAL_HP_MAX_SEQ_LEN,
-                              value=self.max_seq_len)
-        mlperf_log.gnmt_print(key=mlperf_log.EVAL_HP_LEN_NORM_CONST,
-                              value=self.len_norm_const)
-        mlperf_log.gnmt_print(key=mlperf_log.EVAL_HP_LEN_NORM_FACTOR,
-                              value=self.len_norm_factor)
-        mlperf_log.gnmt_print(key=mlperf_log.EVAL_HP_COV_PENALTY_FACTOR,
-                              value=self.cov_penalty_factor)
+        gnmt_print(key=mlperf_log.EVAL_HP_BEAM_SIZE,
+                   value=self.beam_size, sync=False)
+        gnmt_print(key=mlperf_log.EVAL_HP_MAX_SEQ_LEN,
+                   value=self.max_seq_len, sync=False)
+        gnmt_print(key=mlperf_log.EVAL_HP_LEN_NORM_CONST,
+                   value=self.len_norm_const, sync=False)
+        gnmt_print(key=mlperf_log.EVAL_HP_LEN_NORM_FACTOR,
+                   value=self.len_norm_factor, sync=False)
+        gnmt_print(key=mlperf_log.EVAL_HP_COV_PENALTY_FACTOR,
+                   value=self.cov_penalty_factor, sync=False)
 
     def greedy_search(self, batch_size, initial_input, initial_context=None):
+        """
+        Greedy decoder.
+
+        :param batch_size: decoder batch size
+        :param initial_input: initial input, usually tensor of BOS tokens
+        :param initial_context: initial context, usually [encoder_context,
+            src_seq_lengths, None]
+
+        returns: (translation, lengths, counter)
+            translation: (batch_size, max_seq_len) - indices of target tokens
+            lengths: (batch_size) - lengths of generated translations
+            counter: number of iterations of the decoding loop
+        """
         max_seq_len = self.max_seq_len
 
         translation = torch.zeros(batch_size, max_seq_len, dtype=torch.int64)
@@ -68,7 +94,8 @@ class SequenceGenerator(object):
             counter += 1
 
             words = words.view(word_view)
-            words, logprobs, attn, context = self.model.generate(words, context, 1)
+            output = self.model.generate(words, context, 1)
+            words, logprobs, attn, context = output
             words = words.view(-1)
 
             translation[active, idx] = words
@@ -91,19 +118,34 @@ class SequenceGenerator(object):
         return translation, lengths, counter
 
     def beam_search(self, batch_size, initial_input, initial_context=None):
+        """
+        Beam search decoder.
+
+        :param batch_size: decoder batch size
+        :param initial_input: initial input, usually tensor of BOS tokens
+        :param initial_context: initial context, usually [encoder_context,
+            src_seq_lengths, None]
+
+        returns: (translation, lengths, counter)
+            translation: (batch_size, max_seq_len) - indices of target tokens
+            lengths: (batch_size) - lengths of generated translations
+            counter: number of iterations of the decoding loop
+        """
         beam_size = self.beam_size
         norm_const = self.len_norm_const
         norm_factor = self.len_norm_factor
         max_seq_len = self.max_seq_len
         cov_penalty_factor = self.cov_penalty_factor
 
-        translation = torch.zeros(batch_size * beam_size, max_seq_len, dtype=torch.int64)
+        translation = torch.zeros(batch_size * beam_size, max_seq_len,
+                                  dtype=torch.int64)
         lengths = torch.ones(batch_size * beam_size, dtype=torch.int64)
         scores = torch.zeros(batch_size * beam_size, dtype=torch.float32)
 
         active = torch.arange(0, batch_size * beam_size, dtype=torch.int64)
         base_mask = torch.arange(0, batch_size * beam_size, dtype=torch.int64)
-        global_offset = torch.arange(0, batch_size * beam_size, beam_size, dtype=torch.int64)
+        global_offset = torch.arange(0, batch_size * beam_size, beam_size,
+                                     dtype=torch.int64)
 
         eos_beam_fill = torch.tensor([0] + (beam_size - 1) * [float('-inf')])
 
@@ -135,21 +177,23 @@ class SequenceGenerator(object):
             _, seq, feature = context[0].shape
             context[0].unsqueeze_(1)
             context[0] = context[0].expand(-1, beam_size, -1, -1)
-            context[0] = context[0].contiguous().view(batch_size * beam_size, seq, feature)
+            context[0] = context[0].contiguous().view(batch_size * beam_size,
+                                                      seq, feature)
             # context[0]: (batch * beam, seq, feature)
         else:
             # context[0] (encoder state): (seq, batch, feature)
             seq, _, feature = context[0].shape
             context[0].unsqueeze_(2)
             context[0] = context[0].expand(-1, -1, beam_size, -1)
-            context[0] = context[0].contiguous().view(seq, batch_size * beam_size, feature)
+            context[0] = context[0].contiguous().view(seq, batch_size *
+                                                      beam_size, feature)
             # context[0]: (seq, batch * beam,  feature)
 
-        #context[1] (encoder seq length): (batch)
+        # context[1] (encoder seq length): (batch)
         context[1].unsqueeze_(1)
         context[1] = context[1].expand(-1, beam_size)
         context[1] = context[1].contiguous().view(batch_size * beam_size)
-        #context[1]: (batch * beam)
+        # context[1]: (batch * beam)
 
         accu_attn_scores = torch.zeros(batch_size * beam_size, seq)
         if self.cuda:
@@ -168,7 +212,8 @@ class SequenceGenerator(object):
 
             lengths[active[~eos_mask.view(-1)]] += 1
 
-            words, logprobs, attn, context = self.model.generate(words, context, beam_size)
+            output = self.model.generate(words, context, beam_size)
+            words, logprobs, attn, context = output
 
             attn = attn.float().squeeze(attn_query_dim)
             attn = attn.masked_fill(eos_mask.view(-1).unsqueeze(1), 0)
