@@ -30,13 +30,13 @@ from absl import flags
 from absl import logging
 
 import numpy as np
+import util
 
 from graph_analysis import sparse_svd
 from graph_expansion import output_randomized_kronecker_to_pickle
 from graph_reduction import normalize_matrix
 from graph_reduction import resize_matrix
 
-.third_party.tensorflow_models.mlperf.data_generation.fractal_graph_expansions.util as util
 
 flags.DEFINE_string("input_csv_file",
                     "ratings.csv",
