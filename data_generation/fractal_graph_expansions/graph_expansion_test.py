@@ -25,7 +25,7 @@ import itertools
 import numpy as np
 import tensorflow as tf
 
-from import graph_expansion
+import graph_expansion
 from test_util import random_binary_sparse_matrix
 from test_util import read_from_serialized_file
 

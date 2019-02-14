@@ -25,7 +25,7 @@ import collections
 import numpy as np
 import tensorflow as tf
 
-from import random_matrix_ops
+import random_matrix_ops
 from test_util import random_binary_sparse_matrix
 
 

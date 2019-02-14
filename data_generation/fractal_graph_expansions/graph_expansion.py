@@ -31,7 +31,7 @@ from absl import logging
 
 from scipy import sparse
 
-from import util
+import util
 from random_matrix_ops import shuffle_sparse_coo_matrix
 
 

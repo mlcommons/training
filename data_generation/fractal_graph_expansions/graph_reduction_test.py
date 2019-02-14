@@ -23,7 +23,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from import graph_reduction
+import graph_reduction
 from test_util import all_close
 
 

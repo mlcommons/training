@@ -23,7 +23,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from import graph_analysis
+import graph_analysis
 from test_util import all_close
 from test_util import random_binary_sparse_matrix
 

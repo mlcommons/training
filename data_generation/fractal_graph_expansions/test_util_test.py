@@ -22,7 +22,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from import test_util
+import test_util
 
 
 class TestUtilTest(tf.test.TestCase):

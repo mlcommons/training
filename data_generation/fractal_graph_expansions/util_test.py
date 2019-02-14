@@ -23,7 +23,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from import util
+import util
 from test_util import random_binary_sparse_matrix
 from test_util import sparse_to_df
 
