@@ -50,7 +50,7 @@ Sizes of generated data sets:
   * 12,709,557 interactions in test set
   * 2,197,225 users
   * 855,776 items
-  2) With --num_row_multiplier=16 --num_col_multiplier=32:
+  2) With --num_row_multiplier=4 --num_col_multiplier=16:
   * 131,203,749 interactions in train set
   * 1,462,391 interactions in test set
   * 498,975 users
