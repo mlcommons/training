@@ -1,17 +1,17 @@
-# Copyright 2019 The TensorFlow Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
+Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================
 
 This is a directory used to produce larger versions of MovieLens through
   fractal expansions. The expansion is stochastic, see equation (2) and
@@ -36,11 +36,25 @@ How to run (takes ~30 mins on a recent desktop):
   1) Download MovieLens20m from https://grouplens.org/datasets/movielens/
   (permalink http://grouplens.org/datasets/movielens/20m/).
   2) python run_expansion.py will generate the data set with the following flags
-    a) --input_csv_file, the path to the ratings.csv file downloaded
-      from MovieLens.
-    b) --num_row_multiplier, the multiplier for the number of users.
-    c) --num_col_multiplier, the multiplier for the number of items.
-    d) --output_prefix, the path to the output files including their prefix.
+  * --input_csv_file, the path to the ratings.csv file downloaded
+    from MovieLens.
+  * --num_row_multiplier, the multiplier for the number of users.
+    16 (default) yields ~1B interactions, for now 4 is used to train models.
+  * --num_col_multiplier, the multiplier for the number of items.
+    32 (default) yields ~1B interactions, for now 16 is used to train models.
+  * --output_prefix, the path to the output files including their prefix.
+
+Sizes of generated data sets:
+  1) With --num_row_multiplier=16 --num_col_multiplier=32:
+  * 1,223,962,043 interactions in train set
+  * 12,709,557 interactions in test set
+  * 2,197,225 users
+  * 855,776 items
+  2) With --num_row_multiplier=16 --num_col_multiplier=32:
+  * 131,203,749 interactions in train set
+  * 1,462,391 interactions in test set
+  * 498,975 users
+  * 427,888 items
 
 A train and test set will be generated. No information from the test set is
   available in the train set.
@@ -54,7 +68,8 @@ Each shard is a pickled list of numpy arrays, each array corresponds to an user
 The train and test sets will also each feature a separate metadata file
   output_prefix_train/test_metadata.pkl. The metadata contains a pickled
   graph_expansion.SparseMatrixMetadata object entailing the number of
-  interactions, users and items in each data set.
+  interactions, users and items in each data set. (Don't forget to import
+  graph_expansion.SparseMatrixMetadata before pickle.load(...)).
 
 If the original rating matrix (after filtering) has (n, m) (users, items) then
   the synthesized matrix will have about
@@ -67,7 +82,7 @@ Actual users with less than two distinct rating timestamps are dropped from
 
 Other useful flags:
   1) --min_dropout_rate, decreasing/increasing this value will result in
-    a denser/sparser generated data set.
+    a denser/sparser generated data set. 0.05 (default) is used.
   2) --max_dropout_rate, decreasing/increasing this value will result in
-    a denser/sparser generated data set.
+    a denser/sparser generated data set. 0.99 (default) is used.
 

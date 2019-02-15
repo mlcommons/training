@@ -30,8 +30,10 @@ from absl import flags
 from absl import logging
 
 import numpy as np
-import util
 
+from util import load_df_from_file
+from util import convert_df_to_sparse_matrix
+from util import describe_rating_df
 from graph_analysis import sparse_svd
 from graph_expansion import output_randomized_kronecker_to_pickle
 from graph_reduction import normalize_matrix
