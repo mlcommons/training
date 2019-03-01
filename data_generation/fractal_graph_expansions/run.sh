@@ -1,7 +1,8 @@
 #!/bin/bash
 
-blaze run -c opt --copt=-mavx --copt=-mavx2 --copt=-mfma --copt=-mfpmath=both \
-  third_party/tensorflow_models/mlperf/data_generation/fractal_graph_expansions:run_expansion -- \
-  --alsologtostderr --input_csv_file=/cns/oi-d/home/sim-research/datasets/recommendations/ml-20m/ratings.csv \
-  --num_row_multiplier=16 --num_col_multiplier=32 \
-  --output_prefix=/cns/oi-d/home/sim-research/datasets/recommendations/ml-20m/16_32_correct --gfs_user=sim-research
+output_prefix="16_32_movie_lens_expansion"
+num_row_multiplier=16
+num_col_multiplier=32
+
+python run_expansion.py --output_prefix=$output_prefix --num_row_multiplier=$num_row_multiplier --num_col_multiplier=$num_col_multiplier
+python post_process.py --output_prefix=$output_prefix --num_shards=$num_row_multiplier
