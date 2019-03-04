@@ -91,11 +91,11 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
     overlap_threshold = 0.50
     nms_max_detections = 200
     ssd_print(key=mlperf_log.NMS_THRESHOLD,
-                         value=overlap_threshold)
+                         value=overlap_threshold, sync=False)
     ssd_print(key=mlperf_log.NMS_MAX_DETECTIONS,
-                         value=nms_max_detections)
+                         value=nms_max_detections, sync=False)
 
-    ssd_print(key=mlperf_log.EVAL_START, value=epoch)
+    ssd_print(key=mlperf_log.EVAL_START, value=epoch, sync=False)
 
     start = time.time()
     for idx, image_id in enumerate(coco.img_keys):
@@ -145,12 +145,14 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
     ssd_print(key=mlperf_log.EVAL_SIZE, value=idx + 1)
     ssd_print(key=mlperf_log.EVAL_ACCURACY,
                          value={"epoch": epoch,
-                                "value": current_accuracy})
+                                "value": current_accuracy},
+              sync=False)
     ssd_print(key=mlperf_log.EVAL_ITERATION_ACCURACY,
                          value={"iteration": iteration,
-                                "value": current_accuracy})
-    ssd_print(key=mlperf_log.EVAL_TARGET, value=threshold)
-    ssd_print(key=mlperf_log.EVAL_STOP, value=epoch)
+                                "value": current_accuracy},
+              sync=False)
+    ssd_print(key=mlperf_log.EVAL_TARGET, value=threshold, sync=False)
+    ssd_print(key=mlperf_log.EVAL_STOP, value=epoch, sync=False)
     return current_accuracy>= threshold #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
 
 def lr_warmup(optim, warmup_iter, iter_num, base_lr, args):

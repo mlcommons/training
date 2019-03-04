@@ -16,8 +16,9 @@ import torch
 import numpy as np
 from mlperf_compliance import mlperf_log
 
-def ssd_print(*args, **kwargs):
-    barrier()
+def ssd_print(*args, sync=True, **kwargs):
+    if sync:
+        barrier()
     if get_rank() == 0:
         kwargs['stack_offset'] = 2
         mlperf_log.ssd_print(*args, **kwargs)
