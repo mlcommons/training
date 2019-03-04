@@ -4,6 +4,7 @@
 
 pushd pytorch
 
-python setup.py build develop --user
+rm -Rf build/
+python setup.py clean build develop --user
 
 popd

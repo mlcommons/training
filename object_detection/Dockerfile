@@ -1,47 +1,72 @@
-FROM nvcr.io/nvidia/pytorch:19.01-py3
+FROM pytorch/pytorch:1.0.1-cuda10.0-cudnn7-devel
 
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 # install basics
 RUN apt-get update -y \
- && apt-get install -y apt-utils git curl ca-certificates bzip2 cmake tree htop bmon iotop g++ \
- && apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev
+ && apt-get install -y apt-utils=1.2.29ubuntu0.1 \
+                       libglib2.0-0=2.48.2-0ubuntu4.1 \
+                       libsm6=2:1.2.2-1 \
+                       libxext6=2:1.3.3-1 \
+                       libxrender-dev=1:0.9.9-0ubuntu1
 
-# Install Miniconda
-RUN curl -so /miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh \
- && chmod +x /miniconda.sh \
- && /miniconda.sh -b -p /miniconda \
- && rm /miniconda.sh
-
-ENV PATH=/miniconda/bin:$PATH
-
-# Create a Python 3.6 environment
-RUN /miniconda/bin/conda install -y conda-build \
- && /miniconda/bin/conda create -y --name py36 python=3.6.7 \
- && /miniconda/bin/conda clean -ya
-
-ENV CONDA_DEFAULT_ENV=py36
-ENV CONDA_PREFIX=/miniconda/envs/$CONDA_DEFAULT_ENV
-ENV PATH=$CONDA_PREFIX/bin:$PATH
-ENV CONDA_AUTO_UPDATE_CONDA=false
-
-RUN conda install -y ipython
-RUN pip install ninja yacs cython matplotlib opencv-python
-
-# Install PyTorch 1.0 Nightly and OpenCV
-RUN conda install -y pytorch-nightly -c pytorch \
- && conda clean -ya
-
-# Install TorchVision master
-RUN git clone https://github.com/pytorch/vision.git \
- && cd vision \
- && python setup.py install
+RUN pip install ninja==1.8.2.post2 \
+                yacs==0.1.5 \
+                cython==0.29.5 \
+                matplotlib==3.0.2 \
+                opencv-python==4.0.0.21 \
+                mlperf_compliance==0.0.10 \
+                torchvision==0.2.2
 
 # install pycocotools
 RUN git clone https://github.com/cocodataset/cocoapi.git \
  && cd cocoapi/PythonAPI \
+ && git reset --hard ed842bffd41f6ff38707c4f0968d2cfd91088688 \
  && python setup.py build_ext install
 
-# Install MLPerf module
-RUN pip install mlperf_compliance
-
+# For information purposes only, these are the versions of the packages which we've successfully used:
+# $ pip list
+# Package              Version           Location
+# -------------------- ----------------- -------------------------------------------------
+# backcall             0.1.0
+# certifi              2018.11.29
+# cffi                 1.11.5
+# cycler               0.10.0
+# Cython               0.29.5
+# decorator            4.3.2
+# fairseq              0.6.0             /scratch/fairseq
+# ipython              7.2.0
+# ipython-genutils     0.2.0
+# jedi                 0.13.2
+# kiwisolver           1.0.1
+# maskrcnn-benchmark   0.1               /scratch/mlperf/training/object_detection/pytorch
+# matplotlib           3.0.2
+# mkl-fft              1.0.10
+# mkl-random           1.0.2
+# mlperf-compliance    0.0.10
+# ninja                1.8.2.post2
+# numpy                1.16.1
+# opencv-python        4.0.0.21
+# parso                0.3.2
+# pexpect              4.6.0
+# pickleshare          0.7.5
+# Pillow               5.4.1
+# pip                  19.0.1
+# prompt-toolkit       2.0.8
+# ptyprocess           0.6.0
+# pycocotools          2.0
+# pycparser            2.19
+# Pygments             2.3.1
+# pyparsing            2.3.1
+# python-dateutil      2.8.0
+# pytorch-quantization 0.2.1
+# PyYAML               3.13
+# setuptools           40.8.0
+# six                  1.12.0
+# torch                1.0.0.dev20190225
+# torchvision          0.2.1
+# tqdm                 4.31.1
+# traitlets            4.3.2
+# wcwidth              0.1.7
+# wheel                0.32.3
+# yacs                 0.1.5
