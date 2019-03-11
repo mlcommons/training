@@ -160,6 +160,27 @@ class BaseParser(argparse.ArgumentParser):
           metavar="<BS>"
       )
 
+    if enable_lars:
+      self.add_argument(
+         "--enable_lars", "-el", type=Boolean, default=False,
+         help='Enable LARS optimizer for large batch training.',
+         metavar="<EL>"
+      )
+
+    if label_smoothing:
+      self.add_argument(
+         "--label_smoothing", "-ls", type=float, default=0.0,
+         help='Label smoothing parameter used in the softmax_cross_entropy'
+         metavar="<LS>"
+      )
+
+   if weight_decay:
+      self.add_argument(
+         "--weight_decay", "-wd", type=float, default=1e-4,
+         help='Weight decay coefficiant for l2 regularization.'
+         metavar="<WD>"
+      )
+
     assert not (multi_gpu and num_gpu)
 
     if multi_gpu:
