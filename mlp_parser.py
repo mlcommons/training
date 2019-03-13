@@ -29,7 +29,7 @@ LogLine = collections.namedtuple('LogLine', [
 TOKEN = ':::MLP'
 
 LINE_PATTERN = '''
-^
+^.*
 (:::MLP)(v[\d]+\.[\d+]\.[\d+]) [ ] # token and version
 ([a-z]+) [ ] # benchmark
 ([\d\.]+) [ ] # timestamp
@@ -92,7 +92,7 @@ def parse_generator(gen):
     failed = []
     for line in gen:
         line = line.strip()
-        if not line.startswith(TOKEN):
+        if TOKEN not in line:
             continue
         try:
             ll = string_to_logline(line)
