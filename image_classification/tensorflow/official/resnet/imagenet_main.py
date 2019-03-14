@@ -279,16 +279,15 @@ def imagenet_model_fn(features, labels, mode, params):
   # Warmup and higher lr may not be valid for fine tuning with small batches
   # and smaller numbers of training images.
   if params['fine_tune']:
-    warmup = False
     base_lr = .1
   else:
-    warmup = True
     base_lr = .128
 
   learning_rate_fn = resnet_run_loop.learning_rate_with_decay(
       batch_size=params['batch_size'], batch_denom=256,
       num_images=_NUM_IMAGES['train'], boundary_epochs=[30, 60, 80, 90],
-      decay_rates=[1, 0.1, 0.01, 0.001, 1e-4], warmup=warmup, base_lr=_BASE_LR)
+      decay_rates=[1, 0.1, 0.01, 0.001, 1e-4], base_lr=_BASE_LR,
+      enable_lars=params['enable_lars'])
 
   return resnet_run_loop.resnet_model_fn(
       features=features,
@@ -296,7 +295,7 @@ def imagenet_model_fn(features, labels, mode, params):
       mode=mode,
       model_class=ImagenetModel,
       resnet_size=params['resnet_size'],
-      weight_decay=flags.weight_decay,
+      weight_decay=params['weight_decay'],
       learning_rate_fn=learning_rate_fn,
       momentum=0.9,
       data_format=params['data_format'],
@@ -304,8 +303,8 @@ def imagenet_model_fn(features, labels, mode, params):
       loss_scale=params['loss_scale'],
       loss_filter_fn=None,
       dtype=params['dtype'],
-      fine_tune=params['fine_tune'],
-      label_smoothing=flags.label_smoothing
+      label_smoothing=params['label_smoothing'],
+      enable_lars=params['enable_lars']
   )
 
 
@@ -314,8 +313,8 @@ def main(argv):
       resnet_size_choices=[18, 34, 50, 101, 152, 200])
 
   parser.set_defaults(
-      train_epochs=90,
-      version=1
+       train_epochs=90,
+       version=1
   )
 
   flags = parser.parse_args(args=argv[2:])
