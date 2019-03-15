@@ -110,7 +110,8 @@ class BaseParser(argparse.ArgumentParser):
   def __init__(self, add_help=False, data_dir=True, model_dir=True,
                train_epochs=True, epochs_between_evals=True,
                stop_threshold=True, batch_size=True,
-               multi_gpu=False, num_gpu=True, hooks=True):
+               multi_gpu=False, num_gpu=True, hooks=True,
+               enable_lars=True, label_smoothing=True, weight_decay=True, fine_tune=True):
     super(BaseParser, self).__init__(add_help=add_help)
 
     if data_dir:
@@ -158,6 +159,32 @@ class BaseParser(argparse.ArgumentParser):
           help="[default: %(default)s] Global batch size for training and "
                "evaluation.",
           metavar="<BS>"
+      )
+
+    if enable_lars:
+      self.add_argument(
+         "--enable_lars", "-el", action='store_true',
+         help='[default: %(default)s] Enable LARS optimizer for large batch training.'
+      )
+
+    if label_smoothing:
+      self.add_argument(
+         "--label_smoothing", "-lsm", type=float, default=0.0,
+         help='[default: %(default)s] Label smoothing parameter used in the softmax_cross_entropy',
+         metavar="<LSM>"
+      )
+
+    if weight_decay:
+      self.add_argument(
+         "--weight_decay", "-wd", type=float, default=1e-4,
+         help='[default: %(default)s] Weight decay coefficiant for l2 regularization.',
+         metavar="<WD>"
+      )
+
+    if fine_tune:
+      self.add_argument(
+         "--fine_tune", "-ft", action='store_true',
+          help="[default: %(default)s] fine_tune: If True only train the dense layers(final layers."
       )
 
     assert not (multi_gpu and num_gpu)
