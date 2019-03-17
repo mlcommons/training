@@ -33,11 +33,11 @@ def _closest_column_orthogonal_matrix(matrix):
       scipy.linalg.sqrtm(np.matmul(matrix.T, matrix))))
 
 
-def resize_matrix((u, s, v), num_rows, num_cols):
+def resize_matrix(usv, num_rows, num_cols):
   """Apply algorith 2 in https://arxiv.org/pdf/1901.08910.pdf.
 
   Args:
-    (u, s, v): matrix to reduce given in SVD form with the spectrum s in
+    usv: matrix to reduce given in SVD form with the spectrum s in
       increasing order.
     num_rows: number of rows in the output matrix.
     num_cols: number of columns in the output matrix.
@@ -45,6 +45,7 @@ def resize_matrix((u, s, v), num_rows, num_cols):
     A resized version of (u, s, v) whose non zero singular values will be
       identical to the largest singular values in s.
   """
+  u, s, v = usv
   k = min(num_rows, num_cols)
 
   u_random_proj = transform.resize(u[:, :k], (num_rows, k))
