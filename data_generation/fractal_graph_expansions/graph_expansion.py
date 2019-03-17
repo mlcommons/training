@@ -25,7 +25,7 @@ from __future__ import print_function
 
 import collections
 
-
+from six.moves import xrange
 
 from absl import logging
 
