@@ -325,7 +325,15 @@ def run_real_data():
     print("num_items:", num_items)
 
     st = timeit.default_timer()
-    sampler, pos_users, pos_items = process_data(num_items=num_items, min_items_per_user=1, iter_fn=iter_data)
+    sampler_cache = _PREFIX + "cached_sampler.pkl"
+    if os.path.exists(sampler_cache):
+      print("Using cache: {}".format(sampler_cache))
+      with open(sampler_cache, "rb") as f:
+        sampler, pos_users, pos_items = pickle.load(f)
+    else:
+      sampler, pos_users, pos_items = process_data(num_items=num_items, min_items_per_user=1, iter_fn=iter_data)
+      with open(sampler_cache, "wb") as f:
+        pickle.dump([sampler, pos_users, pos_items], f, pickle.HIGHEST_PROTOCOL)
     preproc_time = timeit.default_timer() - st
     num_users = len(sampler.num_regions)
     print("num_users:", num_users)
