@@ -306,8 +306,7 @@ def iter_data():
     shards = sorted([i for i in os.listdir(os.getcwd())
                      if i.startswith(_PREFIX + "_train.")])
 
-    # TODO(robieta): run on a machine with more memory.
-    for shard in shards[:4]:
+    for shard in shards:
         print(shard)
         with open(shard, "rb") as f:
             for i, data in enumerate(pickle.load(f)):
