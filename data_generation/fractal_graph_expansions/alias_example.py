@@ -251,10 +251,11 @@ def profile_sampler(sampler, batch_size, num_batches, num_users):
     print("id creation time: {:.2f} sec".format(timeit.default_timer() - st))
 
     st = timeit.default_timer()
+    k = 20  # Prevent single threaded test from taking forever.
     [sampler.sample_negatives(i) for i in test_user_inds]
-    print("Single threaded time: {:.2f} sec / 1B samples".format((timeit.default_timer() - st) / batch_size / num_batches * 1e9))
+    print("Single threaded time: {:.2f} sec / 1B samples".format((timeit.default_timer() - st) / min([k, batch_size]) / num_batches * 1e9))
 
-    for num_threads in [2, 4, 8, 16]:
+    for num_threads in [4, 8, 16, 32, 48, 64]:
       with multiprocessing.dummy.Pool(num_threads) as pool:
           st = timeit.default_timer()
           results = pool.map(sampler.sample_negatives, test_user_inds)
@@ -340,7 +341,7 @@ def run_real_data():
     print("Preprocessing complete: {:.1f} sec".format(preproc_time))
     print()
 
-    _ = profile_sampler(sampler=sampler, batch_size=int(1e5), num_batches=1000, num_users=num_users)
+    _ = profile_sampler(sampler=sampler, batch_size=int(1e6), num_batches=1000, num_users=num_users)
 
 
 def main():
