@@ -31,9 +31,7 @@ from absl import logging
 
 import numpy as np
 
-from util import load_df_from_file
-from util import convert_df_to_sparse_matrix
-from util import describe_rating_df
+import util
 from graph_analysis import sparse_svd
 from graph_expansion import output_randomized_kronecker_to_pickle
 from graph_reduction import normalize_matrix
@@ -53,9 +51,11 @@ flags.DEFINE_integer("num_col_multiplier",
                      "matrix will be multiplied.")
 flags.DEFINE_string("output_prefix",
                     "",
-                    "Prefix to the path of the pickle files that will be "
-                    "produced. output_prefix_train.pkl and "
-                    "output_prefix_test.pkl will be created.")
+                    "Prefix to the path of the files that will be "
+                    "produced. output_prefix/trainxAxB_C.npz and "
+                    "output_prefix/testxAxB_C.npz will be created, "
+                    "where A is num_row_multiplier, B is num_col_multiplier, "
+                    "and C goes from 0 to (num_row_multiplier - 1).")
 flags.DEFINE_integer("random_seed",
                      0,
                      "Random seed for all random operations.")
@@ -173,10 +173,12 @@ def main(_):
   train_test_ratings_matrix = train_test_ratings_matrix.tocoo()
   logging.info("Done creating signed train/test matrix.")
 
-  output_train_file = FLAGS.output_prefix + "_train.pkl"
-  output_test_file = FLAGS.output_prefix + "_test.pkl"
-  output_train_file_metadata = FLAGS.output_prefix + "_train_metadata.pkl"
-  output_test_file_metadata = FLAGS.output_prefix + "_test_metadata.pkl"
+  output_train_file = (FLAGS.output_prefix + "trainx" + 
+      str(reduced_num_rows) + "x" + str(reduced_num_cols))
+  output_test_file = (FLAGS.output_prefix + "testx" +
+      str(reduced_num_rows) + "x" + str(reduced_num_cols))
+  output_train_file_metadata = None
+  output_test_file_metadata = None
 
   logging.info("Creating synthetic train data set and dumping to %s.",
                output_train_file)

@@ -86,3 +86,12 @@ Other useful flags:
   2) --max_dropout_rate, decreasing/increasing this value will result in
     a denser/sparser generated data set. 0.99 (default) is used.
 
+# Running instructions for the recommendation benchmark
+
+Assuming that the unzipped ML-20M dataset is stored under `/data/cache/ml-20m`, run:
+
+```
+./data_gen.sh
+```
+
+The resulting dataset should be stored under `/data/cache/ml-20mx16x32`.

@@ -66,21 +66,28 @@ source ../verify_dataset.sh
 
 ### Steps to run and time
 
-#### From Source
+#### Expanding the dataset
 
-Run the `run_and_time.sh` script with an integer seed value between 1 and 5
+The original ML-20M dataset is expanded to 16x more users and 32x more items using the code from the `data_generation` directory in the `mlperf/training` repo.
+To obtain the expanded dataset, follow the instructions from section `Running instructions for recommendation benchmark` from the README file in the `data_generation` directory.
+The obtained dataset should be stored in the `/data/cache/ml-20mx16x32` directory
 
-```bash
-source run_and_time.sh SEED
+#### Generating the negative test samples
+
+Assuming the expanded dataset is stored under `/data/cache/ml-20mx16x32` directory, run:
+
+```
+python convert.py /data/cache/ml-20mx16x32
 ```
 
-#### Docker Image
+#### Running the training
 
-```bash
-sudo nvidia-docker run -i -t --rm --ipc=host \
-    --mount "type=bind,source=$(pwd),destination=/mlperf/experiment" \
-    mlperf/recommendation:v0.5 SEED
+Assuming the expanded dataset together with the generated test negative samples files are stored under `/data/cache/ml-20mx16x32` directory, run:
+
 ```
+./run_and_time.sh <SEED>
+```
+
 
 # 3. Dataset/Environment
 ### Publication/Attribution
