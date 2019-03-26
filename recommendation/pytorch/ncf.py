@@ -1,5 +1,4 @@
 import torch.jit
-from apex.optimizers import FusedAdam
 import os
 import math
 import time
@@ -279,7 +278,7 @@ def main():
     # Add optimizer and loss to graph
     params = model.parameters()
 
-    optimizer = FusedAdam(params, lr=args.learning_rate, betas=(args.beta1, args.beta2), eps=args.eps, eps_inside_sqrt=False)
+    optimizer = torch.optim.Adam(params, lr=args.learning_rate, betas=(args.beta1, args.beta2), eps=args.eps)
     criterion = nn.BCEWithLogitsLoss(reduction = 'none') # use torch.mean() with dim later to avoid copy to host
     mlperf_log.ncf_print(key=mlperf_log.OPT_LR, value=args.learning_rate)
     mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")

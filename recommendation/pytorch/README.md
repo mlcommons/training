@@ -15,13 +15,13 @@ sudo apt-get install unzip curl
 ```
 3. Checkout the MLPerf repo
 ```bash
-git clone https://github.com/mlperf/reference.git
+git clone https://github.com/mlperf/training.git
 ```
 
 4. Install other python packages
 
 ```bash
-cd reference/recommendation/pytorch
+cd training/recommendation/pytorch
 pip install -r requirements.txt
 ```
 
@@ -30,51 +30,41 @@ pip install -r requirements.txt
 1. Checkout the MLPerf repo
 
 ```bash
-git clone https://github.com/mlperf/reference.git
+git clone https://github.com/mlperf/training.git
 ```
 2. Install CUDA and Docker
 
 ```bash
-source reference/install_cuda_docker.sh
+source training/install_cuda_docker.sh
 ```
 
-3. Get the docker image for the recommendation task
-
-```bash
-# Pull from Docker Hub
-docker pull mlperf/recommendation:v0.5
-```
-
-or
+3. Build the docker image for the recommendation task
 
 ```bash
 # Build from Dockerfile
-cd reference/recommendation/pytorch
-sudo docker build -t mlperf/recommendation:v0.5 .
-```
-
-### Steps to download and verify data
-
-You can download and verify the dataset by running the `download_dataset.sh` and `verify_dataset.sh` scripts in the parent directory:
-
-```bash
-# Creates ml-20.zip
-source ../download_dataset.sh
-# Confirms the MD5 checksum of ml-20.zip
-source ../verify_dataset.sh
+cd training/recommendation/pytorch
+sudo docker build -t mlperf/recommendation:v0.6 .
 ```
 
 ### Steps to run and time
 
-#### Expanding the dataset
+#### Getting the expanded dataset
 
 The original ML-20M dataset is expanded to 16x more users and 32x more items using the code from the `data_generation` directory in the `mlperf/training` repo.
-To obtain the expanded dataset, follow the instructions from section `Running instructions for recommendation benchmark` from the README file in the `data_generation` directory.
-The obtained dataset should be stored in the `/data/cache/ml-20mx16x32` directory
+To obtain the expanded dataset, follow the instructions from section 
+`Running instructions for the recommendation benchmark` from the README file in the 
+`data_generation/fractal_graph_expansions` directory.
+
+#### Run the Docker container
+
+```bash
+nvidia-docker run --rm -it --ipc=host --network=host -v /my_data_dir:/data/cache mlperf/recommendation:v0.6 /bin/bash
+```
 
 #### Generating the negative test samples
 
-Assuming the expanded dataset is stored under `/data/cache/ml-20mx16x32` directory, run:
+Assuming the expanded dataset is visible in the container under `/data/cache/ml-20mx16x32` 
+directory, run inside the container:
 
 ```
 python convert.py /data/cache/ml-20mx16x32
@@ -82,7 +72,8 @@ python convert.py /data/cache/ml-20mx16x32
 
 #### Running the training
 
-Assuming the expanded dataset together with the generated test negative samples files are stored under `/data/cache/ml-20mx16x32` directory, run:
+Assuming the expanded dataset together with the generated test negative samples files are 
+visible in the container under `/data/cache/ml-20mx16x32` directory, run inside the container:
 
 ```
 ./run_and_time.sh <SEED>

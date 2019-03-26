@@ -88,10 +88,31 @@ Other useful flags:
 
 # Running instructions for the recommendation benchmark
 
-Assuming that the unzipped ML-20M dataset is stored under `/data/cache/ml-20m`, run:
+### Steps to download and verify data
 
-```
-./data_gen.sh
+You can download and verify the dataset by running the `download_dataset.sh` and `verify_dataset.sh` scripts from the parent `recommendation` directory.
+Assume you want to store the downloaded dataset in `/my_data_dir` directory:
+
+1. Install `unzip` and `curl`.
+2. Download and unzip `ml-20m.zip`:
+```bash
+mkdir /my_data_dir
+cd /my_data_dir
+# Creates ml-20.zip
+source <PATH_TO_RECOMMENDATION_DIR>/download_dataset.sh
+# Confirms the MD5 checksum of ml-20.zip
+source <PATH_TO_RECOMMENDATION_DIR>/verify_dataset.sh
+unzip ml-20m.zip
 ```
 
-The resulting dataset should be stored under `/data/cache/ml-20mx16x32`.
+### Step to expand the dataset (x16 users, x32 items)
+
+Assuming that the unzipped ML-20M dataset is stored under `/my_data_dir/ml-20m`, 
+go to `data_generation/fractal_graph_expansions` directory and run:
+
+```bash
+pip install -r requirements.txt
+DATA_DIR=/my_data_dir ./data_gen.sh
+```
+
+The resulting dataset should be stored under `/my_data_dir/ml-20mx16x32`.

@@ -1,4 +1,4 @@
-ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:19.03-py3
+ARG FROM_IMAGE_NAME=pytorch/pytorch:1.0.1-cuda10.0-cudnn7-runtime
 FROM ${FROM_IMAGE_NAME}
 
 # Install Python dependencies
@@ -9,7 +9,6 @@ RUN pip install -r requirements.txt
 
 COPY negative_sampling_cpp ./negative_sampling_cpp
 WORKDIR /workspace/recommendation/negative_sampling_cpp
-RUN python setup.py build --debug
 RUN python setup.py install
 
 # Copy NCF code and build
