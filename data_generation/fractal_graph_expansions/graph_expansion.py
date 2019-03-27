@@ -25,7 +25,7 @@ from __future__ import print_function
 
 import collections
 
-
+from six.moves import xrange
 
 from absl import logging
 
@@ -156,10 +156,11 @@ def _compute_and_write_row_block(
 
   logging.info("Done producing data set row by row.")
 
+  shard_suffix = "_" + str(i).zfill(3)
   util.serialize_to_file(
-      all_train_items_to_write, file_name=train_indices_out_path + ("_%d" % i))
+      all_train_items_to_write, file_name=train_indices_out_path + shard_suffix)
   util.serialize_to_file(
-      all_test_items_to_write, file_name=test_indices_out_path + ("_%d" % i))
+      all_test_items_to_write, file_name=test_indices_out_path + shard_suffix)
 
   num_cols = rows_to_write.shape[1]
   metadata = SparseMatrixMetadata(num_interactions=num_interactions,
