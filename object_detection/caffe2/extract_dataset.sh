@@ -1,4 +1,4 @@
-mkdir detectron/lib/datasets/data/coco
+mkdir -p detectron/lib/datasets/data/coco
 mv coco_annotations_minival.tgz detectron/lib/datasets/data/coco
 mv train2014.zip detectron/lib/datasets/data/coco
 mv val2014.zip detectron/lib/datasets/data/coco
