@@ -50,7 +50,7 @@ def string_to_logline(string):
         raise ValueError('does not match regex')
 
     args = []
-    args.append(m.group(0)) # full string
+    args.append('') # full string
     args.append(m.group(1)) # token
     args.append(m.group(2)) # version
     args.append(m.group(3)) # benchmark
@@ -99,6 +99,8 @@ def parse_generator(gen):
             loglines.append(ll)
         except ValueError as e:
             failed.append((line, str(e)))
+    # deduplicate lines.
+    loglines = list(sorted(list(set(loglines)), key=lambda l: l.timestamp))
     return loglines, failed
 
 
