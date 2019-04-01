@@ -28,8 +28,9 @@ LogLine = collections.namedtuple('LogLine', [
 
 TOKEN = ':::MLP'
 
+# ^.*
 LINE_PATTERN = '''
-^.*
+^
 (:::MLP)(v[\d]+\.[\d+]\.[\d+]) [ ] # token and version
 ([a-z]+) [ ] # benchmark
 ([\d\.]+) [ ] # timestamp
@@ -99,8 +100,6 @@ def parse_generator(gen):
             loglines.append(ll)
         except ValueError as e:
             failed.append((line, str(e)))
-    # deduplicate lines.
-    loglines = list(sorted(list(set(loglines)), key=lambda l: l.timestamp))
     return loglines, failed
 
 
