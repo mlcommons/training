@@ -97,6 +97,7 @@ def parse_generator(gen):
             continue
         try:
             ll = string_to_logline(line)
+            print('Parsed:', ll)
             loglines.append(ll)
         except ValueError as e:
             failed.append((line, str(e)))
