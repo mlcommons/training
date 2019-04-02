@@ -35,16 +35,17 @@ def main():
     args = parse_args()
 
     train_ratings = torch.LongTensor()
+    test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
     for chunk in range(args.user_scaling):
         train_ratings = torch.cat((train_ratings,
             torch.from_numpy(np.load(args.data + '/trainx'
                 + str(args.user_scaling) + 'x' + str(args.item_scaling)
                 + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])))
-        test_ratings_chunk = torch.from_numpy(np.load(args.data + '/testx'
+        test_ratings_chunk[chunk] = torch.from_numpy(np.load(args.data + '/testx'
                 + str(args.user_scaling) + 'x' + str(args.item_scaling)
                 + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
-        test_chunk_size[chunk] = test_ratings_chunk.shape[0]
+        test_chunk_size[chunk] = test_ratings_chunk[chunk].shape[0]
 
     nb_maxs = torch.max(train_ratings, 0)[0]
     nb_users = nb_maxs[0].item()+1
@@ -70,7 +71,7 @@ def main():
         test_negatives[chunk] = generate_negatives(
                 sampler,
                 args.valid_negative,
-                test_ratings_chunk)
+                test_ratings_chunk[chunk])
 
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
