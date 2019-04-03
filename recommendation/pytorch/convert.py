@@ -51,13 +51,12 @@ def main():
     nb_users = nb_maxs[0].item()+1
     nb_items = nb_maxs[1].item()+1
     print(datetime.now(), 'number of users, items...', nb_users, nb_items)
-    train_input = npi.group_by(train_ratings[:, 0]).split(train_ratings[:, 1])
 
     def iter_fn():
-      for _, items in enumerate(train_input):
+      for _, items in enumerate(train_ratings):
          yield items
 
-    sampler, pos_users, pos_items = process_data(num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn)
+    sampler, pos_users, pos_items = process_data(num_items=nb_items, min_items_per_user=0, iter_fn=iter_fn)
 
     sampler_cache = _PREFIX + "cached_sampler.pkl"
     with open(sampler_cache, "wb") as f:
