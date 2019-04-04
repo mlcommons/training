@@ -1,8 +1,7 @@
+import torch.jit
 import os
-import heapq
 import math
 import time
-from functools import partial
 from datetime import datetime
 from collections import OrderedDict
 from argparse import ArgumentParser
@@ -11,16 +10,13 @@ import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
-from torch import multiprocessing as mp
 
 import utils
 from neumf import NeuMF
-from dataset import CFTrainDataset, load_test_ratings, load_test_negs
-from convert import (TEST_NEG_FILENAME, TEST_RATINGS_FILENAME,
-                     TRAIN_RATINGS_FILENAME)
 
 from mlperf_compliance import mlperf_log
 
+from negative_sampling import NegativeSampler
 
 def parse_args():
     parser = ArgumentParser(description="Train a Nerual Collaborative"
@@ -31,6 +27,8 @@ def parse_args():
                         help='number of epochs for training')
     parser.add_argument('-b', '--batch-size', type=int, default=256,
                         help='number of examples for each iteration')
+    parser.add_argument('--valid-batch-size', type=int, default=2**20,
+                        help='number of examples in each validation chunk')
     parser.add_argument('-f', '--factors', type=int, default=8,
                         help='number of predictive factors')
     parser.add_argument('--layers', nargs='+', type=int,
@@ -48,105 +46,75 @@ def parse_args():
                         help='manually set random seed for torch')
     parser.add_argument('--threshold', '-t', type=float,
                         help='stop training early at threshold')
+    parser.add_argument('--valid-negative', type=int, default=999,
+                        help='Number of negative samples for each positive test example')
     parser.add_argument('--processes', '-p', type=int, default=1,
                         help='Number of processes for evaluating model')
     parser.add_argument('--workers', '-w', type=int, default=8,
                         help='Number of workers for training DataLoader')
+    parser.add_argument('--beta1', '-b1', type=float, default=0.9,
+                        help='beta1 for Adam')
+    parser.add_argument('--beta2', '-b2', type=float, default=0.999,
+                        help='beta1 for Adam')
+    parser.add_argument('--eps', type=float, default=1e-8,
+                        help='eps for Adam')
+    parser.add_argument('--user_scaling', default=1, type=int)
+    parser.add_argument('--item_scaling', default=1, type=int)
+    parser.add_argument('--cpu_dataloader', action='store_true',
+                        help='pre-process data on cpu to save memory')
+    parser.add_argument('--random_negatives', action='store_true',
+                        help='do not check train negatives for existence in dataset')
     return parser.parse_args()
 
 
-def predict(model, users, items, batch_size=1024, use_cuda=True):
-    batches = [(users[i:i + batch_size], items[i:i + batch_size])
-               for i in range(0, len(users), batch_size)]
-    preds = []
-    for user, item in batches:
-        def proc(x):
-            x = np.array(x)
-            x = torch.from_numpy(x)
-            if use_cuda:
-                x = x.cuda(async=True)
-            return torch.autograd.Variable(x)
-        outp = model(proc(user), proc(item), sigmoid=True)
-        outp = outp.data.cpu().numpy()
-        preds += list(outp.flatten())
-    return preds
+# TODO: val_epoch is not currently supported on cpu
+def val_epoch(model, x, y, dup_mask, real_indices, K, samples_per_user, num_user, output=None,
+              epoch=None, loss=None):
 
-
-def _calculate_hit(ranked, test_item):
-    return int(test_item in ranked)
-
-
-def _calculate_ndcg(ranked, test_item):
-    for i, item in enumerate(ranked):
-        if item == test_item:
-            return math.log(2) / math.log(i + 2)
-    return 0.
-
-
-def eval_one(rating, items, model, K, use_cuda=True):
-    user = rating[0]
-    test_item = rating[1]
-    items.append(test_item)
-    users = [user] * len(items)
-    predictions = predict(model, users, items, use_cuda=use_cuda)
-
-    map_item_score = {item: pred for item, pred in zip(items, predictions)}
-    ranked = heapq.nlargest(K, map_item_score, key=map_item_score.get)
-
-    hit = _calculate_hit(ranked, test_item)
-    ndcg = _calculate_ndcg(ranked, test_item)
-    return hit, ndcg, len(predictions)
-
-
-def val_epoch(model, ratings, negs, K, use_cuda=True, output=None, epoch=None,
-              processes=1):
-    if epoch is None:
-        print("Initial evaluation")
-    else:
-        print("Epoch {} evaluation".format(epoch))
-
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_START, value=epoch)
     start = datetime.now()
+    log_2 = math.log(2)
+
     model.eval()
-    if processes > 1:
-        context = mp.get_context('spawn')
-        _eval_one = partial(eval_one, model=model, K=K, use_cuda=use_cuda)
-        with context.Pool(processes=processes) as workers:
-            hits_ndcg_numpred = workers.starmap(_eval_one, zip(ratings, negs))
-        hits, ndcgs, num_preds = zip(*hits_ndcg_numpred)
-    else:
-        hits, ndcgs, num_preds = [], [], []
-        for rating, items in zip(ratings, negs):
-            hit, ndcg, num_pred = eval_one(rating, items, model, K, use_cuda=use_cuda)
-            hits.append(hit)
-            ndcgs.append(ndcg)
-            num_preds.append(num_pred)
+    hits = torch.tensor(0., device='cuda')
+    ndcg = torch.tensor(0., device='cuda')
 
-    hits = np.array(hits, dtype=np.float32)
-    ndcgs = np.array(ndcgs, dtype=np.float32)
+    with torch.no_grad():
+        for i, (u,n) in enumerate(zip(x,y)):
+            res = model(u.cuda().view(-1), n.cuda().view(-1), sigmoid=True).detach().view(-1,samples_per_user)
+            # set duplicate results for the same item to -1 before topk
+            res[dup_mask[i]] = -1
+            out = torch.topk(res,K)[1]
+            # topk in pytorch is stable(if not sort)
+            # key(item):value(predicetion) pairs are ordered as original key(item) order
+            # so we need the first position of real item(stored in real_indices) to check if it is in topk
+            ifzero = (out == real_indices[i].cuda().view(-1,1))
+            hits += ifzero.sum()
+            ndcg += (log_2 / (torch.nonzero(ifzero)[:,1].view(-1).to(torch.float)+2).log_()).sum()
 
-    assert len(set(num_preds)) == 1
-    num_neg = num_preds[0] - 1  # one true positive, many negatives
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_SIZE, value={"epoch": epoch, "value": len(hits) * (1 + num_neg)})
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_USERS, value=len(hits))
-    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_NEG, value=num_neg)
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_SIZE, value={"epoch": epoch, "value": num_user * samples_per_user})
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_USERS, value=num_user)
+    mlperf_log.ncf_print(key=mlperf_log.EVAL_HP_NUM_NEG, value=samples_per_user - 1)
 
     end = datetime.now()
+
+    hits = hits.item()
+    ndcg = ndcg.item()
+
     if output is not None:
         result = OrderedDict()
         result['timestamp'] = datetime.now()
         result['duration'] = end - start
         result['epoch'] = epoch
         result['K'] = K
-        result['hit_rate'] = np.mean(hits)
-        result['NDCG'] = np.mean(ndcgs)
+        result['hit_rate'] = hits/num_user
+        result['NDCG'] = ndcg/num_user
+        result['loss'] = loss
         utils.save_result(result, output)
 
-    return hits, ndcgs
+    return hits/num_user, ndcg/num_user
 
 
 def main():
-    # Note: The run start is in convert.py
 
     args = parse_args()
     if args.seed is not None:
@@ -166,24 +134,134 @@ def main():
 
     # Check that GPUs are actually available
     use_cuda = not args.no_cuda and torch.cuda.is_available()
+    # Check where to put data loader
+    if use_cuda:
+        dataloader_device = 'cpu' if args.cpu_dataloader else 'cuda'
+    else:
+        dataloader_device = 'cpu'
 
-    t1 = time.time()
-    # Load Data
-    print('Loading data')
-    train_dataset = CFTrainDataset(
-        os.path.join(args.data, TRAIN_RATINGS_FILENAME), args.negative_samples)
+    # more like load trigger timmer now
+    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_NUM_EVAL, value=args.valid_negative)
+    # The default of np.random.choice is replace=True, so does pytorch random_()
+    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_SAMPLE_EVAL_REPLACEMENT, value=True)
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_SAMPLE_TRAIN_REPLACEMENT, value=True)
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_EVAL_NEG_GEN)
+
+    # sync worker before timing.
+    torch.cuda.synchronize()
+
+    #===========================================================================
+    #== The clock starts on loading the preprocessed data. =====================
+    #===========================================================================
+    mlperf_log.ncf_print(key=mlperf_log.RUN_START)
+    run_start_time = time.time()
+
+    print("New ratings loading...", datetime.now())
+    train_ratings = torch.LongTensor()
+    test_ratings = [torch.LongTensor()] * args.user_scaling
+
+    for chunk in range(args.user_scaling):
+        train_ratings = torch.cat((train_ratings, 
+            torch.from_numpy(np.load(args.data + '/trainx' 
+                + str(args.user_scaling) + 'x' + str(args.item_scaling) 
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])))
+        test_ratings[chunk] = torch.from_numpy(np.load(args.data + '/testx' 
+                + str(args.user_scaling) + 'x' + str(args.item_scaling) 
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
+        
+    print("New ratings loaded.", datetime.now())
+
+
+    # get input data
+    # get dims
+    nb_maxs = torch.max(train_ratings, 0)[0]
+    nb_users = nb_maxs[0].item()+1
+    nb_items = nb_maxs[1].item()+1
+    train_users = train_ratings[:,0]
+    train_items = train_ratings[:,1]
+    del nb_maxs
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_SIZE, value=len(train_users))
+    # produce things not change between epoch
+    # mask for filtering duplicates with real sample
+    # note: test data is removed before create mask, same as reference
+    # create label
+    train_label = torch.ones_like(train_users, dtype=torch.float32)
+    neg_label = torch.zeros_like(train_label, dtype=torch.float32)
+    neg_label = neg_label.repeat(args.negative_samples)
+    train_label = torch.cat((train_label,neg_label))
+    del neg_label
+
+    # produce validation negative sample on GPU
+    all_test_users = sum([l.shape[0] for l in test_ratings])
+
+    test_users = [l[:,0] for l in test_ratings]
+    test_pos = [l[:,1].reshape(-1,1) for l in test_ratings]
+
+    sampler = NegativeSampler(train_ratings, nb_users, nb_items)
+    del train_ratings
+    print("Test negatives creating...", datetime.now())
+
+    test_negatives = [torch.LongTensor()] * args.user_scaling
+    
+    for chunk in range(args.user_scaling):
+        file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
+                + str(args.item_scaling) + '_' + str(chunk) + '.npz')
+        test_negatives[chunk] = torch.from_numpy(np.load(file_name, encoding='bytes')['arr_0'])
+
+    
+    print("Test negatives created.", datetime.now())
+    test_neg_users = [l[:, 0] for l in test_negatives]
+    test_neg_items = [l[:, 1] for l in test_negatives]
+
+
+
+    #test_negs = test_negs.cuda()
+    # create items with real sample at last position
+    test_users = [l.reshape(-1,1).repeat(1,1+args.valid_negative) for l in test_users]
+    test_items = [torch.cat((a.reshape(-1,args.valid_negative), b), dim=1)
+            for a, b in zip(test_neg_items, test_pos)]
+    del test_ratings, test_neg_users, test_neg_items
+
+    # generate dup mask and real indice for exact same behavior on duplication compare to reference
+    # here we need a sort that is stable(keep order of duplicates)
+    # this is a version works on integer
+    sorted_items, indices = zip(*[torch.sort(l) for l in test_items]) # [1,1,1,2], [3,1,0,2]
+    sum_item_indices = [a.float()+b.float()/len(b[0]) 
+            for a, b in zip(sorted_items, indices)] #[1.75,1.25,1.0,2.5]
+    indices_order = [torch.sort(l)[1] for l in sum_item_indices] #[2,1,0,3]
+    stable_indices = [torch.gather(a, 1, b) 
+            for a, b in zip(indices, indices_order)] #[0,1,3,2]
+    # produce -1 mask
+    dup_mask = [(l[:,0:-1] == l[:,1:]) for l in sorted_items]
+    dup_mask = [torch.cat((torch.zeros_like(a, dtype=torch.uint8), b),dim=1)
+            for a, b in zip(test_pos, dup_mask)]
+    dup_mask = [torch.gather(a,1,b.sort()[1])
+            for a, b in zip(dup_mask, stable_indices)]
+    # produce real sample indices to later check in topk
+    sorted_items, indices = zip(*[(a != b).sort()
+            for a, b in zip(test_items, test_pos)])
+    sum_item_indices = [(a.float()) + (b.float())/len(b[0])
+            for a, b in zip(sorted_items, indices)]
+    indices_order = [torch.sort(l)[1] for l in sum_item_indices]
+    stable_indices = [torch.gather(a, 1, b)
+            for a, b in zip(indices, indices_order)]
+    real_indices = [l[:, 0] for l in stable_indices]
+    del sorted_items, indices, sum_item_indices, indices_order, stable_indices, test_pos
+
+    test_users = torch.cat(test_users)
+    test_items = torch.cat(test_items)
+    dup_mask = torch.cat(dup_mask)
+    real_indices = torch.cat(real_indices)
+
+    # make pytorch memory behavior more consistent later
+    torch.cuda.empty_cache()
 
     mlperf_log.ncf_print(key=mlperf_log.INPUT_BATCH_SIZE, value=args.batch_size)
-    mlperf_log.ncf_print(key=mlperf_log.INPUT_ORDER)  # set shuffle=True in DataLoader
-    train_dataloader = torch.utils.data.DataLoader(
-            dataset=train_dataset, batch_size=args.batch_size, shuffle=True,
-            num_workers=args.workers, pin_memory=True)
-    test_ratings = load_test_ratings(os.path.join(args.data, TEST_RATINGS_FILENAME))  # noqa: E501
-    test_negs = load_test_negs(os.path.join(args.data, TEST_NEG_FILENAME))
-    nb_users, nb_items = train_dataset.nb_users, train_dataset.nb_items
+    mlperf_log.ncf_print(key=mlperf_log.INPUT_ORDER)  # we shuffled later with randperm
+
     print('Load data done [%.1f s]. #user=%d, #item=%d, #train=%d, #test=%d'
-          % (time.time()-t1, nb_users, nb_items, train_dataset.mat.nnz,
-             len(test_ratings)))
+          % (time.time()-run_start_time, nb_users, nb_items, len(train_users),
+             nb_users))
 
     # Create model
     model = NeuMF(nb_users, nb_items,
@@ -198,88 +276,139 @@ def main():
         file.write(str(model))
 
     # Add optimizer and loss to graph
-    mlperf_log.ncf_print(key=mlperf_log.OPT_LR, value=args.learning_rate)
-    beta1, beta2, epsilon = 0.9, 0.999, 1e-8
-    mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")
-    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA1, value=beta1)
-    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA2, value=beta2)
-    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_EPSILON, value=epsilon)
-    optimizer = torch.optim.Adam(model.parameters(), betas=(beta1, beta2),
-                                 lr=args.learning_rate, eps=epsilon)
+    params = model.parameters()
 
+    optimizer = torch.optim.Adam(params, lr=args.learning_rate, betas=(args.beta1, args.beta2), eps=args.eps)
+    criterion = nn.BCEWithLogitsLoss(reduction = 'none') # use torch.mean() with dim later to avoid copy to host
+    mlperf_log.ncf_print(key=mlperf_log.OPT_LR, value=args.learning_rate)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA1, value=args.beta1)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_BETA2, value=args.beta2)
+    mlperf_log.ncf_print(key=mlperf_log.OPT_HP_ADAM_EPSILON, value=args.eps)
     mlperf_log.ncf_print(key=mlperf_log.MODEL_HP_LOSS_FN, value=mlperf_log.BCE)
-    criterion = nn.BCEWithLogitsLoss()
 
     if use_cuda:
         # Move model and loss to GPU
         model = model.cuda()
         criterion = criterion.cuda()
 
+    local_batch = args.batch_size
+    traced_criterion = torch.jit.trace(criterion.forward, (torch.rand(local_batch,1),torch.rand(local_batch,1)))
+
     # Create files for tracking training
     valid_results_file = os.path.join(run_dir, 'valid_results.csv')
 
     # Calculate initial Hit Ratio and NDCG
-    hits, ndcgs = val_epoch(model, test_ratings, test_negs, args.topk,
-                            use_cuda=use_cuda, processes=args.processes)
-    print('Initial HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f}'
-          .format(K=args.topk, hit_rate=np.mean(hits), ndcg=np.mean(ndcgs)))
+    samples_per_user = test_items.size(1)
+    users_per_valid_batch = args.valid_batch_size // samples_per_user
 
+    test_users = test_users.split(users_per_valid_batch)
+    test_items = test_items.split(users_per_valid_batch)
+    dup_mask = dup_mask.split(users_per_valid_batch)
+    real_indices = real_indices.split(users_per_valid_batch)
+
+    hr, ndcg = val_epoch(model, test_users, test_items, dup_mask, real_indices, args.topk, samples_per_user=samples_per_user,
+                         num_user=all_test_users)
+    print('Initial HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f}'
+          .format(K=args.topk, hit_rate=hr, ndcg=ndcg))
     success = False
     mlperf_log.ncf_print(key=mlperf_log.TRAIN_LOOP)
     for epoch in range(args.epochs):
-        mlperf_log.ncf_print(key=mlperf_log.TRAIN_EPOCH, value=epoch)
-        model.train()
-        losses = utils.AverageMeter()
 
-        mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_NUM_NEG, value=train_dataset.nb_neg)
+        mlperf_log.ncf_print(key=mlperf_log.TRAIN_EPOCH, value=epoch)
+        mlperf_log.ncf_print(key=mlperf_log.INPUT_HP_NUM_NEG, value=args.negative_samples)
         mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_TRAIN_NEG_GEN)
         begin = time.time()
-        loader = tqdm.tqdm(train_dataloader)
-        for batch_index, (user, item, label) in enumerate(loader):
-            user = torch.autograd.Variable(user, requires_grad=False)
-            item = torch.autograd.Variable(item, requires_grad=False)
-            label = torch.autograd.Variable(label, requires_grad=False)
-            if use_cuda:
-                user = user.cuda(async=True)
-                item = item.cuda(async=True)
-                label = label.cuda(async=True)
+        
+        if args.random_negatives:
+            neg_users = train_users.repeat(args.negative_samples)
+            neg_items = torch.empty_like(neg_users, dtype=torch.int64).random_(0, nb_items)
+        else:
+            negatives = sampler.generate_train(args.negative_samples)
+            neg_users = negatives[:, 0]
+            neg_items = negatives[:, 1]
+
+        after_neg_gen = time.time()
+
+        
+        epoch_users = torch.cat((train_users,neg_users))
+        epoch_items = torch.cat((train_items,neg_items))
+        del neg_users, neg_items
+
+        # shuffle prepared data and split into batches
+        epoch_indices = torch.randperm(len(epoch_users), device=dataloader_device)
+        epoch_size = len(epoch_indices)
+        epoch_users = epoch_users[epoch_indices]
+        epoch_items = epoch_items[epoch_indices]
+        epoch_label = train_label[epoch_indices]
+        epoch_users_list = epoch_users.split(local_batch)
+        epoch_items_list = epoch_items.split(local_batch)
+        epoch_label_list = epoch_label.split(local_batch)
+
+        # only print progress bar on rank 0
+        num_batches = (epoch_size + args.batch_size - 1) // args.batch_size
+        qbar = tqdm.tqdm(range(num_batches))
+        # handle extremely rare case where last batch size < number of worker
+        if len(epoch_users_list) < num_batches:
+            print("epoch_size % batch_size < number of worker!")
+            exit(1)
+        
+        after_shuffle = time.time()
+        
+        neg_gen_time = (after_neg_gen - begin)
+        shuffle_time = (after_shuffle - after_neg_gen)
+
+        for i in qbar:
+            # selecting input from prepared data
+            user = epoch_users_list[i].cuda()
+            item = epoch_items_list[i].cuda()
+            label = epoch_label_list[i].view(-1,1).cuda()
+
+            for p in model.parameters():
+                p.grad = None
 
             outputs = model(user, item)
-            loss = criterion(outputs, label)
-            losses.update(loss.data.item(), user.size(0))
+            loss = traced_criterion(outputs, label).float()
+            loss = torch.mean(loss.view(-1), 0)
 
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-            # Save stats to file
-            description = ('Epoch {} Loss {loss.val:.4f} ({loss.avg:.4f})'
-                           .format(epoch, loss=losses))
-            loader.set_description(description)
-
+       
+        del epoch_users, epoch_items, epoch_label, epoch_users_list, epoch_items_list, epoch_label_list, user, item, label
         train_time = time.time() - begin
         begin = time.time()
-        hits, ndcgs = val_epoch(model, test_ratings, test_negs, args.topk,
-                                use_cuda=use_cuda, output=valid_results_file,
-                                epoch=epoch, processes=args.processes)
-        mlperf_log.ncf_print(key=mlperf_log.EVAL_ACCURACY, value={"epoch": epoch, "value": float(np.mean(hits))})
-        mlperf_log.ncf_print(key=mlperf_log.EVAL_TARGET, value=args.threshold)
-        mlperf_log.ncf_print(key=mlperf_log.EVAL_STOP)
+
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_START, value=epoch)
+
+        hr, ndcg = val_epoch(model, test_users, test_items, dup_mask, real_indices, args.topk, samples_per_user=samples_per_user,
+                             num_user=all_test_users, output=valid_results_file, epoch=epoch, loss=loss.data.item())
+
         val_time = time.time() - begin
         print('Epoch {epoch}: HR@{K} = {hit_rate:.4f}, NDCG@{K} = {ndcg:.4f},'
-              ' train_time = {train_time:.2f}, val_time = {val_time:.2f}'
-              .format(epoch=epoch, K=args.topk, hit_rate=np.mean(hits),
-                      ndcg=np.mean(ndcgs), train_time=train_time,
-                      val_time=val_time))
+                ' train_time = {train_time:.2f}, val_time = {val_time:.2f}, loss = {loss:.4f},'
+                ' neg_gen: {neg_gen_time:.4f}, shuffle_time: {shuffle_time:.2f}'
+              .format(epoch=epoch, K=args.topk, hit_rate=hr,
+                      ndcg=ndcg, train_time=train_time,
+                      val_time=val_time, loss=loss.data.item(),
+                      neg_gen_time=neg_gen_time, shuffle_time=shuffle_time))
+
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_ACCURACY, value={"epoch": epoch, "value": hr})
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_TARGET, value=args.threshold)
+        mlperf_log.ncf_print(key=mlperf_log.EVAL_STOP, value=epoch)
+
         if args.threshold is not None:
-            if np.mean(hits) >= args.threshold:
+            if hr >= args.threshold:
                 print("Hit threshold of {}".format(args.threshold))
                 success = True
                 break
 
     mlperf_log.ncf_print(key=mlperf_log.RUN_STOP, value={"success": success})
+    run_stop_time = time.time()
     mlperf_log.ncf_print(key=mlperf_log.RUN_FINAL)
 
+    # easy way of tracking mlperf score
+    if success:
+        print("mlperf_score", run_stop_time - run_start_time)
 
 if __name__ == '__main__':
     main()

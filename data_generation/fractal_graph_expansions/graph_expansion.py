@@ -134,6 +134,10 @@ def _compute_and_write_row_block(
     train_items_to_write = train_rows_to_write.getrow(k).indices
     test_items_to_write = test_rows_to_write.getrow(k).indices
 
+    # for users with > 1 test items, keep only the first one
+    if len(test_items_to_write) > 1:
+        test_items_to_write = test_items_to_write[:1]
+
     num_train = train_items_to_write.shape[0]
     num_test = test_items_to_write.shape[0]
 
@@ -156,11 +160,14 @@ def _compute_and_write_row_block(
 
   logging.info("Done producing data set row by row.")
 
-  shard_suffix = "_" + str(i).zfill(3)
-  util.serialize_to_file(
-      all_train_items_to_write, file_name=train_indices_out_path + shard_suffix)
-  util.serialize_to_file(
-      all_test_items_to_write, file_name=test_indices_out_path + shard_suffix)
+  util.savez_two_column(
+      all_train_items_to_write, 
+      row_offset=(i * right_matrix.shape[0]),
+      file_name=train_indices_out_path + ("_%d" % i))
+  util.savez_two_column(
+      all_test_items_to_write, 
+      row_offset=(i * right_matrix.shape[0]),
+      file_name=test_indices_out_path + ("_%d" % i))
 
   num_cols = rows_to_write.shape[1]
   metadata = SparseMatrixMetadata(num_interactions=num_interactions,
