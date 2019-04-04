@@ -73,6 +73,7 @@ VOCAB_FILE = "vocab.ende.%d" % _TARGET_VOCAB_SIZE
 
 # Strings to inclue in the generated files.
 _PREFIX = "wmt32k"
+_ENCODE_TAG = "encoded"
 _TRAIN_TAG = "train"
 _EVAL_TAG = "dev"  # Following WMT and Tensor2Tensor conventions, in which the
                    # evaluation datasets are tagged as "dev" for development.
@@ -307,7 +308,7 @@ def encode_and_save_files(
 def shard_filename(path, tag, shard_num, total_shards):
   """Create filename for data shard."""
   return os.path.join(
-      path, "%s-%s-%.5d-of-%.5d" % (_PREFIX, tag, shard_num, total_shards))
+      path, "%s-%s-%s-%.5d-of-%.5d" % (_PREFIX, _ENCODE_TAG, tag, shard_num, total_shards))
 
 
 def shuffle_records(fname):
