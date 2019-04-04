@@ -23,8 +23,10 @@ def parse_args():
     return parser.parse_args()
 
 
-def generate_negatives(sampler, num_negatives, test_ratings):
-    users = test_ratings[:,0].numpy()
+def generate_negatives(sampler, num_negatives, test_ratings, offset):
+    print("PKK: orig", len(test_ratings), offset)
+    print(datetime.now(), 'generate_negatives...', test_ratings, offset)
+    users = np.arange(offset,offset + len(test_ratings))
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_negatives):
       negatives = np.array([users, sampler.sample_negatives(users)])
@@ -59,6 +61,8 @@ def main():
 
     sampler, pos_users, pos_items = process_data(num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn)
 
+    print(datetime.now(), 'number of users, items in train...', len(pos_users), len(pos_items))
+
     sampler_cache = _PREFIX + "cached_sampler.pkl"
     with open(sampler_cache, "wb") as f:
         pickle.dump([sampler, pos_users, pos_items], f, pickle.HIGHEST_PROTOCOL)
@@ -71,12 +75,12 @@ def main():
         test_negatives[chunk] = generate_negatives(
                 sampler,
                 args.valid_negative,
-                test_ratings_chunk[chunk])
+                test_ratings_chunk[chunk],
+                test_user_offset)
 
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
 
-        print("test negatives:", len(test_negatives[chunk]))
         np.savez_compressed(file_name, test_negatives[chunk])
         print(datetime.now(), 'Chunk ', chunk, '/', args.user_scaling, 'saved.')
         test_user_offset += test_chunk_size[chunk]
