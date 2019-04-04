@@ -24,8 +24,7 @@ def parse_args():
 
 
 def generate_negatives(sampler, num_negatives, test_ratings, offset):
-    print("PKK: orig", len(test_ratings), offset)
-    print(datetime.now(), 'generate_negatives...', test_ratings, offset)
+    print(datetime.now(), 'generate_negatives...', len(test_ratings), offset)
     users = np.arange(offset,offset + len(test_ratings))
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_negatives):
