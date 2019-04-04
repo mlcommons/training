@@ -168,7 +168,7 @@ def _compute_and_write_row_block(
       all_test_items_to_write, 
       row_offset=(i * right_matrix.shape[0]),
       file_name=test_indices_out_path + ("_%d" % i))
- 
+
   num_cols = rows_to_write.shape[1]
   metadata = SparseMatrixMetadata(num_interactions=num_interactions,
                                   num_rows=num_rows, num_cols=num_cols)
