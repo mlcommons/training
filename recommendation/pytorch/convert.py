@@ -47,16 +47,17 @@ def main():
                 + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
         test_chunk_size[chunk] = test_ratings_chunk[chunk].shape[0]
 
-    nb_maxs = torch.max(train_ratings, 0)[0]
-    nb_users = nb_maxs[0].item()+1
-    nb_items = nb_maxs[1].item()+1
+    nb_users = np.count_nonzero(np.unique(train_ratings[:, 0])) + 1
+    nb_items = np.count_nonzero(np.unique(train_ratings[:, 1])) + 1
     print(datetime.now(), 'number of users, items...', nb_users, nb_items)
+    train_input = npi.group_by(train_ratings[:, 0]).split(train_ratings[:, 1])
+    print(datetime.now(), 'number of users, items in train...', len(train_input))
 
     def iter_fn():
-      for _, items in enumerate(train_ratings):
+      for _, items in enumerate(train_input):
          yield items
 
-    sampler, pos_users, pos_items = process_data(num_items=nb_items, min_items_per_user=0, iter_fn=iter_fn)
+    sampler, pos_users, pos_items = process_data(num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn)
 
     sampler_cache = _PREFIX + "cached_sampler.pkl"
     with open(sampler_cache, "wb") as f:
