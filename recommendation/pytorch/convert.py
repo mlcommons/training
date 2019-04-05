@@ -6,7 +6,6 @@ from datetime import datetime
 import numpy_indexed as npi
 import pickle
 from alias_generator import process_data
-from alias_generator import profile_sampler
 
 CACHE_FN = "alias_tbl_{}x{}_"
 
