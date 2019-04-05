@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from alias_generator import AliasSample
 import pickle
 from convert import generate_negatives
+from convert import CACHE_FN
 
 import tqdm
 import numpy as np
@@ -171,7 +172,8 @@ def main():
                 + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
         
 
-    sampler_cache = '16x32_cached_sampler.pkl'
+    fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
+    sampler_cache = fn_prefix + "cached_sampler.pkl"
     print("New ratings loaded.", datetime.now())
     if os.path.exists(args.data):
       print("Using alias file: {}".format(args.data))
@@ -182,11 +184,14 @@ def main():
 
     # get input data
     # get dims
-    nb_users = np.count_nonzero(np.unique(train_ratings[:, 0]))
-    nb_items = np.count_nonzero(np.unique(train_ratings[:, 1]))
+
+    nb_maxs = torch.max(train_ratings, 0)[0]
+    nb_users = nb_maxs[0].item()+1  # Zero is not a valid user, so don't add 1
+    nb_items = nb_maxs[1].item()+1  # Zero is not a valid item, so don't add 1
+    del nb_maxs
     train_users = train_ratings[:,0]
     train_items = train_ratings[:,1]
-    del nb_maxs
+
     mlperf_log.ncf_print(key=mlperf_log.INPUT_SIZE, value=len(train_users))
     # produce things not change between epoch
     # mask for filtering duplicates with real sample
@@ -333,13 +338,12 @@ def main():
             neg_users = train_users.repeat(args.negative_samples)
             neg_items = torch.empty_like(neg_users, dtype=torch.int64).random_(0, nb_items)
         else:
-            # negatives = sampler.generate_train(args.negative_samples)
             negatives = generate_negatives(
                 sampler,
                 args.negative_samples,
                 train_users)
-            neg_users = negatives[:, 0]
-            neg_items = negatives[:, 1]
+            neg_users = torch.from_numpy(negatives[0][:, 0])
+            neg_items = torch.from_numpy(negatives[0][:, 1])
 
         after_neg_gen = time.time()
 
