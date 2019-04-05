@@ -16,8 +16,8 @@ def parse_args():
                         help='path to test and training data files')
     parser.add_argument('--valid-negative', type=int, default=999,
                         help='Number of negative samples for each positive test example')
-    parser.add_argument('--user_scaling', default=2, type=int)
-    parser.add_argument('--item_scaling', default=2, type=int)
+    parser.add_argument('--user_scaling', default=16, type=int)
+    parser.add_argument('--item_scaling', default=32, type=int)
 
     return parser.parse_args()
 
@@ -33,6 +33,7 @@ def generate_negatives(sampler, num_negatives, users):
 def main():
     args = parse_args()
 
+    print(datetime.now(), "Loading raw training data.")
     train_ratings = torch.LongTensor()
     test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
@@ -54,7 +55,7 @@ def main():
     print(datetime.now(), "Number of ratings: {}".format(train_ratings.shape[0]))
 
     train_input = npi.group_by(train_ratings[:, 0]).split(train_ratings[:, 1])
-    assert nb_users == len(train_input), "Error with user grouping."
+    print(datetime.now(), "Number of users with ratings: {}".format(train_input.shape[0]))
 
     def iter_fn():
       for _, items in enumerate(train_input):
