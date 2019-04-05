@@ -149,7 +149,7 @@ def main():
     mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_EVAL_NEG_GEN)
 
     # sync worker before timing.
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
 
     #===========================================================================
     #== The clock starts on loading the preprocessed data. =====================
@@ -182,9 +182,8 @@ def main():
 
     # get input data
     # get dims
-    nb_maxs = torch.max(train_ratings, 0)[0]
-    nb_users = nb_maxs[0].item()+1
-    nb_items = nb_maxs[1].item()+1
+    nb_users = np.count_nonzero(np.unique(train_ratings[:, 0]))
+    nb_items = np.count_nonzero(np.unique(train_ratings[:, 1]))
     train_users = train_ratings[:,0]
     train_items = train_ratings[:,1]
     del nb_maxs
