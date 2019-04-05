@@ -149,7 +149,7 @@ def main():
     mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_EVAL_NEG_GEN)
 
     # sync worker before timing.
-    # torch.cuda.synchronize()
+    torch.cuda.synchronize()
 
     #===========================================================================
     #== The clock starts on loading the preprocessed data. =====================
