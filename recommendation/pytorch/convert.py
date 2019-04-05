@@ -55,7 +55,7 @@ def main():
     print(datetime.now(), "Number of ratings: {}".format(train_ratings.shape[0]))
 
     train_input = npi.group_by(train_ratings[:, 0]).split(train_ratings[:, 1])
-    print(datetime.now(), "Number of users with ratings: {}".format(train_input.shape[0]))
+    print(datetime.now(), "Number of users with ratings: {}".format(len(train_input)))
 
     def iter_fn():
       for _, items in enumerate(train_input):
