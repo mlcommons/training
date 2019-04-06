@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from datetime import datetime
 import numpy_indexed as npi
+import os
 import pickle
 from alias_generator import process_data
 
@@ -17,6 +18,8 @@ def parse_args():
                         help='Number of negative samples for each positive test example')
     parser.add_argument('--user_scaling', default=16, type=int)
     parser.add_argument('--item_scaling', default=32, type=int)
+    parser.add_argument('--use_sampler_cache', default=False, type=bool,
+                        help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
 
     return parser.parse_args()
 
@@ -24,13 +27,12 @@ def parse_args():
 def generate_negatives(sampler, num_negatives, users):
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_negatives):
-        negatives = np.array([users, sampler.sample_negatives(users)])
+        negatives = np.array([users, sampler.sample_negatives(users)], dtype=np.int32)
         neg_users_items[i] = negatives.transpose()
     return neg_users_items;
 
 
-def main():
-    args = parse_args()
+def process_raw_data(args):
     train_ratings = torch.IntTensor()
     test_ratings_chunk = [torch.IntTensor()] * args.user_scaling
     #train_ratings = torch.LongTensor()
@@ -78,9 +80,36 @@ def main():
     fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
     sampler_cache = fn_prefix + "cached_sampler.pkl"
     with open(sampler_cache, "wb") as f:
-        pickle.dump([sampler, pos_users, pos_items, nb_items], f, pickle.HIGHEST_PROTOCOL)
+        pickle.dump([sampler, pos_users, pos_items, nb_items, test_chunk_size], f, pickle.HIGHEST_PROTOCOL)
+
+    return sampler, test_chunk_size
+
+def main():
+    args = parse_args()
+
+    if not args.use_sampler_cache:
+      sampler, test_chunk_size = process_raw_data(args)
+    else:
+      fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
+      sampler_cache = fn_prefix + "cached_sampler.pkl"
+      print(datetime.now(), "Loading preprocessed sampler.")
+      if os.path.exists(args.data):
+        print("Using alias file: {}".format(args.data))
+        with open(sampler_cache, "rb") as f:
+          #sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
+          sampler, pos_users, pos_items, nb_items = pickle.load(f)
 
     print(datetime.now(), 'Generating negative test samples...')
+
+    ##### Delete this
+    test_chunk_size = [0] * args.user_scaling
+    for chunk in range(args.user_scaling):
+        print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
+        tmp_data = torch.from_numpy(np.load(args.data + '/testx'
+                + str(args.user_scaling) + 'x' + str(args.item_scaling)
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
+        test_chunk_size[chunk] = tmp_data.shape[0]
+    ##### Delete this
 
     test_negatives = [torch.IntTensor()] * args.user_scaling
     test_user_offset = 0

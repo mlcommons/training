@@ -159,7 +159,8 @@ def main():
     run_start_time = time.time()
 
     print(datetime.now(), "Loading test ratings.")
-    test_ratings = [torch.LongTensor()] * args.user_scaling
+    test_ratings = [torch.IntTensor()] * args.user_scaling
+    #test_ratings = [torch.LongTensor()] * args.user_scaling
 
     for chunk in range(args.user_scaling):
         test_ratings[chunk] = torch.from_numpy(np.load(args.data + '/testx' 
@@ -172,12 +173,15 @@ def main():
     if os.path.exists(args.data):
       print("Using alias file: {}".format(args.data))
       with open(sampler_cache, "rb") as f:
+        #sampler, pos_users, pos_items, nb_items, _ = pickle.load(f)
         sampler, pos_users, pos_items, nb_items = pickle.load(f)
     print(datetime.now(), "Alias table loaded.")
 
     nb_users = len(sampler.num_regions)
-    train_users = torch.from_numpy(pos_users).type(torch.LongTensor)
-    train_items = torch.from_numpy(pos_items).type(torch.LongTensor)
+    train_users = torch.from_numpy(pos_users).type(torch.IntTensor)
+    train_items = torch.from_numpy(pos_items).type(torch.IntTensor)
+    #train_users = torch.from_numpy(pos_users).type(torch.LongTensor)
+    #train_items = torch.from_numpy(pos_items).type(torch.LongTensor)
 
     mlperf_log.ncf_print(key=mlperf_log.INPUT_SIZE, value=len(train_users))
     # produce things not change between epoch
@@ -193,9 +197,10 @@ def main():
     test_pos = [l[:,1].reshape(-1,1) for l in test_ratings]
 
 
-    test_negatives = [torch.LongTensor()] * args.user_scaling
-    test_neg_users = [torch.LongTensor()] * args.user_scaling
-    test_neg_items = [torch.LongTensor()] * args.user_scaling
+    test_negatives = [torch.IntTensor()] * args.user_scaling
+    test_neg_items = [torch.IntTensor()] * args.user_scaling
+    #test_negatives = [torch.LongTensor()] * args.user_scaling
+    #test_neg_items = [torch.LongTensor()] * args.user_scaling
     
     print(datetime.now(), "Loading test negatives.")
     for chunk in range(args.user_scaling):
@@ -206,13 +211,12 @@ def main():
         print(datetime.now(), "Test negative chunk {} of {} loaded ({} users).".format(
               chunk+1, args.user_scaling, test_negatives[chunk].size()))
 
-    test_neg_users = [l[:, 0] for l in test_negatives]
     test_neg_items = [l[:, 1] for l in test_negatives]
 
     # create items with real sample at last position
     test_items = [torch.cat((a.reshape(-1,args.valid_negative), b), dim=1)
             for a, b in zip(test_neg_items, test_pos)]
-    del test_ratings, test_neg_users, test_neg_items
+    del test_ratings, test_neg_items
 
     # generate dup mask and real indice for exact same behavior on duplication compare to reference
     # here we need a sort that is stable(keep order of duplicates)
@@ -242,11 +246,13 @@ def main():
 
     # For our dataset, test set is identical to user set, so arange() provides
     # all test users.
-    test_users = torch.arange(nb_users)
+    test_users = torch.arange(nb_users, dtype=torch.long)
     test_users = test_users[:, None]
     test_users = test_users + torch.zeros(1+args.valid_negative, dtype=torch.long)
 
-    test_items = torch.cat(test_items)
+    # test_items needs to be cast to Long in order to be used in embedding
+    test_items = torch.cat(test_items).type(torch.long)
+    #test_items = torch.cat(test_items)
     dup_mask = torch.cat(dup_mask)
     real_indices = torch.cat(real_indices)
 
@@ -360,8 +366,12 @@ def main():
 
         for i in qbar:
             # selecting input from prepared data
-            user = epoch_users_list[i].cuda()
-            item = epoch_items_list[i].cuda()
+            # Late casting in order to feed Long values into the model.
+            # This is required for embedding lookup.
+            user = epoch_users_list[i].type(torch.long).cuda()
+            item = epoch_items_list[i].type(torch.long).cuda()
+            #user = epoch_users_list[i].cuda()
+            #item = epoch_items_list[i].cuda()
             label = epoch_label_list[i].view(-1,1).cuda()
 
             for p in model.parameters():
