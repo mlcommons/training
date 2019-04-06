@@ -1,5 +1,4 @@
 from argparse import ArgumentParser
-import pandas as pd
 import numpy as np
 import torch
 from datetime import datetime
@@ -32,8 +31,10 @@ def generate_negatives(sampler, num_negatives, users):
 
 def main():
     args = parse_args()
-    train_ratings = torch.LongTensor()
-    test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
+    train_ratings = torch.IntTensor()
+    test_ratings_chunk = [torch.IntTensor()] * args.user_scaling
+    #train_ratings = torch.LongTensor()
+    #test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
     for chunk in range(args.user_scaling):
         print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
@@ -66,6 +67,14 @@ def main():
         num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn_simple)
     assert len(pos_users) == train_ratings.shape[0], "Cardinality difference with original data and sample table data."
 
+    print("pos_users type: {}, pos_items type: {}, s.offsets: {}".format(
+          pos_users.dtype, pos_items.dtype, sampler.offsets.dtype))
+    print("num_reg: {}, region_card: {}".format(sampler.num_regions.dtype,
+          sampler.region_cardinality.dtype))
+    print("region_starts: {}, alias_index: {}, alias_p: {}".format(
+          sampler.region_starts.dtype, sampler.alias_index.dtype,
+          sampler.alias_split_p.dtype))
+
     fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
     sampler_cache = fn_prefix + "cached_sampler.pkl"
     with open(sampler_cache, "wb") as f:
@@ -73,7 +82,7 @@ def main():
 
     print(datetime.now(), 'Generating negative test samples...')
 
-    test_negatives = [torch.LongTensor()] * args.user_scaling
+    test_negatives = [torch.IntTensor()] * args.user_scaling
     test_user_offset = 0
     for chunk in range(args.user_scaling):
         neg_users = np.arange(test_user_offset,

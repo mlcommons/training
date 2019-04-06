@@ -188,7 +188,7 @@ class AliasSample(object):
         return chosen_items
 
 
-def process_data(num_items, min_items_per_user, iter_fn):
+def process_data(num_items, min_items_per_user, iter_fn, dtype=np.int32):
     user_id = -1
     user_id2 = -1
     positive_users = []
@@ -227,12 +227,12 @@ def process_data(num_items, min_items_per_user, iter_fn):
 
     return AliasSample(
         offsets=np.cumsum([0] + num_regions, dtype=np.int32)[:-1],
-        num_regions=np.array(num_regions),
-        region_cardinality=np.concatenate(region_cardinality),
-        region_starts=np.concatenate(region_starts),
-        alias_index=np.concatenate(alias_index),
-        alias_split_p=np.concatenate(alias_split_p),
-    ), np.concatenate(positive_users), np.concatenate(positive_items)
+        num_regions=np.array(num_regions, dtype=dtype),
+        region_cardinality=np.concatenate(region_cardinality).astype(dtype),
+        region_starts=np.concatenate(region_starts).astype(dtype),
+        alias_index=np.concatenate(alias_index).astype(dtype),
+        alias_split_p=np.concatenate(alias_split_p).astype(np.float32),
+    ), np.concatenate(positive_users).astype(dtype), np.concatenate(positive_items).astype(dtype)
 
 
 def make_synthetic_data(num_users, num_items, approx_items_per_user):
