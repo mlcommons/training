@@ -57,45 +57,13 @@ def main():
     print(datetime.now(), "Number of users: {}, Number of items: {}".format(nb_users, nb_items))
     print(datetime.now(), "Number of ratings: {}".format(train_ratings.shape[0]))
 
-    def group_by_user():
-      """This could be accomplished by doing a group-by user, then yielding
-         rows.  However, fast group by on very large ratings pairs is
-         expensive. This generator implementation takes the iter_fn out of
-         the critical path.
-      """
-      cur_buf = 0 # toggle the two buffers                   
-      outs = [[],[]]
-      clear_buf = [False, False]
-      cur_user_id = train_ratings[0][0]
-      for pair in train_ratings:
-        if pair[0] == cur_user_id:
-
-          if clear_buf[0]:
-            outs[0] = []
-            clear_buf[0] = False
-          if clear_buf[1]:
-            outs[1] = []
-            clear_buf[1] = False
-
-          outs[cur_buf].append(pair[1])
-        else:
-
-          if clear_buf[0]:
-            outs[0] = []
-            clear_buf[0] = False
-          if clear_buf[1]:
-            outs[1] = []
-            clear_buf[1] = False
-
-          clear_buf[cur_buf] = True
-          cur_user_id = pair[0]
-          cur_buf = 1 - cur_buf
-          outs[cur_buf].append(pair[1])
-          yield np.array(outs[1 - cur_buf])
-      yield np.array(outs[cur_buf])
+    train_input = npi.group_by(train_ratings[:, 0]).split(train_ratings[:, 1])
+    def iter_fn_simple():
+      for _, items in enumerate(train_input):
+         yield items
 
     sampler, pos_users, pos_items  = process_data(
-        num_items=nb_items, min_items_per_user=1, iter_fn=group_by_user)
+        num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn_simple)
     assert len(pos_users) == train_ratings.shape[0], "Cardinality difference with original data and sample table data."
 
     fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)

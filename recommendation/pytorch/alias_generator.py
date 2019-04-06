@@ -222,6 +222,9 @@ def process_data(num_items, min_items_per_user, iter_fn):
         alias_index.append(user_alias_index)
         alias_split_p.append(user_alias_split_p)
 
+        if user_id % 10000 == 0:
+            print("user id {} processed".format(user_id))
+
     return AliasSample(
         offsets=np.cumsum([0] + num_regions, dtype=np.int32)[:-1],
         num_regions=np.array(num_regions),
