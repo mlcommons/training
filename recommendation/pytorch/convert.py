@@ -18,7 +18,7 @@ def parse_args():
                         help='Number of negative samples for each positive test example')
     parser.add_argument('--user_scaling', default=16, type=int)
     parser.add_argument('--item_scaling', default=32, type=int)
-    parser.add_argument('--use_sampler_cache', default=False, type=bool,
+    parser.add_argument('--use_sampler_cache', action='store_true',
                         help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
 
     return parser.parse_args()
@@ -96,20 +96,11 @@ def main():
       if os.path.exists(args.data):
         print("Using alias file: {}".format(args.data))
         with open(sampler_cache, "rb") as f:
-          #sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
-          sampler, pos_users, pos_items, nb_items = pickle.load(f)
+          sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
 
     print(datetime.now(), 'Generating negative test samples...')
 
-    ##### Delete this
-    test_chunk_size = [0] * args.user_scaling
-    for chunk in range(args.user_scaling):
-        print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
-        tmp_data = torch.from_numpy(np.load(args.data + '/testx'
-                + str(args.user_scaling) + 'x' + str(args.item_scaling)
-                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
-        test_chunk_size[chunk] = tmp_data.shape[0]
-    ##### Delete this
+## Test the 64-bit model while using CPU dataloader. Perhaps it is not OOM
 
     test_negatives = [torch.IntTensor()] * args.user_scaling
     test_user_offset = 0

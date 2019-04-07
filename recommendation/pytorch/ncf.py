@@ -173,8 +173,7 @@ def main():
     if os.path.exists(args.data):
       print("Using alias file: {}".format(args.data))
       with open(sampler_cache, "rb") as f:
-        #sampler, pos_users, pos_items, nb_items, _ = pickle.load(f)
-        sampler, pos_users, pos_items, nb_items = pickle.load(f)
+        sampler, pos_users, pos_items, nb_items, _ = pickle.load(f)
     print(datetime.now(), "Alias table loaded.")
 
     nb_users = len(sampler.num_regions)
