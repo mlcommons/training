@@ -26,36 +26,6 @@ abridged in Minigo documentation as *AG* (for AlphaGo), *AGZ* (for AlphaGo
 Zero), and *AZ* (for AlphaZero) respectively.
 
 
-Goals of the Project
-==================================================
-
-1. Provide a clear set of learning examples using Tensorflow, Kubernetes, and
-   Google Cloud Platform for establishing Reinforcement Learning pipelines on
-   various hardware accelerators.
-
-2. Reproduce the methods of the original DeepMind AlphaGo papers as faithfully
-   as possible, through an open-source implementation and open-source pipeline
-   tools.
-
-3. Provide our data, results, and discoveries in the open to benefit the Go,
-   machine learning, and Kubernetes communities.
-
-An explicit non-goal of the project is to produce a competitive Go program that
-establishes itself as the top Go AI. Instead, we strive for a readable,
-understandable implementation that can benefit the community, even if that
-means our implementation is not as fast or efficient as possible.
-
-While this product might produce such a strong model, we hope to focus on the
-process.  Remember, getting there is half the fun. :)
-
-We hope this project is an accessible way for interested developers to have
-access to a strong Go model with an easy-to-understand platform of python code
-available for extension, adaptation, etc.
-
-If you'd like to read about our experiences training models, see [RESULTS.md](RESULTS.md).
-
-To see our guidelines for contributing, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
 Getting Started
 ===============
 
