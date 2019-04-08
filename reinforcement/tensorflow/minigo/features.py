@@ -17,7 +17,7 @@ Features used by AlphaGo Zero, in approximate order of importance.
 Feature                 # Notes
 Stone History           16 The stones of each color during the last 8 moves.
 Ones                    1  Constant plane of 1s
-All features with 8 planes are 1-hot encoded, with plane i marked with 1 
+All features with 8 planes are 1-hot encoded, with plane i marked with 1
 only if the feature was equal to i. Any features >= 8 would be marked as 8.
 
 This file includes the features from the first paper as DEFAULT_FEATURES
@@ -26,7 +26,7 @@ and the features from AGZ as NEW_FEATURES.
 
 import numpy as np
 import go
-from utils import product
+import utils
 
 # Resolution/truncation limit for one-hot features
 P = 8
@@ -35,7 +35,7 @@ P = 8
 def make_onehot(feature, planes):
     onehot_features = np.zeros(feature.shape + (planes,), dtype=np.uint8)
     capped = np.minimum(feature, planes)
-    onehot_index_offsets = np.arange(0, product(
+    onehot_index_offsets = np.arange(0, utils.product(
         onehot_features.shape), planes) + capped.ravel()
     # A 0 is encoded as [0,0,0,0], not [1,0,0,0], so we'll
     # filter out any offsets that are a multiple of $planes
@@ -149,12 +149,3 @@ NEW_FEATURES_PLANES = sum(f.planes for f in NEW_FEATURES)
 
 def extract_features(position, features=NEW_FEATURES):
     return np.concatenate([feature(position) for feature in features], axis=2)
-
-
-def bulk_extract_features(positions, features=NEW_FEATURES):
-    num_positions = len(positions)
-    num_planes = sum(f.planes for f in features)
-    output = np.zeros([num_positions, go.N, go.N, num_planes], dtype=np.uint8)
-    for i, pos in enumerate(positions):
-        output[i] = extract_features(pos, features=features)
-    return output

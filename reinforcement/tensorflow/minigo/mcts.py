@@ -18,23 +18,34 @@ All terminology here (Q, U, N, p_UCT) uses the same notation as in the
 AlphaGo (AG) paper.
 """
 
-import numpy as np
 import collections
-import random
 import math
+
+from absl import flags
+import numpy as np
 
 import coords
 import go
 
-MAX_DEPTH = (go.N ** 2) * 1.4  # 505 moves for 19x19, 113 for 9x9
+# 722 moves for 19x19, 162 for 9x9
+flags.DEFINE_integer('max_game_length', int(go.N ** 2 * 2),
+                     'Move number at which game is forcibly terminated')
 
-# Exploration constant
-c_PUCT = 1.38
+flags.DEFINE_float('c_puct_base', 19652,
+                   'Exploration constants balancing priors vs. value net output.')
 
-# Dirichlet noise, as a function of go.N
+flags.DEFINE_float('c_puct_init', 1.25,
+                   'Exploration constants balancing priors vs. value net output.')
 
+flags.DEFINE_float('dirichlet_noise_alpha', 0.03 * 361 / (go.N ** 2),
+                   'Concentrated-ness of the noise being injected into priors.')
+flags.register_validator('dirichlet_noise_alpha', lambda x: 0 <= x < 1)
 
-def D_NOISE_ALPHA(): return 0.03 * 361 / (go.N ** 2)
+flags.DEFINE_float('dirichlet_noise_weight', 0.25,
+                   'How much to weight the priors vs. dirichlet noise when mixing')
+flags.register_validator('dirichlet_noise_weight', lambda x: 0 <= x < 1)
+
+FLAGS = flags.FLAGS
 
 
 class DummyNode(object):
@@ -72,7 +83,7 @@ class MCTSNode(object):
         self.is_expanded = False
         self.losses_applied = 0  # number of virtual losses on this node
         # using child_() allows vectorized computation of action score.
-        self.illegal_moves = 1000 * (1 - self.position.all_legal_moves())
+        self.illegal_moves = 1 - self.position.all_legal_moves()
         self.child_N = np.zeros([go.N * go.N + 1], dtype=np.float32)
         self.child_W = np.zeros([go.N * go.N + 1], dtype=np.float32)
         # save a copy of the original prior before it gets mutated by d-noise.
@@ -86,7 +97,8 @@ class MCTSNode(object):
 
     @property
     def child_action_score(self):
-        return self.child_Q * self.position.to_play + self.child_U - self.illegal_moves
+        return (self.child_Q * self.position.to_play +
+                self.child_U - 1000 * self.illegal_moves)
 
     @property
     def child_Q(self):
@@ -94,7 +106,9 @@ class MCTSNode(object):
 
     @property
     def child_U(self):
-        return (c_PUCT * math.sqrt(1 + self.N) *
+        return ((2.0 * (math.log(
+                (1.0 + self.N + FLAGS.c_puct_base) / FLAGS.c_puct_base)
+                       + FLAGS.c_puct_init)) * math.sqrt(max(1, self.N - 1)) *
                 self.child_prior / (1 + self.child_N))
 
     @property
@@ -126,15 +140,14 @@ class MCTSNode(object):
         current = self
         pass_move = go.N * go.N
         while True:
-            current.N += 1
             # if a node has never been evaluated, we have no basis to select a child.
             if not current.is_expanded:
                 break
             # HACK: if last move was a pass, always investigate double-pass first
             # to avoid situations where we auto-lose by passing too early.
-            if (current.position.recent
-                and current.position.recent[-1].move is None
-                    and current.child_N[pass_move] == 0):
+            if (current.position.recent and
+                current.position.recent[-1].move is None and
+                    current.child_N[pass_move] == 0):
                 current = current.maybe_add_child(pass_move)
                 continue
 
@@ -175,31 +188,26 @@ class MCTSNode(object):
             return
         self.parent.revert_virtual_loss(up_to)
 
-    def revert_visits(self, up_to):
-        """Revert visit increments.
-
-        Sometimes, repeated calls to select_leaf return the same node.
-        This is rare and we're okay with the wasted computation to evaluate
-        the position multiple times by the dual_net. But select_leaf has the
-        side effect of incrementing visit counts. Since we want the value to
-        only count once for the repeatedly selected node, we also have to
-        revert the incremented visit counts.
-        """
-        self.N -= 1
-        if self.parent is None or self is up_to:
-            return
-        self.parent.revert_visits(up_to)
-
     def incorporate_results(self, move_probabilities, value, up_to):
         assert move_probabilities.shape == (go.N * go.N + 1,)
         # A finished game should not be going through this code path - should
         # directly call backup_value() on the result of the game.
         assert not self.position.is_game_over()
+
+        # If a node was picked multiple times (despite vlosses), we shouldn't
+        # expand it more than once.
         if self.is_expanded:
-            self.revert_visits(up_to=up_to)
             return
         self.is_expanded = True
-        self.original_prior = self.child_prior = move_probabilities
+
+        # Zero out illegal moves.
+        move_probs = move_probabilities * (1 - self.illegal_moves)
+        scale = sum(move_probs)
+        if scale > 0:
+            # Re-normalize move_probabilities.
+            move_probs *= 1 / scale
+
+        self.original_prior = self.child_prior = move_probs
         # initialize child Q as current node's value, to prevent dynamics where
         # if B is winning, then B will only ever explore 1 move, because the Q
         # estimation will be so much larger than the 0 of the other moves.
@@ -218,20 +226,24 @@ class MCTSNode(object):
             value: the value to be propagated (1 = black wins, -1 = white wins)
             up_to: the node to propagate until.
         """
+        self.N += 1
         self.W += value
         if self.parent is None or self is up_to:
             return
         self.parent.backup_value(value, up_to)
 
     def is_done(self):
-        '''True if the last two moves were Pass or if the position is at a move
-        greater than the max depth.
-        '''
-        return self.position.is_game_over() or self.position.n >= MAX_DEPTH
+        """True if the last two moves were Pass or if the position is at a move
+        greater than the max depth."""
+        return self.position.is_game_over() or self.position.n >= FLAGS.max_game_length
 
     def inject_noise(self):
-        dirch = np.random.dirichlet([D_NOISE_ALPHA()] * ((go.N * go.N) + 1))
-        self.child_prior = self.child_prior * 0.75 + dirch * 0.25
+        epsilon = 1e-5
+        legal_moves = (1 - self.illegal_moves) + epsilon
+        a = legal_moves * ([FLAGS.dirichlet_noise_alpha] * (go.N * go.N + 1))
+        dirichlet = np.random.dirichlet(a)
+        self.child_prior = (self.child_prior * (1 - FLAGS.dirichlet_noise_weight) +
+                            dirichlet * FLAGS.dirichlet_noise_weight)
 
     def children_as_pi(self, squash=False):
         """Returns the child visit counts as a probability distribution, pi
@@ -241,58 +253,75 @@ class MCTSNode(object):
         """
         probs = self.child_N
         if squash:
-            probs = probs ** .95
+            probs = probs ** .98
+        sum_probs = np.sum(probs)
+        if sum_probs == 0:
+            return probs
         return probs / np.sum(probs)
 
-    def most_visited_path(self):
+    def best_child(self):
+        # Sort by child_N tie break with action score.
+        return np.argmax(self.child_N + self.child_action_score / 10000)
+
+    def most_visited_path_nodes(self):
         node = self
         output = []
         while node.children:
-            next_kid = np.argmax(node.child_N)
-            node = node.children.get(next_kid)
-            if node is None:
-                output.append("GAME END")
-                break
-            output.append("%s (%d) ==> " % (coords.to_kgs(
-                                            coords.from_flat(node.fmove)),
-                                            node.N))
+            node = node.children.get(node.best_child())
+            assert node is not None
+            output.append(node)
+        return output
+
+    def most_visited_path(self):
+        output = []
+        node = self
+        for node in self.most_visited_path_nodes():
+            output.append("%s (%d) ==> " % (
+                coords.to_gtp(coords.from_flat(node.fmove)), node.N))
+
         output.append("Q: {:.5f}\n".format(node.Q))
         return ''.join(output)
 
     def mvp_gg(self):
         """ Returns most visited path in go-gui VAR format e.g. 'b r3 w c17..."""
-        node = self
         output = []
-        while node.children and max(node.child_N) > 1:
-            next_kid = np.argmax(node.child_N)
-            node = node.children[next_kid]
-            output.append("%s" % coords.to_kgs(
-                coords.from_flat(node.fmove)))
+        for node in self.most_visited_path_nodes():
+            if max(node.child_N) <= 1:
+                break
+            output.append(coords.to_gtp(coords.from_flat(node.fmove)))
         return ' '.join(output)
 
-    def describe(self):
-        sort_order = list(range(go.N * go.N + 1))
-        sort_order.sort(key=lambda i: (
+    def rank_children(self):
+        ranked_children = list(range(go.N * go.N + 1))
+        ranked_children.sort(key=lambda i: (
             self.child_N[i], self.child_action_score[i]), reverse=True)
-        soft_n = self.child_N / sum(self.child_N)
-        p_delta = soft_n - self.child_prior
-        p_rel = p_delta / self.child_prior
+        return ranked_children
+
+    def describe(self):
+        ranked_children = self.rank_children()
+        soft_n = self.child_N / max(1, sum(self.child_N))
+        prior = self.child_prior
+        p_delta = soft_n - prior
+        p_rel = np.divide(p_delta, prior, out=np.zeros_like(
+            p_delta), where=prior != 0)
         # Dump out some statistics
         output = []
         output.append("{q:.4f}\n".format(q=self.Q))
         output.append(self.most_visited_path())
         output.append(
-            "move:  action      Q      U      P    P-Dir    N  soft-N  p-delta  p-rel\n")
-        output.append("\n".join(["{!s:6}: {: .3f}, {: .3f}, {:.3f}, {:.3f}, {:.3f}, {:4d} {:.4f} {: .5f} {: .2f}".format(
-            coords.to_kgs(coords.from_flat(key)),
-            self.child_action_score[key],
-            self.child_Q[key],
-            self.child_U[key],
-            self.child_prior[key],
-            self.original_prior[key],
-            int(self.child_N[key]),
-            soft_n[key],
-            p_delta[key],
-            p_rel[key])
-            for key in sort_order][:15]))
+            "move : action    Q     U     P   P-Dir    N  soft-N  p-delta  p-rel")
+        for i in ranked_children[:15]:
+            if self.child_N[i] == 0:
+                break
+            output.append("\n{!s:4} : {: .3f} {: .3f} {:.3f} {:.3f} {:.3f} {:5d} {:.4f} {: .5f} {: .2f}".format(
+                coords.to_gtp(coords.from_flat(i)),
+                self.child_action_score[i],
+                self.child_Q[i],
+                self.child_U[i],
+                self.child_prior[i],
+                self.original_prior[i],
+                int(self.child_N[i]),
+                soft_n[i],
+                p_delta[i],
+                p_rel[i]))
         return ''.join(output)

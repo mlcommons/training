@@ -14,36 +14,18 @@
 
 # This file builds the images that are used by prow to run the Minigo tests.
 
-IMG = gcr.io/minigo-testing/minigo-prow-harness
 IMG_V2 = gcr.io/minigo-testing/minigo-prow-harness-v2
-TAG := $(shell date +v%Y%m%d)-$(shell git describe --tags --always --dirty)-$(shell git diff | openssl sha -sha256 | cut -c -6)
-DIR := ${CURDIR}
+TAG := $(shell date +v%Y%m%d)-$(shell git describe --tags --always --dirty)-$(shell git diff | sha256sum | cut -c -6)
 
 all: build
 
-build:
-	mkdir -p staging
-	cp ../requirements.txt staging/requirements.txt
-	@echo {\"image\": \"$(IMG):$(TAG)\"} > version.json
-	docker build ${DOCKER_BUILD_OPTS} -t $(IMG):$(TAG) .
-	docker tag $(IMG):$(TAG) $(IMG):latest
-	rm -R staging/*
-	rmdir staging
-	@echo Built $(IMG):$(TAG) and tagged with latest
-
-push: build
-	gcloud docker -- push $(IMG):$(TAG)
-	gcloud docker -- push $(IMG):latest
-	@echo Pushed $(IMG) with :latest and :$(TAG) tags
-
 buildv2:
-	mkdir -p staging
+	mkdir -p staging/tensorflow
 	cp ../requirements.txt staging/requirements.txt
-	@echo {\"image\": \"$(IMG_V2):$(TAG)\"} > version-v2.json
-	docker build -f Dockerfile.v2 -t $(IMG_V2):$(TAG) .
+	cp -r ../cc/tensorflow/ staging/
+	docker build --build-arg PROJECT=$(PROJECT) -f Dockerfile.v2 -t $(IMG_V2):$(TAG) .
 	docker tag $(IMG_V2):$(TAG) $(IMG_V2):latest
-	rm -R staging/*
-	rmdir staging
+	rm -rf staging/
 	@echo Built $(IMG_V2):$(TAG) and tagged with latest
 
 pushv2: buildv2

@@ -1,0 +1,9 @@
+# Flags for the first bootstrap round of selfplay.
+
+--flagfile=ml_perf/flags/19/selfplay.flags
+
+# Don't perform holdout for the first bootstrap round.
+--holdout_pct=0
+
+# No need to peer deeply into randomness.
+--num_readouts=10
