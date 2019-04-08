@@ -85,13 +85,23 @@ def parse_file(filename):
         return parse_generator(f)
 
 
+def strip_and_dedup(gen):
+  lines = []
+  for l in gen:
+    if ':::MLP' not in l:
+      continue
+    lines.append(re.sub(".*:::MLP", ":::MLP", l))
+  return list(sorted(list(set(lines))))
+
+
+
 def parse_generator(gen):
     ''' Reads a generator of lines and returns (loglines, errors)
     The list of errors are any parsing issues as a tuple (str_line, error_msg)
     '''
     loglines = []
     failed = []
-    for line in gen:
+    for line in strip_and_dedup(gen):
         line = line.strip()
         if TOKEN not in line:
             continue
