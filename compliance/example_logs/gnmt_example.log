@@ -1,0 +1,74 @@
+:::MLPv0.5.0 gnmt 1550049265.393176317 (train.py:268) run_start
+:::MLPv0.5.0 gnmt 1550049265.394439697 (seq2seq/utils.py:113) run_set_random_seed: 1
+:::MLPv0.5.0 gnmt 1550049265.412598848 (train.py:312) preproc_tokenize_training
+:::MLPv0.5.0 gnmt 1550049265.413046360 (train.py:314) train_hp_max_sequence_length: 50
+:::MLPv0.5.0 gnmt 1550049274.456599236 (train.py:326) preproc_num_train_examples: 3498161
+:::MLPv0.5.0 gnmt 1550049275.559447765 (train.py:336) preproc_tokenize_eval
+:::MLPv0.5.0 gnmt 1550049275.597178459 (train.py:346) preproc_num_eval_examples: 3003
+:::MLPv0.5.0 gnmt 1550049275.597592831 (train.py:350) preproc_vocab_size: 32317
+:::MLPv0.5.0 gnmt 1550049275.598169804 (seq2seq/models/gnmt.py:34) model_hp_num_layers: 4
+:::MLPv0.5.0 gnmt 1550049275.598643303 (seq2seq/models/gnmt.py:36) model_hp_hidden_size: 1024
+:::MLPv0.5.0 gnmt 1550049275.599111080 (seq2seq/models/gnmt.py:38) model_hp_dropout: 0.2
+:::MLPv0.5.0 gnmt 1550049279.603173733 (train.py:251) model_hp_loss_fn: "Cross Entropy with label smoothing"
+:::MLPv0.5.0 gnmt 1550049279.603722811 (train.py:253) model_hp_loss_smoothing: 0.1
+:::MLPv0.5.0 gnmt 1550049280.493244410 (train.py:393) input_batch_size: 128
+:::MLPv0.5.0 gnmt 1550049280.493689060 (train.py:395) input_size: 3497728
+:::MLPv0.5.0 gnmt 1550049280.494647741 (seq2seq/data/sampler.py:254) input_order
+:::MLPv0.5.0 gnmt 1550049280.496007442 (seq2seq/data/sampler.py:254) input_order
+:::MLPv0.5.0 gnmt 1550049280.496948242 (train.py:409) eval_size: 3003
+:::MLPv0.5.0 gnmt 1550049280.497889280 (seq2seq/inference/beam_search.py:43) eval_hp_beam_size: 5
+:::MLPv0.5.0 gnmt 1550049280.498333216 (seq2seq/inference/beam_search.py:45) eval_hp_max_sequence_length: 150
+:::MLPv0.5.0 gnmt 1550049280.498714685 (seq2seq/inference/beam_search.py:47) eval_hp_length_normalization_constant: 5.0
+:::MLPv0.5.0 gnmt 1550049280.499088049 (seq2seq/inference/beam_search.py:49) eval_hp_length_normalization_factor: 0.6
+:::MLPv0.5.0 gnmt 1550049280.499464273 (seq2seq/inference/beam_search.py:51) eval_hp_coverage_penalty_factor: 0.1
+:::MLPv0.5.0 gnmt 1550049283.242700577 (seq2seq/train/trainer.py:115) opt_name: "adam"
+:::MLPv0.5.0 gnmt 1550049283.243218422 (seq2seq/train/trainer.py:117) opt_learning_rate: 0.001
+:::MLPv0.5.0 gnmt 1550049283.243656635 (seq2seq/train/trainer.py:119) opt_hp_Adam_beta1: 0.9
+:::MLPv0.5.0 gnmt 1550049283.244005442 (seq2seq/train/trainer.py:121) opt_hp_Adam_beta2: 0.999
+:::MLPv0.5.0 gnmt 1550049283.244350195 (seq2seq/train/trainer.py:123) opt_hp_Adam_epsilon: 1e-08
+:::MLPv0.5.0 gnmt 1550049283.245311022 (seq2seq/train/lr_scheduler.py:78) opt_learning_rate_warmup_steps: 200
+:::MLPv0.5.0 gnmt 1550049283.245801687 (train.py:466) train_loop
+:::MLPv0.5.0 gnmt 1550049283.246350050 (train.py:470) train_epoch: 0
+:::MLPv0.5.0 gnmt 1550049284.053482771 (seq2seq/data/sampler.py:205) input_order
+:::MLPv0.5.0 gnmt 1550061484.477649927 (train.py:483) train_checkpoint
+:::MLPv0.5.0 gnmt 1550061486.181115627 (train.py:490) eval_start: 0
+:::MLPv0.5.0 gnmt 1550061514.467880964 (train.py:495) eval_accuracy: {"epoch": 0, "value": 20.49}
+:::MLPv0.5.0 gnmt 1550061514.468363047 (train.py:497) eval_target: 24.0
+:::MLPv0.5.0 gnmt 1550061514.468725204 (train.py:498) eval_stop
+:::MLPv0.5.0 gnmt 1550061514.469318390 (train.py:470) train_epoch: 1
+:::MLPv0.5.0 gnmt 1550061515.311945915 (seq2seq/data/sampler.py:205) input_order
+:::MLPv0.5.0 gnmt 1550073699.708187580 (train.py:483) train_checkpoint
+:::MLPv0.5.0 gnmt 1550073705.950762510 (train.py:490) eval_start: 1
+:::MLPv0.5.0 gnmt 1550073733.111917734 (train.py:495) eval_accuracy: {"epoch": 1, "value": 21.72}
+:::MLPv0.5.0 gnmt 1550073733.112442732 (train.py:497) eval_target: 24.0
+:::MLPv0.5.0 gnmt 1550073733.112777948 (train.py:498) eval_stop
+:::MLPv0.5.0 gnmt 1550073733.113427401 (train.py:470) train_epoch: 2
+:::MLPv0.5.0 gnmt 1550073733.976921797 (seq2seq/data/sampler.py:205) input_order
+:::MLPv0.5.0 gnmt 1550085915.256659985 (train.py:483) train_checkpoint
+:::MLPv0.5.0 gnmt 1550085921.003725052 (train.py:490) eval_start: 2
+:::MLPv0.5.0 gnmt 1550085948.763688564 (train.py:495) eval_accuracy: {"epoch": 2, "value": 22.52}
+:::MLPv0.5.0 gnmt 1550085948.764161110 (train.py:497) eval_target: 24.0
+:::MLPv0.5.0 gnmt 1550085948.764480591 (train.py:498) eval_stop
+:::MLPv0.5.0 gnmt 1550085948.765091658 (train.py:470) train_epoch: 3
+:::MLPv0.5.0 gnmt 1550085949.625080585 (seq2seq/data/sampler.py:205) input_order
+:::MLPv0.5.0 gnmt 1550098119.481947660 (train.py:483) train_checkpoint
+:::MLPv0.5.0 gnmt 1550098125.219326258 (train.py:490) eval_start: 3
+:::MLPv0.5.0 gnmt 1550098154.012802124 (train.py:495) eval_accuracy: {"epoch": 3, "value": 23.09}
+:::MLPv0.5.0 gnmt 1550098154.013273716 (train.py:497) eval_target: 24.0
+:::MLPv0.5.0 gnmt 1550098154.013695478 (train.py:498) eval_stop
+:::MLPv0.5.0 gnmt 1550098154.014324665 (train.py:470) train_epoch: 4
+:::MLPv0.5.0 gnmt 1550098154.874188900 (seq2seq/data/sampler.py:205) input_order
+:::MLPv0.5.0 gnmt 1550110332.296045065 (train.py:483) train_checkpoint
+:::MLPv0.5.0 gnmt 1550110338.542354584 (train.py:490) eval_start: 4
+:::MLPv0.5.0 gnmt 1550110366.501193285 (train.py:495) eval_accuracy: {"epoch": 4, "value": 23.22}
+:::MLPv0.5.0 gnmt 1550110366.501719475 (train.py:497) eval_target: 24.0
+:::MLPv0.5.0 gnmt 1550110366.502229214 (train.py:498) eval_stop
+:::MLPv0.5.0 gnmt 1550110366.502951622 (train.py:470) train_epoch: 5
+:::MLPv0.5.0 gnmt 1550110367.328888416 (seq2seq/data/sampler.py:205) input_order
+:::MLPv0.5.0 gnmt 1550122538.255764246 (train.py:483) train_checkpoint
+:::MLPv0.5.0 gnmt 1550122544.367511034 (train.py:490) eval_start: 5
+:::MLPv0.5.0 gnmt 1550122571.801926613 (train.py:495) eval_accuracy: {"epoch": 5, "value": 24.11}
+:::MLPv0.5.0 gnmt 1550122571.802411556 (train.py:497) eval_target: 24.0
+:::MLPv0.5.0 gnmt 1550122571.802731991 (train.py:498) eval_stop
+:::MLPv0.5.0 gnmt 1550122571.803371668 (train.py:522) run_stop: {"success": true}
+:::MLPv0.5.0 gnmt 1550122571.803844213 (train.py:523) run_final
