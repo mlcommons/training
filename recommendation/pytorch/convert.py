@@ -27,16 +27,17 @@ def parse_args():
 def generate_negatives(sampler, num_negatives, users):
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_negatives):
-        negatives = np.array([users, sampler.sample_negatives(users)], dtype=np.int32)
+        negatives = np.array([users, sampler.sample_negatives(users)])
+        #negatives = np.array([users, sampler.sample_negatives(users)], dtype=np.int32)
         neg_users_items[i] = negatives.transpose()
     return neg_users_items;
 
 
 def process_raw_data(args):
-    train_ratings = torch.IntTensor()
-    test_ratings_chunk = [torch.IntTensor()] * args.user_scaling
-    #train_ratings = torch.LongTensor()
-    #test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
+    #train_ratings = torch.IntTensor()
+    #test_ratings_chunk = [torch.IntTensor()] * args.user_scaling
+    train_ratings = torch.LongTensor()
+    test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
     for chunk in range(args.user_scaling):
         print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
@@ -100,9 +101,10 @@ def main():
 
     print(datetime.now(), 'Generating negative test samples...')
 
-## Test the 64-bit model while using CPU dataloader. Perhaps it is not OOM
+    # TODO: Test the 64-bit model while using CPU dataloader. Perhaps it is not OOM
 
-    test_negatives = [torch.IntTensor()] * args.user_scaling
+    #test_negatives = [torch.IntTensor()] * args.user_scaling
+    test_negatives = [torch.LongTensor()] * args.user_scaling
     test_user_offset = 0
     for chunk in range(args.user_scaling):
         neg_users = np.arange(test_user_offset,

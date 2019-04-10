@@ -159,8 +159,8 @@ def main():
     run_start_time = time.time()
 
     print(datetime.now(), "Loading test ratings.")
-    test_ratings = [torch.IntTensor()] * args.user_scaling
-    #test_ratings = [torch.LongTensor()] * args.user_scaling
+    #test_ratings = [torch.IntTensor()] * args.user_scaling
+    test_ratings = [torch.LongTensor()] * args.user_scaling
 
     for chunk in range(args.user_scaling):
         test_ratings[chunk] = torch.from_numpy(np.load(args.data + '/testx' 
@@ -173,14 +173,15 @@ def main():
     if os.path.exists(args.data):
       print("Using alias file: {}".format(args.data))
       with open(sampler_cache, "rb") as f:
+        #sampler, pos_users, pos_items, nb_items = pickle.load(f)
         sampler, pos_users, pos_items, nb_items, _ = pickle.load(f)
     print(datetime.now(), "Alias table loaded.")
 
     nb_users = len(sampler.num_regions)
-    train_users = torch.from_numpy(pos_users).type(torch.IntTensor)
-    train_items = torch.from_numpy(pos_items).type(torch.IntTensor)
-    #train_users = torch.from_numpy(pos_users).type(torch.LongTensor)
-    #train_items = torch.from_numpy(pos_items).type(torch.LongTensor)
+    #train_users = torch.from_numpy(pos_users).type(torch.IntTensor)
+    #train_items = torch.from_numpy(pos_items).type(torch.IntTensor)
+    train_users = torch.from_numpy(pos_users).type(torch.LongTensor)
+    train_items = torch.from_numpy(pos_items).type(torch.LongTensor)
 
     mlperf_log.ncf_print(key=mlperf_log.INPUT_SIZE, value=len(train_users))
     # produce things not change between epoch
@@ -196,17 +197,23 @@ def main():
     test_pos = [l[:,1].reshape(-1,1) for l in test_ratings]
 
 
-    test_negatives = [torch.IntTensor()] * args.user_scaling
-    test_neg_items = [torch.IntTensor()] * args.user_scaling
-    #test_negatives = [torch.LongTensor()] * args.user_scaling
-    #test_neg_items = [torch.LongTensor()] * args.user_scaling
+    #test_negatives = [torch.IntTensor()] * args.user_scaling
+    #test_neg_items = [torch.IntTensor()] * args.user_scaling
+    test_negatives = [torch.LongTensor()] * args.user_scaling
+    test_neg_items = [torch.LongTensor()] * args.user_scaling
     
     print(datetime.now(), "Loading test negatives.")
     for chunk in range(args.user_scaling):
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
+        # This concatenated version is used for the alias table version.
         n = np.load(file_name, encoding='bytes')
         test_negatives[chunk] = torch.from_numpy(np.concatenate(n.f.arr_0))
+
+        # Changing it to this version from the NCF master just for error checking.
+        # TODO: Investigate why this difference exists.
+
+        #test_negatives[chunk] = torch.from_numpy(np.load(file_name, encoding='bytes')['arr_0'])
         print(datetime.now(), "Test negative chunk {} of {} loaded ({} users).".format(
               chunk+1, args.user_scaling, test_negatives[chunk].size()))
 
@@ -326,16 +333,16 @@ def main():
             neg_users = train_users.repeat(args.negative_samples)
             neg_items = torch.empty_like(neg_users, dtype=torch.int64).random_(0, nb_items)
         else:
+            neg_users = train_users.repeat(args.negative_samples)
             negatives = generate_negatives(
                 sampler,
                 args.negative_samples,
-                train_users.numpy())
+                neg_users.numpy())
             neg_users = torch.from_numpy(negatives[0][:, 0])
             neg_items = torch.from_numpy(negatives[0][:, 1])
 
         after_neg_gen = time.time()
 
-        
         epoch_users = torch.cat((train_users,neg_users))
         epoch_items = torch.cat((train_items,neg_items))
         del neg_users, neg_items
@@ -367,10 +374,10 @@ def main():
             # selecting input from prepared data
             # Late casting in order to feed Long values into the model.
             # This is required for embedding lookup.
-            user = epoch_users_list[i].type(torch.long).cuda()
-            item = epoch_items_list[i].type(torch.long).cuda()
-            #user = epoch_users_list[i].cuda()
-            #item = epoch_items_list[i].cuda()
+            #user = epoch_users_list[i].type(torch.long).cuda()
+            #item = epoch_items_list[i].type(torch.long).cuda()
+            user = epoch_users_list[i].cuda()
+            item = epoch_items_list[i].cuda()
             label = epoch_label_list[i].view(-1,1).cuda()
 
             for p in model.parameters():
