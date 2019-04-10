@@ -2,12 +2,14 @@ import torch.jit
 import os
 import math
 import time
+import timeit
 from datetime import datetime
 from collections import OrderedDict
 from argparse import ArgumentParser
 from alias_generator import AliasSample
 import pickle
 from convert import generate_negatives
+from convert import generate_negatives_flat
 from convert import CACHE_FN
 
 import tqdm
@@ -328,20 +330,23 @@ def main():
         mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_TRAIN_NEG_GEN)
         begin = time.time()
         
+        st = timeit.default_timer()
         if args.random_negatives:
             neg_users = train_users.repeat(args.negative_samples)
             neg_items = torch.empty_like(neg_users, dtype=torch.int64).random_(0, nb_items)
         else:
-            negatives = generate_negatives(
+            negatives = generate_negatives_flat(
                 sampler,
                 args.negative_samples,
                 train_users.numpy())
-            negatives = np.concatenate(negatives)
-            neg_users = torch.from_numpy(negatives[:, 0])
-            neg_items = torch.from_numpy(negatives[:, 1])
+            neg_users = train_users.repeat(args.negative_samples)
+            neg_items = torch.from_numpy(negatives)
+
+        print("generate_negatives loop time: {:.2f}", timeit.default_timer() - st)
 
         after_neg_gen = time.time()
 
+        st = timeit.default_timer()
         epoch_users = torch.cat((train_users,neg_users))
         epoch_items = torch.cat((train_items,neg_items))
         del neg_users, neg_items
@@ -355,6 +360,7 @@ def main():
         epoch_users_list = epoch_users.split(local_batch)
         epoch_items_list = epoch_items.split(local_batch)
         epoch_label_list = epoch_label.split(local_batch)
+        print("shuffle time: {:.2f}", timeit.default_timer() - st)
 
         # only print progress bar on rank 0
         num_batches = (epoch_size + args.batch_size - 1) // args.batch_size

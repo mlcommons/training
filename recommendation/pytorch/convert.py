@@ -5,6 +5,9 @@ from datetime import datetime
 import numpy_indexed as npi
 import os
 import pickle
+import timeit
+import multiprocessing as mp
+import multiprocessing.dummy
 from alias_generator import process_data
 
 CACHE_FN = "alias_tbl_{}x{}_"
@@ -31,6 +34,47 @@ def generate_negatives(sampler, num_negatives, users):
         neg_users_items[i] = negatives.transpose()
     return neg_users_items;
 
+
+def init_worker(user_ar, data_shape, num_procs):
+    var_dict['user_ar'] = user_ar
+    var_dict['data_shape'] = data_shape
+    var_dict['num_procs'] = num_procs
+
+def worker_fn(proc_id):
+    users_shape = var_dict['data_shape']
+    shared_users_np = np.frombuffer(var_dict['user_ar']).reshape(users_shape)
+    total = users_shape[0]
+    num_procs = var_dict['num_procs']
+
+    per_core_base = total // num_procs
+    add_one_zone = proc_id < (total % num_procs)
+    num_elems = per_core_base+1 if add_one_zone else per_core_base
+    start_idx = per_core_base*proc_id + proc_id if add_one_zone else per_core_base*proc_id + (total%num_procs)
+    my_users = shared_users_np[start_idx:start_idx+num_elems]
+
+    print("....Worker {} -- Elems {} - {}".format(proc_id, start_idx,
+          start_idx+num_elems-1))
+
+    return sampler.sample_negatives(my_users)
+
+def generate_negatives_flat(sampler, num_negatives, users):
+    num_threads = int(0.8 * multiprocessing.cpu_count())
+    print(datetime.now(), "Generating negatives using {} threads.".format(num_threads))
+
+    users = np.tile(users, num_negatives)
+    users_shape = users.shape
+
+    num_batches = (users.shape[0] // int(1e5)) + 1
+    st = timeit.default_timer()
+    user_batches = np.array_split(users, num_batches)
+    print(".. split users into {} batches, time: {:.2f} sec".format(num_batches, timeit.default_timer()-st))
+
+    # Real multi-processing requires us to move the large sampler object to 
+    # shared memory. Using threading for now.
+    with mp.dummy.Pool(num_threads) as pool:
+        results = pool.map(sampler.sample_negatives, user_batches)
+
+    return np.concatenate(results).astype(np.int64)
 
 def process_raw_data(args):
     train_ratings = torch.LongTensor()
