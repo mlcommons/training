@@ -35,28 +35,6 @@ def generate_negatives(sampler, num_negatives, users):
     return neg_users_items;
 
 
-def init_worker(user_ar, data_shape, num_procs):
-    var_dict['user_ar'] = user_ar
-    var_dict['data_shape'] = data_shape
-    var_dict['num_procs'] = num_procs
-
-def worker_fn(proc_id):
-    users_shape = var_dict['data_shape']
-    shared_users_np = np.frombuffer(var_dict['user_ar']).reshape(users_shape)
-    total = users_shape[0]
-    num_procs = var_dict['num_procs']
-
-    per_core_base = total // num_procs
-    add_one_zone = proc_id < (total % num_procs)
-    num_elems = per_core_base+1 if add_one_zone else per_core_base
-    start_idx = per_core_base*proc_id + proc_id if add_one_zone else per_core_base*proc_id + (total%num_procs)
-    my_users = shared_users_np[start_idx:start_idx+num_elems]
-
-    print("....Worker {} -- Elems {} - {}".format(proc_id, start_idx,
-          start_idx+num_elems-1))
-
-    return sampler.sample_negatives(my_users)
-
 def generate_negatives_flat(sampler, num_negatives, users):
     num_threads = int(0.8 * multiprocessing.cpu_count())
     print(datetime.now(), "Generating negatives using {} threads.".format(num_threads))

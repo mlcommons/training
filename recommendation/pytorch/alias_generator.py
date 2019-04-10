@@ -317,9 +317,6 @@ def iter_data():
             for i, data in enumerate(pickle.load(f)):
                 yield data
 
-                # if i == 1000:
-                #     break
-
 
 def run_real_data():
     print("Starting on real data.")

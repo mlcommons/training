@@ -161,7 +161,6 @@ def main():
     run_start_time = time.time()
 
     print(datetime.now(), "Loading test ratings.")
-    #test_ratings = [torch.IntTensor()] * args.user_scaling
     test_ratings = [torch.LongTensor()] * args.user_scaling
 
     for chunk in range(args.user_scaling):
@@ -175,13 +174,10 @@ def main():
     if os.path.exists(args.data):
       print("Using alias file: {}".format(args.data))
       with open(sampler_cache, "rb") as f:
-        #sampler, pos_users, pos_items, nb_items = pickle.load(f)
         sampler, pos_users, pos_items, nb_items, _ = pickle.load(f)
     print(datetime.now(), "Alias table loaded.")
 
     nb_users = len(sampler.num_regions)
-    #train_users = torch.from_numpy(pos_users).type(torch.IntTensor)
-    #train_items = torch.from_numpy(pos_items).type(torch.IntTensor)
     train_users = torch.from_numpy(pos_users).type(torch.LongTensor)
     train_items = torch.from_numpy(pos_items).type(torch.LongTensor)
 
@@ -197,10 +193,6 @@ def main():
     del neg_label
 
     test_pos = [l[:,1].reshape(-1,1) for l in test_ratings]
-
-
-    #test_negatives = [torch.IntTensor()] * args.user_scaling
-    #test_neg_items = [torch.IntTensor()] * args.user_scaling
     test_negatives = [torch.LongTensor()] * args.user_scaling
     test_neg_items = [torch.LongTensor()] * args.user_scaling
     
@@ -377,10 +369,6 @@ def main():
 
         for i in qbar:
             # selecting input from prepared data
-            # Late casting in order to feed Long values into the model.
-            # This is required for embedding lookup.
-            #user = epoch_users_list[i].type(torch.long).cuda()
-            #item = epoch_items_list[i].type(torch.long).cuda()
             user = epoch_users_list[i].cuda()
             item = epoch_items_list[i].cuda()
             label = epoch_label_list[i].view(-1,1).cuda()
