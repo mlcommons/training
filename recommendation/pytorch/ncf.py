@@ -167,7 +167,7 @@ def main():
                 + str(args.user_scaling) + 'x' + str(args.item_scaling) 
                 + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
         
-    fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
+    fn_prefix = args.data + '/' + CACHE_FN.format(args.user_scaling, args.item_scaling)
     sampler_cache = fn_prefix + "cached_sampler.pkl"
     print(datetime.now(), "Loading preprocessed sampler.")
     if os.path.exists(args.data):
@@ -206,14 +206,13 @@ def main():
     for chunk in range(args.user_scaling):
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
-        # This concatenated version is used for the alias table version.
-        n = np.load(file_name, encoding='bytes')
-        test_negatives[chunk] = torch.from_numpy(np.concatenate(n.f.arr_0))
+        raw_data = np.load(file_name, encoding='bytes')
+        if args.user_scaling > 1:
+          # Concatenation is required if args.user_scaling > 1
+          test_negatives[chunk] = torch.from_numpy(np.concatenate(raw_data.f.arr_0))
+        else:
+          test_negatives[chunk] = torch.from_numpy(raw_data['arr_0'])
 
-        # Changing it to this version from the NCF master just for error checking.
-        # TODO: Investigate why this difference exists.
-
-        #test_negatives[chunk] = torch.from_numpy(np.load(file_name, encoding='bytes')['arr_0'])
         print(datetime.now(), "Test negative chunk {} of {} loaded ({} users).".format(
               chunk+1, args.user_scaling, test_negatives[chunk].size()))
 
@@ -333,13 +332,13 @@ def main():
             neg_users = train_users.repeat(args.negative_samples)
             neg_items = torch.empty_like(neg_users, dtype=torch.int64).random_(0, nb_items)
         else:
-            neg_users = train_users.repeat(args.negative_samples)
             negatives = generate_negatives(
                 sampler,
                 args.negative_samples,
-                neg_users.numpy())
-            neg_users = torch.from_numpy(negatives[0][:, 0])
-            neg_items = torch.from_numpy(negatives[0][:, 1])
+                train_users.numpy())
+            negatives = np.concatenate(negatives)
+            neg_users = torch.from_numpy(negatives[:, 0])
+            neg_items = torch.from_numpy(negatives[:, 1])
 
         after_neg_gen = time.time()
 

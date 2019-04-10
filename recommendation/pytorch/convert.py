@@ -28,14 +28,11 @@ def generate_negatives(sampler, num_negatives, users):
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_negatives):
         negatives = np.array([users, sampler.sample_negatives(users)])
-        #negatives = np.array([users, sampler.sample_negatives(users)], dtype=np.int32)
         neg_users_items[i] = negatives.transpose()
     return neg_users_items;
 
 
 def process_raw_data(args):
-    #train_ratings = torch.IntTensor()
-    #test_ratings_chunk = [torch.IntTensor()] * args.user_scaling
     train_ratings = torch.LongTensor()
     test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
@@ -54,7 +51,6 @@ def process_raw_data(args):
     # have any ratings. Therefore, nb_users should not be max_user_index+1.
     nb_users = len(np.unique(train_ratings[:, 0]))
 
-    # nb_items should remain as max_item_index+1 -- users can rate any movie
     nb_maxs = torch.max(train_ratings, 0)[0]
     nb_items = nb_maxs[1].item()+1  # Zero is valid item in output from expansion
     del nb_maxs
@@ -78,7 +74,7 @@ def process_raw_data(args):
           sampler.region_starts.dtype, sampler.alias_index.dtype,
           sampler.alias_split_p.dtype))
 
-    fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
+    fn_prefix = args.data + '/' + CACHE_FN.format(args.user_scaling, args.item_scaling)
     sampler_cache = fn_prefix + "cached_sampler.pkl"
     with open(sampler_cache, "wb") as f:
         pickle.dump([sampler, pos_users, pos_items, nb_items, test_chunk_size], f, pickle.HIGHEST_PROTOCOL)
@@ -100,10 +96,6 @@ def main():
           sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
 
     print(datetime.now(), 'Generating negative test samples...')
-
-    # TODO: Test the 64-bit model while using CPU dataloader. Perhaps it is not OOM
-
-    #test_negatives = [torch.IntTensor()] * args.user_scaling
     test_negatives = [torch.LongTensor()] * args.user_scaling
     test_user_offset = 0
     for chunk in range(args.user_scaling):
