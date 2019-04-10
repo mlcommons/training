@@ -248,10 +248,9 @@ def main():
     test_users = torch.arange(nb_users, dtype=torch.long)
     test_users = test_users[:, None]
     test_users = test_users + torch.zeros(1+args.valid_negative, dtype=torch.long)
-
-    # test_items needs to be cast to Long in order to be used in embedding
+    # test_items needs to be of type Long in order to be used in embedding
     test_items = torch.cat(test_items).type(torch.long)
-    #test_items = torch.cat(test_items)
+
     dup_mask = torch.cat(dup_mask)
     real_indices = torch.cat(real_indices)
 
@@ -352,6 +351,7 @@ def main():
         epoch_users_list = epoch_users.split(local_batch)
         epoch_items_list = epoch_items.split(local_batch)
         epoch_label_list = epoch_label.split(local_batch)
+
         print("shuffle time: {:.2f}", timeit.default_timer() - st)
 
         # only print progress bar on rank 0

@@ -12,6 +12,7 @@ from alias_generator import process_data
 
 CACHE_FN = "alias_tbl_{}x{}_"
 
+
 def parse_args():
     parser = ArgumentParser(description="Train a Nerual Collaborative"
                                         " Filtering model converter")
@@ -23,9 +24,7 @@ def parse_args():
     parser.add_argument('--item_scaling', default=32, type=int)
     parser.add_argument('--use_sampler_cache', action='store_true',
                         help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
-
     return parser.parse_args()
-
 
 def generate_negatives(sampler, num_negatives, users):
     neg_users_items = np.empty([num_negatives], object)
@@ -129,8 +128,8 @@ def main():
                 neg_users)
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
-
         np.savez_compressed(file_name, test_negatives[chunk])
+
         print(datetime.now(), 'Chunk', chunk+1, 'of', args.user_scaling, 'saved.')
         test_user_offset += test_chunk_size[chunk]
 

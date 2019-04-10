@@ -16,6 +16,8 @@
 
 set -e
 
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 
 OUTPUT_DIR=${1:-"data"}
 echo "Writing to ${OUTPUT_DIR}. To change this, set the OUTPUT_DIR environment variable."
@@ -136,8 +138,8 @@ cat "${OUTPUT_DIR}/newstest2015.tok.clean.de" \
    > "${OUTPUT_DIR}/newstest_dev.tok.clean.de"
 
 # Filter datasets
-python3 pytorch/scripts/downloaders/filter_dataset.py -f1 ${OUTPUT_DIR}/train.tok.clean.en -f2 ${OUTPUT_DIR}/train.tok.clean.de
-python3 pytorch/scripts/downloaders/filter_dataset.py -f1 ${OUTPUT_DIR}/newstest_dev.tok.clean.en -f2 ${OUTPUT_DIR}/newstest_dev.tok.clean.de
+python3 pytorch/scripts/filter_dataset.py -f1 ${OUTPUT_DIR}/train.tok.clean.en -f2 ${OUTPUT_DIR}/train.tok.clean.de
+python3 pytorch/scripts/filter_dataset.py -f1 ${OUTPUT_DIR}/newstest_dev.tok.clean.en -f2 ${OUTPUT_DIR}/newstest_dev.tok.clean.de
 
 # Generate Subword Units (BPE)
 # Clone Subword NMT

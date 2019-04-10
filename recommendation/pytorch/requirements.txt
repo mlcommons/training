@@ -4,4 +4,4 @@ torch
 numpy
 numpy_indexed
 pandas
-mlperf_compliance==0.0.6
+mlperf_compliance==0.0.10
