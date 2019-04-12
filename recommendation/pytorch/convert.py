@@ -8,6 +8,7 @@ import pickle
 from alias_generator import process_data
 
 CACHE_FN = "alias_tbl_{}x{}_"
+NEG_ELEMS_BATCH_SZ = 100000
 
 def parse_args():
     parser = ArgumentParser(description="Train a Nerual Collaborative"
@@ -24,12 +25,26 @@ def parse_args():
     return parser.parse_args()
 
 
-def generate_negatives(sampler, num_negatives, users):
+def generate_negatives_old(sampler, num_negatives, users):
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_negatives):
         negatives = np.array([users, sampler.sample_negatives(users)])
         neg_users_items[i] = negatives.transpose()
-    return neg_users_items;
+    return np.concatenate(neg_users_items);
+
+
+def generate_negatives(sampler, num_negatives, users):
+    result = []
+
+    neg_users = np.repeat(users, num_negatives)
+    num_batches = (neg_users.shape[0] // NEG_ELEMS_BATCH_SZ) + 1
+    user_batches = np.array_split(neg_users, num_batches)
+
+    neg_users_items = np.empty([num_negatives], object)
+    for i in range(num_batches):
+        result.append(sampler.sample_negatives(user_batches[i]))
+    result = np.array([neg_users, np.concatenate(result)])
+    return result.transpose()
 
 
 def process_raw_data(args):
@@ -87,7 +102,7 @@ def main():
     if not args.use_sampler_cache:
       sampler, test_chunk_size = process_raw_data(args)
     else:
-      fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
+      fn_prefix = args.data + '/' + CACHE_FN.format(args.user_scaling, args.item_scaling)
       sampler_cache = fn_prefix + "cached_sampler.pkl"
       print(datetime.now(), "Loading preprocessed sampler.")
       if os.path.exists(args.data):

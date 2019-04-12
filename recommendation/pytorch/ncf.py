@@ -207,11 +207,7 @@ def main():
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
         raw_data = np.load(file_name, encoding='bytes')
-        if args.user_scaling > 1:
-          # Concatenation is required if args.user_scaling > 1
-          test_negatives[chunk] = torch.from_numpy(np.concatenate(raw_data.f.arr_0))
-        else:
-          test_negatives[chunk] = torch.from_numpy(raw_data['arr_0'])
+        test_negatives[chunk] = torch.from_numpy(raw_data['arr_0'])
 
         print(datetime.now(), "Test negative chunk {} of {} loaded ({} users).".format(
               chunk+1, args.user_scaling, test_negatives[chunk].size()))
@@ -336,7 +332,6 @@ def main():
                 sampler,
                 args.negative_samples,
                 train_users.numpy())
-            negatives = np.concatenate(negatives)
             neg_users = torch.from_numpy(negatives[:, 0])
             neg_items = torch.from_numpy(negatives[:, 1])
 
