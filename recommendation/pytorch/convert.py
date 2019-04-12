@@ -29,7 +29,7 @@ def parse_args():
 
 
 def generate_negatives(sampler, num_negatives, users):
-    result = []
+    results = []
 
     neg_users = np.repeat(users, num_negatives)
     num_batches = (neg_users.shape[0] // NEG_ELEMS_BATCH_SZ) + 1
@@ -37,25 +37,22 @@ def generate_negatives(sampler, num_negatives, users):
 
     neg_users_items = np.empty([num_negatives], object)
     for i in range(num_batches):
-        result.append(sampler.sample_negatives(user_batches[i]))
-    result = np.array([neg_users, np.concatenate(result)])
-    return result.transpose()
+        results.append(sampler.sample_negatives(user_batches[i]))
+
+    return np.concatenate(results)
 
 
-def generate_negatives_flat(sampler, num_negatives, users):
+def generate_negatives_parallel(sampler, num_negatives, users):
     num_threads = int(0.8 * multiprocessing.cpu_count())
     print(datetime.now(), "Generating negatives using {} threads.".format(num_threads))
 
-    users = np.tile(users, num_negatives)
-    users_shape = users.shape
-
-    num_batches = (users.shape[0] // int(1e5)) + 1
-    st = timeit.default_timer()
-    user_batches = np.array_split(users, num_batches)
-    print(".. split users into {} batches, time: {:.2f} sec".format(num_batches, timeit.default_timer()-st))
+    neg_users = np.repeat(users, num_negatives)
+    num_batches = (neg_users.shape[0] // NEG_ELEMS_BATCH_SZ) + 1
+    user_batches = np.array_split(neg_users, num_batches)
 
     # Real multi-processing requires us to move the large sampler object to 
-    # shared memory. Using threading for now.
+    # shared memory, to avoid pickling inter-process communication overheads.
+    # Using threading for now.
     with mp.dummy.Pool(num_threads) as pool:
         results = pool.map(sampler.sample_negatives, user_batches)
 
@@ -131,10 +128,12 @@ def main():
     for chunk in range(args.user_scaling):
         neg_users = np.arange(test_user_offset,
             test_user_offset+test_chunk_size[chunk])
-        test_negatives[chunk] = generate_negatives(
-                sampler,
-                args.valid_negative,
-                neg_users)
+        neg_items = generate_negatives_parallel(
+            sampler,
+            args.valid_negative,
+            neg_users)
+        neg_users = neg_users.repeat(args.valid_negative)
+        test_negatives[chunk] = np.array([neg_users, neg_items]).transpose()
         file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
                 + str(args.item_scaling) + '_' + str(chunk) + '.npz')
         np.savez_compressed(file_name, test_negatives[chunk])
