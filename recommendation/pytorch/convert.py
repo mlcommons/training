@@ -11,6 +11,7 @@ import multiprocessing.dummy
 from alias_generator import process_data
 
 CACHE_FN = "alias_tbl_{}x{}_"
+NEG_ELEMS_BATCH_SZ = 100000
 
 
 def parse_args():
@@ -26,12 +27,19 @@ def parse_args():
                         help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
     return parser.parse_args()
 
+
 def generate_negatives(sampler, num_negatives, users):
+    result = []
+
+    neg_users = np.repeat(users, num_negatives)
+    num_batches = (neg_users.shape[0] // NEG_ELEMS_BATCH_SZ) + 1
+    user_batches = np.array_split(neg_users, num_batches)
+
     neg_users_items = np.empty([num_negatives], object)
-    for i in range(num_negatives):
-        negatives = np.array([users, sampler.sample_negatives(users)])
-        neg_users_items[i] = negatives.transpose()
-    return neg_users_items;
+    for i in range(num_batches):
+        result.append(sampler.sample_negatives(user_batches[i]))
+    result = np.array([neg_users, np.concatenate(result)])
+    return result.transpose()
 
 
 def generate_negatives_flat(sampler, num_negatives, users):
@@ -52,6 +60,7 @@ def generate_negatives_flat(sampler, num_negatives, users):
         results = pool.map(sampler.sample_negatives, user_batches)
 
     return np.concatenate(results).astype(np.int64)
+
 
 def process_raw_data(args):
     train_ratings = torch.LongTensor()
@@ -108,7 +117,7 @@ def main():
     if not args.use_sampler_cache:
       sampler, test_chunk_size = process_raw_data(args)
     else:
-      fn_prefix = CACHE_FN.format(args.user_scaling, args.item_scaling)
+      fn_prefix = args.data + '/' + CACHE_FN.format(args.user_scaling, args.item_scaling)
       sampler_cache = fn_prefix + "cached_sampler.pkl"
       print(datetime.now(), "Loading preprocessed sampler.")
       if os.path.exists(args.data):
