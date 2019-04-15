@@ -31,19 +31,45 @@ source download_dataset.sh
 ```
 
 ### Steps to run benchmark.
-From Source
 
-Run the run_and_time.sh script
-```
-cd reference/single_stage_detector/ssd
-source run_and_time.sh SEED TARGET
-```
-where SEED is the random seed for a run, TARGET is the quality target from Section 5 below.
+## Steps to launch training
 
-Docker Image
+### NVIDIA DGX-1 (single GPU)
+Launch configuration and system-specific hyperparameters for the NVIDIA DGX-1
+old reference are in the `config_DGX1_32.sh` script.
+
+Steps required to launch old reference training on NVIDIA DGX-1:
+
 ```
-sudo nvidia-docker run -v /coco:/coco -t -i --rm --ipc=host mlperf/single_stage_detector ./run_and_time.sh SEED TARGET
+docker build . -t mlperf-nvidia:single_stage_detector
+DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> DGXSYSTEM=DGX1_32 ./run.sub
 ```
+
+### NVIDIA DGX-1 (single node)
+Launch configuration and system-specific hyperparameters for the NVIDIA DGX-1
+single node reference are in the `config_DGX1_singlenode.sh` script.
+
+Steps required to launch single node training on NVIDIA DGX-1:
+
+```
+docker build . -t mlperf-nvidia:single_stage_detector
+DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> DGXSYSTEM=DGX1_singlenode ./run.sub
+```
+
+### NVIDIA DGX-1 (multi node)
+Launch configuration and system-specific hyperparameters for the NVIDIA DGX-1
+multi node reference are in the `config_DGX1_multinode.sh` script.
+
+Steps required to launch multi node training on NVIDIA DGX-1:
+
+```
+docker build . -t mlperf-nvidia:single_stage_detector
+DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> DGXSYSTEM=DGX1_multinode sbatch -N $DGXNNODES -t $WALLTIME run.sub
+```
+
+### Hyperparameter settings
+
+Hyperparameters are recorded in the `config_*.sh` files for each configuration and in `run_and_time.sh`.
 
 # 3. Dataset/Environment
 ### Publiction/Attribution.
@@ -56,14 +82,14 @@ Train on 2017 COCO train data set, compute mAP on 2017 COCO val data set.
 ### Publication/Attribution
 Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed, Cheng-Yang Fu, Alexander C. Berg. SSD: Single Shot MultiBox Detector. In the Proceedings of the European Conference on Computer Vision (ECCV), 2016.
 
-Backbone is ResNet34 pretrained on ILSVRC 2012 (from torchvision). Modifications to the backbone networks: remove conv_5x residual blocks, change the first 3x3 convolution of the conv_4x block from stride 2 to stride1 (this increases the resolution of the feature map to which detector heads are attached), attach all 6 detector heads to the output of the last conv_4x residual block. Thus detections are attached to 38x38, 19x19, 10x10, 5x5, 3x3, and 1x1 feature maps. Convolutions in the detector layers are followed by batch normalization layers.
+Backbone is ResNet34 pretrained on ILSVRC 2012 (from torchvision). Modifications to the backbone networks: remove conv_5x residual blocks, change the first 3x3 convolution of the conv_4x block from stride 2 to stride1 (this increases the resolution of the feature map to which detector heads are attached), attach all 6 detector heads to the output of the last conv_4x residual block. Thus detections are attached to 38x38, 19x19, 10x10, 5x5, 3x3, and 1x1 feature maps.
 
 # 5. Quality.
 ### Quality metric
 Metric is COCO box mAP (averaged over IoU of 0.5:0.95), computed over 2017 COCO val data.
 
 ### Quality target
-mAP of 0.212
+mAP of 0.23
 
 ### Evaluation frequency
 

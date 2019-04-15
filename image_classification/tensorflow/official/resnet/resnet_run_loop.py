@@ -37,7 +37,6 @@ from official.utils.logs import hooks_helper
 from official.utils.logs import logger
 from official.utils.misc import model_helpers
 
-
 _NUM_EXAMPLES_NAME = "num_examples"
 
 
@@ -130,7 +129,7 @@ def get_synth_input_fn(height, width, num_channels, num_classes):
 ################################################################################
 def learning_rate_with_decay(
     batch_size, batch_denom, num_images, boundary_epochs, decay_rates,
-    base_lr=0.1):
+    base_lr=0.1, enable_lars=False):
   """Get a learning rate that decays step-wise as training progresses.
 
   Args:
@@ -166,13 +165,64 @@ def learning_rate_with_decay(
         warmup_steps, tf.float32))
     return tf.cond(global_step < warmup_steps, lambda: warmup_lr, lambda: lr)
 
+  def poly_rate_fn(global_step):
+    """Handles linear scaling rule, gradual warmup, and LR decay.
+
+    The learning rate starts at 0, then it increases linearly per step.  After
+    flags.poly_warmup_epochs, we reach the base learning rate (scaled to account
+    for batch size). The learning rate is then decayed using a polynomial rate
+    decay schedule with power 2.0.
+
+    Args:
+    global_step: the current global_step
+
+    Returns:
+    returns the current learning rate
+    """
+
+    # Learning rate schedule for LARS polynomial schedule
+    if batch_size < 8192:
+      plr = 5.0
+      w_epochs = 5
+    elif batch_size < 16384:
+      plr = 10.0
+      w_epochs = 5
+    elif batch_size < 32768:
+      plr = 25.0
+      w_epochs = 5
+    else:
+      plr = 32.0
+      w_epochs = 14
+
+    w_steps = int(w_epochs * batches_per_epoch)
+    wrate = (plr * tf.cast(global_step, tf.float32) / tf.cast(
+        w_steps, tf.float32))
+
+    # TODO(pkanwar): use a flag to help calc num_epochs.
+    num_epochs = 90
+    train_steps = batches_per_epoch * num_epochs
+
+    min_step = tf.constant(1, dtype=tf.int64)
+    decay_steps = tf.maximum(min_step, tf.subtract(global_step, w_steps))
+    poly_rate = tf.train.polynomial_decay(
+        plr,
+        decay_steps,
+        train_steps - w_steps + 1,
+        power=2.0)
+    return tf.where(global_step <= w_steps, wrate, poly_rate)
+
+  # For LARS we have a new learning rate schedule
+  if enable_lars:
+    return poly_rate_fn
+
   return learning_rate_fn
 
 
 def resnet_model_fn(features, labels, mode, model_class,
                     resnet_size, weight_decay, learning_rate_fn, momentum,
                     data_format, version, loss_scale, loss_filter_fn=None,
-                    dtype=resnet_model.DEFAULT_DTYPE):
+                    dtype=resnet_model.DEFAULT_DTYPE,
+                    label_smoothing=0.0, enable_lars=False):
   """Shared functionality for different resnet model_fns.
 
   Initializes the ResnetModel representing the model layers
@@ -247,8 +297,15 @@ def resnet_model_fn(features, labels, mode, model_class,
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
   mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_LOSS_FN, value=mlperf_log.CCE)
-  cross_entropy = tf.losses.sparse_softmax_cross_entropy(
-      logits=logits, labels=labels)
+
+  if label_smoothing != 0.0:
+    one_hot_labels = tf.one_hot(labels, 1001)
+    cross_entropy = tf.losses.softmax_cross_entropy(
+        logits=logits, onehot_labels=one_hot_labels,
+        label_smoothing=label_smoothing)
+  else:
+    cross_entropy = tf.losses.sparse_softmax_cross_entropy(
+        logits=logits, labels=labels)
 
   # Create a tensor named cross_entropy for logging purposes.
   tf.identity(cross_entropy, name='cross_entropy')
@@ -289,10 +346,18 @@ def resnet_model_fn(features, labels, mode, model_class,
     mlperf_log.resnet_print(key=mlperf_log.OPT_NAME,
                             value=mlperf_log.SGD_WITH_MOMENTUM)
     mlperf_log.resnet_print(key=mlperf_log.OPT_MOMENTUM, value=momentum)
-    optimizer = tf.train.MomentumOptimizer(
-        learning_rate=learning_rate,
-        momentum=momentum
-    )
+
+    if enable_lars:
+      optimizer = tf.contrib.opt.LARSOptimizer(
+          learning_rate,
+          momentum=momentum,
+          weight_decay=weight_decay,
+          skip_list=['batch_normalization', 'bias'])
+    else:
+      optimizer = tf.train.MomentumOptimizer(
+          learning_rate=learning_rate,
+          momentum=momentum
+      )
 
     if loss_scale != 1:
       # When computing fp16 gradients, often intermediate tensor values are
@@ -421,7 +486,11 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           'batch_size': flags.batch_size,
           'version': flags.version,
           'loss_scale': flags.loss_scale,
-          'dtype': flags.dtype
+          'dtype': flags.dtype,
+          'label_smoothing': flags.label_smoothing,
+          'enable_lars': flags.enable_lars,
+          'weight_decay': flags.weight_decay,
+          'fine_tune': flags.fine_tune
       })
 
   if flags.benchmark_log_dir is not None:

@@ -16,7 +16,7 @@ class NeuMF(nn.Module):
         super(NeuMF, self).__init__()
         nb_mlp_layers = len(mlp_layer_sizes)
 
-        mlperf_log.ncf_print(key=mlperf_log.MODEL_HP_MF_DIM)
+        mlperf_log.ncf_print(key=mlperf_log.MODEL_HP_MF_DIM, value=mf_dim)
 
         # TODO: regularization?
         self.mf_user_embed = nn.Embedding(nb_users, mf_dim)
@@ -66,5 +66,5 @@ class NeuMF(nn.Module):
         x = torch.cat((xmf, xmlp), dim=1)
         x = self.final(x)
         if sigmoid:
-            x = nn.functional.sigmoid(x)
+            x = torch.sigmoid(x)
         return x

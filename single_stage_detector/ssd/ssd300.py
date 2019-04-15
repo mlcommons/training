@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from base_model import ResNet34
 from mlperf_compliance import mlperf_log
+from mlperf_logger import ssd_print
 
 class SSD300(nn.Module):
     """
@@ -19,11 +20,11 @@ class SSD300(nn.Module):
 
         if backbone == 'resnet34':
             self.model = ResNet34()
-            mlperf_log.ssd_print(key=mlperf_log.BACKBONE, value='resnet34')
+            ssd_print(key=mlperf_log.BACKBONE, value='resnet34')
             out_channels = 256
             out_size = 38
             self.out_chan = [out_channels, 512, 512, 256, 256, 256]
-            mlperf_log.ssd_print(key=mlperf_log.LOC_CONF_OUT_CHANNELS,
+            ssd_print(key=mlperf_log.LOC_CONF_OUT_CHANNELS,
                                  value=self.out_chan)
 
         else:
@@ -35,7 +36,7 @@ class SSD300(nn.Module):
         # classifer 1, 2, 3, 4, 5 ,6
 
         self.num_defaults = [4, 6, 6, 6, 4, 4]
-        mlperf_log.ssd_print(key=mlperf_log.NUM_DEFAULTS_PER_CELL,
+        ssd_print(key=mlperf_log.NUM_DEFAULTS_PER_CELL,
                              value=self.num_defaults)
         self.loc = []
         self.conf = []
@@ -146,4 +147,4 @@ class SSD300(nn.Module):
 
         # For SSD 300, shall return nbatch x 8732 x {nlabels, nlocs} results
         return locs, confs
-    
+
