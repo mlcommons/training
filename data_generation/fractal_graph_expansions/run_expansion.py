@@ -125,7 +125,7 @@ def main(_):
   np.random.seed(FLAGS.random_seed)
 
   logging.info("Loading MovieLens 20m from %s.", FLAGS.input_csv_file)
-  ratings_df = util.load_df_from_file(FLAGS.input_csv_file)
+  ratings_df = load_df_from_file(FLAGS.input_csv_file)
   logging.info("Done loading MovieLens 20m from %s.", FLAGS.input_csv_file)
 
   logging.info("Preprocessing MovieLens 20m.")
@@ -133,15 +133,15 @@ def main(_):
       ratings_df)
   logging.info("Done preprocessing MovieLens 20m.")
 
-  num_users, num_items, _ = util.describe_rating_df(ratings_df, "original set")
-  _, _, num_train_ratings = util.describe_rating_df(
+  num_users, num_items, _ = describe_rating_df(ratings_df, "original set")
+  _, _, num_train_ratings = describe_rating_df(
       train_ratings_df, "train set")
-  _, _, num_test_ratings = util.describe_rating_df(test_ratings_df, "test set")
+  _, _, num_test_ratings = describe_rating_df(test_ratings_df, "test set")
 
   logging.info("Converting data frames to sparse matrices.")
-  train_ratings_matrix = util.convert_df_to_sparse_matrix(
+  train_ratings_matrix = convert_df_to_sparse_matrix(
       train_ratings_df, shape=(num_users, num_items))
-  test_ratings_matrix = util.convert_df_to_sparse_matrix(
+  test_ratings_matrix = convert_df_to_sparse_matrix(
       test_ratings_df, shape=(num_users, num_items))
   logging.info("Done converting data frames to sparse matrices.")
 
