@@ -274,7 +274,9 @@ def main():
     # Add optimizer and loss to graph
     params = model.parameters()
 
-    optimizer = torch.optim.Adam(params, lr=args.learning_rate, betas=(args.beta1, args.beta2), eps=args.eps)
+    optimizer = torch.optim.Adam(params, lr=args.learning_rate,
+        betas=(args.beta1, args.beta2), eps=args.eps)
+        #betas=(args.beta1, args.beta2), eps=args.eps, weight_decay=.01)
     criterion = nn.BCEWithLogitsLoss(reduction = 'none') # use torch.mean() with dim later to avoid copy to host
     mlperf_log.ncf_print(key=mlperf_log.OPT_LR, value=args.learning_rate)
     mlperf_log.ncf_print(key=mlperf_log.OPT_NAME, value="Adam")

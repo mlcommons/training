@@ -35,6 +35,8 @@ class NeuMF(nn.Module):
         self.mf_item_embed.weight.data.normal_(0., 0.01)
         self.mlp_user_embed.weight.data.normal_(0., 0.01)
         self.mlp_item_embed.weight.data.normal_(0., 0.01)
+  
+        self.mlp_dropout = nn.Dropout(0.05)
 
         def golorot_uniform(layer):
             fan_in, fan_out = layer.in_features, layer.out_features
@@ -62,6 +64,7 @@ class NeuMF(nn.Module):
         for i, layer in enumerate(self.mlp):
             xmlp = layer(xmlp)
             xmlp = nn.functional.relu(xmlp)
+            xmlp = self.mlp_dropout(xmlp)
 
         x = torch.cat((xmf, xmlp), dim=1)
         x = self.final(x)
