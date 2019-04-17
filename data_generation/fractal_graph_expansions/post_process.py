@@ -22,7 +22,7 @@ from absl import app
 from absl import flags
 from absl import logging
 
-import cPickle as pickle
+import pickle
 import pandas as pd
 import tensorflow as tf
 
