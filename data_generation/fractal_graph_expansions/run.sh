@@ -1,6 +1,6 @@
 #!/bin/bash
 
-input_file="/home/belletti/ml-20m/ratings.csv"
+input_file="/data/ml-20m/ratings.csv"
 output_prefix=""
 num_row_multiplier=16
 num_col_multiplier=32
