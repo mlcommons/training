@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import unittest
 import go
 from sgf_wrapper import replay_sgf, translate_sgf_move, make_sgf
-import unittest
 
 import coords
 from tests import test_utils
@@ -26,7 +26,7 @@ CHINESE_HANDICAP_SGF = "(;GM[1]FF[4]CA[UTF-8]AP[CGoban:3]ST[2]RU[Chinese]SZ[9]HA
 NO_HANDICAP_SGF = "(;CA[UTF-8]SZ[9]PB[Murakawa Daisuke]PW[Iyama Yuta]KM[6.5]HA[0]RE[W+1.5]GM[1];B[fd];W[cf];B[eg];W[dd];B[dc];W[cc];B[de];W[cd];B[ed];W[he];B[ce];W[be];B[df];W[bf];B[hd];W[ge];B[gd];W[gg];B[db];W[cb];B[cg];W[bg];B[gh];W[fh];B[hh];W[fg];B[eh];W[ei];B[di];W[fi];B[hg];W[dh];B[ch];W[ci];B[bh];W[ff];B[fe];W[hf];B[id];W[bi];B[ah];W[ef];B[dg];W[ee];B[di];W[ig];B[ai];W[ih];B[fb];W[hi];B[ag];W[ab];B[bd];W[bc];B[ae];W[ad];B[af];W[bd];B[ca];W[ba];B[da];W[ie])"
 
 
-class TestSgfGeneration(test_utils.MiniGoUnitTest):
+class TestSgfGeneration(test_utils.MinigoUnitTest):
     def test_translate_sgf_move(self):
         self.assertEqual(
             ";B[db]",
@@ -58,12 +58,12 @@ class TestSgfGeneration(test_utils.MiniGoUnitTest):
         self.assertEqualPositions(last_position, last_position2)
 
 
-class TestSgfWrapper(test_utils.MiniGoUnitTest):
+class TestSgfWrapper(test_utils.MinigoUnitTest):
     def test_sgf_props(self):
         sgf_replayer = replay_sgf(CHINESE_HANDICAP_SGF)
         initial = next(sgf_replayer)
-        self.assertEqual(initial.result, go.BLACK)
-        self.assertEqual(initial.position.komi, 5.5)
+        self.assertEqual(go.BLACK, initial.result)
+        self.assertEqual(5.5, initial.position.komi)
 
     def test_japanese_handicap_handling(self):
         intermediate_board = test_utils.load_board('''
@@ -82,7 +82,7 @@ class TestSgfWrapper(test_utils.MiniGoUnitTest):
             n=1,
             komi=5.5,
             caps=(0, 0),
-            recent=(go.PlayerMove(go.WHITE, coords.from_kgs('E5')),),
+            recent=(go.PlayerMove(go.WHITE, coords.from_gtp('E5')),),
             to_play=go.BLACK,
         )
         final_board = test_utils.load_board('''
@@ -101,8 +101,8 @@ class TestSgfWrapper(test_utils.MiniGoUnitTest):
             n=2,
             komi=5.5,
             caps=(0, 0),
-            recent=(go.PlayerMove(go.WHITE, coords.from_kgs('E5')),
-                    go.PlayerMove(go.BLACK, coords.from_kgs('D3')),),
+            recent=(go.PlayerMove(go.WHITE, coords.from_gtp('E5')),
+                    go.PlayerMove(go.BLACK, coords.from_gtp('D3')),),
             to_play=go.WHITE,
         )
         positions_w_context = list(replay_sgf(JAPANESE_HANDICAP_SGF))
@@ -129,7 +129,7 @@ class TestSgfWrapper(test_utils.MiniGoUnitTest):
             n=1,
             komi=5.5,
             caps=(0, 0),
-            recent=(go.PlayerMove(go.BLACK, coords.from_kgs('G7')),),
+            recent=(go.PlayerMove(go.BLACK, coords.from_gtp('G7')),),
             to_play=go.BLACK,
         )
         final_board = test_utils.load_board('''
@@ -149,15 +149,15 @@ class TestSgfWrapper(test_utils.MiniGoUnitTest):
             komi=5.5,
             caps=(7, 2),
             ko=None,
-            recent=(go.PlayerMove(go.WHITE, coords.from_kgs('E9')),
-                    go.PlayerMove(go.BLACK, coords.from_kgs('F9')),),
+            recent=(go.PlayerMove(go.WHITE, coords.from_gtp('E9')),
+                    go.PlayerMove(go.BLACK, coords.from_gtp('F9')),),
             to_play=go.WHITE
         )
         positions_w_context = list(replay_sgf(CHINESE_HANDICAP_SGF))
         self.assertEqualPositions(
             intermediate_position, positions_w_context[1].position)
         self.assertEqual(
-            positions_w_context[1].next_move, coords.from_kgs('C3'))
+            positions_w_context[1].next_move, coords.from_gtp('C3'))
         final_replayed_position = positions_w_context[-1].position.play_move(
             positions_w_context[-1].next_move)
         self.assertEqualPositions(final_position, final_replayed_position)

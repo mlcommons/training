@@ -1,0 +1,13 @@
+# Flags for selfplay.
+
+# This flagfile also serves as the base for the boostrap & eval stages of
+# the RL loop.
+
+--num_games=2048
+--parallel_games=256
+--num_readouts=400
+--virtual_losses=16
+--value_init_penalty=2
+--holdout_pct=0.03
+--disable_resign_pct=0.1
+--resign_threshold=-0.999
