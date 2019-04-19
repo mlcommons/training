@@ -134,7 +134,7 @@ def main():
     for chunk in range(args.user_scaling):
         neg_users = np.arange(test_user_offset,
             test_user_offset+test_chunk_size[chunk])
-        neg_items = generate_negatives_parallel(
+        neg_items = generate_negatives(
             sampler,
             args.valid_negative,
             neg_users)
