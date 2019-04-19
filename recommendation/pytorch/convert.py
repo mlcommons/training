@@ -25,6 +25,8 @@ def parse_args():
     parser.add_argument('--item_scaling', default=32, type=int)
     parser.add_argument('--use_sampler_cache', action='store_true',
                         help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
+    parser.add_argument('--seed', '-s', default=0, type=int,
+                        help='manually set random seed for torch')
     return parser.parse_args()
 
 
@@ -113,6 +115,10 @@ def process_raw_data(args):
 
 def main():
     args = parse_args()
+    if args.seed is not None:
+      print("Using seed = {}".format(args.seed))
+      torch.manual_seed(args.seed)
+      np.random.seed(seed=args.seed)
 
     if not args.use_sampler_cache:
       sampler, test_chunk_size = process_raw_data(args)
