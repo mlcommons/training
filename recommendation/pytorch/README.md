@@ -79,8 +79,14 @@ visible in the container under `/data/cache/ml-20mx16x32` directory, run inside 
 ./run_and_time.sh <SEED>
 ```
 
-Seed 0 has been shown to converge deterministically.  Recommended metric for
-convergence:  HR = 0.51
+Seed 0 has been shown to converge deterministically.
+
+**Note** The current data generation pipeline is run on CPU and is currently
+*very* memory-intensive. It is recommended to run using a host VM with at least
+400 GB of memory. This is because the entire dataset is read into memory and
+manipulated, in order to generate negative samples and perform global shuffling.
+
+Work is planned to alleviate these requirements. Pull requests are welcome.
 
 
 # 3. Dataset/Environment
