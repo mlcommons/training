@@ -9,7 +9,7 @@ from argparse import ArgumentParser
 from alias_generator import AliasSample
 import pickle
 from convert import generate_negatives
-from convert import generate_negatives_parallel
+from convert import generate_negatives_flat
 from convert import CACHE_FN
 
 import tqdm
@@ -321,14 +321,13 @@ def main():
             neg_users = train_users.repeat(args.negative_samples)
             neg_items = torch.empty_like(neg_users, dtype=torch.int64).random_(0, nb_items)
         else:
-            neg_items = generate_negatives_parallel(
+            negatives = generate_negatives(
                 sampler,
                 args.negative_samples,
                 train_users.numpy())
-            neg_items = torch.from_numpy(neg_items)
-            neg_users = train_users.repeat(args.negative_samples)
-            # Transformation for [1,2,3,1,2,3] --> [1,1,2,2,3,3]
-            neg_users = neg_users.reshape(2, -1).transpose(1, 0).reshape(-1)
+            negatives = torch.from_numpy(negatives)
+            neg_users = negatives[:, 0]
+            neg_items = negatives[:, 1]
 
         print("generate_negatives loop time: {:.2f}", timeit.default_timer() - st)
 
