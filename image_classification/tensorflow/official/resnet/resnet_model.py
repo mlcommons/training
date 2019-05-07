@@ -453,7 +453,10 @@ class Model(object):
       inputs = tf.reshape(inputs, [-1, self.final_size])
       mlperf_log.resnet_print(key=mlperf_log.MODEL_HP_DENSE,
                               value=self.num_classes)
-      inputs = tf.layers.dense(inputs=inputs, units=self.num_classes)
+      inputs = tf.layers.dense(
+        inputs=inputs,
+        units=self.num_classes,
+        kernel_initializer=tf.random_normal_initializer(stddev=.01))
       inputs = tf.identity(inputs, 'final_dense')
 
       # Drop batch size from shape logging.
