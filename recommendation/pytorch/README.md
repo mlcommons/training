@@ -125,7 +125,6 @@ The author's original code is available at [hexiangnan/neural_collaborative_filt
 Hit rate at 10 (HR@10) with 999 negative items.
 
 ### Quality target
-HR@10: 0.635 (ml-20m)
 HR@10: 0.51  (ml-1b)
 
 ### Evaluation frequency
