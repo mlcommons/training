@@ -37,9 +37,14 @@ from official.utils.logs import hooks_helper
 from official.utils.logs import logger
 from official.utils.misc import model_helpers
 
+import horovod.tensorflow as hvd
+
 _NUM_EXAMPLES_NAME = "num_examples"
 
-
+_NUM_IMAGES = {
+    'train': 1281167,
+    'validation': 50000,
+}
 ################################################################################
 # Functions for input processing.
 ################################################################################
@@ -72,6 +77,7 @@ def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
   if is_training:
     # Shuffle the records. Note that we shuffle before repeating to ensure
     # that the shuffling respects epoch boundaries.
+    dataset = dataset.shard(hvd.size(), hvd.rank())
     mlperf_log.resnet_print(key=mlperf_log.INPUT_ORDER)
     dataset = dataset.shuffle(buffer_size=shuffle_buffer)
 
@@ -358,7 +364,7 @@ def resnet_model_fn(features, labels, mode, model_class,
           learning_rate=learning_rate,
           momentum=momentum
       )
-
+    optimizer = hvd.DistributedOptimizer(optimizer)
     if loss_scale != 1:
       # When computing fp16 gradients, often intermediate tensor values are
       # so small, they underflow to 0. To avoid this, we multiply the loss by
@@ -457,11 +463,12 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
   # intra_op_parallelism_threads. Note that we default to having
   # allow_soft_placement = True, which is required for multi-GPU and not
   # harmful for other modes.
-  session_config = tf.ConfigProto(
-      inter_op_parallelism_threads=flags.inter_op_parallelism_threads,
-      intra_op_parallelism_threads=flags.intra_op_parallelism_threads,
-      allow_soft_placement=True)
-
+  session_config = tf.ConfigProto(allow_soft_placement=True)
+  session_config.gpu_options.visible_device_list = str(hvd.local_rank())
+  session_config.gpu_options.force_gpu_compatible = True 
+  session_config.intra_op_parallelism_threads = flags.inter_op_parallelism_threads
+  session_config.inter_op_parallelism_threads = flags.intra_op_parallelism_threads
+ 
   if flags.num_gpus == 0:
     distribution = tf.contrib.distribute.OneDeviceStrategy('device:CPU:0')
   elif flags.num_gpus == 1:
@@ -478,8 +485,12 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
 
   mlperf_log.resnet_print(key=mlperf_log.INPUT_BATCH_SIZE,
                           value=flags.batch_size)
+
+  model_dir = flags.model_dir if hvd.rank() == 0 else None
+  benchmark_log_dir = flags.benchmark_log_dir if hvd.rank() == 0 else None
+
   classifier = tf.estimator.Estimator(
-      model_fn=model_function, model_dir=flags.model_dir, config=run_config,
+      model_fn=model_function, model_dir=model_dir, config=run_config,
       params={
           'resnet_size': flags.resnet_size,
           'data_format': flags.data_format,
@@ -493,13 +504,18 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           'fine_tune': flags.fine_tune
       })
 
-  if flags.benchmark_log_dir is not None:
-    benchmark_logger = logger.BenchmarkLogger(flags.benchmark_log_dir)
+  if benchmark_log_dir is not None:
+    benchmark_logger = logger.BenchmarkLogger(benchmark_log_dir)
     benchmark_logger.log_run_info('resnet')
   else:
     benchmark_logger = None
 
   mlperf_log.resnet_print(key=mlperf_log.TRAIN_LOOP)
+
+  num_eval_steps = _NUM_IMAGES['validation'] // flags.batch_size # Each worker evaluates independently
+  steps_per_epoch = _NUM_IMAGES['train'] // flags.batch_size
+  steps_per_epoch_per_worker = steps_per_epoch // hvd.size()
+  steps_per_eval_per_worker = steps_per_epoch_per_worker * flags.epochs_between_evals
 
   # The reference performs the first evaluation on the fourth epoch. (offset
   # eval by 3 epochs)
@@ -513,10 +529,13 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
     for j in range(flags.epochs_between_evals):
       mlperf_log.resnet_print(key=mlperf_log.TRAIN_EPOCH,
                               value=i * flags.epochs_between_evals + j)
-    train_hooks = hooks_helper.get_train_hooks(
-        flags.hooks,
-        batch_size=flags.batch_size,
-        benchmark_log_dir=flags.benchmark_log_dir)
+    
+    train_hooks = [hvd.BroadcastGlobalVariablesHook(0)] 
+    
+    train_hooks = train_hooks + hooks_helper.get_train_hooks(
+      flags.hooks,
+      batch_size=flags.batch_size * hvd.size(),
+      benchmark_log_dir=flags.benchmark_log_dir)
 
     _log_cache = []
     def formatter(x):
@@ -532,6 +551,7 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
       at_end=True,
       formatter=formatter)
 
+    train_hooks = train_hooks + [compliance_hook]
     print('Starting a training cycle.')
 
     def input_fn_train():
@@ -544,8 +564,8 @@ def resnet_main(seed, flags, model_function, input_function, shape=None):
           dtype=flags.dtype
       )
 
-    classifier.train(input_fn=input_fn_train, hooks=train_hooks + [compliance_hook],
-                     max_steps=flags.max_train_steps)
+    classifier.train(input_fn=input_fn_train, hooks=train_hooks,
+                     steps=steps_per_eval_per_worker)
 
     train_examples = int(_log_cache.pop()[_NUM_EXAMPLES_NAME])
     mlperf_log.resnet_print(key=mlperf_log.INPUT_SIZE, value=train_examples)

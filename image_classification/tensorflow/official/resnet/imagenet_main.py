@@ -30,6 +30,10 @@ from official.resnet import imagenet_preprocessing
 from official.resnet import resnet_model
 from official.resnet import resnet_run_loop
 
+import horovod.tensorflow as hvd
+# Initialize Horovod
+hvd.init()
+
 _DEFAULT_IMAGE_SIZE = 224
 _NUM_CHANNELS = 3
 _NUM_CLASSES = 1001
@@ -282,9 +286,9 @@ def imagenet_model_fn(features, labels, mode, params):
     base_lr = .1
   else:
     base_lr = .128
-
+  global_batch_size = params['batch_size'] * hvd.size()
   learning_rate_fn = resnet_run_loop.learning_rate_with_decay(
-      batch_size=params['batch_size'], batch_denom=256,
+      batch_size=global_batch_size, batch_denom=256,
       num_images=_NUM_IMAGES['train'], boundary_epochs=[30, 60, 80, 90],
       decay_rates=[1, 0.1, 0.01, 0.001, 1e-4], base_lr=_BASE_LR,
       enable_lars=params['enable_lars'])
