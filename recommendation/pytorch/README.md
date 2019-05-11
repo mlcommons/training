@@ -67,7 +67,7 @@ Assuming the expanded dataset is visible in the container under `/data/cache/ml-
 directory, run inside the container:
 
 ```
-python convert.py /data/cache/ml-20mx16x32
+python convert.py /data/cache/ml-20mx16x32 --seed 0
 ```
 
 #### Running the training
@@ -78,6 +78,15 @@ visible in the container under `/data/cache/ml-20mx16x32` directory, run inside 
 ```
 ./run_and_time.sh <SEED>
 ```
+
+Seed 0 has been shown to converge deterministically.
+
+**Note** The current data generation pipeline is run on CPU and is currently
+*very* memory-intensive. It is recommended to run using a host VM with at least
+400 GB of memory. This is because the entire dataset is read into memory and
+manipulated, in order to generate negative samples and perform global shuffling.
+
+Work is planned to alleviate these requirements. Pull requests are welcome.
 
 
 # 3. Dataset/Environment
@@ -94,7 +103,11 @@ Harper, F. M. & Konstan, J. A. (2015), 'The MovieLens Datasets: History and Cont
 Positive training examples are all but the last item each user rated.
 Negative training examples are randomly selected from the unrated items for each user.
 
-The last item each user rated is used as a positive example in the test set.
+The last item each user rated is used as a positive example in the test set. For
+the large synthetic dataset, there is no notion of time, since the data points
+are randomly generated. For each user, one item is chosen to be used for the
+test set.
+
 A fixed set of 999 unrated items are also selected to calculate hit rate at 10 for predicting the test item.
 
 ### Training data order
@@ -112,7 +125,7 @@ The author's original code is available at [hexiangnan/neural_collaborative_filt
 Hit rate at 10 (HR@10) with 999 negative items.
 
 ### Quality target
-HR@10: 0.635
+HR@10: 0.51  (ml-1b)
 
 ### Evaluation frequency
 After every epoch through the training data.
