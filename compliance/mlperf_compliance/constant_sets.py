@@ -32,6 +32,7 @@ COMMON_KEY_SET = set([
   constants.SUBMISSION_POC_NAME,
   constants.SUBMISSION_POC_EMAIL,
   constants.SUBMISSION_ENTRY,
+  constants.SUBMISSION_DIVISION,
 
   constants.BLOCK_START,
   constants.BLOCK_STOP,
