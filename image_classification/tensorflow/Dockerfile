@@ -30,7 +30,7 @@ ADD . /research/resnet
 
 WORKDIR /research/resnet
 RUN pip3 install -r official/requirements.txt
-
+RUN pip3 install -r requirements.txt
 
 ENTRYPOINT ["/bin/bash"]
 
