@@ -93,7 +93,7 @@ def process_raw_data(args):
     #del nb_maxs
 
     print(datetime.now(), "Number of users: {}, Number of items: {}".format(nb_users, nb_items))
-    print(datetime.now(), "Number of ratings: {}".format(train_ratings.shape[0]))
+    print(datetime.now(), "Number of ratings: {}".format(nb_train_elems))
 
     train_input = [npi.group_by(x[:, 0]).split(x[:, 1]) for x in train_ratings]
     def iter_fn_simple():
