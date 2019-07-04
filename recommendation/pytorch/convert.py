@@ -1,6 +1,5 @@
 from argparse import ArgumentParser
 import numpy as np
-import torch
 from datetime import datetime
 import numpy_indexed as npi
 import os
@@ -26,7 +25,7 @@ def parse_args():
     parser.add_argument('--use_sampler_cache', action='store_true',
                         help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
     parser.add_argument('--seed', '-s', default=0, type=int,
-                        help='manually set random seed for torch')
+                        help='manually set random seed for numpy')
     return parser.parse_args()
 
 
@@ -88,9 +87,6 @@ def process_raw_data(args):
     nb_items = max(nb_maxs_per_chunk) + 1 # Zero is valid item in output from expansion
 
     nb_train_elems = sum([x.shape[0] for x in train_ratings])
-    #nb_maxs = torch.max(train_ratings, 0)[0]
-    #nb_items = nb_maxs[1].item()+1  # Zero is valid item in output from expansion
-    #del nb_maxs
 
     print(datetime.now(), "Number of users: {}, Number of items: {}".format(nb_users, nb_items))
     print(datetime.now(), "Number of ratings: {}".format(nb_train_elems))
@@ -124,7 +120,6 @@ def main():
     args = parse_args()
     if args.seed is not None:
       print("Using seed = {}".format(args.seed))
-      #torch.manual_seed(args.seed)
       np.random.seed(seed=args.seed)
 
     if not args.use_sampler_cache:
@@ -139,7 +134,6 @@ def main():
           sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
 
     print(datetime.now(), 'Generating negative test samples...')
-    #test_negatives = [torch.LongTensor()] * args.user_scaling
     test_negatives = [np.array([], dtype=np.int64)] * args.user_scaling
     test_user_offset = 0
     for chunk in range(args.user_scaling):
