@@ -1,0 +1,10 @@
+- AT_LEAST_ONE: model_hp_loss_smoothing
+- AT_LEAST_ONE: model_hp_num_layers
+- AT_LEAST_ONE: model_hp_hidden_size
+- AT_LEAST_ONE: model_hp_dropout
+- AT_LEAST_ONE: eval_hp_beam_size
+- AT_LEAST_ONE: train_hp_max_sequence_length
+- AT_LEAST_ONE: eval_hp_max_sequence_length
+- AT_LEAST_ONE: eval_hp_length_normalization_constant
+- AT_LEAST_ONE: eval_hp_length_normalization_factor
+- AT_LEAST_ONE: eval_hp_coverage_penalty_factor

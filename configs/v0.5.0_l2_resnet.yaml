@@ -1,0 +1,10 @@
+
+- AT_LEAST_ONE: eval_offset
+- AT_LEAST_ONE: model_hp_initial_max_pool
+- AT_LEAST_ONE: model_hp_begin_block
+- AT_LEAST_ONE: model_hp_end_block
+- AT_LEAST_ONE: model_hp_block_type
+- AT_LEAST_ONE: model_hp_projection_shortcut
+- AT_LEAST_ONE: model_hp_shorcut_add
+- AT_LEAST_ONE: model_hp_resnet_topology
+
