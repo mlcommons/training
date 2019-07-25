@@ -1,6 +1,5 @@
 from argparse import ArgumentParser
 import numpy as np
-import torch
 from datetime import datetime
 import numpy_indexed as npi
 import os
@@ -26,7 +25,7 @@ def parse_args():
     parser.add_argument('--use_sampler_cache', action='store_true',
                         help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
     parser.add_argument('--seed', '-s', default=0, type=int,
-                        help='manually set random seed for torch')
+                        help='manually set random seed for numpy')
     return parser.parse_args()
 
 
@@ -65,38 +64,42 @@ def generate_negatives_flat(sampler, num_negatives, users):
 
 
 def process_raw_data(args):
-    train_ratings = torch.LongTensor()
-    test_ratings_chunk = [torch.LongTensor()] * args.user_scaling
+    train_ratings = [np.array([], dtype=np.int64)] * args.user_scaling
+    test_ratings_chunk = [np.array([], dtype=np.int64)] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
     for chunk in range(args.user_scaling):
         print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
-        train_ratings = torch.cat((train_ratings,
-            torch.from_numpy(np.load(args.data + '/trainx'
+        train_ratings[chunk] = np.load(args.data + '/trainx'
                 + str(args.user_scaling) + 'x' + str(args.item_scaling)
-                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])))
-        test_ratings_chunk[chunk] = torch.from_numpy(np.load(args.data + '/testx'
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0']
+        test_ratings_chunk[chunk] = np.load(args.data + '/testx'
                 + str(args.user_scaling) + 'x' + str(args.item_scaling)
-                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0'])
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0']
         test_chunk_size[chunk] = test_ratings_chunk[chunk].shape[0]
 
     # Due to the fractal graph expansion process, some generated users do not
     # have any ratings. Therefore, nb_users should not be max_user_index+1.
-    nb_users = len(np.unique(train_ratings[:, 0]))
+    nb_users_per_chunk = [len(np.unique(x[:, 0])) for x in train_ratings]
+    nb_users = sum(nb_users_per_chunk)
+    # nb_users = len(np.unique(train_ratings[:, 0]))
 
-    nb_maxs = torch.max(train_ratings, 0)[0]
-    nb_items = nb_maxs[1].item()+1  # Zero is valid item in output from expansion
-    del nb_maxs
+    nb_maxs_per_chunk = [np.max(x, axis=0)[1] for x in train_ratings]
+    nb_items = max(nb_maxs_per_chunk) + 1 # Zero is valid item in output from expansion
+
+    nb_train_elems = sum([x.shape[0] for x in train_ratings])
+
     print(datetime.now(), "Number of users: {}, Number of items: {}".format(nb_users, nb_items))
-    print(datetime.now(), "Number of ratings: {}".format(train_ratings.shape[0]))
+    print(datetime.now(), "Number of ratings: {}".format(nb_train_elems))
 
-    train_input = npi.group_by(train_ratings[:, 0]).split(train_ratings[:, 1])
+    train_input = [npi.group_by(x[:, 0]).split(x[:, 1]) for x in train_ratings]
     def iter_fn_simple():
-      for _, items in enumerate(train_input):
-         yield items
+        for train_chunk in train_input:
+            for _, items in enumerate(train_chunk):
+                yield items
 
     sampler, pos_users, pos_items  = process_data(
         num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn_simple)
-    assert len(pos_users) == train_ratings.shape[0], "Cardinality difference with original data and sample table data."
+    assert len(pos_users) == nb_train_elems, "Cardinality difference with original data and sample table data."
 
     print("pos_users type: {}, pos_items type: {}, s.offsets: {}".format(
           pos_users.dtype, pos_items.dtype, sampler.offsets.dtype))
@@ -117,7 +120,6 @@ def main():
     args = parse_args()
     if args.seed is not None:
       print("Using seed = {}".format(args.seed))
-      torch.manual_seed(args.seed)
       np.random.seed(seed=args.seed)
 
     if not args.use_sampler_cache:
@@ -132,7 +134,7 @@ def main():
           sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
 
     print(datetime.now(), 'Generating negative test samples...')
-    test_negatives = [torch.LongTensor()] * args.user_scaling
+    test_negatives = [np.array([], dtype=np.int64)] * args.user_scaling
     test_user_offset = 0
     for chunk in range(args.user_scaling):
         neg_users = np.arange(test_user_offset,
