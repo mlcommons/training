@@ -1,0 +1,51 @@
+
+- KEY:
+    NAME:  global_batch_size
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_alt_decay_func
+    REQ:   EXACTLY_ONE
+    CHECK: " type(v['value'])==bool "
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_decay_interval
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_decay_factor
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_decay_steps
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_remain_steps
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_alt_warmup_func
+    REQ:   EXACTLY_ONE
+    CHECK: " type(v['value'])==bool "
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  max_sequence_length
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+

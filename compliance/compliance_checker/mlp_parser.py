@@ -9,34 +9,23 @@ import json
 import re
 import sys
 
-# For example, 
-# :::MLPv0.5.0 ncf 1538678136 (./convert.py:119) preproc_hp_num_eval: 999
-# :::MLPv0.5.0 ncf 1538678136 (./convert.py:119) run_start
+from io import open
 
 LogLine = collections.namedtuple('LogLine', [
     'full_string', # the complete line as a string
-    'token', # the token, i.e. ':::MLP'
-    'version_str', # the version string, e.g. 'v0.5.0'
-    'benchmark', # the benchmark, e.g. 'ncf'
-    'timestamp', # seconds as a float, e.g. 1234.567
-    'filename', # the which generated the log line, e.g. './convert.py'
-    'lineno', # the line in the file which generated the log line, e.g. 119
-    'tag', # the string tag
-    'value', # the parsed value associated with the tag, or None if no value
+    'timestamp',   # seconds as a float, e.g. 1234.567
+    'key',         # the string key
+    'value',       # the parsed value associated with the tag, or None if no value
     ])
 
 
-TOKEN = ':::MLP'
+TOKEN = ':::MLL'
 
 # ^.*
-LINE_PATTERN = '''
-^
-(:::MLP)(v[\d]+\.[\d+]\.[\d+]) [ ] # token and version
-([a-z]+) [ ] # benchmark
+LINE_PATTERN = '^' + TOKEN + ''' [ ] # token and version
 ([\d\.]+) [ ] # timestamp
-\(([^: ]+):(\d+)\) [ ] # file and lineno
-([A-Za-z0-9_]+) [ ]? # tag
-(:\s+(.+))? # optional value
+([A-Za-z0-9_]+) [ ]? # key
+:\s+(.+) # value
 $
 '''
 
@@ -51,26 +40,16 @@ def string_to_logline(string):
         raise ValueError('does not match regex')
 
     args = []
-    args.append('') # full string
-    args.append(m.group(1)) # token
-    args.append(m.group(2)) # version
-    args.append(m.group(3)) # benchmark
+    args.append(string) # full string
 
-    ts = float(m.group(4)) # may raise error, e.g. "1.2.3"
+    ts = float(m.group(1)) # may raise error, e.g. "1.2.3"
     # TODO check for weird values
     args.append(ts)
 
-    
-    args.append(m.group(5)) # file name
+    args.append(m.group(2)) # key
 
-    lineno = int(m.group(6)) # may raise error
-    # TODO check for weird values
-    args.append(lineno)
-
-    args.append(m.group(7)) # tag
-
-    if m.group(9) is not None:
-        j = json.loads(m.group(9))
+    if m.group(3) is not None:
+        j = json.loads(m.group(3))
         args.append(j)
     else:
         # No Value
@@ -81,17 +60,17 @@ def string_to_logline(string):
 
 def parse_file(filename):
     ''' Reads a file by name and returns list of loglines and list of errors'''
-    with open(filename) as f:
+    with open(filename, encoding='latin-1') as f:
         return parse_generator(f)
 
 
 def strip_and_dedup(gen):
-  lines = []
-  for l in gen:
-    if ':::MLP' not in l:
-      continue
-    lines.append(re.sub(".*:::MLP", ":::MLP", l))
-  return list(sorted(list(set(lines))))
+    lines = []
+    for l in gen:
+        if TOKEN not in l:
+            continue
+        lines.append(re.sub(".*"+TOKEN, TOKEN, l))
+    return lines
 
 
 
@@ -103,8 +82,6 @@ def parse_generator(gen):
     failed = []
     for line in strip_and_dedup(gen):
         line = line.strip()
-        if TOKEN not in line:
-            continue
         try:
             ll = string_to_logline(line)
             loglines.append(ll)
