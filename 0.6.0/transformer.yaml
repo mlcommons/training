@@ -1,0 +1,41 @@
+
+- KEY:
+    NAME:  global_batch_size
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_name
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in ['adam', 'lazy_adam'] "
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  max_sequence_length
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_adam_beta_1
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in [ 0.86, 0.9 ]"
+
+- KEY:
+    NAME:  opt_adam_beta_2
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in [ 0.92, 0.98, 0.997 ]"
+
+- KEY:
+    NAME:  opt_adam_epsilon
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+

@@ -1,7 +1,5 @@
-''' Checks that an MLPerf log is compliant.
-
-Compliance Checking is done in the following phases. We abort if there is an
-error at any pharse.
+'''
+Runs the set of rules defined in provided config YAML file.
 '''
 
 from __future__ import print_function
@@ -11,155 +9,121 @@ import os
 import sys
 import yaml
 
-import mlp_common_checks
 import mlp_parser
 
 
-CONFIG_DIR = os.path.dirname(os.path.abspath(__file__)) + '/configs/'
 
-def common_checks(loglines):
-    ''' Preforms common checks which all benchmark logs should pass. '''
+class CCError(Exception): 
+    pass
+
+def run_check_eval(ll, tag, code, state):
+    if code is None: return
+
     try:
-        mlp_common_checks.check_clock(loglines)
-    except mlp_common_checks.CCError as e:
-        print(e)
-        return False
-    return True
+        result = eval(code.strip(), state, {'ll': ll, 'v': ll.value})
+    except:
+        raise CCError('Failed executing CHECK code triggered by line :\n{}'.format(ll.full_string))
+
+    if not result:
+        raise CCError('CHECK failed in line \n \'{}\' for \'{}\',\n v={},\n s={},\n code \'{} \''.format(ll.full_string, tag, ll.value, state['s'], code))
 
 
-def do_check(loglines, check):
-    check_key = list(check.keys())[0]
+def run_check_exec(ll, tag, code, state, action):
+    if code is None: return
 
-    def check_it(call, *args):
-        try:
-            call(*args)
-            return True
-        except mlp_common_checks.CCError as e:
-            print('FAIL: ', e)
-            return False
+    try:
+        exec(code.strip(), state, {'ll': ll, 'v': ll.value})
+    except:
+        raise CCError('Failed executing code {} code triggered by line :\n{}'.format(action, ll.full_string))
 
-    if check_key == 'EXACTLY_ONE':
-        return check_it(mlp_common_checks.check_exactly_one_tag, loglines, check['EXACTLY_ONE'])
-    elif check_key == 'AT_LEAST_ONE':
-        return check_it(mlp_common_checks.check_at_least_one_tag, loglines, check['AT_LEAST_ONE'])
-    elif check_key == 'TAG_EVAL_CHECK':
-        d = check['TAG_EVAL_CHECK']
-        return check_it(mlp_common_checks.check_eval_tag, loglines, d['NAME'], d['TAG'], d['CODE'], d['EXPECT'])
-    elif check_key == 'TAGS_PAIR':
-        d = check['TAGS_PAIR']
-        return check_it(mlp_common_checks.check_tags_pair, loglines, d['FIRST'], d['SECOND'])
-    elif check_key == 'TAGS_COUNT_SAME':
-        d = check['TAGS_COUNT_SAME']
-        return check_it(mlp_common_checks.check_tags_count_same, loglines, d)
-    else:
-        raise Exception('Unknown check: ', check)
 
+enqueued_configs = []
+
+# this function can be called from yaml
+def enqueue_config(config):
+    enqueued_configs.append(config)
 
 def configured_checks(loglines, config_file):
     with open(config_file) as f:
-        checks = yaml.load(f)
+        checks = yaml.load(f, Loader=yaml.BaseLoader)
 
-    l = []
-    for check in checks:
-        l.append(do_check(loglines, check))
-    return False not in l
+    if checks is None:
+        return
 
+    s = {}  # this would be visible from inside configs
+    state = {'enqueue_config':enqueue_config , 's':s}
 
+    #execute begin block
+    begin_blocks = [x for x in checks if list(x)[0]=='BEGIN']
+    assert(len(begin_blocks)<=1) # up to one begin block
+    if len(begin_blocks)==1:
+        exec(begin_blocks[0]['BEGIN']['CODE'].strip(), state)
 
-def check_log(loglines):
-    #if not common_checks(loglines):
-    #    return False
+    key_records = {}
+    for k in checks:
+        if list(k)[0]=='KEY':
+            key_records.update({k['KEY']['NAME']:k['KEY']}) 
 
-    if not configured_checks(loglines, CONFIG_DIR + '/v0.5.0_level1.yaml'):
-        return False
+    occurrence_counter = {k:0 for k in key_records.keys()}
 
-
-    #if not configured_checks(loglines, benchmark_file):
-    #    return False
-
-    return True
-
-
-def get_value(x):
-  if isinstance(x, dict):
-    return x.get("value")
-  return x
-
-
-def get_model_accuracy(loglines):
-    eval_target = {get_value(i.value) for i in loglines if i.tag == 'eval_target'}
-    if len(eval_target) == 1:
-        eval_target = eval_target.pop()
-    else:
-        print("Failed to extract eval target.")
-        eval_target = None
-
-    values = [0]
-    for i in loglines:
-        if i.tag != 'eval_accuracy':
-            continue
+    # executing the rules through log records
+    for line in loglines:
+        key_record = None
         try:
-            values.append(i.value["value"])
+            occurrence_counter[line.key] = occurrence_counter[line.key]+1
+            key_record = key_records[line.key]
         except:
-            pass
-    return max(values), eval_target
+            # unknown key - it's allowed, skip to next record
+            continue
+
+        if 'PRE' in key_record: run_check_exec(line, line.key, key_record['PRE'], state, 'PRE')
+        if 'CHECK' in key_record: run_check_eval(line, line.key, key_record['CHECK'], state)
+        if 'POST' in key_record: run_check_exec(line, line.key, key_record['POST'], state, 'POST')
+
+    # verify occurrences requirements
+    for k,v in key_records.items():
+        if 'REQ' not in v: continue
+        if v['REQ']=='EXACTLY_ONE':
+            if occurrence_counter[k]!=1:
+                 raise CCError("Required EXACTLY_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
+
+        if v['REQ']=='AT_LEAST_ONE':
+            if occurrence_counter[k]<1:
+                 raise CCError("Required AT_LEAST_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
+
+    # execute end block
+    end_blocks = [x for x in checks if list(x)[0]=='END']
+    assert(len(end_blocks)<=1) # up to one end block
+    if len(end_blocks)==1:
+        end_record = end_blocks[0]['END']
+        if 'PRE' in end_record: exec(end_record['PRE'].strip(), state)
+        if 'CHECK' in end_record:
+            end_result = eval(end_record['CHECK'].strip(), state)
+            if not end_result:
+                raise CCError('Failed executing END CHECK with \n s={},\n code \'{} \''.format(state, end_record['CHECK'].strip()))
 
 
-def l1_check_file(filename):
-    loglines, errors = mlp_parser.parse_file(filename)
-
-    if len(errors) > 0:
-        print('Found parsing errors:')
-        for line, error in errors:
-            print(line)
-            print('  ^^ ', error)
-        print()
-        print('FAILED: log lines had parsing errors.')
-        print('FAILED: Logs are NOT L1 compliant.')
-        return False, 0, 0, None
-
-    check_ok = check_log(loglines)
-
-    if not check_ok:
-        print('FAILED: Logs are NOT L1 compliant.')
-        return False, 0, 0, None
-
-    dt = mlp_common_checks.check_clock(loglines)
-    accuracy, eval_target = get_model_accuracy(loglines)
-
-    print('SUCCESS: logs are L1 compliant.')
-    return True, dt, accuracy, eval_target
-
-def l1_check_file_w_starttime(filename):
-    loglines, errors = mlp_parser.parse_file(filename)
-    success, dt, accuracy, eval_target = l1_check_file(filename)
-    # Get start time to order logs
-    start = mlp_common_checks.find_tag(loglines, 'run_start', expect=1)[0]
-
-    return start.timestamp, success, dt, accuracy, eval_target
-
-def check_loglines_l2(loglines):
-    l1_check_ok = check_log(loglines)
-
-    general_l2_file = os.path.join(CONFIG_DIR, 'v0.5.0_level2.yaml')
-    l2_check = configured_checks(loglines,  general_l2_file)
-
+def check_loglines(loglines, config):
     if not loglines:
-      print("No log lines detected.")
-      return False
+      raise CCError('No log lines detected')
 
-    benchmark = loglines[0].benchmark
-    benchmark_file = os.path.join(CONFIG_DIR, 'v0.5.0_l2_{}.yaml'.format(benchmark))
+    enqueue_config(config)
 
-    if not os.path.exists(benchmark_file):
-      raise Exception('Could not find a compliance file for benchmark: ' + benchmark)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    while len(enqueued_configs)>0:
+        current_config = enqueued_configs.pop(0)
+        config_file = general_file = os.path.join(current_dir, current_config)
 
-    specific_l2_check = configured_checks(loglines, benchmark_file)
-    return l1_check_ok and l2_check and specific_l2_check
+        if not os.path.exists(config_file):
+            raise CCError('Could not find config file: {}'.format(config_file))
+
+        # processing a config may have a side affect of pushing another config(s) to be checked
+        configured_checks(loglines,  config_file)
 
 
-def l2_check_file(filename):
-    loglines, errors = mlp_parser.parse_file(filename)
+def check_file(args):
+
+    loglines, errors = mlp_parser.parse_file(args.filename)
 
     if len(errors) > 0:
         print('Found parsing errors:')
@@ -167,66 +131,27 @@ def l2_check_file(filename):
             print(line)
             print('  ^^ ', error)
         print()
-        print('FAILED: log lines had parsing errors.')
-        print('FAILED: Logs are NOT L2 compliant.')
-        return False, 0, 0, None
+        raise CCError('Log lines had parsing errors.')
 
-    check_ok = check_loglines_l2(loglines)
+    check_loglines(loglines, args.config)
 
-    if not check_ok:
-        print('FAILED: Logs are NOT L2 compliant.')
-        return False, 0, 0, None
-
-    dt = mlp_common_checks.check_clock(loglines)
-    accuracy, eval_target = get_model_accuracy(loglines)
-
-    print('SUCCESS: logs are L2 compliant.')
-    return True, dt, accuracy, eval_target
-
-def l2_check_file_w_starttime(filename):
-    loglines, errors = mlp_parser.parse_file(filename)
-    success, dt, accuracy, eval_target = l2_check_file(filename)
-    # Get start time to order logs
-    start = mlp_common_checks.find_tag(loglines, 'run_start', expect=1)[0]
-
-    return start.timestamp, success, dt, accuracy, eval_target
 
 def main():
     parser = argparse.ArgumentParser(description='Lint MLPerf Compliance Logs.')
 
-    parser.add_argument('filename', metavar='FILENAME', type=str,
-                    help='the file to check for compliance.')
-    parser.add_argument('-l', '--level', dest='level', type=int, metavar='LEVEL',
-                    help='checks the logs coply at the given level.')
+    parser.add_argument('filename', type=str,
+                    help='the file to check for compliance')
+    parser.add_argument('--config',  type=str,
+                    help='mlperf logging config', default='0.6.0/common.yaml')
 
     args = parser.parse_args()
-    print(args)
 
-    lj_len = 20
-    if args.level == 1:
-      status, dt, qual, target = l1_check_file(args.filename)
-      if status:
-          print('Measured time: '.ljust(lj_len), dt)
-          if qual:
-              print('Best Eval Accuracy: '.ljust(lj_len), qual)
-          if target:
-              print('Target: '.ljust(lj_len), target)
-          sys.exit(0)
-      else:
-          sys.exit(1)
-
-    if args.level == 2:
-      status, dt, qual, target = l2_check_file(args.filename)
-      if status:
-          print('Measured time: '.ljust(lj_len), dt)
-          if qual:
-              print('Best Eval Accuracy: '.ljust(lj_len), qual)
-          if target:
-              print('Target: '.ljust(lj_len), target)
-          sys.exit(0)
-      else:
-          sys.exit(1)
-
+    try:
+        check_file(args)
+        print('SUCCESS')
+    except CCError as e:
+        print('FAIL: ', e)
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
