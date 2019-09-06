@@ -1,0 +1,59 @@
+
+- BEGIN:
+    CODE: " s.update({'sgd_decay' : 0, 'lars_decay_steps' : 0, 'lars_decay_power' : 0, 'lars_wd' : 0, 'lars_eps' : 0, 'sgd' : 0, 'lars' : 0}) "
+
+
+- KEY:
+    NAME:  global_batch_size
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_name
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in ['sgd', 'lars'] "
+    POST:  " s[v['value']]=1 "
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_epochs
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- KEY:
+    NAME:  opt_learning_rate_decay_boundary_epochs
+    CHECK: " len(v['value']) > 0"
+    POST:  " s['sgd_decay'] = s['sgd_decay']+1 "
+
+- KEY:
+    NAME:  lars_opt_learning_rate_decay_steps
+    CHECK: " v['value'] > 0"
+    POST:  " s['lars_decay_steps'] = s['lars_decay_steps']+1"
+
+- KEY:
+    NAME:  lars_opt_learning_rate_decay_poly_power
+    CHECK: " v['value'] > 0"
+    POST:  " s['lars_decay_power'] = s['lars_decay_power']+1"
+
+- KEY:
+    NAME:  lars_opt_weight_decay
+    CHECK: " v['value'] > 0"
+    POST:  " s['lars_wd'] = s['lars_wd']+1"
+
+- KEY:
+    NAME:  lars_epsilon
+    CHECK: " v['value'] >= 0"
+    POST:  " s['lars_eps'] = s['lars_eps']+1"
+
+
+- KEY:
+    NAME:  model_bn_span
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] > 0"
+
+- END:
+    CHECK: " ((s['sgd_decay']==s['sgd']) and (s['lars_decay_steps']==s['lars']) and (s['lars_decay_power']==s['lars']) and (s['lars_wd']==s['lars']) and (s['lars_eps']==s['lars'])) "
