@@ -142,7 +142,7 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
     model.train()
 
     current_accuracy = E.stats[0]
-    ssd_print(key=mlperf_log.EVAL_SIZE, value=idx + 1)
+    ssd_print(key=mlperf_log.EVAL_SIZE, value=idx + 1, sync=False)
     ssd_print(key=mlperf_log.EVAL_ACCURACY,
                          value={"epoch": epoch,
                                 "value": current_accuracy},
@@ -221,7 +221,11 @@ def train300_mlperf_coco(args):
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_coco)
     else:
         train_sampler = None
-    train_dataloader = DataLoader(train_coco, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    train_dataloader = DataLoader(train_coco,
+                                  batch_size=args.batch_size,
+                                  shuffle=(train_sampler is None),
+                                  sampler=train_sampler,
+                                  num_workers=4)
     # set shuffle=True in DataLoader
     ssd_print(key=mlperf_log.INPUT_SHARD, value=None)
     ssd_print(key=mlperf_log.INPUT_ORDER)
@@ -319,6 +323,12 @@ def train300_mlperf_coco(args):
 
             if iter_num in eval_points:
                 rank = dist.get_rank() if args.distributed else args.local_rank
+                if args.distributed:
+                    world_size = float(dist.get_world_size())
+                    for bn_name, bn_buf in ssd300.module.named_buffers(recurse=True):
+                        if ('running_mean' in bn_name) or ('running_var' in bn_name):
+                            dist.all_reduce(bn_buf, op=dist.ReduceOp.SUM)
+                            bn_buf /= world_size
                 if rank == 0:
                     if not args.no_save:
                         print("")
@@ -332,7 +342,7 @@ def train300_mlperf_coco(args):
                         if use_cuda:
                             success = success.cuda()
                 if args.distributed:
-                    dist.all_reduce(success, op=dist.reduce_op.MAX)
+                    dist.broadcast(success, 0)
                 if success[0]:
                     return True
             iter_num += 1
