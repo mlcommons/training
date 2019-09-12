@@ -116,13 +116,13 @@ def _to_ordered_json(kv_pairs):
     return '[convert-error: {kv_str}]'.format(kv_str=str(kv_pairs))
 
 
-def _encode_log(namespace, time_ns, event_type, log_key, log_value):
+def _encode_log(namespace, time_ns, event_type, key, log_value):
   """Encodes an MLEvent as a string log line.
   Args:
     namespace: provides structure, e.g. "GPU0".
     time_ns: nano seconds since unix epoch.
     event_type: one of: 'INTERVAL_START', 'INTERVAL_END', 'POINT_IN_TIME'
-    log_key: the name of the thing being logged.
+    key: the name of the thing being logged.
     log_value: a json value.
   Returns:
     A string log like, i.e. ":::MLLog { ..."
@@ -131,7 +131,7 @@ def _encode_log(namespace, time_ns, event_type, log_key, log_value):
       'namespace': str(namespace),
       'time_ns': int(time_ns),
       'event_type': str(event_type),
-      'key': str(log_key),
+      'key': str(key),
       'value': str(log_value)
   }
   encoded = _to_ordered_json(json_val.items())
@@ -154,7 +154,7 @@ class MLLogger(object):
     self.log_info = log_info
     self.log_file = log_file
 
-  def _log_helper(self, log_key, log_value, namespace, event_type,
+  def _log_helper(self, key, log_value, namespace, event_type,
                   time_ns=None):
     """Log an event."""
     if namespace is None:
@@ -166,7 +166,7 @@ class MLLogger(object):
         namespace,
         time_ns,
         event_type,
-        log_key,
+        key,
         log_value)
 
     if self.log_info:
@@ -174,40 +174,40 @@ class MLLogger(object):
     if self.log_file:
       self.log_file.write(log_line + '\n')
 
-  def start(self, log_key, log_value, namespace=None, time_ns=None):
+  def start(self, key, log_value, namespace=None, time_ns=None):
     """Start an time interval in the log.
     All intervals which are started must be ended. This interval must be
     ended before a new interval with the same key and namespace can be started.
     Args:
-      log_key: the key for the event, e.g. "mlperf.training"
+      key: the key for the event, e.g. "mlperf.training"
       log_value: the json value to log.
       namespace: override the default namespace.
       time_ns: the time in nanoseconds, or None for current time.
     """
-    self._log_helper(log_key, log_value, namespace, 'INTERVAL_START',
+    self._log_helper(key, log_value, namespace, 'INTERVAL_START',
                      time_ns=time_ns)
 
-  def end(self, log_key, log_value, namespace=None, time_ns=None):
+  def end(self, key, log_value, namespace=None, time_ns=None):
     """End a time interval in the log.
     Ends an interval which was already started with the same key and in the
     same namespace.
     Args:
-      log_key: the same log key which was passed to start().
+      key: the same log key which was passed to start().
       log_value: the value to log at the end of the interval.
       namespace: optional override of the default namespace.
       time_ns: the time in nanoseconds, or None for current time.
     """
-    self._log_helper(log_key, log_value, namespace, 'INTERVAL_END',
+    self._log_helper(key, log_value, namespace, 'INTERVAL_END',
                      time_ns=time_ns)
 
-  def event(self, log_key, log_value, namespace=None, time_ns=None):
+  def event(self, key, log_value, namespace=None, time_ns=None):
     """Log a point in time event.
     The event does not have an associated duration like an interval has.
     Args:
-      log_key: the "name" of the event.
+      key: the "name" of the event.
       log_value: the event data itself.
       namespace: optional override of the default namespace.
       time_ns: the time in nanoseconds, or None for current time.
     """
-    self._log_helper(log_key, log_value, namespace, 'POINT_IN_TIME',
+    self._log_helper(key, log_value, namespace, 'POINT_IN_TIME',
                      time_ns=time_ns)
