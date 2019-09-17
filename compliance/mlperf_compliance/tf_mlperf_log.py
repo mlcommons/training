@@ -33,6 +33,8 @@ import tensorflow as tf
 def log_deferred(op, log_id, every_n=1, first_n=None):
   """Helper method inserting compliance logging ops.
 
+  DEPRECATED: No longer applicable for v0.6 submissions
+
   Note: This helper is not guaranteed to be efficient, as it will insert ops
         and control dependencies. If this proves to be a bottleneck, submitters
         may wish to consider other methods such as extracting values from an
