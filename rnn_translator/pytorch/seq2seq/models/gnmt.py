@@ -1,11 +1,9 @@
 import torch.nn as nn
-from mlperf_compliance import mlperf_log
 
 import seq2seq.data.config as config
 from seq2seq.models.decoder import ResidualRecurrentDecoder
 from seq2seq.models.encoder import ResidualRecurrentEncoder
 from seq2seq.models.seq2seq_base import Seq2Seq
-from seq2seq.utils import gnmt_print
 
 
 class GNMT(Seq2Seq):
@@ -29,13 +27,6 @@ class GNMT(Seq2Seq):
         """
 
         super(GNMT, self).__init__(batch_first=batch_first)
-
-        gnmt_print(key=mlperf_log.MODEL_HP_NUM_LAYERS,
-                   value=num_layers, sync=False)
-        gnmt_print(key=mlperf_log.MODEL_HP_HIDDEN_SIZE,
-                   value=hidden_size, sync=False)
-        gnmt_print(key=mlperf_log.MODEL_HP_DROPOUT,
-                   value=dropout, sync=False)
 
         if share_embedding:
             embedder = nn.Embedding(vocab_size, hidden_size,

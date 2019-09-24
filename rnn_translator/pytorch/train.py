@@ -9,7 +9,8 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data.distributed
-from mlperf_compliance import mlperf_log
+import mllog
+from mllog import constants
 
 import seq2seq.data.config as config
 import seq2seq.train.trainer as trainers
@@ -21,7 +22,7 @@ from seq2seq.data.tokenizer import Tokenizer
 from seq2seq.inference.inference import Translator
 from seq2seq.models.gnmt import GNMT
 from seq2seq.train.smoothing import LabelSmoothing
-from seq2seq.utils import gnmt_print
+from seq2seq.utils import gnmt_start, gnmt_end, gnmt_event
 
 
 def parse_args():
@@ -242,15 +243,9 @@ def build_criterion(vocab_size, padding_idx, smoothing):
         loss_weight = torch.ones(vocab_size)
         loss_weight[padding_idx] = 0
         criterion = nn.CrossEntropyLoss(weight=loss_weight, size_average=False)
-        gnmt_print(key=mlperf_log.MODEL_HP_LOSS_FN,
-                   value='Cross Entropy', sync=False)
     else:
         logging.info(f'Building LabelSmoothingLoss (smoothing: {smoothing})')
         criterion = LabelSmoothing(padding_idx, smoothing)
-        gnmt_print(key=mlperf_log.MODEL_HP_LOSS_FN,
-                   value='Cross Entropy with label smoothing', sync=False)
-        gnmt_print(key=mlperf_log.MODEL_HP_LOSS_SMOOTHING,
-                   value=smoothing, sync=False)
 
     return criterion
 
@@ -259,13 +254,14 @@ def main():
     """
     Launches data-parallel multi-gpu training.
     """
-    mlperf_log.ROOT_DIR_GNMT = os.path.dirname(os.path.abspath(__file__))
-    mlperf_log.LOGGER.propagate = False
+    mllog.config(filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gnmt.log'))
+    mllogger = mllog.get_mllogger()
+    mllogger.logger.propagate = False
 
     args = parse_args()
     device = utils.set_device(args.cuda, args.local_rank)
     distributed = utils.init_distributed(args.cuda)
-    gnmt_print(key=mlperf_log.RUN_START, sync=True)
+    gnmt_start(key=constants.RUN_START, sync=True)
     args.rank = utils.get_rank()
 
     if not args.cudnn:
@@ -309,8 +305,7 @@ def main():
                           pad_vocab)
 
     # build datasets
-    gnmt_print(key=mlperf_log.PREPROC_TOKENIZE_TRAINING, sync=False)
-    gnmt_print(key=mlperf_log.TRAIN_HP_MAX_SEQ_LEN,
+    gnmt_event(key=constants.MAX_SEQUENCE_LENGTH,
                value=args.max_length_train, sync=False)
 
     train_data = LazyParallelDataset(
@@ -322,9 +317,6 @@ def main():
         sort=False,
         max_size=args.max_size)
 
-    gnmt_print(key=mlperf_log.PREPROC_NUM_TRAIN_EXAMPLES,
-               value=len(train_data), sync=False)
-
     val_data = ParallelDataset(
         src_fname=os.path.join(args.dataset_dir, config.SRC_VAL_FNAME),
         tgt_fname=os.path.join(args.dataset_dir, config.TGT_VAL_FNAME),
@@ -333,8 +325,6 @@ def main():
         max_len=args.max_length_val,
         sort=True)
 
-    gnmt_print(key=mlperf_log.PREPROC_TOKENIZE_EVAL, sync=False)
-
     test_data = TextDataset(
         src_fname=os.path.join(args.dataset_dir, config.SRC_TEST_FNAME),
         tokenizer=tokenizer,
@@ -342,12 +332,7 @@ def main():
         max_len=args.max_length_test,
         sort=True)
 
-    gnmt_print(key=mlperf_log.PREPROC_NUM_EVAL_EXAMPLES,
-               value=len(test_data), sync=False)
-
     vocab_size = tokenizer.vocab_size
-    gnmt_print(key=mlperf_log.PREPROC_VOCAB_SIZE,
-               value=vocab_size, sync=False)
 
     # build GNMT model
     model_config = {'hidden_size': args.hidden_size,
@@ -388,11 +373,9 @@ def main():
                                          batching_opt=batching_opt,
                                          num_workers=args.train_loader_workers)
 
-    gnmt_print(key=mlperf_log.INPUT_BATCH_SIZE,
+    gnmt_event(key=constants.GLOBAL_BATCH_SIZE,
                value=args.train_batch_size * utils.get_world_size(),
                sync=False)
-    gnmt_print(key=mlperf_log.INPUT_SIZE,
-               value=train_loader.sampler.num_samples, sync=False)
 
     val_loader = val_data.get_loader(batch_size=args.val_batch_size,
                                      batch_first=batch_first,
@@ -404,9 +387,6 @@ def main():
                                        shuffle=False,
                                        pad=True,
                                        num_workers=args.test_loader_workers)
-
-    gnmt_print(key=mlperf_log.EVAL_SIZE,
-               value=len(test_loader.dataset), sync=False)
 
     translator = Translator(model=model,
                             tokenizer=tokenizer,
@@ -463,11 +443,8 @@ def main():
     best_loss = float('inf')
     break_training = False
     test_bleu = None
-    gnmt_print(key=mlperf_log.TRAIN_LOOP, sync=True)
     for epoch in range(args.start_epoch, args.epochs):
         logging.info(f'Starting epoch {epoch}')
-        gnmt_print(key=mlperf_log.TRAIN_EPOCH,
-                   value=epoch, sync=True)
 
         train_loader.sampler.set_epoch(epoch)
 
@@ -480,22 +457,19 @@ def main():
             val_loss, val_perf = trainer.evaluate(val_loader)
 
             # remember best prec@1 and save checkpoint
-            gnmt_print(key=mlperf_log.TRAIN_CHECKPOINT, sync=False)
             if args.rank == 0:
                 is_best = val_loss < best_loss
                 best_loss = min(val_loss, best_loss)
                 trainer.save(save_all=args.save_all, is_best=is_best)
 
         if args.eval:
-            gnmt_print(key=mlperf_log.EVAL_START, value=epoch, sync=True)
+            gnmt_start(key=constants.EVAL_START, value=epoch, sync=True)
             test_bleu, break_training = translator.run(calc_bleu=True,
                                                        epoch=epoch)
-            gnmt_print(key=mlperf_log.EVAL_ACCURACY,
+            gnmt_event(key=constants.EVAL_ACCURACY,
                        value={"epoch": epoch, "value": round(test_bleu, 2)},
                        sync=False)
-            gnmt_print(key=mlperf_log.EVAL_TARGET,
-                       value=args.target_bleu, sync=False)
-            gnmt_print(key=mlperf_log.EVAL_STOP, sync=True)
+            gnmt_end(key=constants.EVAL_STOP, sync=True)
 
         acc_log = []
         acc_log += [f'Summary: Epoch: {epoch}']
@@ -518,9 +492,8 @@ def main():
         if break_training:
             break
 
-    gnmt_print(key=mlperf_log.RUN_STOP,
+    gnmt_end(key=constants.RUN_STOP,
                value={"success": bool(break_training)}, sync=True)
-    gnmt_print(key=mlperf_log.RUN_FINAL, sync=False)
 
 
 if __name__ == '__main__':

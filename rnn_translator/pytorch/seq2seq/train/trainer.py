@@ -8,13 +8,13 @@ import torch
 import torch.optim
 import torch.utils.data
 from apex.parallel import DistributedDataParallel as DDP
-from mlperf_compliance import mlperf_log
+from mllog import constants
 
 from seq2seq.train.fp_optimizers import Fp16Optimizer
 from seq2seq.train.fp_optimizers import Fp32Optimizer
 from seq2seq.train.lr_scheduler import WarmupMultiStepLR
 from seq2seq.utils import AverageMeter
-from seq2seq.utils import gnmt_print
+from seq2seq.utils import gnmt_event
 from seq2seq.utils import sync_workers
 
 
@@ -111,15 +111,15 @@ class Seq2SeqTrainer:
         opt_name = opt_config.pop('optimizer')
         self.optimizer = torch.optim.__dict__[opt_name](params, **opt_config)
         logging.info(f'Using optimizer: {self.optimizer}')
-        gnmt_print(key=mlperf_log.OPT_NAME,
-                   value=mlperf_log.ADAM, sync=False)
-        gnmt_print(key=mlperf_log.OPT_LR,
+        gnmt_event(key=constants.OPT_NAME,
+                   value=constants.ADAM, sync=False)
+        gnmt_event(key=constants.OPT_BASE_LR,
                    value=opt_config['lr'], sync=False)
-        gnmt_print(key=mlperf_log.OPT_HP_ADAM_BETA1,
+        gnmt_event(key=constants.OPT_ADAM_BETA_1,
                    value=self.optimizer.defaults['betas'][0], sync=False)
-        gnmt_print(key=mlperf_log.OPT_HP_ADAM_BETA2,
+        gnmt_event(key=constants.OPT_ADAM_BETA_2,
                    value=self.optimizer.defaults['betas'][1], sync=False)
-        gnmt_print(key=mlperf_log.OPT_HP_ADAM_EPSILON,
+        gnmt_event(key=constants.OPT_ADAM_EPSILON,
                    value=self.optimizer.defaults['eps'], sync=False)
 
         self.scheduler = WarmupMultiStepLR(self.optimizer, train_iterations,
