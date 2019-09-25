@@ -8,7 +8,7 @@ Use one of the following ways to install.
 
 ```sh
 git clone https://github.com/mlperf/training.git
-pip install -e training/compliance/mllog
+pip install -e training/compliance
 ```
 
 - Install from github at a specific commit (Replace COMMIT_HASH with actual commit hash, the double quotes are needed):

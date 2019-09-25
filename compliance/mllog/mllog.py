@@ -117,6 +117,8 @@ def _encode_log(namespace, time_ms, event_type, key, value, call_site):
     event_type: one of: 'INTERVAL_START', 'INTERVAL_END', 'POINT_IN_TIME'
     key: the name of the thing being logged.
     value: a json value.
+    call_site: a json pointing to the source code logging the event;
+        (e.g {"file": "train.py", "lineno": 42})
   Returns:
     A string log like, i.e. ":::MLLog { ..."
   """
