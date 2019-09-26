@@ -19,6 +19,7 @@
 # NOTE: Keep string values in alphabetical order under each section.
 
 # Constant values - log settings
+DEFAULT_LOGGER_NAME = "mllog_default"
 DEFAULT_NAMESPACE = ""
 
 # Constant values - log event type

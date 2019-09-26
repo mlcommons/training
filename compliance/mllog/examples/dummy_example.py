@@ -15,6 +15,7 @@
 
 import logging
 import os
+import sys
 
 import mllog
 from mllog import constants
@@ -30,22 +31,37 @@ def dummy_example():
   # Customize mllogger configuration
   # These configurations only need to be set Once in your entire program.
   # Try tweaking the following configurations to see the difference.
-  # Customize mllogger.logger to use a file in addition to stdout.
-  # You may replace mllogger.logger with any logging.Logger instance.
+  #   logger: Customize the underlying logger to change the logging behavior.
+  #   default_namespace: the default namespace to use if one isn't provided.
+  #   default_stack_offset: the default depth to go into the stack to find
+  #     the call site.
+  #   default_clear_line: the default behavior of line clearing (i.e. print
+  #     an extra new line to clear any pre-existing text in the log line).
+  #   root_dir: directory prefix which will be trimmed when reporting calling
+  #     file for logging.
+
+  # Customize the underlying logger to use a file in addition to stdout.
+  # You may pass a logging.Logger instance to mllog.config().
+  # Notice that proper log level needs to be set for both logger and handler.
+  logger = logging.getLogger("custom_logger")
+  logger.setLevel(logging.DEBUG)
+  # add file handler for file logging
   _file_handler = logging.FileHandler("example.log")
   _file_handler.setLevel(logging.DEBUG)
-  mllogger.logger.addHandler(_file_handler)
-  # the default namespace to use if one isn't provided.
-  mllogger.default_namespace = "worker1"
-  # the default depth to go into the stack to find the call site.
-  mllogger.default_stack_offset = 1
-  # the default behavior of line clearing (i.e. print an extra new line to
-  # clear any pre-existing text in the log line).
-  mllogger.default_clear_line = False
-  # directory prefix which will be trimmed when reporting calling file for
-  # logging.
-  mllogger.root_dir = os.path.normpath(
-      os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", ".."))
+  logger.addHandler(_file_handler)
+  # add stream handler for stdout logging
+  _stream_handler = logging.StreamHandler(stream=sys.stdout)
+  _stream_handler.setLevel(logging.INFO)
+  logger.addHandler(_stream_handler)
+
+  # Set logger configurations
+  mllog.config(
+      logger=logger,
+      default_namespace = "worker1",
+      default_stack_offset = 1,
+      default_clear_line = False,
+      root_dir = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")))
 
   # Example log messages
   # The methods to use are "start", "end", and "event".

@@ -173,7 +173,7 @@ class MLLogger(object):
     """Create a default logger.
     The default logger prints INFO level messages to stdout.
     """
-    logger = logging.getLogger('mllog')
+    logger = logging.getLogger(constants.DEFAULT_LOGGER_NAME)
     logger.setLevel(logging.INFO)
     _stream_handler = logging.StreamHandler(stream=sys.stdout)
     _stream_handler.setLevel(logging.INFO)
