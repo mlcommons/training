@@ -54,7 +54,7 @@ class TestMlperfLog(unittest.TestCase):
     mllog.mllog.get_caller = self.origin_get_caller
     time.time = self.origin_time
 
-  def _fake_do_log(self, message, clear_line=False):
+  def _fake_do_log(self, level, message, clear_line=False):
     if clear_line:
       print("\n" + message)
     else:
@@ -69,7 +69,7 @@ class TestMlperfLog(unittest.TestCase):
           "event_type": "INTERVAL_START",
           "key": "run_start",
           "value": null,
-          "call_site": {"file": "mybenchmark/file.py", "lineno": 42}
+          "metadata": {"file": "mybenchmark/file.py", "lineno": 42}
         }''', object_pairs_hook=collections.OrderedDict))
     expected_output = " ".join([prefix, expected_log_json])
     with _captured_stdout() as out:
@@ -86,7 +86,7 @@ class TestMlperfLog(unittest.TestCase):
           "event_type": "INTERVAL_END",
           "key": "run_stop",
           "value": null,
-          "call_site": {"file": "mybenchmark/file.py", "lineno": 42}
+          "metadata": {"file": "mybenchmark/file.py", "lineno": 42}
         }''', object_pairs_hook=collections.OrderedDict))
     expected_output = " ".join([prefix, expected_log_json])
     with _captured_stdout() as out:
@@ -103,7 +103,7 @@ class TestMlperfLog(unittest.TestCase):
           "event_type": "POINT_IN_TIME",
           "key": "eval_accuracy",
           "value": 0.99,
-          "call_site": {"file": "mybenchmark/file.py", "lineno": 42}
+          "metadata": {"file": "mybenchmark/file.py", "lineno": 42}
         }''', object_pairs_hook=collections.OrderedDict))
     expected_output = " ".join([prefix, expected_log_json])
     with _captured_stdout() as out:
@@ -120,7 +120,7 @@ class TestMlperfLog(unittest.TestCase):
           "event_type": "POINT_IN_TIME",
           "key": "eval_accuracy",
           "value": 0.99,
-          "call_site": {"file": "mybenchmark/file.py", "lineno": 42}
+          "metadata": {"file": "mybenchmark/file.py", "lineno": 42}
         }''', object_pairs_hook=collections.OrderedDict))
     expected_output = "\n" + " ".join([prefix, expected_log_json]) + "\n"
     with _captured_stdout() as out:

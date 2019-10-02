@@ -109,7 +109,7 @@ def _to_ordered_json(kv_pairs):
     return '[convert-error: {kv_str}]'.format(kv_str=str(kv_pairs))
 
 
-def _encode_log(namespace, time_ms, event_type, key, value, call_site):
+def _encode_log(namespace, time_ms, event_type, key, value, metadata):
   """Encodes an MLEvent as a string log line.
   Args:
     namespace: provides structure, e.g. "GPU0".
@@ -117,8 +117,7 @@ def _encode_log(namespace, time_ms, event_type, key, value, call_site):
     event_type: one of: 'INTERVAL_START', 'INTERVAL_END', 'POINT_IN_TIME'
     key: the name of the thing being logged.
     value: a json value.
-    call_site: a json pointing to the source code logging the event;
-        (e.g {"file": "train.py", "lineno": 42})
+    metadata: a json value.
   Returns:
     A string log like, i.e. ":::MLLog { ..."
   """
@@ -129,7 +128,7 @@ def _encode_log(namespace, time_ms, event_type, key, value, call_site):
     ('event_type', event_type),
     ('key', key),
     ('value', value),
-    ('call_site', call_site)
+    ('metadata', metadata)
   ]
   encoded = _to_ordered_json(ordered_key_val_pairs)
   return LOG_TEMPLATE.format(log_json=encoded)
@@ -168,7 +167,7 @@ class MLLogger(object):
     self.default_stack_offset = default_stack_offset
     self.default_clear_line = default_clear_line
     self.root_dir = root_dir
-  
+
   def _get_default_logger(self):
     """Create a default logger.
     The default logger prints INFO level messages to stdout.
@@ -180,13 +179,13 @@ class MLLogger(object):
     logger.addHandler(_stream_handler)
     return logger
 
-  def _do_log(self, message, clear_line=False):
+  def _do_log(self, level, message, clear_line=False):
     if clear_line:
       message = '\n' + message
-    self.logger.info(message)
+    self.logger.log(level, message)
 
-  def _log_helper(self, event_type, key, value, namespace=None, time_ms=None,
-                  stack_offset=None, clear_line=None):
+  def _log_helper(self, event_type, key, value, metadata=None, namespace=None,
+                  time_ms=None, stack_offset=None, clear_line=None):
     """Log an event."""
     if namespace is None:
       namespace = self.default_namespace
@@ -197,7 +196,19 @@ class MLLogger(object):
     if clear_line is None:
       clear_line = self.default_clear_line
 
-    call_site = get_caller(2 + stack_offset, root_dir=self.root_dir)
+    log_metadata = {}
+    log_metadata.update(get_caller(2 + stack_offset, root_dir=self.root_dir))
+    if metadata:
+      if not isinstance(metadata, dict):
+        self._do_log(logging.WARNING, "Metadata is not dictionary, ignored.",
+                     clear_line=True)
+      else:
+        overlap_keys = set(log_metadata.keys()).intersection(metadata.keys())
+        if overlap_keys:
+          self._do_log(logging.WARNING,
+              "Metadata fields overridden: {}".format(", ".join(overlap_keys)),
+              clear_line=True)
+        log_metadata.update(metadata)
 
     log_line = _encode_log(
         namespace,
@@ -205,11 +216,11 @@ class MLLogger(object):
         event_type,
         key,
         value,
-        call_site)
-    
-    self._do_log(log_line, clear_line)
+        log_metadata)
 
-  def start(self, key, value, namespace=None, time_ms=None,
+    self._do_log(logging.INFO, log_line, clear_line)
+
+  def start(self, key, value, metadata=None, namespace=None, time_ms=None,
             stack_offset=None, clear_line=None):
     """Start an time interval in the log.
     All intervals which are started must be ended. This interval must be
@@ -217,6 +228,7 @@ class MLLogger(object):
     Args:
       key: the key for the event, e.g. "mlperf.training"
       value: the json value to log.
+      metadata: a dictionary containing metadata corresponding to the log event.
       namespace: override the default namespace.
       time_ms: the time in milliseconds, or None for current time.
       stack_offset: override the default stack offset, i.e. the depth to go
@@ -225,10 +237,10 @@ class MLLogger(object):
         print an extra new line to clear pre-existing text in the log line.
     """
     self._log_helper(constants.INTERVAL_START, key, value,
-                     namespace=namespace, time_ms=time_ms,
+                     metadata=metadata, namespace=namespace, time_ms=time_ms,
                      stack_offset=stack_offset, clear_line=clear_line)
 
-  def end(self, key, value, namespace=None, time_ms=None,
+  def end(self, key, value, metadata=None, namespace=None, time_ms=None,
           stack_offset=None, clear_line=None):
     """End a time interval in the log.
     Ends an interval which was already started with the same key and in the
@@ -236,6 +248,7 @@ class MLLogger(object):
     Args:
       key: the same log key which was passed to start().
       value: the value to log at the end of the interval.
+      metadata: a dictionary containing metadata corresponding to the log event.
       namespace: optional override of the default namespace.
       time_ms: the time in milliseconds, or None for current time.
       stack_offset: override the default stack offset, i.e. the depth to go
@@ -244,16 +257,17 @@ class MLLogger(object):
         print an extra new line to clear pre-existing text in the log line.
     """
     self._log_helper(constants.INTERVAL_END, key, value,
-                     namespace=namespace, time_ms=time_ms,
+                     metadata=metadata, namespace=namespace, time_ms=time_ms,
                      stack_offset=stack_offset, clear_line=clear_line)
 
-  def event(self, key, value, namespace=None, time_ms=None,
+  def event(self, key, value, metadata=None, namespace=None, time_ms=None,
             stack_offset=None, clear_line=None):
     """Log a point in time event.
     The event does not have an associated duration like an interval has.
     Args:
       key: the "name" of the event.
       value: the event data itself.
+      metadata: a dictionary containing metadata corresponding to the log event.
       namespace: optional override of the default namespace.
       time_ms: the time in milliseconds, or None for current time.
       stack_offset: override the default stack offset, i.e. the depth to go
@@ -262,5 +276,5 @@ class MLLogger(object):
         print an extra new line to clear pre-existing text in the log line.
     """
     self._log_helper(constants.POINT_IN_TIME, key, value,
-                     namespace=namespace, time_ms=time_ms,
+                     metadata=metadata, namespace=namespace, time_ms=time_ms,
                      stack_offset=stack_offset, clear_line=clear_line)
