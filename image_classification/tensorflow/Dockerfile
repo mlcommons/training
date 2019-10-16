@@ -20,12 +20,12 @@ ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
 RUN apt-get install -y python-setuptools
 
-RUN apt install --no-install-recommends python3-minimal python3  
+RUN apt install --no-install-recommends python3-minimal python3   --yes --force-yes
 
-RUN apt-get install -y python-pip python3-pip virtualenv htop
+RUN apt-get install -y python-pip python3-pip virtualenv htop --yes --force-yes
 # RUN pip install --upgrade numpy scipy sklearn tf-nightly-gpu
 
-RUN apt install python3-numpy python3-scipy
+RUN apt install python3-numpy python3-scipy --yes --force-yes
 
 
 
