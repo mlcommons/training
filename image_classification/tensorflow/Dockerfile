@@ -11,10 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     python \
     python-pip
-ENV add-apt-repository ppa:jonathonf/python-3.6
-ENV apt-get update
-
-ENV apt-get install python3.6
+    
 
 ENV HOME /research
 ENV PYENV_ROOT $HOME/.pyenv
@@ -23,8 +20,13 @@ ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
 RUN apt-get install -y python-setuptools
 
+RUN apt install --no-install-recommends python3-minimal python3  
+
 RUN apt-get install -y python-pip python3-pip virtualenv htop
-RUN pip install --upgrade numpy scipy sklearn tf-nightly-gpu
+# RUN pip install --upgrade numpy scipy sklearn tf-nightly-gpu
+
+RUN apt install python3-numpy python3-scipy
+
 
 
 # Mount data into the docker
