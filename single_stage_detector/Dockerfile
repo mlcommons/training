@@ -1,7 +1,7 @@
 FROM pytorch/pytorch:1.0.1-cuda10.0-cudnn7-runtime
 
 # Set working directory
-WORKDIR /mlperf
+WORKDIR /mlperf/ssd
 
 RUN apt-get update && \
     apt-get install -y python3-tk python-pip && \
@@ -9,11 +9,10 @@ RUN apt-get update && \
 
 RUN pip install --upgrade pip
 
-# Copy SSD code
-WORKDIR /mlperf
-COPY . .
 # Necessary pip packages
+COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 RUN python3 -m pip install pycocotools==2.0.0
 
-WORKDIR /mlperf/ssd
+# Copy SSD code
+COPY ssd .
