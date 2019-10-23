@@ -36,6 +36,9 @@ def config(**kwargs):
   Optional keyword arguments:
     logger: a logging.Logger instance. Customize the logger to change
       the logging behavior (e.g. logging to a file, etc.)
+    filename: a log file to use. If set, a default file handler will be added
+      to the logger so it can log to the specified file. For more advanced
+      customizations, please set the 'logger' parameter instead.
     default_namespace: the default namespace to use if one isn't provided.
     default_stack_offset: the default depth to go into the stack to find the
       call site.
@@ -56,6 +59,14 @@ def config(**kwargs):
                          "logger to avoid unexpected behavior. Consider " +
                          "using a different name for the logger.")
       mllogger.logger = logger
+
+    log_file = kwargs.pop("filename", None)
+    if log_file is not None:
+      if not isinstance(log_file, str):
+        raise ValueError("'filename' must be a string.")
+      _file_handler = logging.FileHandler(log_file)
+      _file_handler.setLevel(logging.INFO)
+      mllogger.logger.addHandler(_file_handler)
 
     default_namespace = kwargs.pop("default_namespace", None)
     if default_namespace is not None:

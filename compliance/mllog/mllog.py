@@ -184,8 +184,8 @@ class MLLogger(object):
       message = '\n' + message
     self.logger.log(level, message)
 
-  def _log_helper(self, event_type, key, value, metadata=None, namespace=None,
-                  time_ms=None, stack_offset=None, clear_line=None):
+  def _log_helper(self, event_type, key, value=None, metadata=None,
+        namespace=None, time_ms=None, stack_offset=None, clear_line=None):
     """Log an event."""
     if namespace is None:
       namespace = self.default_namespace
@@ -220,14 +220,14 @@ class MLLogger(object):
 
     self._do_log(logging.INFO, log_line, clear_line)
 
-  def start(self, key, value, metadata=None, namespace=None, time_ms=None,
+  def start(self, key, value=None, metadata=None, namespace=None, time_ms=None,
             stack_offset=None, clear_line=None):
     """Start an time interval in the log.
     All intervals which are started must be ended. This interval must be
     ended before a new interval with the same key and namespace can be started.
     Args:
       key: the key for the event, e.g. "mlperf.training"
-      value: the json value to log.
+      value: the value to log at the start of the interval.
       metadata: a dictionary containing metadata corresponding to the log event.
       namespace: override the default namespace.
       time_ms: the time in milliseconds, or None for current time.
@@ -240,7 +240,7 @@ class MLLogger(object):
                      metadata=metadata, namespace=namespace, time_ms=time_ms,
                      stack_offset=stack_offset, clear_line=clear_line)
 
-  def end(self, key, value, metadata=None, namespace=None, time_ms=None,
+  def end(self, key, value=None, metadata=None, namespace=None, time_ms=None,
           stack_offset=None, clear_line=None):
     """End a time interval in the log.
     Ends an interval which was already started with the same key and in the
@@ -260,7 +260,7 @@ class MLLogger(object):
                      metadata=metadata, namespace=namespace, time_ms=time_ms,
                      stack_offset=stack_offset, clear_line=clear_line)
 
-  def event(self, key, value, metadata=None, namespace=None, time_ms=None,
+  def event(self, key, value=None, metadata=None, namespace=None, time_ms=None,
             stack_offset=None, clear_line=None):
     """Log a point in time event.
     The event does not have an associated duration like an interval has.
