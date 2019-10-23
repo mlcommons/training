@@ -20,8 +20,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from mlperf_compliance import mlperf_log
-
 
 class Attention(tf.layers.Layer):
   """Multi-headed attention layer."""
@@ -44,14 +42,6 @@ class Attention(tf.layers.Layer):
     self.v_dense_layer = tf.layers.Dense(hidden_size, use_bias=use_bias, name="v")
     self.output_dense_layer = tf.layers.Dense(hidden_size, use_bias=use_bias,
                                               name="output_transform")
-    
-    mlperf_log.transformer_print(
-        mlperf_log.MODEL_HP_ATTENTION_DENSE,
-        value={
-          "hidden_size": hidden_size,
-          "use_bias": use_bias,
-          "num_heads": num_heads
-        })
 
   def split_heads(self, x):
     """Split x into different heads, and transpose the resulting value.
@@ -140,9 +130,6 @@ class Attention(tf.layers.Layer):
     logits += bias
     weights = tf.nn.softmax(logits, name="attention_weights")
     if self.train:
-      mlperf_log.transformer_print(
-          key=mlperf_log.MODEL_HP_ATTENTION_DROPOUT,
-          value=self.attention_dropout)
       weights = tf.nn.dropout(weights, 1.0 - self.attention_dropout)
     attention_output = tf.matmul(weights, v)
 

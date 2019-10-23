@@ -25,12 +25,11 @@ import tempfile
 import random
 import numpy.random
 
-
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from mlperf_compliance import mlperf_log
-from mlperf_compliance import tf_mlperf_log
+from mlperf_logging import mllog
+from mlperf_logging.mllog import constants as mllog_const
 
 import compute_bleu
 from data_download import VOCAB_FILE
@@ -45,6 +44,7 @@ DEFAULT_TRAIN_EPOCHS = 10
 BLEU_DIR = "bleu"
 INF = 10000
 
+mllogger = mllog.get_mllogger()
 
 def model_fn(features, labels, mode, params):
   """Defines how to train, evaluate and predict from the transformer model."""
@@ -100,26 +100,23 @@ def get_learning_rate(learning_rate, hidden_size, learning_rate_warmup_steps):
 def get_train_op(loss, params):
   """Generate training operation that updates variables based on loss."""
   with tf.variable_scope("get_train_op"):
-    mlperf_log.transformer_print(
-        key=mlperf_log.OPT_LR_WARMUP_STEPS,
-        value=params.learning_rate_warmup_steps)
+    mllogger.event(key=mllog_const.OPT_BASE_LR, value=params.learning_rate)
+    mllogger.event(key=mllog_const.OPT_LR_WARMUP_STEPS,
+                   value=params.learning_rate_warmup_steps)
     learning_rate = get_learning_rate(
         params.learning_rate, params.hidden_size,
         params.learning_rate_warmup_steps)
-    log_id = mlperf_log.resnet_print(key=mlperf_log.OPT_LR, deferred=True)
-    learning_rate = tf_mlperf_log.log_deferred(op=learning_rate, log_id=log_id,
-                                               every_n=100)
 
     # Create optimizer. Use LazyAdamOptimizer from TF contrib, which is faster
     # than the TF core Adam optimizer.
-    mlperf_log.transformer_print(key=mlperf_log.OPT_NAME,
-                                 value=mlperf_log.LAZY_ADAM)
-    mlperf_log.transformer_print(key=mlperf_log.OPT_HP_ADAM_BETA1,
-                                 value=params.optimizer_adam_beta1)
-    mlperf_log.transformer_print(key=mlperf_log.OPT_HP_ADAM_BETA2,
-                                 value=params.optimizer_adam_beta2)
-    mlperf_log.transformer_print(key=mlperf_log.OPT_HP_ADAM_EPSILON,
-                                 value=params.optimizer_adam_epsilon)
+    mllogger.event(key=mllog_const.OPT_NAME,
+                   value=mllog_const.LAZY_ADAM)
+    mllogger.event(key=mllog_const.OPT_ADAM_BETA_1,
+                   value=params.optimizer_adam_beta1)
+    mllogger.event(key=mllog_const.OPT_ADAM_BETA_2,
+                   value=params.optimizer_adam_beta2)
+    mllogger.event(key=mllog_const.OPT_ADAM_EPSILON,
+                   value=params.optimizer_adam_epsilon)
     optimizer = tf.contrib.opt.LazyAdamOptimizer(
         learning_rate,
         beta1=params.optimizer_adam_beta1,
@@ -262,46 +259,98 @@ def train_schedule(
       train_eval_iterations = INF
 
   # Loop training/evaluation/bleu cycles
-  mlperf_log.transformer_print(key=mlperf_log.TRAIN_LOOP)
   for i in xrange(train_eval_iterations):
     print("Starting iteration", i + 1)
-
-    mlperf_log.transformer_print(key=mlperf_log.TRAIN_EPOCH,
-                                 value=i * single_iteration_train_epochs + 1)
+    if single_iteration_train_epochs is not None:
+        first_epoch_num = i * single_iteration_train_epochs + 1
+    else: # only when not training on full epochs (e.g. used for debugging)
+        first_epoch_num = None
+    if single_iteration_train_epochs == 1:
+      mllogger.start(
+        key=mllog_const.EPOCH_START,
+        metadata={mllog_const.EPOCH_NUM: first_epoch_num})
+    else:
+      mllogger.start(
+          key=mllog_const.BLOCK_START,
+          metadata={mllog_const.FIRST_EPOCH_NUM: first_epoch_num,
+                    mllog_const.EPOCH_COUNT: single_iteration_train_epochs})
 
     # Train the model for single_iteration_train_steps or until the input fn
     # runs out of examples (if single_iteration_train_steps is None).
     estimator.train(dataset.train_input_fn, steps=single_iteration_train_steps)
 
-    mlperf_log.transformer_print(key=mlperf_log.EVAL_START)
+    if single_iteration_train_epochs == 1:
+      mllogger.end(
+        key=mllog_const.EPOCH_STOP,
+        metadata={mllog_const.EPOCH_NUM: first_epoch_num})
+    mllogger.start(
+        key=mllog_const.EVAL_START,
+        metadata={mllog_const.EPOCH_NUM: first_epoch_num})
+
     eval_results = estimator.evaluate(dataset.eval_input_fn)
     print("Evaluation results (iter %d/%d):" % (i + 1, train_eval_iterations),
           eval_results)
 
+    bleu_target_met = False
     if evaluate_bleu:
       uncased_score, _ = evaluate_and_log_bleu(
           estimator, bleu_writer, bleu_source, bleu_ref)
+      mllogger.event(key=mllog_const.EVAL_ACCURACY, value=uncased_score,
+          metadata={mllog_const.EPOCH_NUM: first_epoch_num})
       if bleu_threshold is not None and uncased_score > bleu_threshold:
+        bleu_target_met = True
         bleu_writer.close()
-        break
-      mlperf_log.transformer_print(key=mlperf_log.EVAL_TARGET, value=bleu_threshold)
-      mlperf_log.transformer_print(key=mlperf_log.EVAL_ACCURACY, value=uncased_score)
-    mlperf_log.transformer_print(key=mlperf_log.EVAL_STOP)
+
+    mllogger.end(key=mllog_const.EVAL_STOP,
+        metadata={mllog_const.EPOCH_NUM: first_epoch_num})
+    if single_iteration_train_epochs != 1:
+      mllogger.end(
+          key=mllog_const.BLOCK_STOP,
+          metadata={mllog_const.FIRST_EPOCH_NUM: first_epoch_num,
+                    mllog_const.EPOCH_COUNT: single_iteration_train_epochs})
+    if bleu_target_met:
+      break
+
+
+def _count_samples_in_batched_dataset(input_fn, params):
+  """Count sample number in a batched dataset returned by an input function.
+  Note that this iterates through all the data files to count sample sizes,
+  therefore it may cause an extra overhead.
+
+  Args:
+    file_pattern: String used to match the input files.
+    params: Model parameters.
+
+  Returns:
+    Number of samples in dataset.
+  """
+  dataset = input_fn(params)
+  dataset = dataset.apply(tf.contrib.data.unbatch())
+  iterator = tf.data.make_one_shot_iterator(dataset)
+  next_item = iterator.get_next()
+  samples = 0
+  with tf.Session() as sess:
+    try:
+      while True:
+        sess.run(next_item)
+        samples += 1
+    except tf.errors.OutOfRangeError:
+      pass
+  return samples
 
 
 def main(_):
+  mllogger.start(key=mllog_const.INIT_START)
   # Set logging level to INFO to display training progress (logged by the
   # estimator)
   tf.logging.set_verbosity(tf.logging.INFO)
-
-  mlperf_log.transformer_print(key=mlperf_log.RUN_START)
 
   # Set random seed.
   if FLAGS.random_seed is None:
     raise Exception('No Random seed given')
   print('Setting random seed = ', FLAGS.random_seed)
   seed = FLAGS.random_seed
-  mlperf_log.transformer_print(key=mlperf_log.RUN_SET_RANDOM_SEED, value=seed)
+  mllogger.event(key=mllog_const.SEED, value=seed)
   random.seed(seed)
   tf.set_random_seed(seed)
   numpy.random.seed(seed)
@@ -342,6 +391,18 @@ def main(_):
   params.epochs_between_eval = FLAGS.epochs_between_eval
   params.repeat_dataset = single_iteration_train_epochs
 
+  mllogger.end(key=mllog_const.INIT_STOP)
+  mllogger.start(key=mllog_const.RUN_START)
+
+  # Log train/eval sample sizes
+  print("Counting training and evaluation samples...")
+  train_samples = _count_samples_in_batched_dataset(
+      dataset.train_input_fn, params)
+  eval_samples = _count_samples_in_batched_dataset(
+      dataset.eval_input_fn, params)
+  mllogger.event(key=mllog_const.TRAIN_SAMPLES, value=train_samples)
+  mllogger.event(key=mllog_const.EVAL_SAMPLES, value=eval_samples)
+
   estimator = tf.estimator.Estimator(
       model_fn=model_fn, model_dir=FLAGS.model_dir, params=params)
   train_schedule(
@@ -349,15 +410,11 @@ def main(_):
       single_iteration_train_epochs, FLAGS.bleu_source, FLAGS.bleu_ref,
       FLAGS.bleu_threshold)
 
-  mlperf_log.transformer_print(key=mlperf_log.RUN_STOP)
-  mlperf_log.transformer_print(key=mlperf_log.RUN_FINAL)
+  mllogger.end(key=mllog_const.RUN_STOP, metadata={
+               mllog_const.STATUS: mllog_const.SUCCESS})
 
 
 if __name__ == "__main__":
-
-  mlperf_log.ROOT_DIR_TRANSFORMER = os.path.normpath(
-      os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
-
   parser = argparse.ArgumentParser()
   parser.add_argument(
       "--data_dir", "-dd", type=str, default="/tmp/translate_ende",
@@ -430,11 +487,14 @@ if __name__ == "__main__":
            "--train_steps or --train_epochs.",
       metavar="<BT>")
 
-
   parser.add_argument(
       "--random_seed", "-rs", type=int, default=None,
       help="the random seed to use", metavar="<SEED>")
 
   FLAGS, unparsed = parser.parse_known_args()
+
+  mllog.config(
+    filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
+    root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
 
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

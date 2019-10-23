@@ -55,7 +55,8 @@ import os
 
 import tensorflow as tf
 
-from mlperf_compliance import mlperf_log
+from mlperf_logging import mllog
+from mlperf_logging.mllog import constants as mllog_const
 
 # Use the number of training files as the shuffle buffer.
 _FILE_SHUFFLE_BUFFER = 100
@@ -68,6 +69,7 @@ _READ_RECORD_BUFFER = 8 * 1000 * 1000
 _MIN_BOUNDARY = 8
 _BOUNDARY_SCALE = 1.1
 
+mllogger = mllog.get_mllogger()
 
 def _load_records(filename):
   """Read file and return a dataset of tf.Examples."""
@@ -211,7 +213,6 @@ def _read_and_batch_from_files(
 
   if shuffle:
     # Shuffle filenames
-    mlperf_log.transformer_print(key=mlperf_log.INPUT_ORDER)
     dataset = dataset.shuffle(buffer_size=_FILE_SHUFFLE_BUFFER)
 
   # Read files and interleave results. When training, the order of the examples
@@ -226,13 +227,12 @@ def _read_and_batch_from_files(
                         num_parallel_calls=num_cpu_cores)
 
   # Remove examples where the input or target length exceeds the maximum length,
+  mllogger.event(key=mllog_const.MAX_SEQUENCE_LENGTH, value=max_length,
+                 metadata={"method": "discard"})
   dataset = dataset.filter(lambda x, y: _filter_max_length((x, y), max_length))
 
   # Batch such that each batch has examples of similar length.
-  mlperf_log.transformer_print(key=mlperf_log.INPUT_BATCH_SIZE,
-                               value=batch_size)
-  mlperf_log.transformer_print(key=mlperf_log.INPUT_MAX_LENGTH,
-                               value=max_length)
+  mllogger.event(key=mllog_const.GLOBAL_BATCH_SIZE, value=batch_size)
   dataset = _batch_examples(dataset, batch_size, max_length)
   dataset = dataset.repeat(repeat)
 
