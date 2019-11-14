@@ -3,7 +3,7 @@
 ## DL params
 EXTRA_PARAMS=(
                --batch-size      "128"
-               --warmup          "300"
+               --warmup          "2.619685" # 300 iterations * 8 GPUs * 1 nodes * 128 batch size / 117266 non-empty images
              )
 
 ## System run parms

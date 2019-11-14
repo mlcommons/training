@@ -35,10 +35,13 @@ def parse_args():
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
     parser.add_argument('--evaluation', nargs='*', type=int,
-                        default=[120000, 160000, 180000, 200000, 220000,
-                                 240000],
-                        help='iterations at which to evaluate')
-    parser.add_argument('--warmup', type=int, default=None)
+                        default=[40, 50, 55, 60, 65, 70, 75, 80],
+                        help='epochs at which to evaluate')
+    parser.add_argument('--lr-decay-schedule', nargs='*', type=int,
+                        default=[40, 50],
+                        help='epochs at which to decay the learning rate')
+    parser.add_argument('--warmup', type=float, default=None,
+                        help='how long the learning rate will be warmed up in fraction of epochs')
     parser.add_argument('--warmup-factor', type=int, default=0,
                         help='mlperf rule parameter for controlling warmup curve')
     parser.add_argument('--lr', type=float, default=2.5e-3,
@@ -155,11 +158,11 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
     ssd_print(key=mlperf_log.EVAL_STOP, value=epoch, sync=False)
     return current_accuracy>= threshold #Average Precision  (AP) @[ IoU=050:0.95 | area=   all | maxDets=100 ]
 
-def lr_warmup(optim, warmup_iter, iter_num, base_lr, args):
-	if iter_num < warmup_iter:
+def lr_warmup(optim, wb, iter_num, base_lr, args):
+	if iter_num < wb:
 		# mlperf warmup rule
-		warmup_step = base_lr / (warmup_iter * (2 ** args.warmup_factor))
-		new_lr = base_lr - (warmup_iter - iter_num) * warmup_step
+		warmup_step = base_lr / (wb * (2 ** args.warmup_factor))
+		new_lr = base_lr - (wb - iter_num) * warmup_step
 
 		for param_group in optim.param_groups:
 			param_group['lr'] = new_lr
@@ -264,8 +267,7 @@ def train300_mlperf_coco(args):
     ssd_print(key=mlperf_log.OPT_MOMENTUM, value=current_momentum)
     ssd_print(key=mlperf_log.OPT_WEIGHT_DECAY,
                          value=current_weight_decay)
-    eval_points = np.array(args.evaluation) * 32 / global_batch_size
-    eval_points = list(map(int, list(eval_points)))
+    eval_points = args.evaluation
     print("epoch", "nbatch", "loss")
 
     iter_num = args.iteration
@@ -276,29 +278,30 @@ def train300_mlperf_coco(args):
         success = success.cuda()
 
 
+    if args.warmup:
+        nonempty_imgs = len(train_coco)
+        wb = int(args.warmup * nonempty_imgs / (N_gpu*args.batch_size))
+        warmup_step = lambda iter_num, current_lr: lr_warmup(optim, wb, iter_num, current_lr, args)
+    else:
+        warmup_step = lambda iter_num, current_lr: None
+
     for epoch in range(args.epochs):
         ssd_print(key=mlperf_log.TRAIN_EPOCH, value=epoch)
         # set the epoch for the sampler
         if args.distributed:
             train_sampler.set_epoch(epoch)
+
+        if epoch in args.lr_decay_schedule:
+            current_lr *= 0.1
+            print("")
+            print("lr decay step #{num}".format(num=args.lr_decay_schedule.index(epoch) + 1))
+            for param_group in optim.param_groups:
+                param_group['lr'] = current_lr
+            ssd_print(key=mlperf_log.OPT_LR,
+                                 value=current_lr)
+
         for nbatch, (img, img_size, bbox, label) in enumerate(train_dataloader):
 
-            if iter_num == (160000 * 32) // global_batch_size:
-                current_lr *= 0.1
-                print("")
-                print("lr decay step #1")
-                for param_group in optim.param_groups:
-                    param_group['lr'] = current_lr
-                ssd_print(key=mlperf_log.OPT_LR,
-                                     value=current_lr)
-            if iter_num == (200000 * 32) // global_batch_size:
-                current_lr *= 0.1
-                print("")
-                print("lr decay step #2")
-                for param_group in optim.param_groups:
-                    param_group['lr'] = current_lr
-                ssd_print(key=mlperf_log.OPT_LR,
-                                     value=current_lr)
             if use_cuda:
                 img = img.cuda()
             img = Variable(img, requires_grad=True)
@@ -317,35 +320,36 @@ def train300_mlperf_coco(args):
                         .format(iter_num, loss.item(), avg_loss), end="\r")
             optim.zero_grad()
             loss.backward()
-            if args.warmup is not None:
-                lr_warmup(optim, args.warmup, iter_num, current_lr, args)
+            warmup_step(iter_num, current_lr)
             optim.step()
 
-            if iter_num in eval_points:
-                rank = dist.get_rank() if args.distributed else args.local_rank
-                if args.distributed:
-                    world_size = float(dist.get_world_size())
-                    for bn_name, bn_buf in ssd300.module.named_buffers(recurse=True):
-                        if ('running_mean' in bn_name) or ('running_var' in bn_name):
-                            dist.all_reduce(bn_buf, op=dist.ReduceOp.SUM)
-                            bn_buf /= world_size
-                if rank == 0:
-                    if not args.no_save:
-                        print("")
-                        print("saving model...")
-                        torch.save({"model" : ssd300.state_dict(), "label_map": train_coco.label_info},
-                                   "./models/iter_{}.pt".format(iter_num))
-
-                    if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
-                                args.threshold, epoch,iter_num):
-                        success = torch.ones(1)
-                        if use_cuda:
-                            success = success.cuda()
-                if args.distributed:
-                    dist.broadcast(success, 0)
-                if success[0]:
-                    return True
             iter_num += 1
+
+        if epoch + 1 in eval_points:
+            rank = dist.get_rank() if args.distributed else args.local_rank
+            if args.distributed:
+                world_size = float(dist.get_world_size())
+                for bn_name, bn_buf in ssd300.module.named_buffers(recurse=True):
+                    if ('running_mean' in bn_name) or ('running_var' in bn_name):
+                        dist.all_reduce(bn_buf, op=dist.ReduceOp.SUM)
+                        bn_buf /= world_size
+            if rank == 0:
+                if not args.no_save:
+                    print("")
+                    print("saving model...")
+                    torch.save({"model" : ssd300.state_dict(), "label_map": train_coco.label_info},
+                               "./models/iter_{}.pt".format(iter_num))
+
+                if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
+                            args.threshold, epoch + 1,iter_num):
+                    success = torch.ones(1)
+                    if use_cuda:
+                        success = success.cuda()
+            if args.distributed:
+                dist.broadcast(success, 0)
+            if success[0]:
+                    return True
+
     return False
 
 def main():
