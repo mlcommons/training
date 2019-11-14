@@ -1,4 +1,4 @@
-# Copyright 2018 MLBenchmark Group. All Rights Reserved.
+# Copyright 2019 MLBenchmark Group. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,38 +29,31 @@ import sys
 import time
 import timeit
 
-_PREFIX = ':::MLLOG'
-PATTERN = re.compile('[a-zA-Z0-9]+')
+from mllog import constants
 
-LOG_FILE = os.getenv('COMPLIANCE_FILE')
-LOGGER = logging.getLogger('mlperf_compliance')
-LOGGER.setLevel(logging.DEBUG)
-
-_STREAM_HANDLER = logging.StreamHandler(stream=sys.stdout)
-_STREAM_HANDLER.setLevel(logging.INFO)
-LOGGER.addHandler(_STREAM_HANDLER)
-
-if LOG_FILE:
-  _FILE_HANDLER = logging.FileHandler(LOG_FILE)
-  _FILE_HANDLER.setLevel(logging.DEBUG)
-  LOGGER.addHandler(_FILE_HANDLER)
-else:
-  _STREAM_HANDLER.setLevel(logging.DEBUG)
+LOG_TEMPLATE = ':::MLLOG {log_json}'
 
 
 def get_caller(stack_index=2, root_dir=None):
+  """Get caller's file and line number information.
+  Args:
+    stack_index: a stack_index of 2 will provide the caller of the
+      function calling this function. Notice that stack_index of 2
+      or more will fail if called from global scope.
+    root_dir: the root dir prefixed to the file name. The root_dir
+      will be trimmed from the file name in the output.
+  Returns:
+    Call site info in a dictionary with these fields:
+      "file": (string) file path
+      "lineno": (int) line number
+  """
   caller = inspect.getframeinfo(inspect.stack()[stack_index][0])
 
   # Trim the filenames for readability.
   filename = caller.filename
   if root_dir is not None:
     filename = re.sub('^' + root_dir + '/', '', filename)
-  return (filename, caller.lineno)
-
-
-# :::MLL 1556733699.71 run_start: {"value": null,
-# "metadata": {"lineno": 77, "file": main.py}}
-LOG_TEMPLATE = ':::MLL {:.3f} {}: {{"value": {}, "metadata": {}}}'
+  return {"file": filename, "lineno": caller.lineno}
 
 
 def _now_as_str():
@@ -68,9 +61,9 @@ def _now_as_str():
   return datetime.datetime.now().strftime('%H:%M:%S.%f')
 
 
-def _current_time_ns():
-  """Returns current nanoseconds since epoch."""
-  return time.time() * 1000 * 1000 * 1000
+def _current_time_ms():
+  """Returns current milliseconds since epoch."""
+  return int(time.time() * 1e3)
 
 
 def _try_float(value):
@@ -116,98 +109,172 @@ def _to_ordered_json(kv_pairs):
     return '[convert-error: {kv_str}]'.format(kv_str=str(kv_pairs))
 
 
-def _encode_log(namespace, time_ns, event_type, key, log_value):
+def _encode_log(namespace, time_ms, event_type, key, value, metadata):
   """Encodes an MLEvent as a string log line.
   Args:
     namespace: provides structure, e.g. "GPU0".
-    time_ns: nano seconds since unix epoch.
+    time_ms: milliseconds since unix epoch.
     event_type: one of: 'INTERVAL_START', 'INTERVAL_END', 'POINT_IN_TIME'
     key: the name of the thing being logged.
-    log_value: a json value.
+    value: a json value.
+    metadata: a json value.
   Returns:
     A string log like, i.e. ":::MLLog { ..."
   """
-  json_val = {
-      'namespace': str(namespace),
-      'time_ns': int(time_ns),
-      'event_type': str(event_type),
-      'key': str(key),
-      'value': str(log_value)
-  }
-  encoded = _to_ordered_json(json_val.items())
-  return '{} {}'.format(_PREFIX, encoded)
+  # preserve the order of key-values
+  ordered_key_val_pairs = [
+    ('namespace', namespace),
+    ('time_ms', time_ms),
+    ('event_type', event_type),
+    ('key', key),
+    ('value', value),
+    ('metadata', metadata)
+  ]
+  encoded = _to_ordered_json(ordered_key_val_pairs)
+  return LOG_TEMPLATE.format(log_json=encoded)
 
 
 class MLLogger(object):
-  """Creates a new logger.
-  This allows logging of MLEvents through stdout.
-  """
+  """MLPerf logging helper."""
 
-  def __init__(self, default_namespace='', log_info=True, log_file=None):
-    """Create a new logger.
+  def __init__(self,
+               logger=None,
+               default_namespace=constants.DEFAULT_NAMESPACE,
+               default_stack_offset=1,
+               default_clear_line=False,
+               root_dir=None):
+    """Create a new MLLogger.
     Args:
+      logger: a logging.Logger instance. If not specified, a default logger
+        will be used which prints to stdout. Customize the logger to change
+        the logging behavior (e.g. logging to a file, etc.)
       default_namespace: the default namespace to use if one isn't provided.
-      log_info: True if log lines should be printed to LOGGER.info()
-      log_file: an optional file object which to also write loglines to.
+      default_stack_offset: the default depth to go into the stack to find the
+        call site. Default value is 1.
+      default_clear_line: the default behavior of line clearing (i.e. print
+        an extra new line to clear any pre-existing text in the log line).
+      root_dir: directory prefix which will be trimmed when reporting calling
+        file for logging.
     """
-    self.default_namespace = default_namespace
-    self.log_info = log_info
-    self.log_file = log_file
+    if logger is None:
+      self.logger = self._get_default_logger()
+    elif not isinstance(logger, logging.Logger):
+      raise ValueError("logger must be a `logging.Logger` instance.")
+    else:
+      self.logger = logger
 
-  def _log_helper(self, key, log_value, namespace, event_type,
-                  time_ns=None):
+    self.default_namespace = default_namespace
+    self.default_stack_offset = default_stack_offset
+    self.default_clear_line = default_clear_line
+    self.root_dir = root_dir
+
+  def _get_default_logger(self):
+    """Create a default logger.
+    The default logger prints INFO level messages to stdout.
+    """
+    logger = logging.getLogger(constants.DEFAULT_LOGGER_NAME)
+    logger.setLevel(logging.INFO)
+    _stream_handler = logging.StreamHandler(stream=sys.stdout)
+    _stream_handler.setLevel(logging.INFO)
+    logger.addHandler(_stream_handler)
+    return logger
+
+  def _do_log(self, level, message, clear_line=False):
+    if clear_line:
+      message = '\n' + message
+    self.logger.log(level, message)
+
+  def _log_helper(self, event_type, key, value=None, metadata=None,
+        namespace=None, time_ms=None, stack_offset=None, clear_line=None):
     """Log an event."""
     if namespace is None:
       namespace = self.default_namespace
-    if time_ns is None:
-      time_ns = _current_time_ns()
+    if time_ms is None:
+      time_ms = _current_time_ms()
+    if stack_offset is None:
+      stack_offset = self.default_stack_offset
+    if clear_line is None:
+      clear_line = self.default_clear_line
+
+    log_metadata = {}
+    log_metadata.update(get_caller(2 + stack_offset, root_dir=self.root_dir))
+    if metadata:
+      if not isinstance(metadata, dict):
+        self._do_log(logging.WARNING, "Metadata is not dictionary, ignored.",
+                     clear_line=True)
+      else:
+        overlap_keys = set(log_metadata.keys()).intersection(metadata.keys())
+        if overlap_keys:
+          self._do_log(logging.WARNING,
+              "Metadata fields overridden: {}".format(", ".join(overlap_keys)),
+              clear_line=True)
+        log_metadata.update(metadata)
 
     log_line = _encode_log(
         namespace,
-        time_ns,
+        time_ms,
         event_type,
         key,
-        log_value)
+        value,
+        log_metadata)
 
-    if self.log_info:
-      LOGGER.info(log_line)
-    if self.log_file:
-      self.log_file.write(log_line + '\n')
+    self._do_log(logging.INFO, log_line, clear_line)
 
-  def start(self, key, log_value, namespace=None, time_ns=None):
+  def start(self, key, value=None, metadata=None, namespace=None, time_ms=None,
+            stack_offset=None, clear_line=None):
     """Start an time interval in the log.
     All intervals which are started must be ended. This interval must be
     ended before a new interval with the same key and namespace can be started.
     Args:
       key: the key for the event, e.g. "mlperf.training"
-      log_value: the json value to log.
+      value: the value to log at the start of the interval.
+      metadata: a dictionary containing metadata corresponding to the log event.
       namespace: override the default namespace.
-      time_ns: the time in nanoseconds, or None for current time.
+      time_ms: the time in milliseconds, or None for current time.
+      stack_offset: override the default stack offset, i.e. the depth to go
+        into the stack to find the call site.
+      clear_line: override the default line clearing behavior, i.e. whether to
+        print an extra new line to clear pre-existing text in the log line.
     """
-    self._log_helper(key, log_value, namespace, 'INTERVAL_START',
-                     time_ns=time_ns)
+    self._log_helper(constants.INTERVAL_START, key, value,
+                     metadata=metadata, namespace=namespace, time_ms=time_ms,
+                     stack_offset=stack_offset, clear_line=clear_line)
 
-  def end(self, key, log_value, namespace=None, time_ns=None):
+  def end(self, key, value=None, metadata=None, namespace=None, time_ms=None,
+          stack_offset=None, clear_line=None):
     """End a time interval in the log.
     Ends an interval which was already started with the same key and in the
     same namespace.
     Args:
       key: the same log key which was passed to start().
-      log_value: the value to log at the end of the interval.
+      value: the value to log at the end of the interval.
+      metadata: a dictionary containing metadata corresponding to the log event.
       namespace: optional override of the default namespace.
-      time_ns: the time in nanoseconds, or None for current time.
+      time_ms: the time in milliseconds, or None for current time.
+      stack_offset: override the default stack offset, i.e. the depth to go
+        into the stack to find the call site.
+      clear_line: override the default line clearing behavior, i.e. whether to
+        print an extra new line to clear pre-existing text in the log line.
     """
-    self._log_helper(key, log_value, namespace, 'INTERVAL_END',
-                     time_ns=time_ns)
+    self._log_helper(constants.INTERVAL_END, key, value,
+                     metadata=metadata, namespace=namespace, time_ms=time_ms,
+                     stack_offset=stack_offset, clear_line=clear_line)
 
-  def event(self, key, log_value, namespace=None, time_ns=None):
+  def event(self, key, value=None, metadata=None, namespace=None, time_ms=None,
+            stack_offset=None, clear_line=None):
     """Log a point in time event.
     The event does not have an associated duration like an interval has.
     Args:
       key: the "name" of the event.
-      log_value: the event data itself.
+      value: the event data itself.
+      metadata: a dictionary containing metadata corresponding to the log event.
       namespace: optional override of the default namespace.
-      time_ns: the time in nanoseconds, or None for current time.
+      time_ms: the time in milliseconds, or None for current time.
+      stack_offset: override the default stack offset, i.e. the depth to go
+        into the stack to find the call site.
+      clear_line: override the default line clearing behavior, i.e. whether to
+        print an extra new line to clear pre-existing text in the log line.
     """
-    self._log_helper(key, log_value, namespace, 'POINT_IN_TIME',
-                     time_ns=time_ns)
+    self._log_helper(constants.POINT_IN_TIME, key, value,
+                     metadata=metadata, namespace=namespace, time_ms=time_ms,
+                     stack_offset=stack_offset, clear_line=clear_line)
