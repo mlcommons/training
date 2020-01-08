@@ -121,8 +121,8 @@ def evaluator(model, data_transforms, loss_fn, greedy_decoder, labels, eval_data
 
                 # final aggregation across all workers and minibatches) and logging of results
                 wer, eloss = process_evaluation_epoch(_global_var_dict)
-                logger.log_scalar('loss', eloss, epoch, stage)
-                logger.log_scalar('wer', wer, epoch, stage)
+                logger.log_scalar('loss', eloss, epoch, name)
+                logger.log_scalar('wer', wer, epoch, name)
 
                 print_once(f"==========>>>>>>{name} Loss: {eloss}\n")
                 print_once(f"==========>>>>>>{name} WER: {wer}\n")
@@ -345,7 +345,7 @@ def main(args):
                 multi_gpu=multi_gpu,
                 pad_to_max=args.pad_to_max
             ),
-            args.train_frequency,
+            args.test_frequency,
             'Test other',
         ))
 
