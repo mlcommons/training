@@ -19,8 +19,9 @@ from tqdm import tqdm
 import math
 import toml
 from dataset import AudioToTextDataLayer
-from helpers import process_evaluation_batch, process_evaluation_epoch, Optimization, add_ctc_labels, AmpOptimizations, print_dict, model_multi_gpu, __ctc_decoder_predictions_tensor
-from model import AudioPreprocessing, GreedyCTCDecoder, JasperEncoderDecoder
+from helpers import process_evaluation_batch, process_evaluation_epoch, Optimization, add_blank_label, AmpOptimizations, print_dict, model_multi_gpu
+from decoders import RNNTGreedyDecoder, TransducerBeamDecoder
+from model_rnnt import AudioPreprocessing, RNNT
 from parts.features import audio_from_file
 import torch
 import apex
@@ -102,11 +103,10 @@ def eval(
             inp = (t_audio_signal_e, t_a_sig_length_e)
 
             t_processed_signal, p_length_e = audio_processor(x=inp)
-            if args.use_conv_mask:
-                t_log_probs_e, t_encoded_len_e  = encoderdecoder((t_processed_signal, p_length_e))
-            else:
-                t_log_probs_e  = encoderdecoder(t_processed_signal)
-            t_predictions_e = greedy_decoder(log_probs=t_log_probs_e)
+            t_log_probs_e, (x_len, y_len) = encoderdecoder(
+                ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
+            )
+            t_predictions_e = greedy_decoder.decode(t_audio_signal_e, t_a_sig_length_e)
 
             values_dict = dict(
                 predictions=[t_predictions_e],
@@ -152,14 +152,13 @@ def main(args):
     else:
         optim_level = Optimization.mxprO0
 
-    jasper_model_definition = toml.load(args.model_toml)
-    dataset_vocab = jasper_model_definition['labels']['labels']
-    ctc_vocab = add_ctc_labels(dataset_vocab)
+    model_definition = toml.load(args.model_toml)
+    dataset_vocab = model_definition['labels']['labels']
+    ctc_vocab = add_blank_label(dataset_vocab)
 
     val_manifest = args.val_manifest
-    featurizer_config = jasper_model_definition['input_eval']
+    featurizer_config = model_definition['input_eval']
     featurizer_config["optimization_level"] = optim_level
-    args.use_conv_mask = jasper_model_definition['encoder'].get('convmask', True)
 
     if args.max_duration is not None:
         featurizer_config['max_duration'] = args.max_duration
@@ -167,7 +166,7 @@ def main(args):
         featurizer_config['pad_to'] = args.pad_to if args.pad_to >= 0 else "max"
 
     print('model_config')
-    print_dict(jasper_model_definition)
+    print_dict(model_definition)
     print('feature_config')
     print_dict(featurizer_config)
     data_layer = None
@@ -184,7 +183,12 @@ def main(args):
             multi_gpu=multi_gpu)
     audio_preprocessor = AudioPreprocessing(**featurizer_config)
 
-    encoderdecoder = JasperEncoderDecoder(jasper_model_definition=jasper_model_definition, feat_in=1024, num_classes=len(ctc_vocab))
+    #encoderdecoder = JasperEncoderDecoder(jasper_model_definition=jasper_model_definition, feat_in=1024, num_classes=len(ctc_vocab))
+    model = RNNT(
+        feature_config=featurizer_config,
+        rnnt=model_definition['rnnt'],
+        num_classes=len(ctc_vocab)
+    )
 
     if args.ckpt is not None:
         print("loading model from ", args.ckpt)
@@ -192,9 +196,9 @@ def main(args):
         for k in audio_preprocessor.state_dict().keys():
             checkpoint['state_dict'][k] = checkpoint['state_dict'].pop("audio_preprocessor." + k)
         audio_preprocessor.load_state_dict(checkpoint['state_dict'], strict=False)
-        encoderdecoder.load_state_dict(checkpoint['state_dict'], strict=False)
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
 
-    greedy_decoder = GreedyCTCDecoder()
+    #greedy_decoder = GreedyCTCDecoder()
 
     # print("Number of parameters in encoder: {0}".format(model.jasper_encoder.num_weights()))
     if args.wav is None:
@@ -216,19 +220,20 @@ def main(args):
 
     print ("audio_preprocessor.normalize: ", audio_preprocessor.featurizer.normalize)
     audio_preprocessor.cuda()
-    encoderdecoder.cuda()
+    model.cuda()
     if args.fp16:
-        encoderdecoder = amp.initialize(
-            models=encoderdecoder,
+        model = amp.initialize(
+            models=model,
             opt_level=AmpOptimizations[optim_level])
 
-    encoderdecoder = model_multi_gpu(encoderdecoder, multi_gpu)
+    model = model_multi_gpu(model, multi_gpu)
 
-    
+    greedy_decoder = TransducerBeamDecoder(len(ctc_vocab) - 1, model.module if multi_gpu else model)
+
     eval(
         data_layer=data_layer,
         audio_processor=audio_preprocessor,
-        encoderdecoder=encoderdecoder,
+        encoderdecoder=model,
         greedy_decoder=greedy_decoder,
         labels=ctc_vocab,
         args=args,
