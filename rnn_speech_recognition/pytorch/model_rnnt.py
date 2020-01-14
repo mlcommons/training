@@ -110,10 +110,9 @@ class RNNT(torch.nn.Module):
                 num_layers=encoder_pre_rnn_layers,
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
-                dropout=0.0,
+                dropout=dropout,
             ),
             "stack_time": StackTime(factor=encoder_stack_time_factor),
-            "bn_relu_drop": BnReLUDropout(input_size=encoder_n_hidden, dropout=dropout),
             "post_rnn": rnn(
                 rnn=rnn_type,
                 input_size=encoder_stack_time_factor*encoder_n_hidden,
@@ -122,7 +121,7 @@ class RNNT(torch.nn.Module):
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
                 norm_first_rnn=True,
-                dropout=0.0,
+                dropout=dropout,
             ),
         })
         return layers
@@ -138,9 +137,8 @@ class RNNT(torch.nn.Module):
                 num_layers=pred_rnn_layers,
                 norm=norm,
                 forget_gate_bias=forget_gate_bias,
-                dropout=0.0,
+                dropout=dropout,
             ),
-            "bn_relu_drop": BnReLUDropout(input_size=pred_n_hidden, dropout=dropout),
         })
         return layers
 
@@ -149,6 +147,7 @@ class RNNT(torch.nn.Module):
         layers = [
             torch.nn.Linear(pred_n_hidden + enc_n_hidden, joint_n_hidden),
             torch.nn.ReLU(),
+        ] + ([ torch.nn.Dropout(p=dropout), ] if dropout else [ ]) + [
             torch.nn.Linear(joint_n_hidden, vocab_size)
         ]
         return torch.nn.Sequential(
@@ -182,9 +181,7 @@ class RNNT(torch.nn.Module):
         x, x_lens = x
         x, _ = self.encoder["pre_rnn"](x, None)
         x, x_lens = self.encoder["stack_time"]((x, x_lens))
-        x = self.encoder["bn_relu_drop"](x)
         x, _ = self.encoder["post_rnn"](x, None)
-        x = self.encoder["bn_relu_drop"](x)
 
         return x.transpose(0, 1), x_lens
 
@@ -234,7 +231,6 @@ class RNNT(torch.nn.Module):
 
         y = y.transpose(0, 1)#.contiguous()   # (U + 1, B, H)
         g, hid = self.prediction["dec_rnn"](y, state)
-        g = self.prediction["bn_relu_drop"](g)
         g = g.transpose(0, 1)#.contiguous()   # (B, U + 1, H)
         del y, start, state
         return g, hid
