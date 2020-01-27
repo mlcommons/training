@@ -32,6 +32,8 @@ import numpy as np
 import pickle
 import time
 
+import torchvision
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Jasper')
     parser.add_argument("--local_rank", default=None, type=int)
@@ -70,7 +72,6 @@ def eval(
         args: script input arguments
     """
     logits_save_to=args.logits_save_to
-    audio_processor.eval()
     encoderdecoder.eval()
     with torch.no_grad():
         _global_var_dict = {
@@ -95,17 +96,10 @@ def eval(
             return
         
         for it, data in enumerate(tqdm(data_layer.data_iterator)):
-            tensors = []
-            for d in data:
-                tensors.append(d.cuda())
+            t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = audio_processor(data)
 
-            t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = tensors
-
-            inp = (t_audio_signal_e, t_a_sig_length_e)
-
-            t_processed_signal, p_length_e = audio_processor(x=inp)
             t_log_probs_e, (x_len, y_len) = encoderdecoder(
-                ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
+                    ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
             )
             t_predictions_e = greedy_decoder.decode(t_audio_signal_e, t_a_sig_length_e)
 
@@ -194,9 +188,6 @@ def main(args):
     if args.ckpt is not None:
         print("loading model from ", args.ckpt)
         checkpoint = torch.load(args.ckpt, map_location="cpu")
-        for k in audio_preprocessor.state_dict().keys():
-            checkpoint['state_dict'][k] = checkpoint['state_dict'].pop("audio_preprocessor." + k)
-        audio_preprocessor.load_state_dict(checkpoint['state_dict'], strict=False)
         model.load_state_dict(checkpoint['state_dict'], strict=False)
 
     #greedy_decoder = GreedyCTCDecoder()
@@ -221,6 +212,14 @@ def main(args):
 
     print ("audio_preprocessor.normalize: ", audio_preprocessor.featurizer.normalize)
     audio_preprocessor.cuda()
+    audio_preprocessor.eval()
+
+    eval_transforms = torchvision.transforms.Compose([
+        lambda xs: [x.cuda() for x in xs],
+        lambda xs: [*audio_preprocessor(xs[0:2]), *xs[2:]],
+        lambda xs: [xs[0].permute(2, 0, 1), *xs[1:]],
+    ])
+
     model.cuda()
     if args.fp16:
         model = amp.initialize(
@@ -233,7 +232,7 @@ def main(args):
 
     eval(
         data_layer=data_layer,
-        audio_processor=audio_preprocessor,
+        audio_processor=eval_transforms,
         encoderdecoder=model,
         greedy_decoder=greedy_decoder,
         labels=ctc_vocab,
