@@ -20,8 +20,9 @@ import math
 import toml
 from dataset import AudioToTextDataLayer
 from helpers import process_evaluation_batch, process_evaluation_epoch, Optimization, add_blank_label, AmpOptimizations, print_dict, model_multi_gpu
-from decoders import RNNTGreedyDecoder, TransducerBeamDecoder
-from model_rnnt import AudioPreprocessing, RNNT
+from decoders import RNNTGreedyDecoder
+from model_rnnt import RNNT
+from preprocessing import AudioPreprocessing
 from parts.features import audio_from_file
 import torch
 import apex
@@ -228,7 +229,7 @@ def main(args):
 
     model = model_multi_gpu(model, multi_gpu)
 
-    greedy_decoder = TransducerBeamDecoder(len(ctc_vocab) - 1, model.module if multi_gpu else model)
+    greedy_decoder = RNNTGreedyDecoder(len(ctc_vocab) - 1, model.module if multi_gpu else model)
 
     eval(
         data_layer=data_layer,
