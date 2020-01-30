@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 # Get COCO 2017 data sets
 dir=$(pwd)
 mkdir /coco; cd /coco
