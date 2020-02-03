@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "cc/tf_utils.h"
-
 #include "cc/logging.h"
+#include "cc/tf_utils.h"
 
 namespace minigo {
 namespace tf_utils {
 
 void WriteGameExamples(const std::string& gcp_project_name,
                        const std::string& instance_name,
-                       const std::string& table_name, const Game& game) {
+                       const std::string& table_name,
+                       const FeatureDescriptor& feature_desc,
+                       const Game& game) {
   MG_LOG(FATAL)
       << "Can't write TensorFlow examples to Bigtable without Bigtable "
          "support enabled. "

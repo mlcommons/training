@@ -23,8 +23,8 @@ namespace minigo {
 
 std::ostream& operator<<(std::ostream& os, const Game::Options& options) {
   os << "resign_threshold:" << options.resign_threshold
-     << " resign_enabled:" << options.resign_enabled << " komi:" << options.komi
-     << " ignore_repeated_moves:" << options.ignore_repeated_moves;
+     << " resign_enabled:" << options.resign_enabled << " komi:"
+     << options.komi;
   return os;
 }
 
@@ -54,28 +54,25 @@ void Game::AddComment(const std::string& comment) {
   }
 }
 
-void Game::AddMove(Color color, Coord c, const Position::Stones& stones,
-                   std::string comment, float Q,
-                   const std::array<float, kNumMoves>& search_pi,
-                   std::vector<std::string> models) {
-  if (!moves_.empty() && moves_.back()->color == color &&
-      moves_.back()->c == c) {
-    MG_CHECK(options_.ignore_repeated_moves)
-        << "Repeated call to AddMove with same (color, coord) (" << color
-        << ", " << c << ") and ignore_repeated_moves is false";
-    return;
-  }
+void Game::AddTrainableMove(Color color, Coord c, const Position& position,
+                            std::string comment, float Q, int N,
+                            const std::array<float, kNumMoves>& search_pi) {
+  AddNonTrainableMove(color, c, position, comment, Q, N);
+  moves_.back()->search_pi = search_pi;
+}
 
+void Game::AddNonTrainableMove(Color color, Coord c, const Position& position,
+                               std::string comment, float Q, int N) {
+  MG_CHECK(moves_.empty() || moves_.back()->color != color ||
+           moves_.back()->c != c) << moves_.back()->color << " " << color << " " << c;
   MG_CHECK(!game_over_);
-  moves_.push_back(absl::make_unique<Move>());
+  moves_.push_back(absl::make_unique<Move>(position));
   auto* move = moves_.back().get();
   move->color = color;
   move->c = c;
   move->Q = Q;
+  move->N = N;
   move->comment = std::move(comment);
-  move->models = std::move(models);
-  move->search_pi = search_pi;
-  move->stones = stones;
 }
 
 void Game::UndoMove() {
@@ -102,27 +99,6 @@ void Game::SetGameOverBecauseOfResign(Color winner) {
   } else {
     result_ = -1;
     result_string_ = "W+R";
-  }
-}
-
-void Game::SetGameOverBecauseMoveLimitReached(float score) {
-  MG_CHECK(!game_over_);
-  game_over_ = true;
-  game_over_reason_ = GameOverReason::kMoveLimitReached;
-  result_ = score < 0 ? -1 : score > 0 ? 1 : 0;
-  result_string_ = FormatScore(score);
-}
-
-void Game::GetStoneHistory(
-    int move, int num_moves,
-    std::vector<const Position::Stones*>* history) const {
-  history->clear();
-  history->reserve(num_moves);
-
-  MG_CHECK(move >= 0);
-  MG_CHECK(move < static_cast<int>(moves_.size()));
-  for (int i = 0; i < num_moves && move - i >= 0; ++i) {
-    history->push_back(&moves_[move - i]->stones);
   }
 }
 

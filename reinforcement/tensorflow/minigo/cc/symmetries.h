@@ -15,15 +15,17 @@
 #ifndef CC_SYMMETRIES_H_
 #define CC_SYMMETRIES_H_
 
-#include <algorithm>
+#include <array>
 #include <cstring>
+#include <ostream>
 
+#include "cc/coord.h"
 #include "cc/logging.h"
 
 namespace minigo {
 namespace symmetry {
 
-enum Symmetry {
+enum Symmetry : uint8_t {
   // No transform.
   kIdentity,
 
@@ -33,7 +35,7 @@ enum Symmetry {
   // 180 degree rotation.
   kRot180,
 
-  // 270 degree anticlockwise rotation.
+  // 270 degree clockwise rotation.
   kRot270,
 
   // Transpose.
@@ -51,153 +53,153 @@ enum Symmetry {
   kNumSymmetries,
 };
 
-inline Symmetry Inverse(Symmetry sym) {
-  switch (sym) {
-    case kIdentity:
-      return kIdentity;
-    case kRot90:
-      return kRot270;
-    case kRot180:
-      return kRot180;
-    case kRot270:
-      return kRot90;
-    case kFlip:
-      return kFlip;
-    case kFlipRot90:
-      return kFlipRot90;
-    case kFlipRot180:
-      return kFlipRot180;
-    case kFlipRot270:
-      return kFlipRot270;
-    default:
-      MG_LOG(FATAL) << static_cast<int>(sym);
-      return kNumSymmetries;
-  }
+std::ostream& operator<<(std::ostream& os, Symmetry sym);
+
+// Helpful array of all symmetries that allows iterating over all symmetries
+// without casting between int and Symmetry all the time.
+extern const std::array<Symmetry, kNumSymmetries> kAllSymmetries;
+
+// Array of inverses.
+extern const std::array<Symmetry, kNumSymmetries> kInverseSymmetries;
+
+extern const std::array<std::array<Coord, kNumMoves>, kNumSymmetries> kCoords;
+
+inline Symmetry Inverse(Symmetry sym) { return kInverseSymmetries[sym]; }
+
+// Identity symmetry is the same for both interleaved (NHWC) and planar (NCHW)
+// data.
+template <int N, int num, typename T>
+inline void Identity(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  std::memcpy(dst, src, N * N * num * sizeof(T));
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void Identity(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
-  std::copy_n(src, N * N * num_channels, dst);
-}
-
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void Rot90(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+// Symmetries for interleaved tensors (NHWC).
+template <int N, int num_channels, typename T>
+inline void Rot90Interleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + (N - 1 - j) * num_channels;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s += row_stride;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void Rot180(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+template <int N, int num_channels, typename T>
+inline void Rot180Interleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + (N - 1 - j) * row_stride + (N - 1) * num_channels;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s -= num_channels;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void Rot270(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+template <int N, int num_channels, typename T>
+inline void Rot270Interleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + (N - 1) * row_stride + j * num_channels;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s -= row_stride;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void Flip(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+template <int N, int num_channels, typename T>
+inline void FlipInterleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + j * num_channels;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s += row_stride;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void FlipRot90(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+template <int N, int num_channels, typename T>
+inline void FlipRot90Interleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + (N - 1 - j) * row_stride;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s += num_channels;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void FlipRot180(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+template <int N, int num_channels, typename T>
+inline void FlipRot180Interleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + (N - 1) * row_stride + (N - 1 - j) * num_channels;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s -= row_stride;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void FlipRot270(SrcIt src, DstIt dst) {
-  MG_CHECK(dst != src);
+template <int N, int num_channels, typename T>
+inline void FlipRot270Interleaved(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
   const int row_stride = num_channels * N;
   for (int j = 0; j < N; ++j) {
     auto s = src + j * row_stride + (N - 1) * num_channels;
     for (int i = 0; i < N; ++i) {
-      dst = std::copy_n(s, num_channels, dst);
+      std::memcpy(dst, s, num_channels * sizeof(T));
+      dst += num_channels;
       s -= num_channels;
     }
   }
 }
 
-template <int N, int num_channels, typename SrcIt, typename DstIt>
-inline void ApplySymmetry(Symmetry sym, SrcIt src, DstIt dst) {
+// TODO(tommadams): rename ApplySymmetry to ApplySymmetryInterleaved
+template <int N, int num_channels, typename T>
+inline void ApplySymmetry(Symmetry sym, const T* src, T* dst) {
   switch (sym) {
     case kIdentity:
       Identity<N, num_channels>(src, dst);
       break;
     case Symmetry::kRot90:
-      Rot90<N, num_channels>(src, dst);
+      Rot90Interleaved<N, num_channels>(src, dst);
       break;
     case Symmetry::kRot180:
-      Rot180<N, num_channels>(src, dst);
+      Rot180Interleaved<N, num_channels>(src, dst);
       break;
     case Symmetry::kRot270:
-      Rot270<N, num_channels>(src, dst);
+      Rot270Interleaved<N, num_channels>(src, dst);
       break;
     case Symmetry::kFlip:
-      Flip<N, num_channels>(src, dst);
+      FlipInterleaved<N, num_channels>(src, dst);
       break;
     case Symmetry::kFlipRot90:
-      FlipRot90<N, num_channels>(src, dst);
+      FlipRot90Interleaved<N, num_channels>(src, dst);
       break;
     case Symmetry::kFlipRot180:
-      FlipRot180<N, num_channels>(src, dst);
+      FlipRot180Interleaved<N, num_channels>(src, dst);
       break;
     case Symmetry::kFlipRot270:
-      FlipRot270<N, num_channels>(src, dst);
+      FlipRot270Interleaved<N, num_channels>(src, dst);
       break;
     default:
       MG_LOG(FATAL) << static_cast<int>(sym);
@@ -205,33 +207,149 @@ inline void ApplySymmetry(Symmetry sym, SrcIt src, DstIt dst) {
   }
 }
 
-template <int N, int num_channels, typename T>
-class NchwOutputIterator {
- public:
-  using difference_type = std::ptrdiff_t;
-  using value_type = T;
-  using reference = T&;
-  using pointer = T*;
-  using iterator_category = std::output_iterator_tag;
-
-  NchwOutputIterator(T* features) : ptr_(features), offset_(0) {}
-
-  NchwOutputIterator& operator++() {
-    offset_ += N * N;
-    if (offset_ >= N * N * num_channels) {
-      offset_ -= N * N * num_channels - 1;
+// Symmetries for planar tensors (NCHW).
+template <int N, int num_planes, typename T>
+inline void Rot90Planar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + (N - 1 - j);
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s += N;
+      }
     }
-    return *this;
+    src += N * N;
   }
+}
 
-  reference operator*() const { return ptr_[offset_]; }
+template <int N, int num_planes, typename T>
+inline void Rot180Planar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + (N - 1 - j) * N + (N - 1);
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s -= 1;
+      }
+    }
+    src += N * N;
+  }
+}
 
-  bool operator!=(const T* ptr) { return ptr != ptr_ + offset_; }
+template <int N, int num_planes, typename T>
+inline void Rot270Planar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + (N - 1) * N + j;
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s -= N;
+      }
+    }
+    src += N * N;
+  }
+}
 
- private:
-  T* ptr_;
-  size_t offset_;
-};
+template <int N, int num_planes, typename T>
+inline void FlipPlanar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + j;
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s += N;
+      }
+    }
+    src += N * N;
+  }
+}
+
+template <int N, int num_planes, typename T>
+inline void FlipRot90Planar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + (N - 1 - j) * N;
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s += 1;
+      }
+    }
+    src += N * N;
+  }
+}
+
+template <int N, int num_planes, typename T>
+inline void FlipRot180Planar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + (N - 1) * N + (N - 1 - j);
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s -= N;
+      }
+    }
+    src += N * N;
+  }
+}
+
+template <int N, int num_planes, typename T>
+inline void FlipRot270Planar(const T* src, T* dst) {
+  MG_DCHECK(dst != src);
+  for (int p = 0; p < num_planes; ++p) {
+    for (int j = 0; j < N; ++j) {
+      auto s = src + j * N + (N - 1);
+      for (int i = 0; i < N; ++i) {
+        *dst++ = *s;
+        s -= 1;
+      }
+    }
+    src += N * N;
+  }
+}
+
+template <int N, int num_planes, typename T>
+inline void ApplySymmetryPlanar(Symmetry sym, const T* src, T* dst) {
+  switch (sym) {
+    case kIdentity:
+      Identity<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kRot90:
+      Rot90Planar<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kRot180:
+      Rot180Planar<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kRot270:
+      Rot270Planar<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kFlip:
+      FlipPlanar<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kFlipRot90:
+      FlipRot90Planar<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kFlipRot180:
+      FlipRot180Planar<N, num_planes>(src, dst);
+      break;
+    case Symmetry::kFlipRot270:
+      FlipRot270Planar<N, num_planes>(src, dst);
+      break;
+    default:
+      MG_LOG(FATAL) << static_cast<int>(sym);
+      break;
+  }
+}
+
+Coord ApplySymmetry(Symmetry sym, Coord c);
+
+// Returns the Symmetry obtained by first applying a then b.
+Symmetry Concat(Symmetry a, Symmetry b);
 
 }  // namespace symmetry
 }  // namespace minigo

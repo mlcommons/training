@@ -15,14 +15,21 @@
 #include <array>
 #include <deque>
 #include <map>
+#include <type_traits>
 #include <vector>
 
-#include "cc/dual_net/dual_net.h"
+#include "absl/memory/memory.h"
+#include "absl/strings/str_cat.h"
+#include "cc/model/features.h"
+#include "cc/model/loader.h"
+#include "cc/model/model.h"
 #include "cc/position.h"
 #include "cc/random.h"
 #include "cc/symmetries.h"
 #include "cc/test_utils.h"
 #include "gtest/gtest.h"
+#include "tensorflow/core/framework/op.h"
+#include "tensorflow/core/framework/op_def_builder.h"
 
 #if MG_ENABLE_TF_DUAL_NET
 #include "cc/dual_net/tf_dual_net.h"
@@ -30,145 +37,214 @@
 #if MG_ENABLE_LITE_DUAL_NET
 #include "cc/dual_net/lite_dual_net.h"
 #endif
-#if MG_ENABLE_TRT_DUAL_NET
-#include "cc/dual_net/trt_dual_net.h"
-#endif
 
 namespace minigo {
 namespace {
 
-using StoneFeatures = DualNet::StoneFeatures;
-using BoardFeatures = DualNet::BoardFeatures;
-
-StoneFeatures GetStoneFeatures(const BoardFeatures& features, Coord c) {
-  StoneFeatures result;
-  for (int i = 0; i < DualNet::kNumStoneFeatures; ++i) {
-    result[i] = features[c * DualNet::kNumStoneFeatures + i];
+template <typename T>
+std::vector<T> GetStoneFeatures(const Tensor<T>& features, Coord c) {
+  std::vector<T> result;
+  MG_CHECK(features.shape.is({1, kN, kN, -1}));
+  for (int i = 0; i < features.shape[3]; ++i) {
+    result.push_back(features.data[c * features.shape[3] + i]);
   }
   return result;
 }
 
+// Helper function to make AlphaGo Zero-like features (stones and to-play
+// features) for input features that use different sizes of move history.
+template <typename T, typename F>
+std::vector<T> MakeZeroFeatures(std::initializer_list<T> stones, T to_play) {
+  // Make sure that caller has provided enough stone features.
+  MG_CHECK(stones.size() >= F::kNumStonePlanes);
+
+  // Take only the required number of stone features.
+  std::vector<T> result(stones);
+  result.resize(F::kNumStonePlanes);
+
+  // Append the to-play feature.
+  result.push_back(to_play);
+  return result;
+}
+
+template <typename F>
+class DualNetTest : public ::testing::Test {};
+
+using TestFeatureTypes = ::testing::Types<AgzFeatures, Mlperf07Features>;
+TYPED_TEST_CASE(DualNetTest, TestFeatureTypes);
+
 // Verifies SetFeatures an empty board with black to play.
-TEST(DualNetTest, TestEmptyBoardBlackToPlay) {
-  Position::Stones stones;
-  std::vector<const Position::Stones*> history = {&stones};
-  DualNet::BoardFeatures features;
-  DualNet::SetFeatures(history, Color::kBlack, &features);
+TYPED_TEST(DualNetTest, TestEmptyBoardBlackToPlay) {
+  using FeatureType = TypeParam;
+
+  TestablePosition board("");
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
+  input.position_history.push_back(&board);
+
+  BoardFeatureBuffer<float> buffer;
+  Tensor<float> features = {{1, kN, kN, FeatureType::kNumPlanes},
+                            buffer.data()};
+  FeatureType::SetNhwc({&input}, &features);
 
   for (int c = 0; c < kN * kN; ++c) {
     auto f = GetStoneFeatures(features, c);
-    for (int i = 0; i < DualNet::kPlayerFeature; ++i) {
-      EXPECT_EQ(0, f[i]);
+    for (size_t i = 0; i < f.size(); ++i) {
+      if (i != FeatureType::template GetPlaneIdx<ToPlayFeature>()) {
+        EXPECT_EQ(0, f[i]);
+      } else {
+        EXPECT_EQ(1, f[i]);
+      }
     }
-    EXPECT_EQ(1, f[DualNet::kPlayerFeature]);
   }
 }
 
 // Verifies SetFeatures for an empty board with white to play.
-TEST(DualNetTest, TestEmptyBoardWhiteToPlay) {
-  Position::Stones stones;
-  std::vector<const Position::Stones*> history = {&stones};
-  DualNet::BoardFeatures features;
-  DualNet::SetFeatures(history, Color::kWhite, &features);
+TYPED_TEST(DualNetTest, TestEmptyBoardWhiteToPlay) {
+  using FeatureType = TypeParam;
+
+  TestablePosition board("", Color::kWhite);
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
+  input.position_history.push_back(&board);
+
+  BoardFeatureBuffer<float> buffer;
+  Tensor<float> features = {{1, kN, kN, FeatureType::kNumPlanes},
+                            buffer.data()};
+  FeatureType::SetNhwc({&input}, &features);
 
   for (int c = 0; c < kN * kN; ++c) {
     auto f = GetStoneFeatures(features, c);
-    for (int i = 0; i < DualNet::kPlayerFeature; ++i) {
+    for (size_t i = 0; i < f.size(); ++i) {
       EXPECT_EQ(0, f[i]);
     }
-    EXPECT_EQ(0, f[DualNet::kPlayerFeature]);
   }
 }
 
 // Verifies SetFeatures.
-TEST(DualNetTest, TestSetFeatures) {
+TYPED_TEST(DualNetTest, TestSetFeatures) {
+  using FeatureType = TypeParam;
+
   TestablePosition board("");
 
-  std::vector<std::string> moves = {"B9", "H9", "A8", "J9"};
-  std::deque<Position::Stones> positions;
+  std::vector<std::string> moves = {"B9", "H9", "A8", "J9",
+                                    "D5", "A1", "A2", "J1"};
+  std::deque<TestablePosition> positions;
   for (const auto& move : moves) {
     board.PlayMove(move);
-    positions.push_front(board.stones());
+    positions.push_front(board);
   }
 
-  std::vector<const Position::Stones*> history;
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
   for (const auto& p : positions) {
-    history.push_back(&p);
+    input.position_history.push_back(&p);
   }
 
-  DualNet::BoardFeatures features;
-  DualNet::SetFeatures(history, board.to_play(), &features);
+  BoardFeatureBuffer<float> buffer;
+  Tensor<float> features = {{1, kN, kN, FeatureType::kNumPlanes},
+                            buffer.data()};
+  FeatureType::SetNhwc({&input}, &features);
 
-  //                   B0 W0 B1 W1 B2 W2 B3 W3 B4 W4 B5 W5 B6 W6 B7 W7 C
-  StoneFeatures b9 = {{1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
-  StoneFeatures h9 = {{0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
-  StoneFeatures a8 = {{1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
-  StoneFeatures j9 = {{0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
+  const auto& mzf = MakeZeroFeatures<float, FeatureType>;
+  //             B0 W0 B1 W1 B2 W2 B3 W3 B4 W4 B5 W5 B6 W6 B7 W7  C
+  auto b9 = mzf({1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0}, 1);
+  auto h9 = mzf({0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0}, 1);
+  auto a8 = mzf({1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0}, 1);
+  auto j9 = mzf({0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0}, 1);
+  auto d5 = mzf({1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+  auto a1 = mzf({0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+  auto a2 = mzf({1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+  auto j1 = mzf({0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+  auto b1 = mzf({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+
+  if (std::is_same<FeatureType, Mlperf07Features>::value) {
+    //                   L1 L2 L3 WC
+    b9.insert(b9.end(), {0, 0, 1, 0});
+    h9.insert(h9.end(), {0, 0, 1, 0});
+    a8.insert(a8.end(), {0, 0, 1, 0});
+    j9.insert(j9.end(), {0, 0, 1, 0});
+    d5.insert(d5.end(), {0, 0, 1, 0});
+    a1.insert(a1.end(), {1, 0, 0, 0});
+    a2.insert(a2.end(), {0, 1, 0, 0});
+    j1.insert(j1.end(), {0, 1, 0, 0});
+    b1.insert(b1.end(), {0, 0, 0, 1});
+  }
 
   EXPECT_EQ(b9, GetStoneFeatures(features, Coord::FromString("B9")));
   EXPECT_EQ(h9, GetStoneFeatures(features, Coord::FromString("H9")));
   EXPECT_EQ(a8, GetStoneFeatures(features, Coord::FromString("A8")));
   EXPECT_EQ(j9, GetStoneFeatures(features, Coord::FromString("J9")));
+  EXPECT_EQ(d5, GetStoneFeatures(features, Coord::FromString("D5")));
+  EXPECT_EQ(a1, GetStoneFeatures(features, Coord::FromString("A1")));
+  EXPECT_EQ(a2, GetStoneFeatures(features, Coord::FromString("A2")));
+  EXPECT_EQ(j1, GetStoneFeatures(features, Coord::FromString("J1")));
+  EXPECT_EQ(b1, GetStoneFeatures(features, Coord::FromString("B1")));
 }
 
 // Verfies that features work as expected when capturing.
-TEST(DualNetTest, TestStoneFeaturesWithCapture) {
+TYPED_TEST(DualNetTest, TestStoneFeaturesWithCapture) {
+  using FeatureType = TypeParam;
+
   TestablePosition board("");
 
   std::vector<std::string> moves = {"J3", "pass", "H2", "J2",
                                     "J1", "pass", "J2"};
-  std::deque<Position::Stones> positions;
+  std::deque<TestablePosition> positions;
   for (const auto& move : moves) {
     board.PlayMove(move);
-    positions.push_front(board.stones());
+    positions.push_front(board);
   }
 
-  std::vector<const Position::Stones*> history;
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
   for (const auto& p : positions) {
-    history.push_back(&p);
+    input.position_history.push_back(&p);
   }
 
-  BoardFeatures features;
-  DualNet::SetFeatures(history, board.to_play(), &features);
+  BoardFeatureBuffer<float> buffer;
+  Tensor<float> features = {{1, kN, kN, FeatureType::kNumPlanes},
+                            buffer.data()};
+  FeatureType::SetNhwc({&input}, &features);
 
-  //                   W0 B0 W1 B1 W2 B2 W3 B3 W4 B4 W5 B5 W6 B6 W7 B7 C
-  StoneFeatures j2 = {{0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+  const auto& mzf = MakeZeroFeatures<float, FeatureType>;
+  //             W0 B0 W1 B1 W2 B2 W3 B3 W4 B4 W5 B5 W6 B6 W7 B7  C
+  auto j2 = mzf({0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0);
+  if (std::is_same<FeatureType, Mlperf07Features>::value) {
+    //                   L1 L2 L3 WC
+    j2.insert(j2.end(), {0, 0, 1, 0});
+  }
   EXPECT_EQ(j2, GetStoneFeatures(features, Coord::FromString("J2")));
 }
 
 // Checks that the different backends produce the same result.
-TEST(DualNetTest, TestBackendsEqual) {
-  struct Test {
-    Test(std::unique_ptr<DualNetFactory> factory, std::string extension)
-        : factory(std::move(factory)), extension(std::move(extension)) {}
-    std::unique_ptr<DualNetFactory> factory;
-    std::string extension;
-  };
+TYPED_TEST(DualNetTest, TestBackendsEqual) {
+  using FeatureType = TypeParam;
 
-  std::map<std::string, Test> tests;
+  if (!std::is_same<FeatureType, AgzFeatures>::value) {
+    // TODO(tommadams): generate models for other feature types.
+    return;
+  }
 
+  std::vector<std::string> model_basenames;
 #if MG_ENABLE_TF_DUAL_NET
-  tests.emplace("TfDualNet",
-                Test(absl::make_unique<TfDualNetFactory>(), ".pb"));
+  model_basenames.push_back("test_tf.minigo");
 #endif
 #if MG_ENABLE_LITE_DUAL_NET
-  tests.emplace("LiteDualNet",
-                Test(absl::make_unique<LiteDualNetFactory>(), ".tflite"));
-#endif
-#if MG_ENABLE_TRT_DUAL_NET
-  tests.emplace("TrtDualNet",
-                Test(absl::make_unique<TrtDualNetFactory>(), ".uff"));
+  model_basenames.push_back("test_lite.minigo");
 #endif
 
-  DualNet::BoardFeatures nhwc_features;
-  Random().Uniform(0.0f, 1.0f, absl::MakeSpan(nhwc_features));
-  DualNet::BoardFeatures nchw_features;
-  using OutIter =
-      symmetry::NchwOutputIterator<kN, DualNet::kNumStoneFeatures, float>;
-  std::copy(nhwc_features.begin(), nhwc_features.end(),
-            OutIter(nchw_features.data()));
+  Random rnd(Random::kUniqueSeed, Random::kUniqueStream);
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
+  TestablePosition position("");
+  for (int i = 0; i < kN * kN; ++i) {
+    auto c = GetRandomLegalMove(position, &rnd);
+    position.PlayMove(c);
+  }
+  input.position_history.push_back(&position);
 
-  DualNet::Output ref_output;
+  ModelOutput ref_output;
   std::string ref_name;
 
   auto policy_string = [](const std::array<float, kNumMoves>& policy) {
@@ -178,19 +254,14 @@ TEST(DualNetTest, TestBackendsEqual) {
     return oss.str();
   };
 
-  for (const auto& kv : tests) {
-    const auto& name = kv.first;
-    auto& test = kv.second;
-    MG_LOG(INFO) << "Running " << name;
+  for (const auto& name : model_basenames) {
+    MG_LOG(INFO) << "Loading " << name;
+    auto model = NewModel(absl::StrCat("cc/dual_net/", name), "");
 
-    auto dual_net = test.factory->NewDualNet(
-        absl::StrCat("cc/dual_net/test_model", test.extension));
-
-    auto* features = dual_net->GetInputLayout() == DualNet::InputLayout::kNHWC
-                         ? &nhwc_features
-                         : &nchw_features;
-    DualNet::Output output;
-    dual_net->RunMany({features}, {&output}, nullptr);
+    ModelOutput output;
+    std::vector<const ModelInput*> inputs = {&input};
+    std::vector<ModelOutput*> outputs = {&output};
+    model->RunMany(inputs, &outputs, nullptr);
 
     if (ref_name.empty()) {
       ref_output = output;
@@ -210,6 +281,66 @@ TEST(DualNetTest, TestBackendsEqual) {
     EXPECT_NEAR(output.value, ref_output.value, 0.0001f)
         << name << " vs " << ref_name;
   }
+
+  ShutdownModelFactories();
 }
+
+TEST(WouldCaptureTest, WouldCaptureBlack) {
+  TestablePosition board(R"(
+      OOOX.XOOX
+      OXX....X.
+      .OOX.....
+      OOOOX....
+      XXXXX....)");
+
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
+  input.position_history.push_back(&board);
+
+  BoardFeatureBuffer<float> buffer;
+  Tensor<float> features = {{1, kN, kN, Mlperf07Features::kNumPlanes},
+                            buffer.data()};
+  Mlperf07Features::SetNhwc({&input}, &features);
+
+  const auto& mzf = MakeZeroFeatures<float, Mlperf07Features>;
+  //             W0 B0 W1 B1 W2 B2 W3 B3 W4 B4 W5 B5 W6 B6 W7 B7  C
+  auto a7 = mzf({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+  auto g8 = mzf({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1);
+  //                   L1 L2 L3 WC
+  a7.insert(a7.end(), {0, 0, 0, 1});
+  g8.insert(g8.end(), {0, 0, 0, 1});
+  EXPECT_EQ(a7, GetStoneFeatures(features, Coord::FromString("A7")));
+  EXPECT_EQ(g8, GetStoneFeatures(features, Coord::FromString("G8")));
+}
+
+TEST(WouldCaptureTest, WouldCaptureWhite) {
+  TestablePosition board(R"(
+      XXXO.OXXO
+      XOO....O.
+      .XXO.....
+      XXXXO....
+      OOOOO....)",
+                         Color::kWhite);
+
+  ModelInput input;
+  input.sym = symmetry::kIdentity;
+  input.position_history.push_back(&board);
+
+  BoardFeatureBuffer<float> buffer;
+  Tensor<float> features = {{1, kN, kN, Mlperf07Features::kNumPlanes},
+                            buffer.data()};
+  Mlperf07Features::SetNhwc({&input}, &features);
+
+  const auto& mzf = MakeZeroFeatures<float, Mlperf07Features>;
+  //             W0 B0 W1 B1 W2 B2 W3 B3 W4 B4 W5 B5 W6 B6 W7 B7  C
+  auto a7 = mzf({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0);
+  auto g8 = mzf({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0);
+  //                   L1 L2 L3 WC
+  a7.insert(a7.end(), {0, 0, 0, 1});
+  g8.insert(g8.end(), {0, 0, 0, 1});
+  EXPECT_EQ(a7, GetStoneFeatures(features, Coord::FromString("A7")));
+  EXPECT_EQ(g8, GetStoneFeatures(features, Coord::FromString("G8")));
+}
+
 }  // namespace
 }  // namespace minigo

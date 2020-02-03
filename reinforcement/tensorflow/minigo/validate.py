@@ -20,7 +20,6 @@ Usage:
 import os
 
 from absl import app, flags
-from tensorflow import gfile
 
 import dual_net
 import preprocessing
@@ -29,8 +28,8 @@ import utils
 flags.DEFINE_integer('examples_to_validate', 50 * 2048,
                      'Number of examples to run validation on.')
 
-flags.DEFINE_string('validate_name', 'selfplay',
-                    'Name of validation set (i.e. selfplay or human).')
+flags.DEFINE_string('validate_name', 'holdout',
+                    'Name of validation set (i.e. holdout or human).')
 
 flags.DEFINE_bool('expand_validation_dirs', True,
                   'Whether to expand the input paths by globbing. If false, '
@@ -49,12 +48,13 @@ def validate(*tf_records):
     if FLAGS.use_tpu:
         def _input_fn(params):
             return preprocessing.get_tpu_input_tensors(
-                params['batch_size'], tf_records, filter_amount=1.0)
+                params['train_batch_size'], params['input_layout'], tf_records,
+                filter_amount=1.0)
     else:
         def _input_fn():
             return preprocessing.get_input_tensors(
-                FLAGS.train_batch_size, tf_records, filter_amount=1.0,
-                shuffle_examples=False)
+                FLAGS.train_batch_size, FLAGS.input_layout, tf_records,
+                filter_amount=1.0, shuffle_examples=False)
 
     steps = FLAGS.examples_to_validate // FLAGS.train_batch_size
     if FLAGS.use_tpu:
@@ -71,12 +71,19 @@ def main(argv):
     if FLAGS.expand_validation_dirs:
         tf_records = []
         with utils.logged_timer("Building lists of holdout files"):
-            for record_dir in validation_paths:
-                tf_records.extend(gfile.Glob(os.path.join(record_dir, '*.zz')))
+            dirs = validation_paths
+            while dirs:
+                d = dirs.pop()
+                for path, newdirs, files in os.walk(d):
+                    tf_records.extend(os.path.join(path, f) for f in files if f.endswith('.zz'))
+                    dirs.extend(os.path.join(path, d) for d in newdirs)
+
     else:
         tf_records = validation_paths
 
     if not tf_records:
+        print("Validation paths:", validation_paths)
+        print(["{}:\n\t{}".format(p, os.listdir(p)) for p in validation_paths])
         raise RuntimeError("Did not find any holdout files for validating!")
     validate(*tf_records)
 

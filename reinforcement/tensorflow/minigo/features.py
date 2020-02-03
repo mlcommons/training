@@ -21,7 +21,7 @@ All features with 8 planes are 1-hot encoded, with plane i marked with 1
 only if the feature was equal to i. Any features >= 8 would be marked as 8.
 
 This file includes the features from the first paper as DEFAULT_FEATURES
-and the features from AGZ as NEW_FEATURES.
+and the features from AGZ as AGZ_FEATURES.
 """
 
 import numpy as np
@@ -53,6 +53,7 @@ def planes(num_planes):
     return deco
 
 
+# TODO(tommadams): add a generic stone_features for all N <= 8
 @planes(16)
 def stone_features(position):
     # a bit easier to calculate it with axis 0 being the 16 board states,
@@ -70,6 +71,26 @@ def stone_features(position):
 
     features[::2] = last_eight == position.to_play
     features[1::2] = last_eight == -position.to_play
+    return np.rollaxis(features, 0, 3)
+
+
+# TODO(tommadams): add a generic stone_features for all N <= 8
+@planes(8)
+def stone_features_4(position):
+    # a bit easier to calculate it with axis 0 being the 16 board states,
+    # and then roll axis 0 to the end.
+    features = np.zeros([8, go.N, go.N], dtype=np.uint8)
+
+    num_deltas_avail = position.board_deltas.shape[0]
+    cumulative_deltas = np.cumsum(position.board_deltas, axis=0)
+    last = np.tile(position.board, [4, 1, 1])
+    # apply deltas to compute previous board states
+    last[1:num_deltas_avail + 1] -= cumulative_deltas
+    # if no more deltas are available, just repeat oldest board.
+    last[num_deltas_avail + 1:] = last[num_deltas_avail].reshape(1, go.N, go.N)
+
+    features[::2] = last == position.to_play
+    features[1::2] = last == -position.to_play
     return np.rollaxis(features, 0, 3)
 
 
@@ -116,17 +137,28 @@ def liberty_feature(position):
     return make_onehot(position.get_liberties(), P)
 
 
-@planes(P)
+@planes(3)
+def few_liberties_feature(position):
+    feature = position.get_liberties()
+    onehot_features = np.zeros(feature.shape + (3,), dtype=np.uint8)
+    onehot_index_offsets = np.arange(0, utils.product(
+        onehot_features.shape), 3) + feature.ravel()
+    nonzero_elements = ((feature != 0) & (feature <= 3)).ravel()
+    nonzero_index_offsets = onehot_index_offsets[nonzero_elements] - 1
+    onehot_features.ravel()[nonzero_index_offsets] = 1
+    return onehot_features
+
+
+@planes(1)
 def would_capture_feature(position):
-    features = np.zeros([go.N, go.N], dtype=np.uint8)
+    features = np.zeros([go.N, go.N, 1], dtype=np.uint8)
     for g in position.lib_tracker.groups.values():
         if g.color == position.to_play:
             continue
         if len(g.liberties) == 1:
-            last_lib = list(g.liberties)[0]
-            # += because the same spot may capture more than 1 group.
-            features[last_lib] += len(g.stones)
-    return make_onehot(features, P)
+            lib = next(iter(g.liberties))
+            features[lib + (0,)] = 1
+    return features
 
 
 DEFAULT_FEATURES = [
@@ -139,13 +171,22 @@ DEFAULT_FEATURES = [
 
 DEFAULT_FEATURES_PLANES = sum(f.planes for f in DEFAULT_FEATURES)
 
-NEW_FEATURES = [
+AGZ_FEATURES = [
     stone_features,
     color_to_play_feature
 ]
 
-NEW_FEATURES_PLANES = sum(f.planes for f in NEW_FEATURES)
+AGZ_FEATURES_PLANES = sum(f.planes for f in AGZ_FEATURES)
+
+MLPERF07_FEATURES = [
+    stone_features_4,
+    color_to_play_feature,
+    few_liberties_feature,
+    would_capture_feature,
+]
+
+MLPERF07_FEATURES_PLANES = sum(f.planes for f in MLPERF07_FEATURES)
 
 
-def extract_features(position, features=NEW_FEATURES):
+def extract_features(position, features):
     return np.concatenate([feature(position) for feature in features], axis=2)

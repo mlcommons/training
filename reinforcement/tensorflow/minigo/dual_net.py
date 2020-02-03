@@ -20,21 +20,28 @@ move prediction and score estimation.
 
 from absl import flags
 import functools
+import json
 import logging
 import os.path
+import struct
+import tempfile
 import time
 import numpy as np
 import random
 
 import tensorflow as tf
-from tensorflow.contrib import summary
-from tensorflow.contrib.tpu.python.tpu import tpu_config
-from tensorflow.contrib.tpu.python.tpu import tpu_estimator
-from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
+from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
+from tensorflow.contrib import quantize as contrib_quantize
+from tensorflow.contrib import summary as contrib_summary
+from tensorflow.contrib import tpu as contrib_tpu
+from tensorflow.contrib.tpu.python.tpu import tpu_config as contrib_tpu_python_tpu_tpu_config
+from tensorflow.contrib.tpu.python.tpu import tpu_estimator as contrib_tpu_python_tpu_tpu_estimator
+from tensorflow.contrib.tpu.python.tpu import tpu_optimizer as contrib_tpu_python_tpu_tpu_optimizer
 
 import features as features_lib
 import go
 import symmetries
+import minigo_model
 
 
 flags.DEFINE_integer('train_batch_size', 256,
@@ -97,6 +104,9 @@ flags.DEFINE_integer(
     help=('Number of TPU cores. For a single TPU device, this is 8 because each'
           ' TPU has 4 chips each with 2 cores.'))
 
+flags.DEFINE_string('gpu_device_list', None,
+                    'Comma-separated list of GPU device IDs to use.')
+
 flags.DEFINE_bool('quantize', False,
                   'Whether create a quantized model. When loading a model for '
                   'inference, this must match how the model was trained.')
@@ -139,7 +149,19 @@ flags.DEFINE_integer(
 flags.DEFINE_bool(
     'use_swish', False,
     help=('Use Swish activation function inplace of ReLu. '
-         'https://arxiv.org/pdf/1710.05941.pdf'))
+          'https://arxiv.org/pdf/1710.05941.pdf'))
+
+flags.DEFINE_bool(
+    'bool_features', False,
+    help='Use bool input features instead of float')
+
+flags.DEFINE_string(
+    'input_features', 'agz',
+    help='Type of input features: "agz" or "mlperf07"')
+
+flags.DEFINE_string(
+    'input_layout', 'nhwc',
+    help='Layout of input features: "nhwc" or "nchw"')
 
 
 # TODO(seth): Verify if this is still required.
@@ -159,6 +181,8 @@ class DualNetwork():
         self.inference_output = None
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
+        if FLAGS.gpu_device_list is not None:
+            config.gpu_options.visible_device_list = FLAGS.gpu_device_list
         self.sess = tf.Session(graph=tf.Graph(), config=config)
         self.initialize_graph()
 
@@ -192,7 +216,8 @@ class DualNetwork():
         return probs[0], values[0]
 
     def run_many(self, positions):
-        processed = list(map(features_lib.extract_features, positions))
+        f = get_features()
+        processed = [features_lib.extract_features(p, f) for p in positions]
         if FLAGS.use_random_symmetry:
             syms_used, processed = symmetries.randomize_symmetries_feat(
                 processed)
@@ -205,13 +230,38 @@ class DualNetwork():
         return probabilities, value
 
 
+def get_features_planes():
+    if FLAGS.input_features == 'agz':
+        return features_lib.AGZ_FEATURES_PLANES
+    elif FLAGS.input_features == 'mlperf07':
+        return features_lib.MLPERF07_FEATURES_PLANES
+    else:
+        raise ValueError('unrecognized input features "%s"' %
+                         FLAGS.input_features)
+
+
+def get_features():
+    if FLAGS.input_features == 'agz':
+        return features_lib.AGZ_FEATURES
+    elif FLAGS.input_features == 'mlperf07':
+        return features_lib.MLPERF07_FEATURES
+    else:
+        raise ValueError('unrecognized input features "%s"' %
+                         FLAGS.input_features)
+
+
 def get_inference_input():
     """Set up placeholders for input features/labels.
 
     Returns the feature, output tensors that get passed into model_fn."""
-    return (tf.placeholder(tf.float32,
-                           [None, go.N, go.N, features_lib.NEW_FEATURES_PLANES],
-                           name='pos_tensor'),
+    feature_type = tf.bool if FLAGS.bool_features else tf.float32
+    if FLAGS.input_layout == 'nhwc':
+        feature_shape = [None, go.N, go.N, get_features_planes()]
+    elif FLAGS.input_layout == 'nchw':
+        feature_shape = [None, get_features_planes(), go.N, go.N]
+    else:
+        raise ValueError('invalid input_layout "%s"' % FLAGS.input_layout)
+    return (tf.placeholder(feature_type, feature_shape, name='pos_tensor'),
             {'pi_tensor': tf.placeholder(tf.float32, [None, go.N * go.N + 1]),
              'value_tensor': tf.placeholder(tf.float32, [None])})
 
@@ -221,8 +271,10 @@ def model_fn(features, labels, mode, params):
     Create the model for estimator api
 
     Args:
-        features: tensor with shape
-            [BATCH_SIZE, go.N, go.N, features_lib.NEW_FEATURES_PLANES]
+        features: if input_layout == 'nhwc', a tensor with shape:
+                [BATCH_SIZE, go.N, go.N, get_features_planes()]
+            else, a tensor with shape:
+                [BATCH_SIZE, get_features_planes(), go.N, go.N]
         labels: dict from string to tensor with shape
             'pi_tensor': [BATCH_SIZE, go.N * go.N + 1]
             'value_tensor': [BATCH_SIZE]
@@ -266,21 +318,23 @@ def model_fn(features, labels, mode, params):
     # Insert quantization ops if requested
     if params['quantize']:
         if mode == tf.estimator.ModeKeys.TRAIN:
-            tf.contrib.quantize.create_training_graph(
+            contrib_quantize.create_training_graph(
                 quant_delay=params['quant_delay'])
         else:
-            tf.contrib.quantize.create_eval_graph()
+            contrib_quantize.create_eval_graph()
 
     optimizer = tf.train.MomentumOptimizer(
         learning_rate, params['sgd_momentum'])
     if params['use_tpu']:
-        optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
+        optimizer = contrib_tpu_python_tpu_tpu_optimizer.CrossShardOptimizer(
+            optimizer)
     with tf.control_dependencies(update_ops):
         train_op = optimizer.minimize(combined_cost, global_step=global_step)
 
     # Computations to be executed on CPU, outside of the main TPU queues.
-    def eval_metrics_host_call_fn(policy_output, value_output, pi_tensor, policy_cost,
-                                  value_cost, l2_cost, combined_cost, step,
+    def eval_metrics_host_call_fn(policy_output, value_output, pi_tensor,
+                                  value_tensor, policy_cost, value_cost,
+                                  l2_cost, combined_cost, step,
                                   est_mode=tf.estimator.ModeKeys.TRAIN):
         policy_entropy = -tf.reduce_mean(tf.reduce_sum(
             policy_output * tf.log(policy_output), axis=1))
@@ -299,8 +353,9 @@ def model_fn(features, labels, mode, params):
             tf.one_hot(policy_target_top_1, tf.shape(policy_output)[1]))
 
         value_cost_normalized = value_cost / params['value_cost_weight']
+        avg_value_observed = tf.reduce_mean(value_tensor)
 
-        with tf.variable_scope("metrics"):
+        with tf.variable_scope('metrics'):
             metric_ops = {
                 'policy_cost': tf.metrics.mean(policy_cost),
                 'value_cost': tf.metrics.mean(value_cost),
@@ -308,7 +363,7 @@ def model_fn(features, labels, mode, params):
                 'l2_cost': tf.metrics.mean(l2_cost),
                 'policy_entropy': tf.metrics.mean(policy_entropy),
                 'combined_cost': tf.metrics.mean(combined_cost),
-
+                'avg_value_observed': tf.metrics.mean(avg_value_observed),
                 'policy_accuracy_top_1': tf.metrics.mean(policy_output_in_top1),
                 'policy_accuracy_top_3': tf.metrics.mean(policy_output_in_top3),
                 'policy_top_1_confidence': tf.metrics.mean(policy_top_1_confidence),
@@ -325,26 +380,28 @@ def model_fn(features, labels, mode, params):
 
         # Create summary ops so that they show up in SUMMARIES collection
         # That way, they get logged automatically during training
-        summary_writer = summary.create_file_writer(FLAGS.work_dir)
+        summary_writer = contrib_summary.create_file_writer(FLAGS.work_dir)
         with summary_writer.as_default(), \
-                summary.record_summaries_every_n_global_steps(
+                contrib_summary.record_summaries_every_n_global_steps(
                     params['summary_steps'], eval_step):
             for metric_name, metric_op in metric_ops.items():
-                summary.scalar(metric_name, metric_op[1], step=eval_step)
+                contrib_summary.scalar(
+                    metric_name, metric_op[1], step=eval_step)
 
         # Reset metrics occasionally so that they are mean of recent batches.
-        reset_op = tf.variables_initializer(tf.local_variables("metrics"))
+        reset_op = tf.variables_initializer(tf.local_variables('metrics'))
         cond_reset_op = tf.cond(
             tf.equal(eval_step % params['summary_steps'], tf.to_int64(1)),
             lambda: reset_op,
             lambda: tf.no_op())
 
-        return summary.all_summary_ops() + [cond_reset_op]
+        return contrib_summary.all_summary_ops() + [cond_reset_op]
 
     metric_args = [
         policy_output,
         value_output,
         labels['pi_tensor'],
+        labels['value_tensor'],
         tf.reshape(policy_cost, [1]),
         tf.reshape(value_cost, [1]),
         tf.reshape(l2_cost, [1]),
@@ -362,7 +419,7 @@ def model_fn(features, labels, mode, params):
     host_call_fn = functools.partial(
         eval_metrics_host_call_fn, est_mode=tf.estimator.ModeKeys.TRAIN)
 
-    tpu_estimator_spec = tpu_estimator.TPUEstimatorSpec(
+    tpu_estimator_spec = contrib_tpu_python_tpu_tpu_estimator.TPUEstimatorSpec(
         mode=mode,
         predictions=predictions,
         loss=combined_cost,
@@ -388,9 +445,19 @@ def model_inference_fn(features, training, params):
         (policy_output, value_output, logits) tuple of tensors.
     """
 
+    if FLAGS.bool_features:
+        features = tf.dtypes.cast(features, dtype=tf.float32)
+
+    if FLAGS.input_layout == 'nhwc':
+        bn_axis = -1
+        data_format = 'channels_last'
+    else:
+        bn_axis = 1
+        data_format = 'channels_first'
+
     mg_batchn = functools.partial(
         tf.layers.batch_normalization,
-        axis=-1,
+        axis=bn_axis,
         momentum=.95,
         epsilon=1e-5,
         center=True,
@@ -402,23 +469,22 @@ def model_inference_fn(features, training, params):
         tf.layers.conv2d,
         filters=params['conv_width'],
         kernel_size=3,
-        padding="same",
-        data_format="channels_last",
-        use_bias=False)
+        padding='same',
+        use_bias=False,
+        data_format=data_format)
 
     mg_global_avgpool2d = functools.partial(
         tf.layers.average_pooling2d,
         pool_size=go.N,
         strides=1,
-        padding="valid",
-        data_format="channels_last")
+        padding='valid',
+        data_format=data_format)
 
     def mg_activation(inputs):
         if FLAGS.use_swish:
             return tf.nn.swish(inputs)
 
         return tf.nn.relu(inputs)
-
 
     def residual_inner(inputs):
         conv_layer1 = mg_batchn(mg_conv2d(inputs))
@@ -473,7 +539,8 @@ def model_inference_fn(features, training, params):
     # Policy head
     policy_conv = mg_conv2d(
         shared_output, filters=params['policy_conv_width'], kernel_size=1)
-    policy_conv = mg_activation(mg_batchn(policy_conv, center=False, scale=False))
+    policy_conv = mg_activation(
+        mg_batchn(policy_conv, center=False, scale=False))
     logits = tf.layers.dense(
         tf.reshape(
             policy_conv, [-1, params['policy_conv_width'] * go.N * go.N]),
@@ -484,7 +551,8 @@ def model_inference_fn(features, training, params):
     # Value head
     value_conv = mg_conv2d(
         shared_output, filters=params['value_conv_width'], kernel_size=1)
-    value_conv = mg_activation(mg_batchn(value_conv, center=False, scale=False))
+    value_conv = mg_activation(
+        mg_batchn(value_conv, center=False, scale=False))
 
     value_fc_hidden = mg_activation(tf.layers.dense(
         tf.reshape(value_conv, [-1, params['value_conv_width'] * go.N * go.N]),
@@ -513,13 +581,18 @@ def tpu_model_inference_fn(features):
     def custom_getter(getter, name, *args, **kwargs):
         with tf.control_dependencies(None):
             return tf.guarantee_const(
-                getter(name, *args, **kwargs), name=name + "/GuaranteeConst")
-    with tf.variable_scope("", custom_getter=custom_getter):
+                getter(name, *args, **kwargs), name=name + '/GuaranteeConst')
+    with tf.variable_scope('', custom_getter=custom_getter):
         # TODO(tommadams): remove the tf.control_dependencies context manager
         # when a fixed version of TensorFlow is released.
         t = int(time.time())
         epoch_time = tf.constant(t, name='epoch_time_%d' % t)
         with tf.control_dependencies([epoch_time]):
+            if FLAGS.input_layout == 'nhwc':
+                feature_shape = [-1, go.N, go.N, get_features_planes()]
+            else:
+                feature_shape = [-1, get_features_planes(), go.N, go.N]
+            features = tf.reshape(features, feature_shape)
             return model_inference_fn(features, False, FLAGS.flag_values_dict())
 
 
@@ -552,11 +625,11 @@ def _get_nontpu_estimator():
 
 
 def _get_tpu_estimator():
-    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+    tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
         FLAGS.tpu_name, zone=None, project=None)
     tpu_grpc_url = tpu_cluster_resolver.get_master()
 
-    run_config = tpu_config.RunConfig(
+    run_config = contrib_tpu_python_tpu_tpu_config.RunConfig(
         master=tpu_grpc_url,
         evaluation_master=tpu_grpc_url,
         model_dir=FLAGS.work_dir,
@@ -565,12 +638,12 @@ def _get_tpu_estimator():
         keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         session_config=tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=True),
-        tpu_config=tpu_config.TPUConfig(
+        tpu_config=contrib_tpu_python_tpu_tpu_config.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
             num_shards=FLAGS.num_tpu_cores,
-            per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))
+            per_host_input_for_training=contrib_tpu_python_tpu_tpu_config.InputPipelineConfig.PER_HOST_V2))
 
-    return tpu_estimator.TPUEstimator(
+    return contrib_tpu_python_tpu_tpu_estimator.TPUEstimator(
         use_tpu=FLAGS.use_tpu,
         model_fn=model_fn,
         config=run_config,
@@ -615,16 +688,33 @@ def export_model(model_path):
     for filename in all_checkpoint_files:
         suffix = filename.partition(latest_checkpoint)[2]
         destination_path = model_path + suffix
-        print("Copying {} to {}".format(filename, destination_path))
+        print('Copying {} to {}'.format(filename, destination_path))
         tf.gfile.Copy(filename, destination_path)
 
 
-def freeze_graph(model_path):
+def freeze_graph(model_path, use_trt=False, trt_max_batch_size=8,
+                 trt_precision='fp32'):
+    output_names = ['policy_output', 'value_output']
+
     n = DualNetwork(model_path)
     out_graph = tf.graph_util.convert_variables_to_constants(
-        n.sess, n.sess.graph.as_graph_def(), ["policy_output", "value_output"])
-    with tf.gfile.GFile(model_path + '.pb', 'wb') as f:
-        f.write(out_graph.SerializeToString())
+        n.sess, n.sess.graph.as_graph_def(), output_names)
+
+    if use_trt:
+        import tensorflow.contrib.tensorrt as trt
+        out_graph = trt.create_inference_graph(
+            input_graph_def=out_graph,
+            outputs=output_names,
+            max_batch_size=trt_max_batch_size,
+            max_workspace_size_bytes=1 << 29,
+            precision_mode=trt_precision)
+
+    metadata = make_model_metadata({
+        'engine': 'tf',
+        'use_trt': bool(use_trt),
+    })
+
+    minigo_model.write_graph_def(out_graph, metadata, model_path + '.minigo')
 
 
 def freeze_graph_tpu(model_path):
@@ -635,7 +725,7 @@ def freeze_graph_tpu(model_path):
     if FLAGS.tpu_name.startswith('grpc://'):
         tpu_grpc_url = FLAGS.tpu_name
     else:
-        tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+        tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
             FLAGS.tpu_name, zone=None, project=None)
         tpu_grpc_url = tpu_cluster_resolver.get_master()
     sess = tf.Session(tpu_grpc_url)
@@ -644,13 +734,13 @@ def freeze_graph_tpu(model_path):
     with sess.graph.as_default():
         # Replicate the inference function for each TPU core.
         replicated_features = []
+        feature_type = tf.bool if FLAGS.bool_features else tf.float32
         for i in range(FLAGS.num_tpu_cores):
+            name = 'pos_tensor_%d' % i
             features = tf.placeholder(
-                tf.float32, [None, go.N, go.N,
-                             features_lib.NEW_FEATURES_PLANES],
-                name='pos_tensor_%d' % i)
+                feature_type, [None], name=name)
             replicated_features.append((features,))
-        outputs = tf.contrib.tpu.replicate(
+        outputs = contrib_tpu.replicate(
             tpu_model_inference_fn, replicated_features)
 
         # The replicate op assigns names like output_0_shard_0 to the output
@@ -664,8 +754,21 @@ def freeze_graph_tpu(model_path):
 
         tf.train.Saver().restore(sess, model_path)
 
-    # Freeze the graph.
-    model_def = tf.graph_util.convert_variables_to_constants(
+    out_graph = tf.graph_util.convert_variables_to_constants(
         sess, sess.graph.as_graph_def(), output_names)
-    with tf.gfile.GFile(model_path + '.pb', 'wb') as f:
-        f.write(model_def.SerializeToString())
+
+    metadata = make_model_metadata({
+        'engine': 'tpu',
+        'num_replicas': FLAGS.num_tpu_cores,
+    })
+
+    minigo_model.write_graph_def(out_graph, metadata, model_path + '.minigo')
+
+
+def make_model_metadata(metadata):
+    for f in ['conv_width', 'fc_width', 'trunk_layers', 'use_SE', 'use_SE_bias',
+              'use_swish', 'input_features', 'input_layout']:
+        metadata[f] = getattr(FLAGS, f)
+    metadata['input_type'] = 'bool' if FLAGS.bool_features else 'float'
+    metadata['board_size'] = go.N
+    return metadata

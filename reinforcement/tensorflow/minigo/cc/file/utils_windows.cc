@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "cc/file/utils.h"
-
 #include <cstdio>
 #include <string>
 
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "cc/file/path.h"
+#include "cc/file/utils.h"
 #include "cc/logging.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -150,6 +149,13 @@ bool ListDir(std::string directory, std::vector<std::string>* files) {
   FindClose(h);
 
   return true;
+}
+
+bool FileExists(std::string path) {
+  path = NormalizeSlashes(path);
+  auto dwAttrib = GetFileAttributes(path.c_str());
+  return dwAttrib != INVALID_FILE_ATTRIBUTES &&
+         !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 }  // namespace file

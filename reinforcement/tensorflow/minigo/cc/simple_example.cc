@@ -13,9 +13,10 @@
 // limitations under the License.
 
 #include <stdio.h>
+
 #include <iostream>
 
-#include "cc/dual_net/factory.h"
+#include "cc/model/loader.h"
 #include "cc/game.h"
 #include "cc/init.h"
 #include "cc/logging.h"
@@ -26,9 +27,8 @@
 #include "gflags/gflags.h"
 
 // Inference flags.
-DEFINE_string(model, "",
-              "Path to a minigo model. The format of the model depends on the "
-              "inference engine.");
+DEFINE_string(device, "", "Device to run on (e.g. TPU address).");
+DEFINE_string(model, "", "Path to a minigo model.");
 DEFINE_int32(num_readouts, 100,
              "Number of readouts to make during tree search for each move.");
 
@@ -43,9 +43,7 @@ void SimpleExample() {
   const bool use_ansi_colors = FdSupportsAnsiColors(fileno(stderr));
 
   // Load the model specified by the command line arguments.
-  auto descriptor = ParseModelDescriptor(FLAGS_model);
-  auto model_factory = NewDualNetFactory(descriptor.engine);
-  auto model = model_factory->NewDualNet(descriptor.model);
+  auto model = NewModel(FLAGS_model, FLAGS_device);
 
   // Create a game object that tracks the move history & final score.
   Game::Options game_options;
@@ -54,13 +52,13 @@ void SimpleExample() {
   // Create the player.
   MctsPlayer::Options player_options;
   player_options.inject_noise = false;
-  player_options.soft_pick = false;
   player_options.num_readouts = FLAGS_num_readouts;
+  player_options.tree.soft_pick_enabled = false;
   MctsPlayer player(std::move(model), nullptr, &game, player_options);
 
   // Play the game.
-  while (!game.game_over() && !player.root()->at_move_limit()) {
-    auto move = player.SuggestMove();
+  while (!game.game_over()) {
+    auto move = player.SuggestMove(player_options.num_readouts);
 
     const auto& position = player.root()->position;
     std::cout << player.root()->position.ToPrettyString(use_ansi_colors)
@@ -68,7 +66,7 @@ void SimpleExample() {
     std::cout << "Move: " << position.n()
               << " Captures X: " << position.num_captures()[0]
               << " O: " << position.num_captures()[1] << "\n";
-    std::cout << player.root()->Describe() << "\n";
+    std::cout << player.tree().Describe() << "\n";
 
     MG_CHECK(player.PlayMove(move));
   }

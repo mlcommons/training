@@ -16,22 +16,21 @@
 #define CC_DUAL_NET_TF_DUAL_NET_H_
 
 #include <memory>
-#include <string>
 
-#include "cc/dual_net/dual_net.h"
+#include "absl/strings/string_view.h"
+#include "cc/model/model.h"
+#include "cc/model/factory.h"
 
 namespace minigo {
 
-class TfDualNetFactory : public DualNetFactory {
+class TfDualNetFactory : public ModelFactory {
  public:
-  TfDualNetFactory();
+  explicit TfDualNetFactory(absl::string_view device);
 
-  int GetBufferCount() const override;
-
-  std::unique_ptr<DualNet> NewDualNet(const std::string& model) override;
+  std::unique_ptr<Model> NewModel(const ModelDefinition& def) override;
 
  private:
-  int device_count_;
+  bool place_on_gpu_ = true;
 };
 
 }  // namespace minigo

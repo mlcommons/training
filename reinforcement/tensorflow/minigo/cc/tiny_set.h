@@ -37,7 +37,7 @@ class tiny_set : private inline_vector<T, Capacity> {
 
   // Insert an element into the set.
   // Returns true if the insertion took place, or false if the element was
-  // already preset in the set.
+  // already present in the set.
   bool insert(const T& x) {
     for (const auto& y : *this) {
       if (x == y) {
@@ -46,6 +46,16 @@ class tiny_set : private inline_vector<T, Capacity> {
     }
     impl::push_back(x);
     return true;
+  }
+
+  // Returns true if the set contains x.
+  bool contains(const T& x) const {
+    for (const auto& y : *this) {
+      if (x == y) {
+        return true;
+      }
+    }
+    return false;
   }
 };
 

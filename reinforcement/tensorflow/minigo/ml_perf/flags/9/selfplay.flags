@@ -3,13 +3,24 @@
 # This flagfile also serves as the base for the boostrap & eval stages of
 # the RL loop.
 
---num_games=4096
 --num_readouts=240
+--fastplay_frequency=0
 --value_init_penalty=0.2
---holdout_pct=0.03
---disable_resign_pct=0.1
---resign_threshold=-0.99
+--holdout_pct=0.025
+--disable_resign_pct=1.0
+--min_resign_threshold=-1.0
+--max_resign_threshold=-0.8
+--virtual_losses=2
 
-# Device-specific selfplay flags.
---parallel_games=2048
---virtual_losses=8
+--dirichlet_alpha=0.135
+--noise_mix=0.3
+
+--cache_size_mb=2048
+--verbose=false
+
+--selfplay_threads=3
+--parallel_search=2
+--parallel_inference=3
+--concurrent_games_per_thread=128
+
+--target_pruning=1

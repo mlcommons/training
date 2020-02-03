@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <stdio.h>
+
+#include <atomic>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -29,8 +31,6 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "cc/constants.h"
-#include "cc/dual_net/batching_dual_net.h"
-#include "cc/dual_net/factory.h"
 #include "cc/file/path.h"
 #include "cc/file/utils.h"
 #include "cc/game.h"
@@ -38,19 +38,21 @@
 #include "cc/init.h"
 #include "cc/logging.h"
 #include "cc/mcts_player.h"
+#include "cc/model/batching_model.h"
+#include "cc/model/loader.h"
+#include "cc/model/model.h"
 #include "cc/random.h"
 #include "cc/tf_utils.h"
 #include "cc/zobrist.h"
 #include "gflags/gflags.h"
 
 // Game options flags.
+DEFINE_bool(resign_enabled, true, "Whether resign is enabled.");
 DEFINE_double(resign_threshold, -0.999, "Resign threshold.");
 DEFINE_uint64(seed, 0,
               "Random seed. Use default value of 0 to use a time-based seed.");
 
 // Tree search flags.
-DEFINE_int32(num_readouts, 100,
-             "Number of readouts to make during tree search for each move.");
 DEFINE_int32(virtual_losses, 8,
              "Number of virtual losses when running tree search.");
 DEFINE_double(value_init_penalty, 2.0,
@@ -61,12 +63,25 @@ DEFINE_double(value_init_penalty, 2.0,
               "This behaves similiarly to Leela's FPU \"First Play Urgency\".");
 
 // Inference flags.
-DEFINE_string(model, "",
-              "Path to a minigo model. The format of the model depends on the "
-              "inference engine. If parallel_games=1, this model is used for "
-              "black. For engine=tf, the model should be a GraphDef proto. For "
-              "engine=lite, the model should be .tflite flatbuffer.");
-DEFINE_string(model_two, "", "Descriptor for the second model");
+DEFINE_string(eval_model, "",
+              "Path to a minigo model to evaluate against a target.");
+DEFINE_string(eval_device, "",
+              "Optional ID of the device to the run inference on for the eval "
+              "model. For TPUs, pass the gRPC address.");
+DEFINE_int32(num_eval_readouts, 100,
+             "Number of readouts to make during tree search for the eval "
+             "model.)");
+
+DEFINE_string(target_model, "",
+              "Path to a target minigo model that eval_model is evaluated "
+              "against.");
+DEFINE_string(target_device, "",
+              "Optional ID of the device to the run inference on for the "
+              "target model. For TPUs, pass the gRPC address.");
+DEFINE_int32(num_target_readouts, 100,
+             "Number of readouts to make during tree search for the eval "
+             "model.)");
+
 DEFINE_int32(parallel_games, 32, "Number of games to play in parallel.");
 
 // Output flags.
@@ -77,36 +92,25 @@ DEFINE_string(output_bigtable, "",
 DEFINE_string(sgf_dir, "",
               "SGF directory for selfplay and puzzles. If empty in selfplay "
               "mode, no SGF is written.");
-DEFINE_string(bigtable_tag, "", "Used in Bigtable metadata");
+DEFINE_string(bigtable_tag, "", "Used in Bigtable metadata.");
+DEFINE_bool(verbose, true, "Enable verbose logging.");
 
 namespace minigo {
 namespace {
 
-void ParseOptionsFromFlags(Game::Options* game_options,
-                           MctsPlayer::Options* player_options) {
-  game_options->resign_threshold = -std::abs(FLAGS_resign_threshold);
-  game_options->ignore_repeated_moves = true;
-  player_options->virtual_losses = FLAGS_virtual_losses;
-  player_options->random_seed = FLAGS_seed;
-  player_options->num_readouts = FLAGS_num_readouts;
-  player_options->inject_noise = false;
-  player_options->soft_pick = false;
-  player_options->random_symmetry = true;
-}
-
 class Evaluator {
-  class Model {
+  class EvaluatedModel {
    public:
-    Model(BatchingDualNetFactory* batcher, const std::string& path)
-        : batcher_(batcher), path_(path) {}
+    EvaluatedModel(BatchingModelFactory* batcher, const std::string& path,
+                   const MctsPlayer::Options& player_options)
+        : batcher_(batcher), path_(path), player_options_(player_options) {}
 
-    BatchingDualNetFactory* batcher() { return batcher_; }
     std::string name() {
       absl::MutexLock lock(&mutex_);
       if (name_.empty()) {
         // The model's name is lazily initialized the first time we create a
         // instance. Make sure it's valid.
-        NewDualNetImpl();
+        NewModelImpl();
       }
       return name_;
     }
@@ -121,60 +125,74 @@ class Evaluator {
       win_stats_.Update(game);
     }
 
-    std::unique_ptr<DualNet> NewDualNet() {
+    std::unique_ptr<Model> NewModel() {
       absl::MutexLock lock(&mutex_);
-      return NewDualNetImpl();
+      return NewModelImpl();
+    }
+
+    const MctsPlayer::Options& player_options() const {
+      return player_options_;
     }
 
    private:
-    std::unique_ptr<DualNet> NewDualNetImpl() EXCLUSIVE_LOCKS_REQUIRED(&mutex_) {
-      auto dual_net = batcher_->NewDualNet(path_);
+    std::unique_ptr<Model> NewModelImpl() EXCLUSIVE_LOCKS_REQUIRED(&mutex_) {
+      auto model = batcher_->NewModel(path_);
       if (name_.empty()) {
-        name_ = dual_net->name();
+        name_ = model->name();
       }
-      return dual_net;
+      return model;
     }
 
     mutable absl::Mutex mutex_;
-    BatchingDualNetFactory* batcher_ GUARDED_BY(&mutex_);
+    BatchingModelFactory* batcher_ GUARDED_BY(&mutex_);
     const std::string path_;
     std::string name_ GUARDED_BY(&mutex_);
     WinStats win_stats_ GUARDED_BY(&mutex_);
+    MctsPlayer::Options player_options_;
   };
 
  public:
-  Evaluator(ModelDescriptor desc_a, ModelDescriptor desc_b)
-      : desc_a_(std::move(desc_a)), desc_b_(std::move(desc_b)) {
-    // Create a batcher for the first model.
-    batchers_.push_back(absl::make_unique<BatchingDualNetFactory>(
-        NewDualNetFactory(desc_a_.engine)));
+  Evaluator() {
+    // Create a batcher for the eval model.
+    batchers_.push_back(
+        absl::make_unique<BatchingModelFactory>(FLAGS_eval_device, 2));
 
-    // If the second model requires a different factory, create one & a second
+    // If the target model requires a different device, create one & a second
     // batcher too.
-    if (desc_b_.engine != desc_a_.engine) {
-      batchers_.push_back(absl::make_unique<BatchingDualNetFactory>(
-          NewDualNetFactory(desc_b_.engine)));
+    if (FLAGS_target_device != FLAGS_eval_device) {
+      batchers_.push_back(
+          absl::make_unique<BatchingModelFactory>(FLAGS_target_device, 2));
     }
   }
 
   void Run() {
     auto start_time = absl::Now();
 
-    Model model_a(batchers_.front().get(), desc_a_.model);
-    Model model_b(batchers_.back().get(), desc_b_.model);
+    game_options_.resign_enabled = FLAGS_resign_enabled;
+    game_options_.resign_threshold = -std::abs(FLAGS_resign_threshold);
 
-    MG_LOG(INFO) << "DualNet factories created from " << desc_a_ << "\n  and "
-                 << desc_b_ << " in "
-                 << absl::ToDoubleSeconds(absl::Now() - start_time) << " sec.";
+    MctsPlayer::Options player_options;
+    player_options.virtual_losses = FLAGS_virtual_losses;
+    player_options.inject_noise = false;
+    player_options.random_seed = FLAGS_seed;
+    player_options.tree.value_init_penalty = FLAGS_value_init_penalty;
+    player_options.tree.soft_pick_enabled = false;
 
-    ParseOptionsFromFlags(&game_options_, &player_options_);
+    player_options.num_readouts = FLAGS_num_eval_readouts;
+    EvaluatedModel eval_model(batchers_.front().get(), FLAGS_eval_model,
+                              player_options);
+
+    player_options.num_readouts = FLAGS_num_target_readouts;
+    EvaluatedModel target_model(batchers_.back().get(), FLAGS_target_model,
+                              player_options);
 
     int num_games = FLAGS_parallel_games;
     for (int thread_id = 0; thread_id < num_games; ++thread_id) {
       bool swap_models = (thread_id & 1) != 0;
-      threads_.emplace_back(std::bind(&Evaluator::ThreadRun, this, thread_id,
-                                      swap_models ? &model_b : &model_a,
-                                      swap_models ? &model_a : &model_b));
+      threads_.emplace_back(
+          std::bind(&Evaluator::ThreadRun, this, thread_id,
+                    swap_models ? &target_model : &eval_model,
+                    swap_models ? &eval_model : &target_model));
     }
     for (auto& t : threads_) {
       t.join();
@@ -184,18 +202,19 @@ class Evaluator {
                  << (absl::Now() - start_time);
 
     MG_LOG(INFO) << FormatWinStatsTable(
-        {{model_a.name(), model_a.GetWinStats()},
-         {model_b.name(), model_b.GetWinStats()}});
+        {{eval_model.name(), eval_model.GetWinStats()},
+         {target_model.name(), target_model.GetWinStats()}});
   }
 
  private:
-  void ThreadRun(int thread_id, Model* black_model, Model* white_model) {
+  void ThreadRun(int thread_id, EvaluatedModel* black_model,
+                 EvaluatedModel* white_model) {
     // Only print the board using ANSI colors if stderr is sent to the
     // terminal.
     const bool use_ansi_colors = FdSupportsAnsiColors(fileno(stderr));
 
     // The player and other_player reference this pointer.
-    std::unique_ptr<DualNet> dual_net;
+    std::unique_ptr<Model> model;
 
     std::vector<std::string> bigtable_spec =
         absl::StrSplit(FLAGS_output_bigtable, ',');
@@ -208,33 +227,34 @@ class Evaluator {
 
     Game game(black_model->name(), white_model->name(), game_options_);
 
-    auto player_options = player_options_;
-    // If an random seed was explicitly specified, make sure we use a
-    // different seed for each thread.
-    if (player_options.random_seed != 0) {
-      player_options.random_seed += 1299283 * thread_id;
-    }
-
-    const bool verbose = thread_id == 0;
-    player_options.verbose = false;
+    const bool verbose = FLAGS_verbose && (thread_id == 0);
     auto black = absl::make_unique<MctsPlayer>(
-        black_model->NewDualNet(), nullptr, &game, player_options);
-
-    player_options.verbose = false;
+        black_model->NewModel(), nullptr, &game, black_model->player_options());
     auto white = absl::make_unique<MctsPlayer>(
-        white_model->NewDualNet(), nullptr, &game, player_options);
+        white_model->NewModel(), nullptr, &game, white_model->player_options());
 
-    BatchingDualNetFactory::StartGame(black->network(), white->network());
+    BatchingModelFactory::StartGame(black->model(), white->model());
     auto* curr_player = black.get();
     auto* next_player = white.get();
-    while (!game.game_over() && !curr_player->root()->at_move_limit()) {
-      auto move = curr_player->SuggestMove();
-      if (verbose) {
-        std::cerr << curr_player->root()->Describe() << "\n";
+    while (!game.game_over()) {
+      if (curr_player->root()->position.n() >= kMinPassAliveMoves &&
+          curr_player->root()->position.CalculateWholeBoardPassAlive()) {
+        // Play pass moves to end the game.
+        while (!game.game_over()) {
+          MG_CHECK(curr_player->PlayMove(Coord::kPass));
+          next_player->PlayOpponentsMove(Coord::kPass);
+          std::swap(curr_player, next_player);
+        }
+        break;
       }
-      curr_player->PlayMove(move);
-      if (!game.game_over()) {
-        next_player->PlayMove(move);
+
+      auto move = curr_player->SuggestMove(curr_player->options().num_readouts);
+      if (verbose) {
+        std::cerr << curr_player->tree().Describe() << "\n";
+      }
+      MG_CHECK(curr_player->PlayMove(move));
+      if (move != Coord::kResign) {
+        next_player->PlayOpponentsMove(move);
       }
       if (verbose) {
         MG_LOG(INFO) << absl::StreamFormat(
@@ -245,7 +265,7 @@ class Evaluator {
       }
       std::swap(curr_player, next_player);
     }
-    BatchingDualNetFactory::EndGame(black->network(), white->network());
+    BatchingModelFactory::EndGame(black->model(), white->model());
 
     if (game.result() > 0) {
       black_model->UpdateWinStats(game);
@@ -261,8 +281,8 @@ class Evaluator {
     // Write SGF.
     std::string output_name = "NO_SGF_SAVED";
     if (!FLAGS_sgf_dir.empty()) {
-      output_name = absl::StrCat(GetOutputName(absl::Now(), thread_id), "-",
-                                 black->name(), "-", white->name());
+      output_name = absl::StrCat(GetOutputName(game_id_++), "-", black->name(),
+                                 "-", white->name());
       game.AddComment(
           absl::StrCat("B inferences: ", black->GetModelsUsedForInference()));
       game.AddComment(
@@ -282,12 +302,9 @@ class Evaluator {
   }
 
   Game::Options game_options_;
-  MctsPlayer::Options player_options_;
   std::vector<std::thread> threads_;
-
-  const ModelDescriptor desc_a_;
-  const ModelDescriptor desc_b_;
-  std::vector<std::unique_ptr<BatchingDualNetFactory>> batchers_;
+  std::atomic<size_t> game_id_{0};
+  std::vector<std::unique_ptr<BatchingModelFactory>> batchers_;
 };
 
 }  // namespace
@@ -295,9 +312,8 @@ class Evaluator {
 
 int main(int argc, char* argv[]) {
   minigo::Init(&argc, &argv);
-  minigo::zobrist::Init(FLAGS_seed * 614944751);
-  minigo::Evaluator evaluator(minigo::ParseModelDescriptor(FLAGS_model),
-                              minigo::ParseModelDescriptor(FLAGS_model_two));
+  minigo::zobrist::Init(FLAGS_seed);
+  minigo::Evaluator evaluator;
   evaluator.Run();
   return 0;
 }
