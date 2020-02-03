@@ -5,15 +5,20 @@ of Minigo.
 
 ## Set up
 
-The C++ Minigo port uses __version 0.17.2__ of the [Bazel](https://bazel.build/)
-build system. We have experienced build issues with the latest version of Bazel,
-so for now we recommend installing
-[bazel-0.17.2-installer-linux-x86\_64.sh](https://github.com/bazelbuild/bazel/releases).
-
 Minigo++ depends on the TensorFlow C++ libraries, but we have not yet set up
 Bazel WORKSPACE and BUILD rules to automatically download and configure
 TensorFlow so (for now at least) you must perform a manual step to build the
-library.  This depends on `zip`, so be sure that package is installed first:
+library.  This depends on `zip`, so be sure that package is installed first.
+
+If you want to run on GPU, you will have to tell Bazel where to find your CUDA
+install (note that recent versions of Bazel ignore `LD_LIBRARY_PATH`):
+
+```shell
+sudo sh -c "echo /usr/local/cuda/lib64 > /etc/ld.so.conf.d/cuda.conf"
+sudo ldconfig
+```
+
+Now, you're ready to compile TensorFlow from source:
 
 ```shell
 sudo apt-get install zip
@@ -44,12 +49,12 @@ Inferences engines section below for more details.
 
 The TensorFlow models can found on our public Google Cloud Storage bucket. A
 good model to start with is 000990-cormorant from the v15 run. The C++ engine
-requires the frozen model in a `GraphDef` proto format, which is the `.pb` file.
-You can copy it locally as follows:
+requires the frozen model in a `.minigo` format. You can copy it locally as
+follows:
 
 ```shell
 mkdir -p saved_models
-gsutil cp gs://minigo-pub/v15-19x19/models/000990-cormorant.pb saved_models/
+gsutil cp gs://minigo-pub/v15-19x19/models/000990-cormorant.minigo saved_models/
 ```
 
 Minigo can also read models directly from Google Cloud Storage but it doesn't
@@ -70,7 +75,7 @@ a single game using a fixed number of readouts.
 ```shell
 bazel build -c opt cc:simple_example
 bazel-bin/cc/simple_example \
-  --model=tf,saved_models/000990-cormorant.pb \
+  --model=saved_models/000990-cormorant.minigo \
   --num_readouts=160
 ```
 
@@ -92,7 +97,7 @@ that the simple example, including:
 ```shell
 bazel build -c opt cc:selfplay
 bazel-bin/cc/selfplay \
-  --model=saved_models/000990-cormorant.pb \
+  --model=saved_models/000990-cormorant.minigo \
   --num_readouts=160 \
   --parallel_games=1 \
   --output_dir=data/selfplay \
@@ -108,8 +113,8 @@ multiple games in parallel.
 ```shell
 bazel build -c opt cc:eval
 bazel-bin/cc/eval \
-  --model=saved_models/000990-cormorant.pb \
-  --model_two=saved_models/000990-cormorant.pb \
+  --eval_model=saved_models/000990-cormorant.minigo \
+  --target_model=saved_models/000990-cormorant.minigo \
   --num_readouts=160 \
   --parallel_games=32 \
   --sgf_dir=sgf
@@ -123,22 +128,8 @@ backend for Minigui (see `minigui/README.md`).
 ```shell
 bazel build -c opt cc:gtp
 bazel-bin/cc/gtp \
-  --model=saved_models/000990-cormorant.pb \
+  --model=saved_models/000990-cormorant.minigo \
   --num_readouts=160
-```
-
-#### cc:puzzle
-
-Loads all SGF files found in the given `sgf_dir` and tries to predict the move
-made at each position in each game. After all games are processed, prints
-summary stats to about how many moves were correctly predicted.
-
-```shell
-bazel build -c opt cc:puzzle
-bazel-bin/cc/puzzle \
-  --model=saved_models/000990-cormorant.pb \
-  --num_readouts=160 \
-  --sgf_dir=puzzle_sgf
 ```
 
 ## Running the unit tests
@@ -154,7 +145,7 @@ bazel test --define=board_size=9 cc/...  &&  bazel test cc/...
 Note that Minigo is compiled for a 19x19 board by default, which explains the
 lack of a `--define=board_size=19` in the second `bazel test` invocation.
 
-## Running with AddressSanitizer
+## Running with Address Sanitizer
 
 Bazel supports building with AddressSanitizer to check for C++ memory errors:
 
@@ -166,60 +157,90 @@ bazel build cc:selfplay \
   --copt=-O1
 ```
 
-## Inference engines
+If you need to programatic control of the sanitizers at runtime, you will have
+to make Bazel aware of the sanitizer include path. Edit `WORKSPACE`, changing
+`path` as appropriate:
 
-C++ Minigo currently supports multiple separate engines for performing
-inference. Which engines are compiled into the C++ binaries are controlled by
-passing Bazel `--define` arguments at compile time. The inference engine to
-use is specified as part of the `--model` or `--model_two` command line
-arguments:
+```
+new_local_repository(
+    name = "sanitizers",
+    path = "/usr/lib/gcc/x86_64-linux-gnu/7/include/sanitizer/",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "sanitizers",
+    hdrs = glob(["**/*.h"])
+)
+"""
+)
+```
+
+Then add `@sanitizers` as a dependency to your `BUILD` target and you'll be able
+to include `asan_interface.h` and `lsan_interface.h`. This will allow you to do
+things like suppress leak checking at exit by calling `__lsan_disable()`.
+
+
+## Profiling
+
+Minigo uses the C++ bindings for
+[https://google.github.io/tracing-framework/](Web Tracing Framework) to profile
+the code. To enable, compile with
+`bazel build --copt=-DWTF_ENABLE cc:selfplay` followed by the rest of your build
+arguments. Without `WTF_ENABLE` defined, all the profiling code should be
+optimized away by the compiler.
+
+By default, the `cc:selfplay` binary writes to the trace to
+`/tmp/minigo.wtf-trace` but this path can be overridden using the `--wtf_trace`
+flag.
+
+
+## File format & Inference engines
+
+C++ Minigo supports a variety of inference engines, input features, layouts and
+data types. In order to determine what configuration to use, Minigo uses a
+custom `.minigo` data format that wraps the raw model data with extra metadata.
+Which engines are compiled into the C++ binaries are controlled by passing
+Bazel `--define` arguments at compile time.
 
  - **tf**: peforms inference using the TensorFlow libraries built by
    `cc/configure_tensorflow.sh`. Compiled & used as the inference by default,
-   disable the engine with `--define=tf=0`. Use by passing `--model=tf,$PATH`,
-   where `$PATH` is the path to a frozen TensorFlow `GraphDef` proto (as
-   generated by `freeze_graph.py`).
+   disable the engine with `--define=tf=0`. The model should be a frozen
+   TensorFlow `GraphDef` proto (as generated by `freeze_graph.py`).
  - **lite**: performs inference using TensorFlow Lite, which runs in software on
    the CPU.
    Compile by passing `--define=lite=1` to `bazel build`.
-   Use by passing `--model=lite,$PATH`, where `$PATH` is the path to a Toco-
-   optimized TFLite flat buffer (see below).
+   The model should be a Toco-optimized TFLite flat buffer (see below).
  - **tpu**: perform inference on a Cloud TPU. Your code must run on a Cloud
    TPU-equipped VM for this to work.
    Compile by passing `--define=tpu=1` to `bazel build`.
-   Use by passed `--model=tpu:$TPU_NAME,$PATH`, where `$TPU_NAME` is the name
-   of a Cloud TPU (e.g. `grpc://10.240.2.10:8470`) and `$PATH` is the path to a
-   frozen TensorFlow `GraphDef` proto (as generated by `freeze_graph.py`).
- - **trt**: uses NVIDIA TensorRT.
-   Compile by passing `--define=trt=1` to `bazel build`.
-   Use by passing `--model=trt,$PATH`, where `$PATH` is a TensorRT model.
- - **fake**: a simple fake that is only useful in so much as you can use it to
-   test that the tree search code compiles without also having to compile a
-   full inference engine. Enabled by default. There's no way to disable the
-   fake inference engine because this guaratees that there's always an engine
-   available (even if it's a useless one).
-   Use by passing `--model=fake`.
+   The model should be a frozen `GraphDef` proto that was generated by passing
+   `--use_tpu=true` when running `freeze_graph.py`. The TPU address must also
+   be specified with `--define=$TPU_ADDRESS`, when `$TPU_ADDRESS` is the TPU's
+   gRPC address (e.g. `grpc://10.240.2.10:8470`).
  - **random**: a model that returns random samples from a normal distribution,
    which can be useful for bootstrapping the reinforcement learning pipeline.
-   Use by passing `--model=random:$SEED,$POLICY_STD_DEV:$VALUE_STD_DEV`, where
-   `$SEED` is a random seed (set to `0` to choose one based on the current
-   time), `$POLICY_STD_DEV` is the standard deviation of the distribution of
-   policy samples (`0.4` is a reasonable choice) and `$VALUE_STD_DEV` is the
-   standard deviation for the distribution of value samples (again, `0.4` is
-   a reasonable choice). That was a bit of a long-winded explanation, so just
-   try `--model=random:0,0.4:0.4` to start with.
+   Use by passing
+   `--model=random:$FEATURES:$LAYOUT:$SEED`, where `$FEATURES` is the type of
+   model features (e.g.  `agz`, `mlperf07`), `$LAYOUT` is the feature tensor
+   layout (either `nhwc` or `nchw`) and `$SEED` is a random seed (use `0` to
+   choose one based on the operating system's entropy source).
 
 ## Compiling a TensorFlow Lite model
 
-First, run a frozen graph through Toco, the TensorFlow optimizing compiler:
+First, unwrap the `.minigo` model into a `.pb`, then run it through Toco, the
+TensorFlow optimizing compiler:
 
 ```
+python3 oneoffs/unwrap_model.py \
+      --src_path model.minigo \
+      --dst_path model.pb
+
 BATCH_SIZE=8
-./cc/tensorflow/toco \
-  --input_file=saved_models/000256-opossum.pb \
+./cc/tensorflow/bin/toco \
+  --input_file=model.pb \
   --input_format=TENSORFLOW_GRAPHDEF \
   --output_format=TFLITE \
-  --output_file=saved_models/000256-opossum.tflite \
+  --output_file=model.tflite \
   --inference_type=FLOAT \
   --input_type=FLOAT \
   --input_arrays=pos_tensor \
@@ -227,13 +248,23 @@ BATCH_SIZE=8
   --input_shapes=8,19,19,17
 ```
 
+Unwrapping the model will print its metadata. You will need to rewrap the model
+with the same metadata but setting the engine to `tflite`:
+
+```
+python3 oneoffs/wrap_model.py \
+  --src_path model.tflite \
+  --dst_path model.minifo \
+  --metadata engine=lite,input_features=agz,input_layout=nhwc,input_type=float,board_size=19
+```
+
 ## Cloud TPU
 
 Minigo supports running inference on Cloud TPU.
-Build `//cc:selfplay` with `--define=tpu=1` and run with `--model=tpu,$PATH`
-(see above).
+Build `//cc:concurrent_selfplay` with `--define=tpu=1` and run with
+`--device=$TPU_NAME` (see above).
 
-To freeze a model into a GraphDef proto that can be run on Cloud TPU, use
+To freeze a model into a model that can be run on Cloud TPU, use
 `freeze_graph.py`:
 
 ```

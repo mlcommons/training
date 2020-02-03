@@ -14,18 +14,38 @@
 
 #include "cc/random.h"
 
-#include "absl/time/clock.h"
-#include "absl/time/time.h"
+#include <atomic>
 
 namespace minigo {
 
 namespace {
+std::atomic<int> unique_stream_id{0};
+
 uint64_t ChooseSeed(uint64_t seed) {
-  return seed != 0 ? seed : absl::ToUnixMicros(absl::Now());
+  if (seed == 0) {
+    std::random_device rd;
+    seed = rd();
+    if (sizeof(std::random_device::result_type) < 8) {
+      seed = (seed << 32) | rd();
+    }
+  }
+  return seed;
+}
+
+int ChooseStream(int stream) {
+  if (stream == 0) {
+    stream = unique_stream_id.fetch_add(1);
+  }
+  return stream;
 }
 }  // namespace
 
-Random::Random(uint64_t seed) : seed_(ChooseSeed(seed)), impl_(seed_) {}
+constexpr uint64_t Random::kLargePrime;
+constexpr uint64_t Random::kUniqueSeed;
+constexpr int Random::kUniqueStream;
+
+Random::Random(uint64_t seed, int stream)
+    : seed_(ChooseSeed(seed)), impl_(seed_, ChooseStream(stream)) {}
 
 void Random::Dirichlet(float alpha, absl::Span<float> samples) {
   std::gamma_distribution<float> distribution(alpha);
@@ -41,8 +61,13 @@ void Random::Dirichlet(float alpha, absl::Span<float> samples) {
   }
 }
 
-void Random::Uniform(float mn, float mx, absl::Span<float> samples) {
-  std::uniform_real_distribution<float> distribution(mn, mx);
+float Random::Uniform(float a, float b) {
+  std::uniform_real_distribution<float> distribution(a, b);
+  return distribution(impl_);
+}
+
+void Random::Uniform(float a, float b, absl::Span<float> samples) {
+  std::uniform_real_distribution<float> distribution(a, b);
   for (float& sample : samples) {
     sample = distribution(impl_);
   }
@@ -58,6 +83,20 @@ void Random::NormalDistribution(float mean, float stddev,
   for (float& sample : samples) {
     sample = distribution(impl_);
   }
+}
+
+int Random::SampleCdf(absl::Span<float> cdf) {
+  // Take care to handle the case where the first elements in the CDF have zero
+  // probability: discard any 0.0 values that the random number generator
+  // produces. Admittedly, this isn't going to happen very often.
+  float e;
+  do {
+    e = operator()();
+  } while (e == 0);
+
+  float x = cdf.back() * e;
+  return std::distance(cdf.begin(),
+                       std::lower_bound(cdf.begin(), cdf.end(), x));
 }
 
 }  // namespace minigo

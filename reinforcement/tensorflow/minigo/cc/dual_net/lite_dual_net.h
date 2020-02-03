@@ -18,13 +18,14 @@
 #include <memory>
 #include <string>
 
-#include "cc/dual_net/dual_net.h"
+#include "cc/model/model.h"
+#include "cc/model/factory.h"
 
 namespace minigo {
 
-class LiteDualNetFactory : public DualNetFactory {
+class LiteDualNetFactory : public ModelFactory {
  public:
-  std::unique_ptr<DualNet> NewDualNet(const std::string& model) override;
+  std::unique_ptr<Model> NewModel(const ModelDefinition& def) override;
 };
 
 }  // namespace minigo

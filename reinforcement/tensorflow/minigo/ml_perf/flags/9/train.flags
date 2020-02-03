@@ -2,8 +2,13 @@
 
 --flagfile=ml_perf/flags/9/architecture.flags
 
---shuffle_buffer_size=10000
---filter_amount=0.5
+--shuffle_buffer_size=0
+--shuffle_examples=false
+
+--keep_checkpoint_max=100
+
+# see --train_filter in rl_loop.flags
+# --filter_amount=1
 
 # Device specific hyperparameters re: batch size and LR schedules.
 --train_batch_size=4096

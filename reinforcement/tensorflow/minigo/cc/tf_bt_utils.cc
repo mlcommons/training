@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "cc/tf_utils.h"
-
 #include <cstdint>
 
 #include "absl/strings/str_cat.h"
@@ -21,6 +19,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "cc/constants.h"
+#include "cc/tf_utils.h"
 #include "google/cloud/bigtable/data_client.h"
 #include "google/cloud/bigtable/read_modify_write_rule.h"
 #include "google/cloud/bigtable/table.h"
@@ -92,8 +91,9 @@ void WriteTfExamples(Table& table, const std::string& row_prefix,
 
 void WriteGameExamples(const std::string& gcp_project_name,
                        const std::string& instance_name,
-                       const std::string& table_name, const Game& game) {
-  auto examples = MakeExamples(game);
+                       const std::string& table_name,
+                       Model::FeatureType feature_type, const Game& game) {
+  auto examples = MakeExamples(feature_type, game);
   Table table(
       CreateDefaultDataClient(gcp_project_name, instance_name, ClientOptions()),
       table_name);
@@ -133,15 +133,13 @@ void WriteEvalRecord(const std::string& gcp_project_name,
 
   auto row_name = absl::StrFormat(kEvalGameRowFormat, game_counter);
   SingleRowMutation row_mutation(
-      row_name,
-      SetCell("metadata", "black", game.black_name()),
+      row_name, SetCell("metadata", "black", game.black_name()),
       SetCell("metadata", "white", game.white_name()),
       SetCell("metadata", "black_won", absl::StrCat(game.result() > 0)),
       SetCell("metadata", "white_won", absl::StrCat(game.result() < 0)),
       SetCell("metadata", "result", game.result_string()),
       SetCell("metadata", "length", absl::StrCat(game.moves().size())),
-      SetCell("metadata", "sgf", sgf_name),
-      SetCell("metadata", "tag", tag));
+      SetCell("metadata", "sgf", sgf_name), SetCell("metadata", "tag", tag));
 
   table.Apply(std::move(row_mutation));
   MG_LOG(INFO) << "Bigtable eval row written to " << row_name;

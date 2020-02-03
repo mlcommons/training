@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "cc/file/utils.h"
-
 #include <memory>
 
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "cc/file/path.h"
+#include "cc/file/utils.h"
 #include "cc/logging.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/file_system.h"
@@ -41,7 +40,7 @@ bool RecursivelyCreateDir(std::string path) {
   auto* env = tensorflow::Env::Default();
   status = env->RecursivelyCreateDir(path);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error creating " << path << ": " << status;
+    MG_LOG(ERROR) << "error creating \"" << path << "\": " << status;
     return false;
   }
 
@@ -57,7 +56,7 @@ bool WriteFile(std::string path, absl::string_view contents) {
   std::unique_ptr<tensorflow::WritableFile> file;
   status = env->NewWritableFile(path, &file);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error opening " << path << " for write: " << status;
+    MG_LOG(ERROR) << "error opening \"" << path << "\" for write: " << status;
     return false;
   }
 
@@ -67,14 +66,14 @@ bool WriteFile(std::string path, absl::string_view contents) {
   if (!contents.empty()) {
     status = file->Append({contents.data(), contents.size()});
     if (!status.ok()) {
-      MG_LOG(ERROR) << "error writing to " << path << ": " << status;
+      MG_LOG(ERROR) << "error writing to \"" << path << "\": " << status;
       return false;
     }
   }
 
   status = file->Close();
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error closing " << path << ": " << status;
+    MG_LOG(ERROR) << "error closing \"" << path << "\": " << status;
     return false;
   }
   return true;
@@ -89,14 +88,14 @@ bool ReadFile(std::string path, std::string* contents) {
   tensorflow::uint64 size;
   status = env->GetFileSize(path, &size);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error getting size of " << path << ": " << status;
+    MG_LOG(ERROR) << "error getting size of \"" << path << "\": " << status;
     return false;
   }
 
   std::unique_ptr<tensorflow::RandomAccessFile> file;
   status = env->NewRandomAccessFile(path, &file);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error opening " << path << " for read: " << status;
+    MG_LOG(ERROR) << "error opening \"" << path << "\" for read: " << status;
     return false;
   }
 
@@ -104,7 +103,7 @@ bool ReadFile(std::string path, std::string* contents) {
   tensorflow::StringPiece s;
   status = file->Read(0u, size, &s, &(*contents)[0]);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error reading " << path << ": " << status;
+    MG_LOG(ERROR) << "error reading \"" << path << "\": " << status;
     return false;
   }
   contents->resize(s.size());
@@ -121,7 +120,7 @@ bool GetModTime(std::string path, uint64_t* mtime_usec) {
 
   status = env->Stat(path, &stat);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error statting " << path << ": " << status;
+    MG_LOG(ERROR) << "error statting \"" << path << "\": " << status;
     return false;
   }
 
@@ -137,11 +136,17 @@ bool ListDir(std::string directory, std::vector<std::string>* files) {
 
   status = env->GetChildren(directory, files);
   if (!status.ok()) {
-    MG_LOG(ERROR) << "error getting " << directory << " content: " << status;
+    MG_LOG(ERROR) << "error getting \"" << directory << "\" content: " << status;
     return false;
   }
 
   return true;
+}
+
+bool FileExists(std::string path) {
+  path = NormalizeSlashes(path);
+  auto* env = tensorflow::Env::Default();
+  return env->FileExists(path).ok();
 }
 
 }  // namespace file

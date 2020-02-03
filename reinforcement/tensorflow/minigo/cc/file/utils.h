@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+
 #include "absl/strings/string_view.h"
 #include "cc/platform/utils.h"
 
@@ -47,6 +48,11 @@ MG_WARN_UNUSED_RESULT bool GetModTime(std::string path, uint64_t* mtime_usec);
 // access to GCS. Only allows local file access otherwise.
 MG_WARN_UNUSED_RESULT bool ListDir(std::string directory,
                                    std::vector<std::string>* files);
+
+// Check if specified path is a file.
+// When compiled with --define=tf=1, uses TensorFlow's file APIs to enable
+// access to GCS. Only allows local file access otherwise.
+MG_WARN_UNUSED_RESULT bool FileExists(std::string path);
 
 }  // namespace file
 }  // namespace minigo

@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/optional.h"
 #include "cc/color.h"
 #include "cc/constants.h"
 #include "cc/coord.h"
@@ -43,41 +44,36 @@ class Game {
 
     float komi = kDefaultKomi;
 
-    // If true, repeated calls to AddMove with the same Color and Coord will
-    // be ignored. This should be set to true when two separate MctsPlayer
-    // instances are playing (because they both make AddMove calls to the same
-    // Game object), and set to false for self-play where a single MctsPlayer
-    // plays both back and white.
-    bool ignore_repeated_moves = false;
-
     friend std::ostream& operator<<(std::ostream& os, const Options& options);
   };
 
   struct Move {
+    explicit Move(const Position& position) : position(position) {}
+
+    bool is_trainable() const { return search_pi.has_value(); }
+
     Color color;
 
     Coord c = Coord::kInvalid;
 
     float Q;
 
+    int N;
+
     // Comments associated with the move.
     std::string comment;
 
-    // Models evaluated when performing tree search.
-    std::vector<std::string> models;
+    // Only set if the move is trainable.
+    absl::optional<std::array<float, kNumMoves>> search_pi;
 
-    std::array<float, kNumMoves> search_pi;
-
-    // Stones on the board before the move was played.
     // This is used to build training features after a selfplay game has
     // finished.
-    Position::Stones stones;
+    Position position;
   };
 
   enum class GameOverReason {
     kBothPassed,
     kOpponentResigned,
-    kMoveLimitReached,
   };
 
   static std::string FormatScore(float score);
@@ -88,10 +84,11 @@ class Game {
 
   void AddComment(const std::string& comment);
 
-  void AddMove(Color color, Coord c, const Position::Stones& stones,
-               std::string comment, float Q,
-               const std::array<float, kNumMoves>& search_pi,
-               std::vector<std::string> models);
+  void AddTrainableMove(Color color, Coord c, const Position& position,
+                        std::string comment, float Q, int N,
+                        const std::array<float, kNumMoves>& search_pi);
+  void AddNonTrainableMove(Color color, Coord c, const Position& position,
+                           std::string comment, float Q, int N);
 
   void UndoMove();
 
@@ -99,13 +96,11 @@ class Game {
 
   void SetGameOverBecauseOfResign(Color winner);
 
-  void SetGameOverBecauseMoveLimitReached(float score);
-
   // Returns up to the last `num_moves` of moves that lead up to the requested
   // `move`, including the move itself.
   // If `move < num_moves`, history will be truncated to the first `move` moves.
-  void GetStoneHistory(int move, int num_moves,
-                       std::vector<const Position::Stones*>* history) const;
+  template <typename T>
+  void GetPositionHistory(int move, int num_moves, T* history) const;
 
   // Get information on the bleakest move for a completed game, if the game has
   // history and was played with resign disabled. This only makes sense if
@@ -155,6 +150,16 @@ class Game {
   std::string comment_;
   std::vector<std::unique_ptr<Move>> moves_;
 };
+
+template <typename T>
+void Game::GetPositionHistory(int move, int num_moves, T* history) const {
+  history->clear();
+  MG_CHECK(move >= 0);
+  MG_CHECK(move < static_cast<int>(moves_.size()));
+  for (int i = 0; i < num_moves && move - i >= 0; ++i) {
+    history->push_back(&moves_[move - i]->position);
+  }
+}
 
 }  // namespace minigo
 

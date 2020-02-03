@@ -21,7 +21,6 @@
 #include "cc/color.h"
 #include "cc/coord.h"
 #include "cc/group.h"
-#include "cc/mcts_node.h"
 #include "cc/position.h"
 #include "cc/random.h"
 
@@ -32,7 +31,10 @@ namespace minigo {
 class TestablePosition : public Position {
  public:
   TestablePosition(absl::string_view board_str, Color to_play = Color::kBlack);
+  TestablePosition(const std::array<Color, kN * kN>& stones,
+                   Color to_play = Color::kBlack);
 
+  using Position::GroupAt;
   using Position::PlayMove;
 
   // Convenience functions that automatically parse coords.
@@ -45,13 +47,10 @@ class TestablePosition : public Position {
   Color IsKoish(absl::string_view str) const {
     return Position::IsKoish(Coord::FromString(str));
   }
-  MoveType ClassifyMove(absl::string_view str) const {
-    return Position::ClassifyMove(Coord::FromString(str));
+  MoveType ClassifyMoveIgnoringSuperko(absl::string_view str) const {
+    return Position::ClassifyMoveIgnoringSuperko(Coord::FromString(str));
   }
-  using Position::ClassifyMove;
-
-  BoardVisitor board_visitor;
-  GroupVisitor group_visitor;
+  using Position::ClassifyMoveIgnoringSuperko;
 };
 
 // Removes extraneous whitespace from a board string and returns it in the same
@@ -59,8 +58,6 @@ class TestablePosition : public Position {
 std::string CleanBoardString(absl::string_view str);
 
 std::array<Color, kN * kN> ParseBoard(absl::string_view str);
-
-int CountPendingVirtualLosses(const MctsNode* node);
 
 // Get a random legal move.
 // Only returns Coord::kPass if no other move is legal.

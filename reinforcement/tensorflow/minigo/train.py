@@ -19,6 +19,7 @@ Usage:
 """
 
 import logging
+import math
 
 from absl import app, flags
 import numpy as np
@@ -33,9 +34,17 @@ import utils
 flags.DEFINE_integer('shuffle_buffer_size', 2000,
                      'Size of buffer used to shuffle train examples.')
 
+flags.DEFINE_boolean('shuffle_examples', True,
+                     'Whether to shuffle training examples.')
+
 flags.DEFINE_integer('steps_to_train', None,
                      'Number of training steps to take. If not set, iterates '
                      'once over training data.')
+
+flags.DEFINE_integer('num_examples', None,
+                     'Total number of input examples. This is only used if '
+                     'steps_to_train is not set. Requires that filter_amount '
+                     'is 1.0.')
 
 flags.DEFINE_integer('window_size', 500000,
                      'Number of games to include in the window')
@@ -54,12 +63,30 @@ flags.DEFINE_bool('use_bt', False,
 flags.DEFINE_bool('freeze', False,
                   'Whether to freeze the graph at the end of training.')
 
+flags.DEFINE_boolean(
+    'use_trt', False, 'True to write a GraphDef that uses the TRT runtime')
+flags.DEFINE_integer('trt_max_batch_size', None,
+                     'Maximum TRT batch size')
+flags.DEFINE_string('trt_precision', 'fp32',
+                    'Precision for TRT runtime: fp16, fp32 or int8')
+flags.register_multi_flags_validator(
+    ['use_trt', 'trt_max_batch_size'],
+    lambda flags: not flags['use_trt'] or flags['trt_max_batch_size'],
+    'trt_max_batch_size must be set if use_trt is true')
+
 
 flags.register_multi_flags_validator(
     ['use_bt', 'use_tpu'],
     lambda flags: flags['use_tpu'] if flags['use_bt'] else True,
     '`use_bt` flag only valid with `use_tpu` as well')
 
+@flags.multi_flags_validator(
+    ['num_examples', 'steps_to_train', 'filter_amount'],
+    '`num_examples` requires `steps_to_train==0` and `filter_amount==1.0`')
+def _example_flags_validator(flags_dict):
+    if not flags_dict['num_examples']:
+        return True
+    return not flags_dict['steps_to_train'] and flags_dict['filter_amount'] == 1.0
 
 @flags.multi_flags_validator(
     ['use_bt', 'cbt_project', 'cbt_instance', 'cbt_table'],
@@ -116,6 +143,7 @@ class UpdateRatioSessionHook(tf.train.SessionRunHook):
         self.global_step = None
 
     def begin(self):
+        """Called once before using the session"""
         # These calls only works because the SessionRunHook api guarantees this
         # will get called within a graph context containing our model graph.
 
@@ -124,11 +152,13 @@ class UpdateRatioSessionHook(tf.train.SessionRunHook):
         self.global_step = tf.train.get_or_create_global_step()
 
     def before_run(self, run_context):
+        """Called before each call to run()."""
         global_step = run_context.session.run(self.global_step)
         if global_step % self.every_n_steps == 0:
             self.before_weights = run_context.session.run(self.weight_tensors)
 
-    def after_run(self, run_context, run_values):
+    def after_run(self, run_context, unused_run_values):
+        """Called after each call to run()."""
         global_step = run_context.session.run(self.global_step)
         if self.before_weights is not None:
             after_weights = run_context.session.run(self.weight_tensors)
@@ -159,13 +189,18 @@ def train(*tf_records: "Records to train on"):
                     games,
                     games_nr,
                     params['batch_size'],
+                    params['input_layout'],
                     number_of_games=FLAGS.window_size,
                     random_rotation=True)
         else:
             def _input_fn(params):
                 return preprocessing.get_tpu_input_tensors(
                     params['batch_size'],
+                    params['input_layout'],
                     tf_records,
+                    filter_amount=FLAGS.filter_amount,
+                    shuffle_examples=FLAGS.shuffle_examples,
+                    shuffle_buffer_size=FLAGS.shuffle_buffer_size,
                     random_rotation=True)
         # Hooks are broken with TPUestimator at the moment.
         hooks = []
@@ -173,8 +208,10 @@ def train(*tf_records: "Records to train on"):
         def _input_fn():
             return preprocessing.get_input_tensors(
                 FLAGS.train_batch_size,
+                FLAGS.input_layout,
                 tf_records,
                 filter_amount=FLAGS.filter_amount,
+                shuffle_examples=FLAGS.shuffle_examples,
                 shuffle_buffer_size=FLAGS.shuffle_buffer_size,
                 random_rotation=True)
 
@@ -182,6 +219,12 @@ def train(*tf_records: "Records to train on"):
                  EchoStepCounterHook(output_dir=FLAGS.work_dir)]
 
     steps = FLAGS.steps_to_train
+    if not steps and FLAGS.num_examples:
+        batch_size = FLAGS.train_batch_size
+        if FLAGS.use_tpu:
+            batch_size *= FLAGS.num_tpu_cores
+        steps = math.floor(FLAGS.num_examples / batch_size)
+
     logging.info("Training, steps = %s, batch = %s -> %s examples",
                  steps or '?', effective_batch_size,
                  (steps * effective_batch_size) if steps else '?')
@@ -220,7 +263,8 @@ def main(argv):
         if FLAGS.use_tpu:
             dual_net.freeze_graph_tpu(FLAGS.export_path)
         else:
-            dual_net.freeze_graph(FLAGS.export_path)
+            dual_net.freeze_graph(FLAGS.export_path, FLAGS.use_trt,
+                                  FLAGS.trt_max_batch_size, FLAGS.trt_precision)
 
 
 if __name__ == "__main__":

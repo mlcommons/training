@@ -32,6 +32,7 @@ from google.cloud import bigtable
 from google.cloud.bigtable import row_filters as bigtable_row_filters
 from google.cloud.bigtable import column_family as bigtable_column_family
 import tensorflow as tf
+from tensorflow.contrib import cloud as contrib_cloud
 
 import utils
 
@@ -56,6 +57,11 @@ FLAGS = flags.FLAGS
 
 ROW_PREFIX = 'g_{:0>10}_'
 ROWCOUNT_PREFIX = 'ct_{:0>10}_'
+
+# Model tabels (models, models_for_eval) row key
+MODEL_PREFIX = "m_{run}_{num:0>10}"
+# Name of model
+MODEL_NAME = b'model'
 
 # Maximum number of concurrent processes to use when issuing requests against
 # Bigtable.  Value taken from default in the load-testing tool described here:
@@ -90,6 +96,15 @@ _game_from_counter = re.compile(r'ct_(\d+)_')
 BigtableSpec = collections.namedtuple(
     'BigtableSpec',
     ['project', 'instance', 'table'])
+
+
+# Information needed to create a mix of two Game queues.
+# r = resign/regular; c = calibration (no-resign)
+GameMix = collections.namedtuple(
+    'GameMix',
+    ['games_r', 'moves_r',
+     'games_c', 'moves_c',
+     'selection'])
 
 
 def cbt_intvalue(value):
@@ -224,7 +239,7 @@ class GameQueue:
         self.bt_table = bigtable.Client(
             self.btspec.project, admin=True).instance(
                 self.btspec.instance).table(self.btspec.table)
-        self.tf_table = tf.contrib.cloud.BigtableClient(
+        self.tf_table = contrib_cloud.BigtableClient(
             self.btspec.project,
             self.btspec.instance).table(self.btspec.table)
 
@@ -599,6 +614,33 @@ def set_fresh_watermark(game_queue, count_from, window_size,
         game_queue.require_fresh_games(num_to_play)
 
 
+def mix_by_decile(games, moves, deciles=9):
+    """Compute a mix of regular and calibration games by decile.
+
+    deciles should be an integer between 0 and 10 inclusive.
+    """
+    assert 0 <= deciles <= 10
+    # The prefixes and suffixes below have the following meanings:
+    #   ct_: count
+    #   fr_: fraction
+    #    _r: resign (ordinary)
+    #   _nr: no-resign
+    ct_total = 10
+    lesser = ct_total - math.floor(deciles)
+    greater = ct_total - lesser
+    ct_r, ct_nr = greater, lesser
+    fr_r = ct_r / ct_total
+    fr_nr = ct_nr / ct_total
+    games_r = math.ceil(games * fr_r)
+    moves_r = math.ceil(moves * fr_r)
+    games_c = math.floor(games * fr_nr)
+    moves_c = math.floor(moves * fr_nr)
+    selection = np.array([0] * ct_r + [1] * ct_nr, dtype=np.int64)
+    return GameMix(games_r, moves_r,
+                   games_c, moves_c,
+                   selection)
+
+
 def get_unparsed_moves_from_last_n_games(games, games_nr, n,
                                          moves=2**21,
                                          shuffle=True,
@@ -622,30 +664,59 @@ def get_unparsed_moves_from_last_n_games(games, games_nr, n,
       A dataset containing no more than `moves` examples, sampled
         randomly from the last `n` games in the table.
     """
-    # The prefixes and suffixes below have the following meanings:
-    #   ct_: count
-    #   fr_: fraction
-    #    _r: resign (ordinary)
-    #   _nr: no-resign
-    ct_r, ct_nr = 9, 1
-    ct_total = ct_r + ct_nr
-    fr_r = ct_r / ct_total
-    fr_nr = ct_nr / ct_total
+    mix = mix_by_decile(n, moves, 9)
     resign = games.moves_from_last_n_games(
-        math.ceil(n * fr_r),
-        math.ceil(moves * fr_r),
+        mix.games_r,
+        mix.moves_r,
         shuffle,
         column_family, column)
     no_resign = games_nr.moves_from_last_n_games(
-        math.floor(n * fr_nr),
-        math.floor(moves * fr_nr),
+        mix.games_c,
+        mix.moves_c,
         shuffle,
         column_family, column)
-    selection = np.array([0] * ct_r + [1] * ct_nr, dtype=np.int64)
-    choice = tf.data.Dataset.from_tensor_slices(selection).repeat().take(moves)
-    ds = tf.contrib.data.choose_from_datasets([resign, no_resign], choice)
+    choice = tf.data.Dataset.from_tensor_slices(mix.selection).repeat().take(moves)
+    ds = tf.data.experimental.choose_from_datasets([resign, no_resign], choice)
     if shuffle:
-        ds = ds.shuffle(len(selection) * 2)
+        ds = ds.shuffle(len(mix.selection) * 2)
+    if values_only:
+        ds = ds.map(lambda row_name, s: s)
+    return ds
+
+
+def get_unparsed_moves_from_games(games_r, games_c,
+                                  start_r, start_c,
+                                  mix,
+                                  shuffle=True,
+                                  column_family=TFEXAMPLE,
+                                  column='example',
+                                  values_only=True):
+    """Get a dataset of serialized TFExamples from a given start point.
+
+    Args:
+      games_r, games_c: GameQueues of the regular selfplay and calibration
+        (aka 'no resign') games to sample from.
+      start_r: an integer indicating the game number to start at in games_r.
+      start_c: an integer indicating the game number to start at in games_c.
+      mix: the result of mix_by_decile()
+      shuffle:  if True, shuffle the selected move examples.
+      column_family:  name of the column family containing move examples.
+      column:  name of the column containing move examples.
+      values_only: if True, return only column values, no row keys.
+
+    Returns:
+      A dataset containing no more than the moves implied by `mix`,
+        sampled randomly from the game ranges implied.
+    """
+    resign = games_r.moves_from_games(
+        start_r, start_r + mix.games_r, mix.moves_r, shuffle, column_family, column)
+    calibrated = games_c.moves_from_games(
+        start_c, start_c + mix.games_c, mix.moves_c, shuffle, column_family, column)
+    moves = mix.moves_r + mix.moves_c
+    choice = tf.data.Dataset.from_tensor_slices(mix.selection).repeat().take(moves)
+    ds = tf.data.experimental.choose_from_datasets([resign, calibrated], choice)
+    if shuffle:
+        ds = ds.shuffle(len(mix.selection) * 2)
     if values_only:
         ds = ds.map(lambda row_name, s: s)
     return ds
@@ -667,10 +738,9 @@ def count_elements_in_dataset(ds, batch_size=1*1024, parallel_batch=8):
       The number of elements in the dataset.
     """
     with tf.Session() as sess:
-        dsc = ds.apply(tf.contrib.data.enumerate_dataset())
-        dsc = dsc.apply(
-            tf.contrib.data.map_and_batch(lambda c, v: c, batch_size,
-                                          num_parallel_batches=parallel_batch))
+        dsc = ds.apply(tf.data.experimental.enumerate_dataset())
+        dsc = dsc.apply(tf.data.experimental.map_and_batch(
+            lambda c, v: c, batch_size, num_parallel_batches=parallel_batch))
         iterator = dsc.make_initializable_iterator()
         sess.run(iterator.initializer)
         get_next = iterator.get_next()
