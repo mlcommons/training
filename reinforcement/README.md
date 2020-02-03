@@ -1,4 +1,4 @@
-# 1. Problem 
+# 1. Problem
 This task benchmarks on policy reinforcement learning for the 9x9 version of the boardgame go. The model plays games against itself and uses these games to improve play.
 
 # 2. Directions
@@ -125,7 +125,6 @@ Note that quality does not necessarily monotonically increase.
 
 ### Evaluation frequency
 Evaluation should be preformed for every model which is trained (regardless if it wins the "model evaluation" round). 
-    
 
 ### Evaluation thoroughness
 All positions should be considered in each evaluation phase.
