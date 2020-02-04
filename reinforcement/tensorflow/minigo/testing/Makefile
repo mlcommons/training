@@ -22,13 +22,12 @@ all: build
 buildv2:
 	mkdir -p staging/tensorflow
 	cp ../requirements.txt staging/requirements.txt
-	cp -r ../cc/tensorflow/ staging/
 	docker build --build-arg PROJECT=$(PROJECT) -f Dockerfile.v2 -t $(IMG_V2):$(TAG) .
 	docker tag $(IMG_V2):$(TAG) $(IMG_V2):latest
 	rm -rf staging/
 	@echo Built $(IMG_V2):$(TAG) and tagged with latest
 
 pushv2: buildv2
-	gcloud docker -- push $(IMG_V2):$(TAG)
-	gcloud docker -- push $(IMG_V2):latest
+	docker push $(IMG_V2):$(TAG)
+	docker push $(IMG_V2):latest
 	@echo Pushed $(IMG_V2) with :latest and :$(TAG) tags

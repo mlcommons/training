@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "cc/file/utils.h"
-
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
 #include <cstdio>
 #include <string>
 
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "cc/file/path.h"
+#include "cc/file/utils.h"
 #include "cc/logging.h"
 
 namespace minigo {
@@ -142,5 +143,11 @@ bool ListDir(std::string directory, std::vector<std::string>* files) {
 
   return true;
 }
+
+bool FileExists(std::string path) {
+  path = NormalizeSlashes(path);
+  return access(path.c_str(), F_OK);
+}
+
 }  // namespace file
 }  // namespace minigo

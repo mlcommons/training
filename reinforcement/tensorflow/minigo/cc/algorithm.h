@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "absl/types/span.h"
 #include "cc/logging.h"
 
 namespace minigo {
@@ -38,13 +39,9 @@ inline int ArgMax(const T& container, Compare cmp) {
                                         std::end(container), std::move(cmp)));
 }
 
-template <typename T, typename U>
-inline int SearchSorted(const T& container, const U& value) {
-  MG_CHECK(!container.empty());
-  return std::distance(
-      container.begin(),
-      std::lower_bound(container.begin(), container.end(), value));
-}
+// Calculates ArgMax of an array of floats using SSE instructions and runs about
+// 5x faster than the ArgMax<float>.
+int ArgMaxSse(absl::Span<const float> span);
 
 }  // namespace minigo
 

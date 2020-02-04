@@ -18,23 +18,28 @@
 #include <array>
 
 #include "absl/synchronization/mutex.h"
-#include "cc/dual_net/dual_net.h"
+#include "cc/model/factory.h"
+#include "cc/model/model.h"
 #include "cc/random.h"
 
 namespace minigo {
 
-class RandomDualNet : public DualNet {
+class RandomDualNet : public Model {
  public:
-  RandomDualNet(std::string name, uint64_t seed, float policy_stddev,
-                float value_stddev);
+  // It may seem weird to require a feature type for RandomDual net since it
+  // doesn't actually read the input features but once a game finises, we will
+  // need to know which features to serialize as training examples.
+  RandomDualNet(std::string name, const FeatureDescriptor& feature_desc,
+                uint64_t seed, float policy_stddev, float value_stddev);
 
   // Output policy is a normal distribution with a mean of 0.5 and a standard
   // deviation of policy_stddev, followed by a softmax.
   // Output value is a normal distribution with a mean of 0 and a standard
   // deviation of value_stddev. The output value is repeatedly sampled from the
   // normal distribution until a value is found in the range [-1, 1].
-  void RunMany(std::vector<const BoardFeatures*> features,
-               std::vector<Output*> outputs, std::string* model) override;
+  void RunMany(const std::vector<const ModelInput*>& inputs,
+               std::vector<ModelOutput*>* outputs,
+               std::string* model_name) override;
 
  private:
   Random rnd_;
@@ -42,19 +47,9 @@ class RandomDualNet : public DualNet {
   const float value_stddev_;
 };
 
-class RandomDualNetFactory : public DualNetFactory {
+class RandomDualNetFactory : public ModelFactory {
  public:
-  RandomDualNetFactory(uint64_t seed, float policy_stddev, float value_stddev);
-
-  // Model specifies the policy and value standard deviation as a
-  // colon-separated string, e.g. "0.4:0.4".
-  std::unique_ptr<DualNet> NewDualNet(const std::string& model) override;
-
- private:
-  absl::Mutex mutex_;
-  Random rnd_;
-  const float policy_stddev_;
-  const float value_stddev_;
+  std::unique_ptr<Model> NewModel(const ModelDefinition& def) override;
 };
 
 }  // namespace minigo

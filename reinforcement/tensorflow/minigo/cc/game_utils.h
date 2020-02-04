@@ -19,7 +19,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
 #include "absl/time/time.h"
 #include "cc/game.h"
 
@@ -30,10 +29,9 @@ struct WinStats {
   struct ColorStats {
     int both_passed = 0;
     int opponent_resigned = 0;
-    int move_limit_reached = 0;
 
     int total() const {
-      return both_passed + opponent_resigned + move_limit_reached;
+      return both_passed + opponent_resigned;
     }
   };
 
@@ -45,9 +43,6 @@ struct WinStats {
         break;
       case Game::GameOverReason::kOpponentResigned:
         stats.opponent_resigned += 1;
-        break;
-      case Game::GameOverReason::kMoveLimitReached:
-        stats.move_limit_reached += 1;
         break;
     }
   }
@@ -62,13 +57,15 @@ std::string FormatWinStatsTable(
     const std::vector<std::pair<std::string, WinStats>>& stats);
 
 // Returns the name (specifically the basename stem) for an output game file
-// (e.g. SGF, TF example, etc) based on the current time, hostname, process ID
-// and game ID.
-std::string GetOutputName(absl::Time now, size_t game_id);
+// (e.g. SGF, TF example, etc) based on the hostname, process ID and game ID.
+std::string GetOutputName(size_t game_id);
 
 // Writes an SGF of the given game.
 void WriteSgf(const std::string& output_dir, const std::string& output_name,
               const Game& game, bool write_comments);
+
+// Log game result & stats.
+void LogEndGameInfo(const Game& game, absl::Duration game_time);
 
 }  // namespace minigo
 

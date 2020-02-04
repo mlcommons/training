@@ -13,91 +13,10 @@ load(
     "minigo_cc_test_9_only",
 )
 
-cc_library(
-    name = "tensorflow_dynamic",
-    srcs = [
-        "tensorflow/libtensorflow_framework.so",
-    ] + select({
-        "//cc/config:enable_tpu": ["tensorflow/libgrpc_runtime.so"],
-        "//conditions:default": ["tensorflow/libtensorflow_cc.so"],
-    }),
-    hdrs = glob(
-        ["tensorflow/**/*"],
-        exclude = [
-            "**/*.a",
-            "**/*.so",
-            "tensorflow/flatbuffers/**",
-            "tensorflow/tensorflow/contrib/lite/**",
-        ],
-    ),
-    includes = [
-        "tensorflow",
-        "tensorflow/external/nsync/public",
-    ],
-    tags = ["manual"],
-)
-
-# TODO(tommadams): Set this up for windows compilation.
-cc_library(
-    name = "tensorflow_static",
-    srcs = [],
-    hdrs = [],
-    tags = ["manual"],
-)
-
-cc_library(
-    name = "tensorflow",
-    tags = ["manual"],
-    deps = select({
-        "@bazel_tools//src/conditions:windows": ["tensorflow_static"],
-        "//conditions:default": ["tensorflow_dynamic"],
-    }),
-)
-
-cc_library(
-    name = "tf_lite",
-    srcs = [
-        "tensorflow/libtensorflow_lite.a",
-    ],
-    hdrs = glob(
-        [
-            "tensorflow/flatbuffers/*.h",
-            "tensorflow/tensorflow/contrib/lite/**",
-        ],
-        exclude = ["**/*.so"],
-    ),
-    includes = ["tensorflow"],
-    linkopts = ["-ldl"],
-    tags = ["manual"],
-)
-
-cc_library(
-    name = "cuda",
-    tags = ["manual"],
-    deps = select({
-        "//cc/config:enable_gpu": [
-            "@local_config_cuda//:cuda_headers",
-            "@local_config_cuda//:cudart",
-        ],
-        "//conditions:default": [],
-    }),
-)
-
-cc_library(
-    name = "tensorrt",
-    tags = ["manual"],
-    deps = [
-        "@local_config_cuda//:cuda_headers",
-        "@local_config_cuda//:cudart",
-        "@local_config_tensorrt//:nv_infer",
-        "@local_config_tensorrt//:nvparsers",
-        "@local_config_tensorrt//:tensorrt_headers",
-    ],
-)
-
 minigo_cc_library(
     name = "base",
     srcs = [
+        "algorithm.cc",
         "color.cc",
         "coord.cc",
         "group.cc",
@@ -110,6 +29,7 @@ minigo_cc_library(
         "coord.h",
         "group.h",
         "move.h",
+        "padded_array.h",
         "stone.h",
     ],
     linkopts = select({
@@ -121,6 +41,7 @@ minigo_cc_library(
         ":logging",
         "//cc/platform",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -130,10 +51,12 @@ minigo_cc_library(
     hdrs = ["game.h"],
     deps = [
         ":base",
+        ":logging",
         ":position",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -155,17 +78,19 @@ minigo_cc_library(
 )
 
 minigo_cc_library(
-    name = "gtp_player",
-    srcs = ["gtp_player.cc"],
-    hdrs = ["gtp_player.h"],
+    name = "gtp_client",
+    srcs = ["gtp_client.cc"],
+    hdrs = ["gtp_client.h"],
     deps = [
         ":base",
         ":logging",
         ":mcts",
         ":sgf",
-        "//cc:thread_safe_queue",
-        "//cc/dual_net",
+        "//cc/async:thread_safe_queue",
         "//cc/file",
+        "//cc/model",
+        "//cc/model:factory",
+        "//cc/model:loader",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
@@ -179,6 +104,7 @@ minigo_cc_library(
     hdrs = ["init.h"],
     deps = [
         "@com_github_gflags_gflags//:gflags",
+        "@com_google_absl//absl/debugging:failure_signal_handler",
         "@com_google_absl//absl/debugging:symbolize",
     ],
 )
@@ -196,6 +122,10 @@ minigo_cc_library(
     name = "logging",
     srcs = ["logging.cc"],
     hdrs = ["logging.h"],
+    linkopts = select({
+        "@bazel_tools//src/conditions:windows": ["ws2_32.lib"],
+        "//conditions:default": ["-lpthread"],
+    }),
     deps = [
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/debugging:stacktrace",
@@ -205,55 +135,80 @@ minigo_cc_library(
 )
 
 minigo_cc_library(
-    name = "minigui_player",
-    srcs = ["minigui_player.cc"],
-    hdrs = ["minigui_player.h"],
+    name = "minigui_gtp_client",
+    srcs = ["minigui_gtp_client.cc"],
+    hdrs = ["minigui_gtp_client.h"],
     deps = [
         ":base",
-        ":gtp_player",
+        ":gtp_client",
+        ":json",
         ":logging",
         ":mcts",
         ":sgf",
-        ":thread_safe_queue",
-        "//cc/dual_net",
+        "//cc/async:thread",
+        "//cc/async:thread_safe_queue",
         "//cc/file",
-        "@com_github_nlohmann_json//:json",
+        "//cc/model",
+        "//cc/model:batching_model",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
     ],
+)
+
+# The http_file used for @com_github_nlohmann_json_single_header generates a
+# file named `downloaded`. Rename it to `json.h`.
+genrule(
+    name = "json_h",
+    srcs = ["@com_github_nlohmann_json_single_header//file"],
+    outs = ["json.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "json",
+    hdrs = [":json_h"],
 )
 
 minigo_cc_library(
     name = "mcts",
     srcs = [
-        "mcts_node.cc",
         "mcts_player.cc",
+        "mcts_tree.cc",
     ],
     hdrs = [
-        "mcts_node.h",
         "mcts_player.h",
+        "mcts_tree.h",
     ],
     deps = [
         ":base",
         ":game",
+        ":inline_vector",
         ":logging",
+        ":padded_array",
         ":position",
         ":random",
         ":symmetries",
         ":zobrist",
-        "//cc/dual_net",
-        "//cc/dual_net:inference_cache",
+        "//cc/model",
+        "//cc/model:inference_cache",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
     ],
+)
+
+minigo_cc_library(
+    name = "padded_array",
+    hdrs = ["padded_array.h"],
 )
 
 minigo_cc_library(
@@ -274,8 +229,8 @@ minigo_cc_library(
     name = "random",
     srcs = ["random.cc"],
     hdrs = ["random.h"],
+    linkopts = ["-lm"],
     deps = [
-        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -298,19 +253,11 @@ minigo_cc_library(
 
 minigo_cc_library(
     name = "symmetries",
+    srcs = ["symmetries.cc"],
     hdrs = ["symmetries.h"],
     deps = [
+        ":base",
         ":logging",
-    ],
-)
-
-cc_library(
-    name = "thread_safe_queue",
-    hdrs = ["thread_safe_queue.h"],
-    deps = [
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
     ],
 )
 
@@ -330,14 +277,14 @@ minigo_cc_library(
                ":logging",
                ":game",
                "//cc/file",
-               "//cc/dual_net",
+               "//cc/model",
                "@com_google_absl//absl/strings:str_format",
            ] + select({
                "//cc/config:enable_bt": ["@com_github_googlecloudplatform_google_cloud_cpp//google/cloud/bigtable:bigtable_client"],
                "//conditions:default": [],
            }) +
            select({
-               "//cc/config:enable_tf": ["//cc:tensorflow"],
+               "//cc/config:enable_tf": ["//cc/tensorflow"],
                "//conditions:default": [],
            }),
 )
@@ -347,6 +294,20 @@ minigo_cc_library(
     hdrs = ["tiny_set.h"],
     deps = [
         ":inline_vector",
+    ],
+)
+
+cc_library(
+    name = "wtf_saver",
+    srcs = ["wtf_saver.cc"],
+    hdrs = ["wtf_saver.h"],
+    deps = [
+        ":logging",
+        "//cc/async:poll_thread",
+        "//cc/async:thread",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/time",
+        "@wtf",
     ],
 )
 
@@ -368,10 +329,20 @@ minigo_cc_library(
     deps = [
         ":base",
         ":logging",
-        ":mcts",
         ":position",
         ":random",
         "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "algorithm_test",
+    size = "small",
+    srcs = ["algorithm_test.cc"],
+    deps = [
+        ":base",
+        ":random",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -386,10 +357,11 @@ minigo_cc_test(
 )
 
 minigo_cc_test_9_only(
-    name = "mcts_node_test",
+    name = "mcts_tree_test",
     size = "small",
-    srcs = ["mcts_node_test.cc"],
+    srcs = ["mcts_tree_test.cc"],
     deps = [
+        ":base",
         ":mcts",
         ":position",
         ":random",
@@ -431,10 +403,25 @@ minigo_cc_test_9_only(
 )
 
 minigo_cc_test(
+    name = "pass_alive_test",
+    size = "small",
+    srcs = ["pass_alive_test.cc"],
+    deps = [
+        ":base",
+        ":logging",
+        ":position",
+        ":random",
+        ":test_utils",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+minigo_cc_test(
     name = "random_test",
     size = "small",
     srcs = ["random_test.cc"],
-    linkopts = ["-lm"],
     deps = [
         ":random",
         "@com_google_googletest//:gtest_main",
@@ -459,22 +446,42 @@ minigo_cc_test(
     srcs = ["symmetries_test.cc"],
     deps = [
         ":symmetries",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
 
-minigo_cc_test(
-    name = "thread_safe_queue_test",
-    size = "small",
-    srcs = ["thread_safe_queue_test.cc"],
+minigo_cc_binary(
+    name = "concurrent_selfplay",
+    srcs = ["concurrent_selfplay.cc"],
+    visibility = ["//visibility:public"],
     deps = [
+        ":base",
+        ":game",
+        ":game_utils",
+        ":init",
         ":logging",
-        ":thread_safe_queue",
+        ":mcts",
+        ":random",
+        ":tf_utils",
+        ":wtf_saver",
+        ":zobrist",
+        "//cc/async:poll_thread",
+        "//cc/async:sharded_executor",
+        "//cc/async:thread",
+        "//cc/async:thread_safe_queue",
+        "//cc/file",
+        "//cc/file:directory_watcher",
+        "//cc/model:inference_cache",
+        "//cc/model:loader",
+        "//cc/platform",
+        "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest_main",
+        "@wtf",
     ],
 )
 
@@ -492,9 +499,10 @@ minigo_cc_binary(
         ":random",
         ":tf_utils",
         ":zobrist",
-        "//cc/dual_net:batching_dual_net",
-        "//cc/dual_net:factory",
         "//cc/file",
+        "//cc/model",
+        "//cc/model:batching_model",
+        "//cc/model:loader",
         "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
@@ -509,12 +517,12 @@ minigo_cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":base",
-        ":gtp_player",
+        ":gtp_client",
         ":init",
-        ":minigui_player",
+        ":minigui_gtp_client",
         ":zobrist",
-        "//cc/dual_net:factory",
         "//cc/file",
+        "//cc/model:loader",
         "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/memory",
@@ -524,54 +532,37 @@ minigo_cc_binary(
 )
 
 minigo_cc_binary(
-    name = "puzzle",
-    srcs = ["puzzle.cc"],
+    name = "replay_games",
+    srcs = ["replay_games.cc"],
+    deps = [
+        ":base",
+        ":init",
+        ":logging",
+        ":position",
+        ":sgf",
+        "//cc/async:thread",
+        "//cc/async:thread_safe_queue",
+        "//cc/file",
+        "@com_github_gflags_gflags//:gflags",
+        "@com_google_absl//absl/memory",
+    ],
+)
+
+cc_binary(
+    name = "sample_records",
+    srcs = ["sample_records.cc"],
     visibility = ["//visibility:public"],
     deps = [
         ":base",
         ":init",
         ":logging",
-        ":mcts",
-        ":sgf",
-        ":zobrist",
-        "//cc/dual_net:batching_dual_net",
-        "//cc/dual_net:factory",
-        "//cc/file",
-        "//cc/platform",
+        ":random",
+        "//cc/async:thread",
+        "//cc/tensorflow",
         "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-minigo_cc_binary(
-    name = "selfplay",
-    srcs = ["selfplay.cc"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":base",
-        ":game",
-        ":game_utils",
-        ":init",
-        ":logging",
-        ":mcts",
-        ":random",
-        ":tf_utils",
-        ":zobrist",
-        "//cc/dual_net:batching_dual_net",
-        "//cc/dual_net:factory",
-        "//cc/dual_net:reloading_dual_net",
-        "//cc/file",
-        "//cc/platform",
-        "@com_github_gflags_gflags//:gflags",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
     ],
 )
 
@@ -587,7 +578,7 @@ minigo_cc_binary(
         ":random",
         ":zobrist",
         "//cc:game",
-        "//cc/dual_net:factory",
+        "//cc/model:loader",
         "//cc/platform",
         "@com_github_gflags_gflags//:gflags",
     ],
@@ -616,20 +607,10 @@ minigo_cc_binary(
     srcs = ["tpu_test.cc"],
     tags = ["manual"],
     deps = [
-        ":tensorflow",
+        "//cc/tensorflow",
         "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
-minigo_cc_binary(
-    name = "position_benchmark",
-    srcs = ["position_benchmark.cc"],
-    deps = [
-        ":base",
-        ":position",
-        "@com_google_benchmark//:benchmark",
     ],
 )

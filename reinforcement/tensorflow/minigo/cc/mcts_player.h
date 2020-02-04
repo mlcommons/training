@@ -24,13 +24,12 @@
 
 #include "absl/memory/memory.h"
 #include "absl/time/time.h"
-#include "absl/types/span.h"
 #include "cc/algorithm.h"
 #include "cc/constants.h"
-#include "cc/dual_net/dual_net.h"
-#include "cc/dual_net/inference_cache.h"
 #include "cc/game.h"
-#include "cc/mcts_node.h"
+#include "cc/mcts_tree.h"
+#include "cc/model/inference_cache.h"
+#include "cc/model/model.h"
 #include "cc/position.h"
 #include "cc/random.h"
 #include "cc/symmetries.h"
@@ -44,25 +43,21 @@ float TimeRecommendation(int move_num, float seconds_per_move, float time_limit,
 class MctsPlayer {
  public:
   struct Options {
+    MctsTree::Options tree;
+
     // If inject_noise is true, the amount of noise to mix into the root.
     float noise_mix = 0.25;
     bool inject_noise = true;
-    bool soft_pick = true;
-    bool random_symmetry = true;
-
-    // See mcts_node.cc for details.
-    // Default (0.0) is init-to-parent.
-    float value_init_penalty = 0.0;
-
-    // For soft-picked moves, the probabilities are exponentiated by
-    // policy_softmax_temp to encourage diversity in early play.
-    float policy_softmax_temp = 0.98;
 
     int virtual_losses = 8;
 
-    // Seed used from random permutations.
-    // If the default value of 0 is used, a time-based seed is chosen.
-    uint64_t random_seed = 0;
+    // Random seed & stream used for random permutations.
+    uint64_t random_seed = Random::kUniqueSeed;
+
+    // If true, flip & rotate the board features when performing inference. The
+    // symmetry chosen is psuedo-randomly chosen in a deterministic way based
+    // on the position itself and the random_seed.
+    bool random_symmetry = true;
 
     // Number of readouts to perform (ignored if seconds_per_move is non-zero).
     int num_readouts = 0;
@@ -80,97 +75,95 @@ class MctsPlayer {
     // of time spent thinking as the game progresses.
     float decay_factor = 0.98;
 
-    // If true, print debug info to stderr.
-    bool verbose = true;
+    // "Playout Cap Oscillation" as per the KataGo paper.
+    // If fastplay_frequency > 0, tree search is modified as follows:
+    //   - Each move is either a "low-readout" fast move, or a full, slow move.
+    //   The percent of fast moves corresponds to "fastplay_frequency"
+    //   - A "fast" move will:
+    //     - Reuse the tree
+    //     - Not mix noise in at root
+    //     - Only perform 'fastplay_readouts' readouts.
+    //     - Not be used as a training target.
+    //   - A "slow" move will:
+    //     - Clear the tree (*not* the cache).
+    //     - Mix in dirichlet noise
+    //     - Perform 'num_readouts' readouts.
+    //     - Be noted in the Game object, to be written as a training example.
+    float fastplay_frequency = 0;
+    int fastplay_readouts = 20;
 
-    // If true, children of the current root node are pruned when a move is
-    // played. Under normal play, only the descendents of the move played ever
-    // have a chance of being visited again during tree search. However, when
-    // using Minigo to explore different variations and ponder about the best
-    // moves, it makes sense to keep the full tree around.
-    bool prune_orphaned_nodes = true;
+    // "Target pruning" adjusts the targets after reading to discard reads
+    // caused by 'unhelpful' noise & reflect the 'better' understanding of the
+    // reward distribution.  "False" == no pruning will be applied.
+    bool target_pruning = false;
 
     friend std::ostream& operator<<(std::ostream& ios, const Options& options);
   };
 
-  struct History {
-    std::array<float, kNumMoves> search_pi;
-    Coord c = Coord::kPass;
-    std::string comment;
-    const MctsNode* node = nullptr;
-  };
+  // Callback invoked on each batch of leaves expanded during tree search.
+  using TreeSearchCallback =
+      std::function<void(const std::vector<const MctsNode*>&)>;
 
   // If position is non-null, the player will be initilized with that board
   // state. Otherwise, the player is initialized with an empty board with black
   // to play.
-  MctsPlayer(std::unique_ptr<DualNet> network,
-             std::unique_ptr<InferenceCache> inference_cache, Game* game,
+  MctsPlayer(std::unique_ptr<Model> model,
+             std::shared_ptr<InferenceCache> inference_cache, Game* game,
              const Options& options);
 
-  virtual ~MctsPlayer();
+  ~MctsPlayer();
 
   void InitializeGame(const Position& position);
 
-  virtual void NewGame();
+  void NewGame();
 
-  virtual Coord SuggestMove();
+  Coord SuggestMove(int new_readouts, bool inject_noise = false);
 
   // Plays the move at point c.
   // If game is non-null, adds a new move to the game's move history and sets
   // the game over state if appropriate.
-  virtual bool PlayMove(Coord c);
+  bool PlayMove(Coord c, bool is_trainable = false);
+
+  // Used in eval mode to update this player's tree in response to the
+  // opponent's move.
+  // TODO(tommadams): write a new eval binary similar to concurrent_eval so
+  // we can delete MctsPlayer.
+  void PlayOpponentsMove(Coord c);
+
+  // Moves the root_ node up to its parent, popping the last move off the game
+  // history but preserving the game tree.
+  bool UndoMove();
 
   bool ShouldResign() const;
+
+  void SetTreeSearchCallback(TreeSearchCallback cb);
+
+  // TODO(tommadams): after changing MctsTree::PlayMove() to delete all
+  // ancestors of the new tree root, we can simply create a new tree instead of
+  // needing this method.
+  void ClearSubtrees() { tree_->ClearSubtrees(); }
 
   // Returns a string containing the list of all models used for inference, and
   // which moves they were used for.
   std::string GetModelsUsedForInference() const;
 
   // Returns the root of the current search tree, i.e. the current board state.
-  MctsNode* root() { return root_; }
-  const MctsNode* root() const { return root_; }
+  // TODO(tommadams): convert all callers to player->tree().root();
+  const MctsNode* root() const { return tree_->root(); }
 
+  const MctsTree& tree() const { return *tree_; }
   const Options& options() const { return options_; }
-  const std::string& name() const { return network_->name(); }
-  DualNet* network() { return network_.get(); }
+  const std::string& name() const { return model_->name(); }
+  Model* model() { return model_.get(); }
+  uint64_t seed() const { return rnd_.seed(); }
 
+  void SetOptions(const Options& options) { options_ = options; }
+
+  void TreeSearch(int num_leaves, int max_num_reads);
+
+  // Protected methods that get exposed for testing.
  protected:
-  // Path in the game tree from leaf to root.
-  struct TreePath {
-    TreePath(MctsNode* root, MctsNode* leaf) : root(root), leaf(leaf) {}
-    MctsNode* root;
-    MctsNode* leaf;
-  };
-
-  Options* mutable_options() { return &options_; }
-
-  Coord PickMove();
-
-  // Resets the root_ node back to the game_root_, clearing the game history but
-  // preserving the game tree.
-  // This is used to rewind the game during review.
-  void ResetRoot();
-
-  // Moves the root_ node up to its parent, popping the last move off the game
-  // history but preserving the game tree.
-  bool UndoMove();
-
-  void TreeSearch();
-
-  void SelectLeaves(MctsNode* root, int num_leaves,
-                    std::vector<MctsPlayer::TreePath>* paths);
-
-  // Returns the root of the game tree.
-  MctsNode* game_root() { return &game_root_; }
-  const MctsNode* game_root() const { return &game_root_; }
-
-  Game* game() { return game_; }
-  const Game* game() const { return game_; }
-
-  Random* rnd() { return &rnd_; }
-
-  // Run inference for the given leaf nodes & incorportate the inference output.
-  virtual void ProcessLeaves(absl::Span<TreePath> paths, bool random_symmetry);
+  MctsTree* mutable_tree() { return tree_.get(); }
 
  private:
   // State that tracks which model is used for each inference.
@@ -195,18 +188,63 @@ class MctsPlayer {
     int last_move = 0;
   };
 
-  void UpdateGame(Coord c);
+  // A position's canonical symmetry is the symmetry that transforms the
+  // canonical form of a position into its actual form. For example, one way of
+  // defining a canonical symmetry is that the first move must be played in the
+  // top-right corner. For the early moves of a game, there will not be a
+  // canonical symmetry defined; in these cases, GetCanonicalSymmetry returns
+  // symmetry::kIdentity.
+  symmetry::Symmetry GetCanonicalSymmetry(const MctsNode* node) const {
+    return node->canonical_symmetry;
+  }
 
-  std::unique_ptr<DualNet> network_;
-  int temperature_cutoff_;
+  // Returns the symmetry that should be applied to this node's position when
+  // performing inference. The MctsPlayer picks a symmetry using a pseudo-random
+  // but deterministic function so that the same MctsPlayer instance is
+  // guaranteed to return the same symmetry for a given position but different
+  // MctsPlayer instances may return different symmetries for the same position.
+  symmetry::Symmetry GetInferenceSymmetry(const MctsNode* node) const {
+    if (options_.random_symmetry) {
+      uint64_t bits = Random::MixBits(
+          node->position.stone_hash() * Random::kLargePrime + inference_mix_);
+      return static_cast<symmetry::Symmetry>(bits % symmetry::kNumSymmetries);
+    } else {
+      return symmetry::kIdentity;
+    }
+  }
 
-  MctsNode::EdgeStats root_stats_;
+  // Inject noise into the root node.
+  void InjectNoise(float dirichlet_alpha);
 
-  MctsNode* root_;
-  MctsNode game_root_;
+  // Expand the root node if necessary.
+  // In order to correctly count the number of reads performed or to inject
+  // noise, the root node must be expanded. The root will always be expanded
+  // unless this is the first time SuggestMove has been called for a game, or
+  // PlayMove was called without a prior call to SuggestMove, or the child nodes
+  // of the tree have been cleared.
+  void MaybeExpandRoot();
 
-  BoardVisitor bv_;
-  GroupVisitor gv_;
+  // Select up to `num_inferences` leaves to perform inference on, storing the
+  // selected leaves in `tree_search_inferences_`. If the player has an
+  // inference cache, this can cause more nodes to be added to the tree when
+  // the selected leaves are already in the cache. To limit this, SelectLeaves
+  // will stop once the root has `max_num_reads`.
+  //
+  // In some positions, the model may favor one move so heavily that it
+  // overcomes the effects of virtual loss. In this case, SelectLeaves may
+  // choose the same leaf multiple times.
+  void SelectLeaves(int num_inferences, int max_num_reads);
+
+  // Run inference on the contents of `inferences_` that was previously
+  // populated by a call to SelectLeaves, and propagate the results back up the
+  // tree to the root.
+  void ProcessLeaves();
+
+  void UpdateGame(Coord c, bool is_trainable);
+
+  std::unique_ptr<Model> model_;
+
+  std::unique_ptr<MctsTree> tree_;
 
   Game* game_;
 
@@ -214,7 +252,7 @@ class MctsPlayer {
 
   Options options_;
 
-  // The name of the model used for inferences. In the case of ReloadingDualNet,
+  // The name of the model used for inferences. In the case of ReloadingModel,
   // this is different from the model's name: the model name is the pattern used
   // to match each generation of model, while the inference model name is the
   // path to the actual serialized model file.
@@ -222,14 +260,33 @@ class MctsPlayer {
 
   std::vector<InferenceInfo> inferences_;
 
-  std::unique_ptr<InferenceCache> inference_cache_;
+  std::shared_ptr<InferenceCache> inference_cache_;
 
-  // Vectors reused when running TreeSearch.
-  std::vector<TreePath> tree_search_paths_;
-  std::vector<DualNet::BoardFeatures> features_;
-  std::vector<DualNet::Output> outputs_;
-  std::vector<symmetry::Symmetry> symmetries_used_;
-  std::vector<const Position::Stones*> recent_positions_;
+  struct TreeSearchInference {
+    TreeSearchInference(InferenceCache::Key cache_key,
+                        symmetry::Symmetry canonical_sym,
+                        symmetry::Symmetry inference_sym, MctsNode* leaf)
+        : cache_key(cache_key),
+          canonical_sym(canonical_sym),
+          inference_sym(inference_sym),
+          leaf(leaf) {}
+    InferenceCache::Key cache_key;
+    symmetry::Symmetry canonical_sym;
+    symmetry::Symmetry inference_sym;
+    MctsNode* leaf;
+    ModelInput input;
+    ModelOutput output;
+  };
+
+  std::vector<TreeSearchInference> tree_search_inferences_;
+  std::vector<const ModelInput*> input_ptrs_;
+  std::vector<ModelOutput*> output_ptrs_;
+
+  TreeSearchCallback tree_search_cb_ = nullptr;
+
+  // Random number combined with each Position's Zobrist hash in order to
+  // deterministically choose the symmetry to apply when performing inference.
+  const int64_t inference_mix_;
 };
 
 }  // namespace minigo

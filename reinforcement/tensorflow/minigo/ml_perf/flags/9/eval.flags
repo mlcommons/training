@@ -2,6 +2,8 @@
 
 --flagfile=ml_perf/flags/9/selfplay.flags
 
-# Play fewer games for eval than selfplay.
---num_games=100
+# --num_readouts=240
+--fastplay_frequency=0
+--resign_enabled=false
+
 --parallel_games=100

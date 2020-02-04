@@ -5,6 +5,22 @@ package(
 licenses(["notice"])  # Apache License 2.0
 
 cc_library(
+    name = "directory_watcher",
+    srcs = ["directory_watcher.cc"],
+    hdrs = ["directory_watcher.h"],
+    deps = [
+        ":file",
+        "//cc:logging",
+        "//cc/async:poll_thread",
+        "//cc/async:thread",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_library(
     name = "path",
     srcs = ["path.cc"],
     hdrs = ["path.h"],
@@ -22,8 +38,8 @@ cc_library(
     deps = [
         ":path",
         "//cc:logging",
-        "//cc:tensorflow",
         "//cc/platform",
+        "//cc/tensorflow",
         "@com_google_absl//absl/strings",
     ],
 )
