@@ -1,17 +1,3 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Tokenization classes."""
 
 from __future__ import absolute_import
@@ -21,8 +7,28 @@ from __future__ import print_function
 import collections
 import re
 import unicodedata
+
+from absl import flags
 import six
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_bool(
+    "preserve_unused_tokens", False,
+    "If True, Wordpiece tokenization will not be applied to words in the vocab."
+)
+
+_UNUSED_TOKEN_RE = re.compile("^\\[unused\\d+\\]$")
+
+
+def preserve_token(token, vocab):
+  """Returns True if the token should forgo tokenization and be preserved."""
+  if not FLAGS.preserve_unused_tokens:
+    return False
+  if token not in vocab:
+    return False
+  return bool(_UNUSED_TOKEN_RE.search(token))
 
 
 def validate_case_matches_checkpoint(do_lower_case, init_checkpoint):
@@ -121,15 +127,14 @@ def printable_text(text):
 def load_vocab(vocab_file):
   """Loads a vocabulary file into a dictionary."""
   vocab = collections.OrderedDict()
-  index = 0
   with tf.gfile.GFile(vocab_file, "r") as reader:
     while True:
       token = convert_to_unicode(reader.readline())
       if not token:
         break
       token = token.strip()
-      vocab[token] = index
-      index += 1
+      if token not in vocab:
+        vocab[token] = len(vocab)
   return vocab
 
 
@@ -164,12 +169,16 @@ class FullTokenizer(object):
   def __init__(self, vocab_file, do_lower_case=True):
     self.vocab = load_vocab(vocab_file)
     self.inv_vocab = {v: k for k, v in self.vocab.items()}
-    self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
+    self.basic_tokenizer = BasicTokenizer(
+        do_lower_case=do_lower_case, vocab=self.vocab)
     self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
 
   def tokenize(self, text):
     split_tokens = []
     for token in self.basic_tokenizer.tokenize(text):
+      if preserve_token(token, self.vocab):
+        split_tokens.append(token)
+        continue
       for sub_token in self.wordpiece_tokenizer.tokenize(token):
         split_tokens.append(sub_token)
 
@@ -185,13 +194,15 @@ class FullTokenizer(object):
 class BasicTokenizer(object):
   """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""
 
-  def __init__(self, do_lower_case=True):
+  def __init__(self, do_lower_case=True, vocab=tuple()):
     """Constructs a BasicTokenizer.
 
     Args:
       do_lower_case: Whether to lower case the input.
+      vocab: A container of tokens to not mutate during tokenization.
     """
     self.do_lower_case = do_lower_case
+    self.vocab = vocab
 
   def tokenize(self, text):
     """Tokenizes a piece of text."""
@@ -209,6 +220,9 @@ class BasicTokenizer(object):
     orig_tokens = whitespace_tokenize(text)
     split_tokens = []
     for token in orig_tokens:
+      if preserve_token(token, self.vocab):
+        split_tokens.append(token)
+        continue
       if self.do_lower_case:
         token = token.lower()
         token = self._run_strip_accents(token)
@@ -361,7 +375,7 @@ class WordpieceTokenizer(object):
 
 def _is_whitespace(char):
   """Checks whether `chars` is a whitespace character."""
-  # \t, \n, and \r are technically contorl characters but we treat them
+  # \t, \n, and \r are technically control characters but we treat them
   # as whitespace since they are generally considered as such.
   if char == " " or char == "\t" or char == "\n" or char == "\r":
     return True
