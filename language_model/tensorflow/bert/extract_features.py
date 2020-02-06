@@ -1,17 +1,3 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Extract pre-computed feature vectors from BERT."""
 
 from __future__ import absolute_import
@@ -23,9 +9,10 @@ import collections
 import json
 import re
 
-import modeling
-import tokenization
+from language.bert import modeling
+from language.bert import tokenization
 import tensorflow as tf
+from tensorflow.contrib import tpu as contrib_tpu
 
 flags = tf.flags
 
@@ -200,7 +187,7 @@ def model_fn_builder(bert_config, init_checkpoint, layer_indexes, use_tpu,
     for (i, layer_index) in enumerate(layer_indexes):
       predictions["layer_output_%d" % i] = all_layers[layer_index]
 
-    output_spec = tf.contrib.tpu.TPUEstimatorSpec(
+    output_spec = contrib_tpu.TPUEstimatorSpec(
         mode=mode, predictions=predictions, scaffold_fn=scaffold_fn)
     return output_spec
 
@@ -350,10 +337,10 @@ def main(_):
   tokenizer = tokenization.FullTokenizer(
       vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
 
-  is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
-  run_config = tf.contrib.tpu.RunConfig(
+  is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
+  run_config = contrib_tpu.RunConfig(
       master=FLAGS.master,
-      tpu_config=tf.contrib.tpu.TPUConfig(
+      tpu_config=contrib_tpu.TPUConfig(
           num_shards=FLAGS.num_tpu_cores,
           per_host_input_for_training=is_per_host))
 
@@ -375,7 +362,7 @@ def main(_):
 
   # If TPU is not available, this will fall back to normal Estimator on CPU
   # or GPU.
-  estimator = tf.contrib.tpu.TPUEstimator(
+  estimator = contrib_tpu.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=model_fn,
       config=run_config,

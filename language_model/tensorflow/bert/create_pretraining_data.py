@@ -1,17 +1,3 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Create masked LM/next sentence masked_lm TF examples for BERT."""
 
 from __future__ import absolute_import
@@ -20,7 +6,7 @@ from __future__ import print_function
 
 import collections
 import random
-import tokenization
+from language.bert import tokenization
 import tensorflow as tf
 
 flags = tf.flags
@@ -41,10 +27,6 @@ flags.DEFINE_bool(
     "do_lower_case", True,
     "Whether to lower case the input text. Should be True for uncased "
     "models and False for cased models.")
-
-flags.DEFINE_bool(
-    "do_whole_word_mask", False,
-    "Whether to use whole word masking rather than per-WordPiece masking.")
 
 flags.DEFINE_integer("max_seq_length", 128, "Maximum sequence length.")
 
@@ -347,20 +329,7 @@ def create_masked_lm_predictions(tokens, masked_lm_prob,
   for (i, token) in enumerate(tokens):
     if token == "[CLS]" or token == "[SEP]":
       continue
-    # Whole Word Masking means that if we mask all of the wordpieces
-    # corresponding to an original word. When a word has been split into
-    # WordPieces, the first token does not have any marker and any subsequence
-    # tokens are prefixed with ##. So whenever we see the ## token, we
-    # append it to the previous set of word indexes.
-    #
-    # Note that Whole Word Masking does *not* change the training code
-    # at all -- we still predict each WordPiece independently, softmaxed
-    # over the entire vocabulary.
-    if (FLAGS.do_whole_word_mask and len(cand_indexes) >= 1 and
-        token.startswith("##")):
-      cand_indexes[-1].append(i)
-    else:
-      cand_indexes.append([i])
+    cand_indexes.append(i)
 
   rng.shuffle(cand_indexes)
 
@@ -371,39 +340,29 @@ def create_masked_lm_predictions(tokens, masked_lm_prob,
 
   masked_lms = []
   covered_indexes = set()
-  for index_set in cand_indexes:
+  for index in cand_indexes:
     if len(masked_lms) >= num_to_predict:
       break
-    # If adding a whole-word mask would exceed the maximum number of
-    # predictions, then just skip this candidate.
-    if len(masked_lms) + len(index_set) > num_to_predict:
+    if index in covered_indexes:
       continue
-    is_any_index_covered = False
-    for index in index_set:
-      if index in covered_indexes:
-        is_any_index_covered = True
-        break
-    if is_any_index_covered:
-      continue
-    for index in index_set:
-      covered_indexes.add(index)
+    covered_indexes.add(index)
 
-      masked_token = None
-      # 80% of the time, replace with [MASK]
-      if rng.random() < 0.8:
-        masked_token = "[MASK]"
+    masked_token = None
+    # 80% of the time, replace with [MASK]
+    if rng.random() < 0.8:
+      masked_token = "[MASK]"
+    else:
+      # 10% of the time, keep original
+      if rng.random() < 0.5:
+        masked_token = tokens[index]
+      # 10% of the time, replace with random word
       else:
-        # 10% of the time, keep original
-        if rng.random() < 0.5:
-          masked_token = tokens[index]
-        # 10% of the time, replace with random word
-        else:
-          masked_token = vocab_words[rng.randint(0, len(vocab_words) - 1)]
+        masked_token = vocab_words[rng.randint(0, len(vocab_words) - 1)]
 
-      output_tokens[index] = masked_token
+    output_tokens[index] = masked_token
 
-      masked_lms.append(MaskedLmInstance(index=index, label=tokens[index]))
-  assert len(masked_lms) <= num_to_predict
+    masked_lms.append(MaskedLmInstance(index=index, label=tokens[index]))
+
   masked_lms = sorted(masked_lms, key=lambda x: x.index)
 
   masked_lm_positions = []
