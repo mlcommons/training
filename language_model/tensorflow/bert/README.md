@@ -1,6 +1,6 @@
 # Location of the input files 
 
-This [GCS location](https://pantheon.corp.google.com/storage/browser/pkanwar-bert/bs64k_32k_ckpt?pli=1) contains the following.
+This [GCS location](https://console.cloud.google.com/storage/browser/pkanwar-bert) contains the following.
 * TensorFlow checkpoint (bert_model.ckpt) containing the pre-trained weights (which is actually 3 files).
 * Vocab file (vocab.txt) to map WordPiece to word id.
 * Config file (bert_config.json) which specifies the hyperparameters of the model.
