@@ -192,7 +192,7 @@ def learning_rate_with_decay(
       plr = 25.0
       w_epochs = 5
     elif batch_size < 65536:
-      plr = 29.0           # With batch size 32768, set momentum to 0.929, set num_epochs to 68.
+      plr = 29.0           # With batch size 32768, set momentum to 0.929, set num_epochs to 64.
       w_epochs = 18
     else:
       plr = 32.2           # With batch size 65536, set momentum to 0.941, set num_epochs to 90.
