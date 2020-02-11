@@ -4,8 +4,6 @@ This [GCS location](https://pantheon.corp.google.com/storage/browser/pkanwar-ber
 * TensorFlow checkpoint (bert_model.ckpt) containing the pre-trained weights (which is actually 3 files).
 * Vocab file (vocab.txt) to map WordPiece to word id.
 * Config file (bert_config.json) which specifies the hyperparameters of the model.
-* Script directory with files needed to generate the dataset
-
 
 # Download and preprocess datasets
 
@@ -56,6 +54,7 @@ python run_pretraining.py \
   --nodo_eval \
   --do_train \
   --eval_batch_size=8 \
+  --learning_rate=4e-05 \
   --init_checkpoint=./checkpoint/model.ckpt-7037 \
   --iterations_per_loop=1000 \
   --max_predictions_per_seq=76 \
@@ -65,6 +64,36 @@ python run_pretraining.py \
   --optimizer=lamb \
   --save_checkpoints_steps=1000 \
   --start_warmup_step=0 \
+   --num_gpus=8 \
   --train_batch_size=24/
 
 ```
+
+The above parameters are for a machine with 8 V100 GPUs with 16GB memory each; the hyper parameters (learning rate, warm up steps, etc.) are for testing only. The training script won’t print out the masked_lm_accuracy; in order to get masked_lm_accuracy, a separately invocation of run_pretraining.py with the following command with a V100 GPU with 16 GB memory:
+
+```shell
+
+python3 run_pretraining.py \
+  --bert_config_file=./bert_config.json \
+  --output_dir=/tmp/output/ \
+  --input_file="<tfrecord dir>/part-*" \
+  --do_eval \
+  --nodo_train \
+  --eval_batch_size=8 \
+  --init_checkpoint=./checkpoint/model.ckpt-7037 \
+  --iterations_per_loop=1000 \
+  --learning_rate=4e-05 \
+  --max_eval_steps=1250 \
+  --max_predictions_per_seq=76 \
+  --max_seq_length=512 \
+  --num_gpus=1 \
+  --num_train_steps=1365333333 \
+  --num_warmup_steps=3125 \
+  --optimizer=lamb \
+  --save_checkpoints_steps=1000 \
+  --start_warmup_step=0 \
+  --train_batch_size=24 \
+  --nouse_tpu
+   
+```
+
