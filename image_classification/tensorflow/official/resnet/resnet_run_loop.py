@@ -181,16 +181,16 @@ def learning_rate_with_decay(
     """
 
     # Learning rate schedule for LARS polynomial schedule
-    if batch_size <= 4096:
+    if batch_size < 8192:
       plr = 5.0
       w_epochs = 5
-    elif batch_size <= 8192:
+    elif batch_size < 16384:
       plr = 10.0
       w_epochs = 5
-    elif batch_size <= 16384:
+    elif batch_size < 32768:
       plr = 25.0
       w_epochs = 5
-    else:      # Larger than batch 16k
+    else:
       plr = 32.0
       w_epochs = 14
 
@@ -198,7 +198,8 @@ def learning_rate_with_decay(
     wrate = (plr * tf.cast(global_step, tf.float32) / tf.cast(
         w_steps, tf.float32))
 
-    num_epochs = flags.train_epochs
+    # TODO(pkanwar): use a flag to help calc num_epochs.
+    num_epochs = 90
     train_steps = batches_per_epoch * num_epochs
 
     min_step = tf.constant(1, dtype=tf.int64)
