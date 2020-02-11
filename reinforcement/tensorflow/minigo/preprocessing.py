@@ -12,30 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-'''Utilities to create, read, write tf.Examples.'''
+"""Utilities to create, read, write tf.Examples."""
 import functools
-import numpy as np
-import tensorflow as tf
 import random
 
+import bigtable_input
 import coords
+import dual_net
 import features as features_lib
 import go
 import sgf_wrapper
+import symmetries
 
-import goparams
+import numpy as np
+import tensorflow as tf
 
 TF_RECORD_CONFIG = tf.python_io.TFRecordOptions(
     tf.python_io.TFRecordCompressionType.ZLIB)
-
-# The shuffle buffer size determines how far an example could end up from
-# where it started; this and the interleave parameters in preprocessing can give
-# us an approximation of a uniform sampling.  The default of 4M is used in
-# training, but smaller numbers can be used for aggregation or validation.
-# SHUFFLE_BUFFER_SIZE = int(2*1e6)
-SHUFFLE_BUFFER_SIZE = goparams.SHUFFLE_BUFFER_SIZE
-
-# Constructing tf.Examples
 
 
 def _one_hot(index):
@@ -45,12 +38,12 @@ def _one_hot(index):
 
 
 def make_tf_example(features, pi, value):
-    '''
+    """
     Args:
         features: [N, N, FEATURE_DIM] nparray of uint8
         pi: [N * N + 1] nparray of float32
         value: float
-    '''
+    """
     return tf.train.Example(features=tf.train.Features(feature={
         'x': tf.train.Feature(
             bytes_list=tf.train.BytesList(
@@ -62,16 +55,14 @@ def make_tf_example(features, pi, value):
             float_list=tf.train.FloatList(
                 value=[value]))}))
 
-# Write tf.Example to files
-
 
 def write_tf_examples(filename, tf_examples, serialize=True):
-    '''
+    """
     Args:
         filename: Where to write tf.records
         tf_examples: An iterable of tf.Example
         serialize: whether to serialize the examples.
-    '''
+    """
     with tf.python_io.TFRecordWriter(
             filename, options=TF_RECORD_CONFIG) as writer:
         for ex in tf_examples:
@@ -80,16 +71,18 @@ def write_tf_examples(filename, tf_examples, serialize=True):
             else:
                 writer.write(ex)
 
-# Read tf.Example from files
 
-
-def batch_parse_tf_example(batch_size, example_batch):
-    '''
+def batch_parse_tf_example(batch_size, layout, example_batch):
+    """
     Args:
+        batch_size: batch size
+        layout: 'nchw' or 'nhwc'
         example_batch: a batch of tf.Example
     Returns:
         A tuple (feature_tensor, dict of output tensors)
-    '''
+    """
+    planes = dual_net.get_features_planes()
+
     features = {
         'x': tf.FixedLenFeature([], tf.string),
         'pi': tf.FixedLenFeature([], tf.string),
@@ -98,92 +91,183 @@ def batch_parse_tf_example(batch_size, example_batch):
     parsed = tf.parse_example(example_batch, features)
     x = tf.decode_raw(parsed['x'], tf.uint8)
     x = tf.cast(x, tf.float32)
-    x = tf.reshape(x, [batch_size, go.N, go.N,
-                       features_lib.NEW_FEATURES_PLANES])
+
+    if layout == 'nhwc':
+        shape = [batch_size, go.N, go.N, planes]
+    else:
+        shape = [batch_size, planes, go.N, go.N]
+    x = tf.reshape(x, shape)
+
     pi = tf.decode_raw(parsed['pi'], tf.float32)
     pi = tf.reshape(pi, [batch_size, go.N * go.N + 1])
     outcome = parsed['outcome']
     outcome.set_shape([batch_size])
-    return (x, {'pi_tensor': pi, 'value_tensor': outcome})
+    return x, {'pi_tensor': pi, 'value_tensor': outcome}
 
 
-def read_tf_records(batch_size, tf_records, num_repeats=None,
+def read_tf_records(batch_size, tf_records, num_repeats=1,
                     shuffle_records=True, shuffle_examples=True,
-                    shuffle_buffer_size=None,
+                    shuffle_buffer_size=None, interleave=True,
                     filter_amount=1.0):
-    '''
+    """
     Args:
         batch_size: batch size to return
         tf_records: a list of tf_record filenames
-        num_repeats: how many times the data should be read (default: infinite)
+        num_repeats: how many times the data should be read (default: One)
         shuffle_records: whether to shuffle the order of files read
         shuffle_examples: whether to shuffle the tf.Examples
         shuffle_buffer_size: how big of a buffer to fill before shuffling.
+        interleave: iwhether to interleave examples from multiple tf_records
         filter_amount: what fraction of records to keep
     Returns:
         a tf dataset of batched tensors
-    '''
+    """
+    if shuffle_examples and not shuffle_buffer_size:
+        raise ValueError("Must set shuffle buffer size if shuffling examples")
 
-    if shuffle_buffer_size is None:
-        shuffle_buffer_size = SHUFFLE_BUFFER_SIZE
+    tf_records = list(tf_records)
     if shuffle_records:
         random.shuffle(tf_records)
     record_list = tf.data.Dataset.from_tensor_slices(tf_records)
 
     # compression_type here must agree with write_tf_examples
-    # cycle_length = how many tfrecord files are read in parallel
-    # block_length = how many tf.Examples are read from each file before
-    #   moving to the next file
-    # The idea is to shuffle both the order of the files being read,
-    # and the examples being read from the files.
-    dataset = record_list.interleave(lambda x:
-                                     tf.data.TFRecordDataset(
-                                         x, compression_type='ZLIB'),
-                                     cycle_length=64, block_length=16)
-    dataset = dataset.filter(lambda x: tf.less(
-        tf.random_uniform([1]), filter_amount)[0])
-    # TODO(amj): apply py_func for transforms here.
-    if num_repeats is not None:
-        dataset = dataset.repeat(num_repeats)
+    map_func = functools.partial(
+        tf.data.TFRecordDataset,
+        buffer_size=8 * 1024 * 1024,
+        compression_type='ZLIB')
+
+    if interleave:
+        # cycle_length = how many tfrecord files are read in parallel
+        # The idea is to shuffle both the order of the files being read,
+        # and the examples being read from the files.
+        dataset = record_list.apply(tf.data.experimental.parallel_interleave(
+            map_func, cycle_length=64, sloppy=True))
     else:
-        dataset = dataset.repeat()
+        dataset = record_list.flat_map(map_func)
+
+    if filter_amount < 1.0:
+        dataset = dataset.filter(
+            lambda _: tf.random_uniform([]) < filter_amount)
+
+    dataset = dataset.repeat(num_repeats)
     if shuffle_examples:
         dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
+
     dataset = dataset.batch(batch_size)
     return dataset
 
 
-def get_input_tensors(batch_size, tf_records, num_repeats=None,
+def _random_rotation(feature_layout, x_tensor, outcome_tensor):
+    pi_tensor = outcome_tensor['pi_tensor']
+    if feature_layout == 'nhwc':
+        x_rot_tensor, pi_rot_tensor=symmetries.rotate_train_nhwc(
+            x_tensor, pi_tensor)
+    else:
+        x_rot_tensor, pi_rot_tensor=symmetries.rotate_train_nchw(
+            x_tensor, pi_tensor)
+
+    outcome_tensor['pi_tensor'] = pi_rot_tensor
+    return x_rot_tensor, outcome_tensor
+
+
+def get_input_tensors(batch_size, feature_layout, tf_records, num_repeats=1,
                       shuffle_records=True, shuffle_examples=True,
                       shuffle_buffer_size=None,
-                      filter_amount=0.05):
-    '''Read tf.Records and prepare them for ingestion by dual_net.  See
-    `read_tf_records` for parameter documentation.
+                      filter_amount=0.05, random_rotation=True):
+    """Read tf.Records and prepare them for ingestion by dual_net.
+
+    See `read_tf_records` for parameter documentation.
 
     Returns a dict of tensors (see return value of batch_parse_tf_example)
-    '''
-    if shuffle_buffer_size is None:
-        shuffle_buffer_size = SHUFFLE_BUFFER_SIZE
-    dataset = read_tf_records(batch_size, tf_records, num_repeats=num_repeats,
-                              shuffle_records=shuffle_records,
-                              shuffle_examples=shuffle_examples,
-                              shuffle_buffer_size=shuffle_buffer_size,
-                              filter_amount=filter_amount)
+    """
+    print("Reading tf_records from {} inputs".format(len(tf_records)))
+    dataset = read_tf_records(
+        batch_size,
+        tf_records,
+        num_repeats=num_repeats,
+        shuffle_records=shuffle_records,
+        shuffle_examples=shuffle_examples,
+        shuffle_buffer_size=shuffle_buffer_size,
+        filter_amount=filter_amount,
+        interleave=False)
     dataset = dataset.filter(lambda t: tf.equal(tf.shape(t)[0], batch_size))
-    dataset = dataset.map(functools.partial(
-        batch_parse_tf_example, batch_size))
+    dataset = dataset.map(
+        functools.partial(batch_parse_tf_example, batch_size, feature_layout))
+    if random_rotation:
+        # Unbatch the dataset so we can rotate it
+        dataset = dataset.apply(tf.data.experimental.unbatch())
+        dataset = dataset.apply(tf.data.experimental.map_and_batch(
+            functools.partial(_random_rotation, feature_layout),
+            batch_size))
+
     return dataset.make_one_shot_iterator().get_next()
 
-# End-to-end utility functions
+
+def get_tpu_input_tensors(batch_size, feature_layout, tf_records, num_repeats=1,
+                          shuffle_records=True, shuffle_examples=True,
+                          shuffle_buffer_size=None,
+                          filter_amount=0.05, random_rotation=True):
+    # TPUs trains on sequential golden chunks to simplify preprocessing and
+    # reproducibility.
+    assert len(tf_records) < 101, "Use example_buffer to build a golden_chunk"
+
+    dataset = read_tf_records(
+        batch_size,
+        tf_records,
+        num_repeats=num_repeats,
+        shuffle_records=shuffle_records,
+        shuffle_examples=shuffle_examples,
+        shuffle_buffer_size=shuffle_buffer_size,
+        filter_amount=filter_amount,
+        interleave=False)
+    dataset = dataset.filter(lambda t: tf.equal(tf.shape(t)[0], batch_size))
+    dataset = dataset.map(
+        functools.partial(batch_parse_tf_example, batch_size, feature_layout))
+
+    # TODO(sethtroisi@): Unify
+    if random_rotation:
+        # Unbatch the dataset so we can rotate it
+        dataset = dataset.apply(tf.data.experimental.unbatch())
+        dataset = dataset.apply(tf.data.experimental.map_and_batch(
+            functools.partial(_random_rotation, feature_layout),
+            batch_size, drop_remainder=True))
+
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    return dataset
+
+
+def get_tpu_bt_input_tensors(games, games_nr, batch_size, feature_layout,
+                             num_repeats=1,
+                             number_of_games=500e3,
+                             fresh_fraction=0.05,
+                             random_rotation=True):
+    dataset = bigtable_input.get_unparsed_moves_from_last_n_games(
+        games, games_nr, number_of_games)
+    dataset = dataset.repeat(num_repeats)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.filter(lambda t: tf.equal(tf.shape(t)[0], batch_size))
+    dataset = dataset.map(
+        functools.partial(batch_parse_tf_example, batch_size, feature_layout))
+    if random_rotation:
+        # Unbatch the dataset so we can rotate it
+        dataset = dataset.apply(tf.data.experimental.unbatch())
+        dataset = dataset.apply(tf.data.experimental.map_and_batch(
+            functools.partial(_random_rotation, feature_layout),
+            batch_size, drop_remainder=True))
+
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    return dataset
 
 
 def make_dataset_from_selfplay(data_extracts):
-    '''
+    """
     Returns an iterable of tf.Examples.
     Args:
         data_extracts: An iterable of (position, pi, result) tuples
-    '''
-    tf_examples = (make_tf_example(features_lib.extract_features(pos), pi, result)
+    """
+    f = dual_net.get_features()
+    tf_examples = (make_tf_example(features_lib.extract_features(pos, f),
+                                   pi, result)
                    for pos, pi, result in data_extracts)
     return tf_examples
 
@@ -195,27 +279,8 @@ def make_dataset_from_sgf(sgf_filename, tf_record):
 
 
 def _make_tf_example_from_pwc(position_w_context):
-    features = features_lib.extract_features(position_w_context.position)
+    f = dual_net.get_features()
+    features = features_lib.extract_features(position_w_context.position, f)
     pi = _one_hot(coords.to_flat(position_w_context.next_move))
     value = position_w_context.result
     return make_tf_example(features, pi, value)
-
-
-def shuffle_tf_examples(gather_size, records_to_shuffle):
-    '''Read through tf.Record and yield shuffled, but unparsed tf.Examples
-
-    Args:
-        gather_size: The number of tf.Examples to be gathered together
-        records_to_shuffle: A list of filenames
-    Returns:
-        An iterator yielding lists of bytes, which are serialized tf.Examples.
-    '''
-    dataset = read_tf_records(gather_size, records_to_shuffle, num_repeats=1)
-    batch = dataset.make_one_shot_iterator().get_next()
-    sess = tf.Session()
-    while True:
-        try:
-            result = sess.run(batch)
-            yield list(result)
-        except tf.errors.OutOfRangeError:
-            break

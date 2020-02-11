@@ -11,7 +11,8 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-==============================================================================
+
+
 
 This is a directory used to produce larger versions of MovieLens through
   fractal expansions. The expansion is stochastic, see equation (2) and
@@ -50,7 +51,7 @@ Sizes of generated data sets:
   * 12,709,557 interactions in test set
   * 2,197,225 users
   * 855,776 items
-  2) With --num_row_multiplier=16 --num_col_multiplier=32:
+  2) With --num_row_multiplier=4 --num_col_multiplier=16:
   * 131,203,749 interactions in train set
   * 1,462,391 interactions in test set
   * 498,975 users
@@ -86,3 +87,33 @@ Other useful flags:
   2) --max_dropout_rate, decreasing/increasing this value will result in
     a denser/sparser generated data set. 0.99 (default) is used.
 
+# Running instructions for the recommendation benchmark
+
+### Steps to download and verify data
+
+You can download and verify the dataset by running the `download_dataset.sh` and `verify_dataset.sh` scripts from the parent `recommendation` directory.
+Assume you want to store the downloaded dataset in `/my_data_dir` directory:
+
+1. Install `unzip` and `curl`.
+2. Download and unzip `ml-20m.zip`:
+```bash
+mkdir /my_data_dir
+cd /my_data_dir
+# Creates ml-20.zip
+source <PATH_TO_RECOMMENDATION_DIR>/download_dataset.sh
+# Confirms the MD5 checksum of ml-20.zip
+source <PATH_TO_RECOMMENDATION_DIR>/verify_dataset.sh
+unzip ml-20m.zip
+```
+
+### Step to expand the dataset (x16 users, x32 items)
+
+Assuming that the unzipped ML-20M dataset is stored under `/my_data_dir/ml-20m`, 
+go to `data_generation/fractal_graph_expansions` directory and run:
+
+```bash
+pip install -r requirements.txt
+DATA_DIR=/my_data_dir ./data_gen.sh
+```
+
+The resulting dataset should be stored under `/my_data_dir/ml-20mx16x32`.

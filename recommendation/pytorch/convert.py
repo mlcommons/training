@@ -1,119 +1,158 @@
-import os
 from argparse import ArgumentParser
-from collections import defaultdict
-
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
+from datetime import datetime
+import numpy_indexed as npi
+import os
+import pickle
+import timeit
+import multiprocessing as mp
+import multiprocessing.dummy
+from alias_generator import process_data
 
-from load import implicit_load
-
-from mlperf_compliance import mlperf_log
-
-
-MIN_RATINGS = 20
-
-
-USER_COLUMN = 'user_id'
-ITEM_COLUMN = 'item_id'
-
-
-TRAIN_RATINGS_FILENAME = 'train-ratings.csv'
-TEST_RATINGS_FILENAME = 'test-ratings.csv'
-TEST_NEG_FILENAME = 'test-negative.csv'
+CACHE_FN = "alias_tbl_{}x{}_"
+NEG_ELEMS_BATCH_SZ = 100000
 
 
 def parse_args():
-    parser = ArgumentParser()
-    parser.add_argument('path', type=str,
-                        help='Path to reviews CSV file from MovieLens')
-    parser.add_argument('output', type=str,
-                        help='Output directory for train and test CSV files')
-    parser.add_argument('-n', '--negatives', type=int, default=999,
-                        help='Number of negative samples for each positive'
-                             'test example')
-    parser.add_argument('-s', '--seed', type=int, default=0,
-                        help='Random seed to reproduce same negative samples')
+    parser = ArgumentParser(description="Train a Nerual Collaborative"
+                                        " Filtering model converter")
+    parser.add_argument('data', type=str,
+                        help='path to test and training data files')
+    parser.add_argument('--valid-negative', type=int, default=999,
+                        help='Number of negative samples for each positive test example')
+    parser.add_argument('--user_scaling', default=16, type=int)
+    parser.add_argument('--item_scaling', default=32, type=int)
+    parser.add_argument('--use_sampler_cache', action='store_true',
+                        help='Use exiting pre-processed sampler cache. See CACHE_FN variable and use.')
+    parser.add_argument('--seed', '-s', default=0, type=int,
+                        help='manually set random seed for numpy')
     return parser.parse_args()
 
 
+def generate_negatives(sampler, num_negatives, users):
+    result = []
+
+    neg_users = np.repeat(users, num_negatives)
+    num_batches = (neg_users.shape[0] // NEG_ELEMS_BATCH_SZ) + 1
+    user_batches = np.array_split(neg_users, num_batches)
+
+    neg_users_items = np.empty([num_negatives], object)
+    for i in range(num_batches):
+        result.append(sampler.sample_negatives(user_batches[i]))
+    result = np.array([neg_users, np.concatenate(result)])
+    return result.transpose()
+
+
+def generate_negatives_flat(sampler, num_negatives, users):
+    num_threads = int(0.8 * multiprocessing.cpu_count())
+    print(datetime.now(), "Generating negatives using {} threads.".format(num_threads))
+
+    users = np.tile(users, num_negatives)
+    users_shape = users.shape
+
+    num_batches = (users.shape[0] // int(1e5)) + 1
+    st = timeit.default_timer()
+    user_batches = np.array_split(users, num_batches)
+    print(".. split users into {} batches, time: {:.2f} sec".format(num_batches, timeit.default_timer()-st))
+
+    # Real multi-processing requires us to move the large sampler object to 
+    # shared memory. Using threading for now.
+    with mp.dummy.Pool(num_threads) as pool:
+        results = pool.map(sampler.sample_negatives, user_batches)
+
+    return np.concatenate(results).astype(np.int64)
+
+
+def process_raw_data(args):
+    train_ratings = [np.array([], dtype=np.int64)] * args.user_scaling
+    test_ratings_chunk = [np.array([], dtype=np.int64)] * args.user_scaling
+    test_chunk_size = [0] * args.user_scaling
+    for chunk in range(args.user_scaling):
+        print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
+        train_ratings[chunk] = np.load(args.data + '/trainx'
+                + str(args.user_scaling) + 'x' + str(args.item_scaling)
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0']
+        test_ratings_chunk[chunk] = np.load(args.data + '/testx'
+                + str(args.user_scaling) + 'x' + str(args.item_scaling)
+                + '_' + str(chunk) + '.npz', encoding='bytes')['arr_0']
+        test_chunk_size[chunk] = test_ratings_chunk[chunk].shape[0]
+
+    # Due to the fractal graph expansion process, some generated users do not
+    # have any ratings. Therefore, nb_users should not be max_user_index+1.
+    nb_users_per_chunk = [len(np.unique(x[:, 0])) for x in train_ratings]
+    nb_users = sum(nb_users_per_chunk)
+    # nb_users = len(np.unique(train_ratings[:, 0]))
+
+    nb_maxs_per_chunk = [np.max(x, axis=0)[1] for x in train_ratings]
+    nb_items = max(nb_maxs_per_chunk) + 1 # Zero is valid item in output from expansion
+
+    nb_train_elems = sum([x.shape[0] for x in train_ratings])
+
+    print(datetime.now(), "Number of users: {}, Number of items: {}".format(nb_users, nb_items))
+    print(datetime.now(), "Number of ratings: {}".format(nb_train_elems))
+
+    train_input = [npi.group_by(x[:, 0]).split(x[:, 1]) for x in train_ratings]
+    def iter_fn_simple():
+        for train_chunk in train_input:
+            for _, items in enumerate(train_chunk):
+                yield items
+
+    sampler, pos_users, pos_items  = process_data(
+        num_items=nb_items, min_items_per_user=1, iter_fn=iter_fn_simple)
+    assert len(pos_users) == nb_train_elems, "Cardinality difference with original data and sample table data."
+
+    print("pos_users type: {}, pos_items type: {}, s.offsets: {}".format(
+          pos_users.dtype, pos_items.dtype, sampler.offsets.dtype))
+    print("num_reg: {}, region_card: {}".format(sampler.num_regions.dtype,
+          sampler.region_cardinality.dtype))
+    print("region_starts: {}, alias_index: {}, alias_p: {}".format(
+          sampler.region_starts.dtype, sampler.alias_index.dtype,
+          sampler.alias_split_p.dtype))
+
+    fn_prefix = args.data + '/' + CACHE_FN.format(args.user_scaling, args.item_scaling)
+    sampler_cache = fn_prefix + "cached_sampler.pkl"
+    with open(sampler_cache, "wb") as f:
+        pickle.dump([sampler, pos_users, pos_items, nb_items, test_chunk_size], f, pickle.HIGHEST_PROTOCOL)
+
+    return sampler, test_chunk_size
+
 def main():
     args = parse_args()
-    np.random.seed(args.seed)
+    if args.seed is not None:
+      print("Using seed = {}".format(args.seed))
+      np.random.seed(seed=args.seed)
 
-    print("Loading raw data from {}".format(args.path))
-    df = implicit_load(args.path, sort=False)
+    if not args.use_sampler_cache:
+      sampler, test_chunk_size = process_raw_data(args)
+    else:
+      fn_prefix = args.data + '/' + CACHE_FN.format(args.user_scaling, args.item_scaling)
+      sampler_cache = fn_prefix + "cached_sampler.pkl"
+      print(datetime.now(), "Loading preprocessed sampler.")
+      if os.path.exists(args.data):
+        print("Using alias file: {}".format(args.data))
+        with open(sampler_cache, "rb") as f:
+          sampler, pos_users, pos_items, nb_items, test_chunk_size = pickle.load(f)
 
-    print("Filtering out users with less than {} ratings".format(MIN_RATINGS))
-    grouped = df.groupby(USER_COLUMN)
-    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_MIN_RATINGS, value=MIN_RATINGS)
-    df = grouped.filter(lambda x: len(x) >= MIN_RATINGS)
+    print(datetime.now(), 'Generating negative test samples...')
+    test_negatives = [np.array([], dtype=np.int64)] * args.user_scaling
+    test_user_offset = 0
+    for chunk in range(args.user_scaling):
+        neg_users = np.arange(test_user_offset,
+            test_user_offset+test_chunk_size[chunk])
+        test_negatives[chunk] = generate_negatives(
+                sampler,
+                args.valid_negative,
+                neg_users)
+        file_name = (args.data + '/test_negx' + str(args.user_scaling) + 'x'
+                + str(args.item_scaling) + '_' + str(chunk) + '.npz')
+        np.savez_compressed(file_name, test_negatives[chunk])
 
-    print("Mapping original user and item IDs to new sequential IDs")
-    original_users = df[USER_COLUMN].unique()
-    original_items = df[ITEM_COLUMN].unique()
+        print(datetime.now(), 'Chunk', chunk+1, 'of', args.user_scaling, 'saved.')
+        test_user_offset += test_chunk_size[chunk]
 
-    user_map = {user: index for index, user in enumerate(original_users)}
-    item_map = {item: index for index, item in enumerate(original_items)}
-
-    df[USER_COLUMN] = df[USER_COLUMN].apply(lambda user: user_map[user])
-    df[ITEM_COLUMN] = df[ITEM_COLUMN].apply(lambda item: item_map[item])
-
-    assert df[USER_COLUMN].max() == len(original_users) - 1
-    assert df[ITEM_COLUMN].max() == len(original_items) - 1
-
-    print("Creating list of items for each user")
-    # Need to sort before popping to get last item
-    df.sort_values(by='timestamp', inplace=True)
-    all_ratings = set(zip(df[USER_COLUMN], df[ITEM_COLUMN]))
-    user_to_items = defaultdict(list)
-    for row in tqdm(df.itertuples(), desc='Ratings', total=len(df)):
-        user_to_items[getattr(row, USER_COLUMN)].append(getattr(row, ITEM_COLUMN))  # noqa: E501
-
-    test_ratings = []
-    test_negs = []
-    all_items = set(range(len(original_items)))
-
-    print("Generating {} negative samples for each user"
-          .format(args.negatives))
-    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_NUM_EVAL, value=args.negatives)
-
-    # The default of np.random.choice is replace=True
-    mlperf_log.ncf_print(key=mlperf_log.PREPROC_HP_SAMPLE_EVAL_REPLACEMENT, value=True)
-
-    #===========================================================================
-    #== First random operation triggers the clock start. =======================
-    #===========================================================================
-    mlperf_log.ncf_print(key=mlperf_log.RUN_START)
-    mlperf_log.ncf_print(key=mlperf_log.INPUT_STEP_EVAL_NEG_GEN)
-
-    for user in tqdm(range(len(original_users)), desc='Users', total=len(original_users)):  # noqa: E501
-        test_item = user_to_items[user].pop()
-
-        all_ratings.remove((user, test_item))
-        all_negs = all_items - set(user_to_items[user])
-        all_negs = sorted(list(all_negs))  # determinism
-
-        test_ratings.append((user, test_item))
-        test_negs.append(list(np.random.choice(all_negs, args.negatives)))
-
-    print("Saving train and test CSV files to {}".format(args.output))
-    df_train_ratings = pd.DataFrame(list(all_ratings))
-    df_train_ratings['fake_rating'] = 1
-    df_train_ratings.to_csv(os.path.join(args.output, TRAIN_RATINGS_FILENAME),
-                            index=False, header=False, sep='\t')
-
-    mlperf_log.ncf_print(key=mlperf_log.INPUT_SIZE, value=len(df_train_ratings))
-
-    df_test_ratings = pd.DataFrame(test_ratings)
-    df_test_ratings['fake_rating'] = 1
-    df_test_ratings.to_csv(os.path.join(args.output, TEST_RATINGS_FILENAME),
-                           index=False, header=False, sep='\t')
-
-    df_test_negs = pd.DataFrame(test_negs)
-    df_test_negs.to_csv(os.path.join(args.output, TEST_NEG_FILENAME),
-                        index=False, header=False, sep='\t')
+    print(datetime.now(), "Number of test users: {}".format(test_user_offset))
 
 
 if __name__ == '__main__':
     main()
+

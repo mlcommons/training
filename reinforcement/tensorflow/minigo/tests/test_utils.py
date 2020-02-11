@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
-import random
 import re
 import time
 import unittest
+
+import numpy as np
 
 import go
 import utils
@@ -43,21 +43,13 @@ def load_board(string):
 
 
 class TestUtils(unittest.TestCase):
-    def test_shuffler(self):
-        random.seed(1)
-        dataset = (i for i in range(10))
-        shuffled = list(utils.shuffler(
-            dataset, pool_size=5, refill_threshold=0.8))
-        self.assertEqual(len(shuffled), 10)
-        self.assertNotEqual(shuffled, list(range(10)))
-
     def test_parse_game_result(self):
-        self.assertEqual(utils.parse_game_result('B+3.5'), go.BLACK)
-        self.assertEqual(utils.parse_game_result('W+T'), go.WHITE)
-        self.assertEqual(utils.parse_game_result('Void'), 0)
+        self.assertEqual(go.BLACK, utils.parse_game_result('B+3.5'))
+        self.assertEqual(go.WHITE, utils.parse_game_result('W+T'))
+        self.assertEqual(0, utils.parse_game_result('Void'))
 
 
-class MiniGoUnitTest(unittest.TestCase):
+class MinigoUnitTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.start_time = time.time()
@@ -125,5 +117,5 @@ class MiniGoUnitTest(unittest.TestCase):
         queue = [root]
         while queue:
             current = queue.pop()
-            self.assertEqual(current.losses_applied, 0)
+            self.assertEqual(0, current.losses_applied)
             queue.extend(current.children.values())

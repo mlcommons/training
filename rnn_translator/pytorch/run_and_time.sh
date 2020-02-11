@@ -13,7 +13,7 @@ echo "STARTING TIMING RUN AT $start_fmt"
 
 # run benchmark
 seed=${1:-"1"}
-target=21.80
+target=24.00
 
 echo "running benchmark"
 ./run.sh $seed $target

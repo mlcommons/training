@@ -15,18 +15,17 @@
 # Docker image test-harness container for running python tests. Based off of
 # https://github.com/kubeflow/kubeflow/tree/master/testing
 
-FROM ubuntu:16.04
+ARG PROJECT
+FROM gcr.io/$PROJECT/cc-base:latest
 
 # add env we can debug with the image name:tag
 ARG IMAGE_ARG
 ENV IMAGE=${IMAGE_ARG}
 
 RUN apt-get update && apt-get install -y \
-    python \
-    python3 \
-    python3-pip \
     rsync \
     git \
+    clang-format \
     wget && \
     apt-get clean
 
@@ -41,8 +40,12 @@ WORKDIR /workspace
 COPY bootstrap_v2.sh /workspace/bootstrap_v2.sh
 
 COPY staging/requirements.txt /workspace/requirements.txt
-RUN pip3 install --upgrade pip
+RUN pip3 install --upgrade pip setuptools
 RUN pip3 install -r /workspace/requirements.txt
-RUN pip3 install "tensorflow>=1.5,<1.6"
+RUN pip3 install "tensorflow==1.15.0"
+
+# Workaround because test-infra/scenarios/execute.py runs `/usr/bin/env python`
+# and not python2.7 explicitly.
+RUN ln -sf /usr/bin/python2.7 /usr/bin/python
 
 ENTRYPOINT ["/bin/sh", "/workspace/bootstrap_v2.sh"]

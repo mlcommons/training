@@ -1,4 +1,4 @@
-# Copyright 2018 MLBenchmark Group. All Rights Reserved.
+# Copyright 2019 MLBenchmark Group. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,14 +20,14 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="mlperf_compliance",
-    version="0.0.10",
-    author="Taylor Robie",
-    author_email="taylorrobie@google.com",
-    description="Tools for logging MLPerf compliance tags.",
+    version="0.1.0",
+    author="MLPerf.org",
+    author_email="mlperf@googlegroups.com",
+    description="MLPerf compliance tools.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/mlperf/training/tree/master/compliance",
-    packages=['mlperf_compliance'],
+    packages=setuptools.find_namespace_packages(include=['mllog*']),
     classifiers=[
       "Programming Language :: Python :: 2",
       "Programming Language :: Python :: 3",

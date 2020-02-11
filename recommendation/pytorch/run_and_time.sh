@@ -5,34 +5,37 @@ set -e
 # to use the script:
 #   run_and_time.sh <random seed 1-5>
 
-THRESHOLD=0.635
-BASEDIR=$(dirname -- "$0")
-
-# start timing
-start=$(date +%s)
-start_fmt=$(date +%Y-%m-%d\ %r)
-echo "STARTING TIMING RUN AT $start_fmt"
+THRESHOLD=1.0
+BASEDIR='/data/cache'
+DATASET=${DATASET:-ml-20m}
 
 # Get command line seed
 seed=${1:-1}
 
-echo "unzip ml-20m.zip"
-if unzip -u ml-20m.zip
-then
-    echo "Start processing ml-20m/ratings.csv"
-    t0=$(date +%s)
-	python $BASEDIR/convert.py ml-20m/ratings.csv ml-20m --negatives 999
-    t1=$(date +%s)
-	delta=$(( $t1 - $t0 ))
-    echo "Finish processing ml-20m/ratings.csv in $delta seconds"
+# Get the multipliers for expanding the dataset
+USER_MUL=${USER_MUL:-16}
+ITEM_MUL=${ITEM_MUL:-32}
 
-    echo "Start training"
-    t0=$(date +%s)
-	python $BASEDIR/ncf.py ml-20m -l 0.0005 -b 2048 --layers 256 256 128 64 -f 64 \
-		--seed $seed --threshold $THRESHOLD --processes 10
-    t1=$(date +%s)
-	delta=$(( $t1 - $t0 ))
-    echo "Finish training in $delta seconds"
+DATASET_DIR=${BASEDIR}/${DATASET}x${USER_MUL}x${ITEM_MUL}
+
+if [ -d ${DATASET_DIR} ]
+then
+    # start timing
+    start=$(date +%s)
+    start_fmt=$(date +%Y-%m-%d\ %r)
+    echo "STARTING TIMING RUN AT $start_fmt"
+
+	python ncf.py ${DATASET_DIR} \
+        -l 0.0002 \
+        -b 65536 \
+        --layers 256 256 128 64 \
+        -f 64 \
+		--seed $seed \
+        --threshold $THRESHOLD \
+        --user_scaling ${USER_MUL} \
+        --item_scaling ${ITEM_MUL} \
+        --cpu_dataloader \
+        --random_negatives
 
 	# end timing
 	end=$(date +%s)
@@ -47,8 +50,7 @@ then
 
 	echo "RESULT,$result_name,$seed,$result,$USER,$start_fmt"
 else
-	echo "Problem unzipping ml-20.zip"
-	echo "Please run 'download_data.sh && verify_datset.sh' first"
+	echo "Directory ${DATASET_DIR} does not exist"
 fi
 
 
