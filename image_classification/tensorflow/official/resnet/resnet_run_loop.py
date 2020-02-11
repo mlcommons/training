@@ -31,6 +31,7 @@ import tensorflow as tf  # pylint: disable=g-bad-import-order
 from mlperf_compliance import mlperf_log
 from mlperf_compliance import tf_mlperf_log
 from official.resnet import resnet_model
+from official.resnet import mlperf_lars_optimizer
 from official.utils.arg_parsers import parsers
 from official.utils.export import export
 from official.utils.logs import hooks_helper
@@ -190,9 +191,12 @@ def learning_rate_with_decay(
     elif batch_size < 32768:
       plr = 25.0
       w_epochs = 5
+    elif batch_size < 65536:
+      plr = 29.0
+      w_epochs = 18
     else:
-      plr = 32.0
-      w_epochs = 14
+      plr = 32.2
+      w_epochs = 28
 
     w_steps = int(w_epochs * batches_per_epoch)
     wrate = (plr * tf.cast(global_step, tf.float32) / tf.cast(
@@ -323,12 +327,15 @@ def resnet_model_fn(features, labels, mode, model_class,
   # Add weight decay to the loss.
   mlperf_log.resnet_print(key=mlperf_log.MODEL_L2_REGULARIZATION,
                           value=weight_decay)
-  l2_loss = weight_decay * tf.add_n(
-      # loss is computed using fp32 for numerical stability.
-      [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
-       if loss_filter_fn(v.name)])
-  tf.summary.scalar('l2_loss', l2_loss)
-  loss = cross_entropy + l2_loss
+  if enable_lars:
+    loss = cross_entropy
+  else:
+    l2_loss = weight_decay * tf.add_n(
+        # loss is computed using fp32 for numerical stability.
+        [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
+         if loss_filter_fn(v.name)])
+    tf.summary.scalar('l2_loss', l2_loss)
+    loss = cross_entropy + l2_loss
 
   if mode == tf.estimator.ModeKeys.TRAIN:
     global_step = tf.train.get_or_create_global_step()
@@ -348,7 +355,7 @@ def resnet_model_fn(features, labels, mode, model_class,
     mlperf_log.resnet_print(key=mlperf_log.OPT_MOMENTUM, value=momentum)
 
     if enable_lars:
-      optimizer = tf.contrib.opt.LARSOptimizer(
+      optimizer = mlperf_lars_optimizer.MLPERF_LARSOptimizer(
           learning_rate,
           momentum=momentum,
           weight_decay=weight_decay,
