@@ -30,9 +30,35 @@ cd reference/single_stage_detector/
 source download_dataset.sh
 ```
 
-### Steps to run benchmark.
+## Running with Popper
 
-## Steps to launch training
+[Popper](https://github.com/systemslab/popper) is a tool for defining and executing container-native workflows either locally or on CI services. Some workflows in this repository contain a `wf.yml` file that defines a Popper workflow for automatically downloading and verifying data, running the benchmark and generating a report. The execution and report generation both comply with the [MLPerf training rules](https://github.com/mlperf/training_policies/blob/master/training_rules.adoc). More details about Popper can be found [here](https://popper.readthedocs.io/).
+
+
+### Instructions:
+
+1. Clone the repository.
+```
+git clone https://github.com/mlperf/training
+```
+
+2. Install docker, cuda-runtime and nvidia-docker on the machine.
+```
+./training/install_cuda_docker.sh
+```
+
+3. Install the `popper` tool.
+```
+pip install popper
+```
+We recommend to use a [virtualenv](https://packaging.python.org/guides/installing-using-pip-and-virtual-environments/#creating-a-virtual-environment) for installing Popper.
+
+4. Run the workflow.
+```
+cd single_stage_detector/
+popper run -f wf.yml -c settings.py
+```
+Here, the `settings.py` file contains necessary configuration that needs to be passed to the container engine in order to use the nvidia drivers. For more information about customizing container engine parameters, see [here](https://popper.readthedocs.io/en/latest/sections/cli_features.html#customizing-container-engine-behavior).
 
 ### NVIDIA DGX-1 (single GPU)
 Launch configuration and system-specific hyperparameters for the NVIDIA DGX-1

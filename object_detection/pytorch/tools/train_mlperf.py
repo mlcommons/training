@@ -159,8 +159,11 @@ def train(cfg, local_rank, distributed):
     )
     arguments["save_checkpoints"] = cfg.SAVE_CHECKPOINTS
 
-    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
-    arguments.update(extra_checkpoint_data)
+    try:
+        extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
+        arguments.update(extra_checkpoint_data)
+    except Exception:
+        pass
 
     data_loader, iters_per_epoch = make_data_loader(
         cfg,

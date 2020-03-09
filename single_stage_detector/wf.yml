@@ -1,0 +1,26 @@
+steps:
+- id: 'collect system info'
+  uses: 'docker://popperized/facter:3.14.9'
+  runs: './scripts/collect_system_info.sh'
+
+- id: 'download data'
+  uses: 'docker://byrnedo/alpine-curl:0.1.8'
+  runs: './scripts/download_dataset.sh'
+
+- id: 'verify data'
+  uses: 'docker://alpine:3.9.5'
+  runs: './scripts/verify_dataset.sh'
+
+- id: 'extract data'
+  uses: 'docker://garthk/unzip@sha256:f57a80e56cd9f2c0a003ae2c5da9e66927fcbbf833824944820e2caf0dc62825'
+  runs: './scripts/extract_dataset.sh'
+
+- id: 'run benchmark'
+  uses: './ssd'
+  runs: './scripts/run_benchmark.sh'
+  env:
+     DGXSYSTEM: 'DGX1_32'
+
+- id: 'report result'
+  uses: 'docker://frolvlad/alpine-bash@sha256:6d66903825fa81381decde07a0353ea520ca75e1f79335670a3d3e69e2f41382'
+  runs: './scripts/report_result.sh'

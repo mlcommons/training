@@ -14,6 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -ex
+
+cd ./ssd
+
 DGXSYSTEM=${DGXSYSTEM:-"DGX1_32"}
 if [[ -f config_${DGXSYSTEM}.sh ]]; then
   source config_${DGXSYSTEM}.sh
@@ -26,25 +30,17 @@ SLURM_NTASKS_PER_NODE=${SLURM_NTASKS_PER_NODE:-$DGXNGPU}
 SLURM_JOB_ID=${SLURM_JOB_ID:-$RANDOM}
 echo "Run vars: id $SLURM_JOB_ID gpus $SLURM_NTASKS_PER_NODE mparams $MULTI_NODE"
 
-# runs benchmark and reports time to convergence
-# to use the script:
-#   run_and_time.sh
-
-set -e
-
 # start timing
 start=$(date +%s)
 start_fmt=$(date +%Y-%m-%d\ %r)
 echo "STARTING TIMING RUN AT $start_fmt"
 
 # run benchmark
-set -x
 NUMEPOCHS=${NUMEPOCHS:-70}
 LR=${LR:-"2.5e-3"}
 
 echo "running benchmark"
 
-export DATASET_DIR="/data/coco2017"
 export TORCH_MODEL_ZOO="/data/torchvision"
 
 python -m bind_launch --nsockets_per_node ${DGXNSOCKET} \
@@ -56,13 +52,10 @@ python -m bind_launch --nsockets_per_node ${DGXNSOCKET} \
   --lr "${LR}" \
   --no-save \
   --threshold=0.23 \
-  --data ${DATASET_DIR} \
+  --data ../data/coco \
   ${EXTRA_PARAMS[@]} ; ret_code=$?
 
-set +x
-
 sleep 3
-if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 
 # end timing
 end=$(date +%s)
@@ -71,6 +64,9 @@ echo "ENDING TIMING RUN AT $end_fmt"
 
 # report result
 result=$(( $end - $start ))
-result_name="OBJECT_DETECTION"
+result_name="ssd"
 
-echo "RESULT,$result_name,,$result,nvidia,$start_fmt"
+rm -rf core
+
+echo "RESULT,$result_name,,$result,$USER,$start_fmt"
+cd ..
