@@ -5,8 +5,6 @@ This [GCS location](https://console.cloud.google.com/storage/browser/pkanwar-ber
 * Vocab file (vocab.txt) to map WordPiece to word id.
 * Config file (bert_config.json) which specifies the hyperparameters of the model.
 
-Download these by running download_gcs.sh. The download will be placed
-
 # Download and preprocess datasets
 
 Download the [wikipedia dump](https://dumps.wikimedia.org/enwiki/20200101/enwiki-20200101-pages-articles-multistream.xml.bz2) and extract the pages
