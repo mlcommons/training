@@ -92,6 +92,7 @@ Metric is COCO box mAP (averaged over IoU of 0.5:0.95), computed over 2017 COCO 
 mAP of 0.23
 
 ### Evaluation frequency
+One evaluation every 5 epochs.
 
 ### Evaluation thoroughness
 All the images in COCO 2017 val data set.
