@@ -55,7 +55,11 @@ python3 create_pretraining_data.py \
 The generated tfrecord has 500 parts, totalling to ~365GB.
 
 # Stopping criteria
-The training should occur over a minimum of 9,600,000 samples (e.g., 150k steps x 64 global batch size). A valid submission will evaluate a masked lm accuracy >= 0.678. The requirement for both minimum step count and accuracy is due to the inherent fluctuations in accuracy wrt pretraining steps, which has a standard deviation of step count measured at ~10% to meet the targer mlm_accuracy of 0.678 on a sample of 10 training runs. Based on this data, it is expected that ~95% of runs will be >= 0.678 mlm_accuracy after training 9.6M samples using the reference code and data.
+The training should occur over a minimum of 9,600,000 samples (e.g., 150k steps x 64 global batch size). A valid submission will evaluate a masked lm accuracy >= 0.678. The requirement for both minimum step count and accuracy is due to the inherent fluctuations in accuracy wrt pretraining steps, which has a standard deviation of step count measured at ~10% to meet the targer mlm_accuracy of 0.678 on a sample of 10 training runs. Based on this data, it is expected that ~95% of runs will be >= 0.678 mlm_accuracy after training 9.6M samples using the reference code and data.  
+  
+The evaluation will be on the first 500 consecutive samples of the withheld test set. Slightly more data than was needed was withheld in the test set for experimentation to determine the stopping criteria. 500 samples was chosen to minimize evaluation cost while maintaining stability of the results.  
+  
+The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. In particular the seed (12345) must be set to ensure everyone evaluates on the same data.
 
 # Running the model
 
