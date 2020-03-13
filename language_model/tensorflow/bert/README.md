@@ -54,6 +54,9 @@ python3 create_pretraining_data.py \
 
 The generated tfrecord has 500 parts, totalling to ~365GB.
 
+# Stopping criteria
+The training should occur over a minimum of 9,600,000 samples (e.g., 150k steps x 64 global batch size). A valid submission will evaluate a masked lm accuracy >= 0.678. The requirement for both minimum step count and accuracy is due to the inherent fluctuations in accuracy wrt pretraining steps, which has a standard deviation of step count measured at ~10% to meet the targer mlm_accuracy of 0.678 on a sample of 10 training runs. Based on this data, it is expected that ~95% of runs will be >= 0.678 mlm_accuracy after training 9.6M samples using the reference code and data.
+
 # Running the model
 
 To run this model, use the following command.
@@ -72,13 +75,13 @@ python run_pretraining.py \
   --iterations_per_loop=1000 \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
-  --num_train_steps=1365333333 \
+  --num_train_steps=150000 \
   --num_warmup_steps=0 \
   --optimizer=lamb \
   --save_checkpoints_steps=1000 \
   --start_warmup_step=0 \
-   --num_gpus=8 \
-  --train_batch_size=24/
+   --num_gpus=16 \
+  --train_batch_size=4/
 
 ```
 
@@ -100,12 +103,12 @@ python3 run_pretraining.py \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
   --num_gpus=1 \
-  --num_train_steps=1365333333 \
+  --num_train_steps=2400000 \
   --num_warmup_steps=3125 \
   --optimizer=lamb \
   --save_checkpoints_steps=1000 \
   --start_warmup_step=0 \
-  --train_batch_size=24 \
+  --train_batch_size=4 \
   --nouse_tpu
    
 ```
