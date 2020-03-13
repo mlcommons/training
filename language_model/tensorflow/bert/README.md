@@ -23,17 +23,17 @@ The following command will run the clean up steps, and put the results in ./resu
 
 After running the process_wiki.sh script, for the 20200101 wiki dump, there will be 500 files, named part-00xxx-of-00500 in the ./results directory.
 
-Exact steps (starting in the bert path)
-cd cleanup_scripts
-mkdir -p wiki
-cd wiki
-wget https://dumps.wikimedia.org/enwiki/20200101/enwiki-20200101-pages-articles-multistream.xml.bz2    # Optionally use curl instead
-bzip2 -d enwiki-20200101-pages-articles-multistream.xml.bz2
-cd ..    # back to bert/cleanup_scripts
-git clone https://github.com/attardi/wikiextractor.git
-python3 wikiextractor/WikiExtractor.py wiki/enwiki-20200101-pages-articles-multistream.xml    # Results are placed in bert/cleanup_scripts/text
-./process_wiki.sh '<text/*/wiki_??'
-python3 extract_test_set_articles.py
+Exact steps (starting in the bert path)  
+cd cleanup_scripts  
+mkdir -p wiki  
+cd wiki  
+wget https://dumps.wikimedia.org/enwiki/20200101/enwiki-20200101-pages-articles-multistream.xml.bz2    # Optionally use curl instead  
+bzip2 -d enwiki-20200101-pages-articles-multistream.xml.bz2  
+cd ..    # back to bert/cleanup_scripts  
+git clone https://github.com/attardi/wikiextractor.git  
+python3 wikiextractor/WikiExtractor.py wiki/enwiki-20200101-pages-articles-multistream.xml    # Results are placed in bert/cleanup_scripts/text  
+./process_wiki.sh '<text/*/wiki_??'  
+python3 extract_test_set_articles.py  
 
 # Generate the BERT input dataset
 
