@@ -34,6 +34,14 @@ git clone https://github.com/attardi/wikiextractor.git
 python3 wikiextractor/WikiExtractor.py wiki/enwiki-20200101-pages-articles-multistream.xml    # Results are placed in bert/cleanup_scripts/text  
 ./process_wiki.sh '<text/*/wiki_??'  
 python3 extract_test_set_articles.py  
+  
+MD5sums:  
+7f59165e21b7d566db610ff6756c926b - bert_config.json  
+00d47075e0f583fb7c0791fac1c57cb3 - enwiki-20200101-pages-articles-multistream.xml.bz2  
+80f7e609749c962e492f50f8317a5721 - model.ckpt-7037.data-00000-of-00001  
+c4f503f6661cabec96174eb3849c5c8b - model.ckpt-7037.index  
+b322f2eb77f5ea4a02afd69fbc22209a - model.ckpt-7037.meta  
+64800d5d8528ce344256daf115d4965e - vocab.txt  
 
 # Generate the BERT input dataset
 
