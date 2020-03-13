@@ -1,5 +1,3 @@
-# NVIDIA
-
 import glob
 
 output_filename = 'wiki_test_set.txt'

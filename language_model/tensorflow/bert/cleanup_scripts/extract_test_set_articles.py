@@ -1,5 +1,3 @@
-# NVIDIA
-
 import glob
 import hashlib
 
