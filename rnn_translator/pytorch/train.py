@@ -258,10 +258,12 @@ def main():
     mllogger = mllog.get_mllogger()
     mllogger.logger.propagate = False
 
+    gnmt_start(key=constants.INIT_START)
+
     args = parse_args()
     device = utils.set_device(args.cuda, args.local_rank)
     distributed = utils.init_distributed(args.cuda)
-    gnmt_start(key=constants.RUN_START, sync=True)
+
     args.rank = utils.get_rank()
 
     if not args.cudnn:
@@ -304,34 +306,6 @@ def main():
     tokenizer = Tokenizer(os.path.join(args.dataset_dir, config.VOCAB_FNAME),
                           pad_vocab)
 
-    # build datasets
-    gnmt_event(key=constants.MAX_SEQUENCE_LENGTH,
-               value=args.max_length_train, sync=False)
-
-    train_data = LazyParallelDataset(
-        src_fname=os.path.join(args.dataset_dir, config.SRC_TRAIN_FNAME),
-        tgt_fname=os.path.join(args.dataset_dir, config.TGT_TRAIN_FNAME),
-        tokenizer=tokenizer,
-        min_len=args.min_length_train,
-        max_len=args.max_length_train,
-        sort=False,
-        max_size=args.max_size)
-
-    val_data = ParallelDataset(
-        src_fname=os.path.join(args.dataset_dir, config.SRC_VAL_FNAME),
-        tgt_fname=os.path.join(args.dataset_dir, config.TGT_VAL_FNAME),
-        tokenizer=tokenizer,
-        min_len=args.min_length_val,
-        max_len=args.max_length_val,
-        sort=True)
-
-    test_data = TextDataset(
-        src_fname=os.path.join(args.dataset_dir, config.SRC_TEST_FNAME),
-        tokenizer=tokenizer,
-        min_len=args.min_length_test,
-        max_len=args.max_length_test,
-        sort=True)
-
     vocab_size = tokenizer.vocab_size
 
     # build GNMT model
@@ -361,6 +335,37 @@ def main():
 
     num_parameters = sum([l.nelement() for l in model.parameters()])
     logging.info(f'Number of parameters: {num_parameters}')
+
+    gnmt_end(key=constants.INIT_STOP, sync=True)
+    gnmt_start(key=constants.RUN_START, sync=True)
+
+    # build datasets
+    gnmt_event(key=constants.MAX_SEQUENCE_LENGTH,
+               value=args.max_length_train, sync=False)
+
+    train_data = LazyParallelDataset(
+        src_fname=os.path.join(args.dataset_dir, config.SRC_TRAIN_FNAME),
+        tgt_fname=os.path.join(args.dataset_dir, config.TGT_TRAIN_FNAME),
+        tokenizer=tokenizer,
+        min_len=args.min_length_train,
+        max_len=args.max_length_train,
+        sort=False,
+        max_size=args.max_size)
+
+    val_data = ParallelDataset(
+        src_fname=os.path.join(args.dataset_dir, config.SRC_VAL_FNAME),
+        tgt_fname=os.path.join(args.dataset_dir, config.TGT_VAL_FNAME),
+        tokenizer=tokenizer,
+        min_len=args.min_length_val,
+        max_len=args.max_length_val,
+        sort=True)
+
+    test_data = TextDataset(
+        src_fname=os.path.join(args.dataset_dir, config.SRC_TEST_FNAME),
+        tokenizer=tokenizer,
+        min_len=args.min_length_test,
+        max_len=args.max_length_test,
+        sort=True)
 
     batching_opt = {'shard_size': args.shard_size,
                     'num_buckets': args.num_buckets}
