@@ -26,8 +26,9 @@ def enqueue_config(config):
 
 class ComplianceChecker:
 
-    def __init__(self):
+    def __init__(self, ruleset):
         self.error_risen = False
+        self.ruleset = ruleset
 
     def raise_error(self, msg, raise_exception=False):
         if raise_exception:
@@ -151,7 +152,7 @@ class ComplianceChecker:
 
     def check_file(self, args):
 
-        loglines, errors = mlp_parser.parse_file(args.filename)
+        loglines, errors = mlp_parser.parse_file(args.filename, ruleset=self.ruleset)
 
         if len(errors) > 0:
             print('Found parsing errors:')
@@ -170,17 +171,27 @@ def get_parser():
 
     parser.add_argument('filename', type=str,
                     help='the file to check for compliance')
+    parser.add_argument('--ruleset', type=str, default='0.6.0',
+                    help='what version of rules to check the log against')
     parser.add_argument('--config',  type=str,
-                    help='mlperf logging config', default='0.6.0/common.yaml')
+                    help='mlperf logging config, by default it loads {ruleset}/common.yaml', default=None)
 
     return parser
+
+
+def fill_defaults(args):
+    if not args.config:
+        args.config = f'{args.ruleset}/common.yaml'
+
+    return args
 
 
 def main():
     parser = get_parser()
     args = parser.parse_args()
+    args = fill_defaults(args)
 
-    checker = ComplianceChecker()
+    checker = ComplianceChecker(args.ruleset)
 
     if checker.check_file(args):
         print('SUCCESS')
