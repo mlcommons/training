@@ -16,16 +16,24 @@ import mlp_parser
 class CCError(Exception): 
     pass
 
+
+def raise_error(msg, raise_exception=False):
+    if raise_exception:
+        raise CCError(msg)
+    else:
+        print(msg)
+
 def run_check_eval(ll, tag, code, state):
     if code is None: return
 
     try:
-        result = eval(code.strip(), state, {'ll': ll, 'v': ll.value})
+        result = eval(code.strip(), state, {'ll': ll, 'v': ll.value })
     except:
-        raise CCError('Failed executing CHECK code triggered by line :\n{}'.format(ll.full_string))
+        raise_error('Failed executing CHECK code triggered by line :\n{}'.format(ll.full_string))
+        return
 
     if not result:
-        raise CCError('CHECK failed in line \n \'{}\' for \'{}\',\n v={},\n s={},\n code \'{} \''.format(ll.full_string, tag, ll.value, state['s'], code))
+        raise_error('CHECK failed in line \n \'{}\' for \'{}\',\n v={},\n s={},\n code \'{} \''.format(ll.full_string, tag, ll.value, state['s'], code))
 
 
 def run_check_exec(ll, tag, code, state, action):
@@ -34,7 +42,7 @@ def run_check_exec(ll, tag, code, state, action):
     try:
         exec(code.strip(), state, {'ll': ll, 'v': ll.value})
     except:
-        raise CCError('Failed executing code {} code triggered by line :\n{}'.format(action, ll.full_string))
+        raise_error('Failed executing code {} code triggered by line :\n{}'.format(action, ll.full_string))
 
 
 enqueued_configs = []
@@ -85,11 +93,11 @@ def configured_checks(loglines, config_file):
         if 'REQ' not in v: continue
         if v['REQ']=='EXACTLY_ONE':
             if occurrence_counter[k]!=1:
-                 raise CCError("Required EXACTLY_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
+                 raise_error("Required EXACTLY_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
 
         if v['REQ']=='AT_LEAST_ONE':
             if occurrence_counter[k]<1:
-                 raise CCError("Required AT_LEAST_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
+                 raise_error("Required AT_LEAST_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
 
     # execute end block
     end_blocks = [x for x in checks if list(x)[0]=='END']
@@ -100,12 +108,12 @@ def configured_checks(loglines, config_file):
         if 'CHECK' in end_record:
             end_result = eval(end_record['CHECK'].strip(), state)
             if not end_result:
-                raise CCError('Failed executing END CHECK with \n s={},\n code \'{} \''.format(state, end_record['CHECK'].strip()))
+                raise_error('Failed executing END CHECK with \n s={},\n code \'{} \''.format(state, end_record['CHECK'].strip()))
 
 
 def check_loglines(loglines, config):
     if not loglines:
-      raise CCError('No log lines detected')
+      raise_error('No log lines detected')
 
     enqueue_config(config)
 
@@ -115,7 +123,7 @@ def check_loglines(loglines, config):
         config_file = general_file = os.path.join(current_dir, current_config)
 
         if not os.path.exists(config_file):
-            raise CCError('Could not find config file: {}'.format(config_file))
+            raise_error('Could not find config file: {}'.format(config_file))
 
         # processing a config may have a side affect of pushing another config(s) to be checked
         configured_checks(loglines,  config_file)
@@ -131,7 +139,7 @@ def check_file(args):
             print(line)
             print('  ^^ ', error)
         print()
-        raise CCError('Log lines had parsing errors.')
+        raise_error('Log lines had parsing errors.')
 
     check_loglines(loglines, args.config)
 
