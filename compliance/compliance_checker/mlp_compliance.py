@@ -165,8 +165,7 @@ class ComplianceChecker:
 
         return not self.error_risen
 
-
-def main():
+def get_parser():
     parser = argparse.ArgumentParser(description='Lint MLPerf Compliance Logs.')
 
     parser.add_argument('filename', type=str,
@@ -174,6 +173,11 @@ def main():
     parser.add_argument('--config',  type=str,
                     help='mlperf logging config', default='0.6.0/common.yaml')
 
+    return parser
+
+
+def main():
+    parser = get_parser()
     args = parser.parse_args()
 
     checker = ComplianceChecker()
