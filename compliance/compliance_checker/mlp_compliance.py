@@ -27,15 +27,38 @@ def enqueue_config(config):
 class ComplianceChecker:
 
     def __init__(self, ruleset):
-        self.error_risen = False
         self.ruleset = ruleset
 
-    def raise_error(self, msg, raise_exception=False):
-        if raise_exception:
-            raise CCError(msg)
+        self.overwritable = {}
+        self.not_overwritable = []
+
+    def raise_exception(self, msg):
+        raise CCError(msg)
+
+
+    def put_message(self, msg, key=None):
+        if key:
+            self.overwritable[key] = msg
         else:
+            self.not_overwritable.append(msg)
+
+
+    def overwrite_messages(self, keys):
+        for key in keys:
+            self.overwritable.pop(key, None)
+
+
+    def log_messages(self):
+        for key in self.overwritable:
+            print(self.overwritable[key])
+
+        for msg in self.not_overwritable:
             print(msg)
-            self.error_risen = True
+
+
+    def has_messages(self):
+        return self.not_overwritable or self.overwritable
+
 
     def run_check_eval(self, ll, tag, code, state):
         if code is None: return
@@ -43,11 +66,16 @@ class ComplianceChecker:
         try:
             result = eval(code.strip(), state, {'ll': ll, 'v': ll.value })
         except:
-            self.raise_error('Failed executing CHECK code triggered by line :\n{}'.format(ll.full_string))
+            self.put_message(f'Failed executing CHECK code triggered by line :\n{ll.full_string}',
+                             key=ll.key)
             return
 
         if not result:
-            self.raise_error('CHECK failed in line \n \'{}\' for \'{}\',\n v={},\n s={},\n code \'{} \''.format(ll.full_string, tag, ll.value, state['s'], code))
+            self.put_message(
+                f"CHECK failed in line \n '{ll.full_string}'"
+                f" for '{tag}',\n v={ll.value},\n s={state['s']},\n"
+                f" code '{code}'",
+                key=ll.key)
 
 
     def run_check_exec(self, ll, tag, code, state, action):
@@ -56,7 +84,8 @@ class ComplianceChecker:
         try:
             exec(code.strip(), state, {'ll': ll, 'v': ll.value})
         except:
-            self.raise_error('Failed executing code {} code triggered by line :\n{}'.format(action, ll.full_string))
+            self.put_message(f'Failed executing code {action} code triggered by line :\n{ll.full_string}',
+                             key=ll.key)
 
 
     def parse_alternatives(self, string):
@@ -87,6 +116,8 @@ class ComplianceChecker:
 
         occurrence_counter = {k:0 for k in key_records.keys()}
 
+        self.overwrite_messages(key_records)
+
         # executing the rules through log records
         for line in loglines:
             key_record = None
@@ -104,21 +135,25 @@ class ComplianceChecker:
         alternatives = set()
         # verify occurrences requirements
         for k,v in key_records.items():
-            if 'REQ' not in v: continue
+            if 'REQ' not in v:
+                continue
+
             if v['REQ']=='EXACTLY_ONE':
                 if occurrence_counter[k]!=1:
-                     self.raise_error("Required EXACTLY_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
+                     self.put_message(f"Required EXACTLY_ONE occurrence of '{k}' but found {occurrence_counter[k]}",
+                                      key=k)
 
             if v['REQ']=='AT_LEAST_ONE':
                 if occurrence_counter[k]<1:
-                     self.raise_error("Required AT_LEAST_ONE occurrence of \'{}\' but found {}".format(k, occurrence_counter[k]))
+                     self.put_message(f"Required AT_LEAST_ONE occurrence of '{k}' but found {occurrence_counter[k]}",
+                                      key=k)
 
             if v['REQ'].startswith('AT_LEAST_ONE_OR'):
                 alternatives.add(tuple({k, *self.parse_alternatives(v['REQ'])}))
 
         for alts in alternatives:
             if not any(occurrence_counter[k] for k in alts):
-                self.raise_error("Required AT_LEAST_ONE occurrence of {}".format(' or '.join(f"'{s}'" for s in alts)))
+                self.put_message("Required AT_LEAST_ONE occurrence of {}".format(' or '.join(f"'{s}'" for s in alts)))
 
         # execute end block
         end_blocks = [x for x in checks if list(x)[0]=='END']
@@ -129,12 +164,12 @@ class ComplianceChecker:
             if 'CHECK' in end_record:
                 end_result = eval(end_record['CHECK'].strip(), state)
                 if not end_result:
-                    self.raise_error('Failed executing END CHECK with \n s={},\n code \'{} \''.format(state, end_record['CHECK'].strip()))
+                    self.put_message('Failed executing END CHECK with \n s={},\n code \'{} \''.format(state, end_record['CHECK'].strip()))
 
 
     def check_loglines(self, loglines, config):
         if not loglines:
-          self.raise_error('No log lines detected')
+          self.put_message('No log lines detected')
 
         enqueue_config(config)
 
@@ -144,7 +179,7 @@ class ComplianceChecker:
             config_file = general_file = os.path.join(current_dir, current_config)
 
             if not os.path.exists(config_file):
-                self.raise_error('Could not find config file: {}'.format(config_file))
+                self.put_message('Could not find config file: {}'.format(config_file))
 
             # processing a config may have a side affect of pushing another config(s) to be checked
             self.configured_checks(loglines,  config_file)
@@ -160,11 +195,13 @@ class ComplianceChecker:
                 print(line)
                 print('  ^^ ', error)
             print()
-            self.raise_error('Log lines had parsing errors.')
+            self.put_message('Log lines had parsing errors.')
 
         self.check_loglines(loglines, args.config)
 
-        return not self.error_risen
+        self.log_messages()
+
+        return not self.has_messages()
 
 def get_parser():
     parser = argparse.ArgumentParser(description='Lint MLPerf Compliance Logs.')
