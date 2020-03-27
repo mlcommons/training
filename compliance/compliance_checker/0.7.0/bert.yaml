@@ -2,9 +2,9 @@
 - KEY:
     NAME:  initial_eval_accuracy
     REQ:   EXACTLY_ONE
-    CHECK: >
-        s['cache_clear'] and
-        not s['init_started']
+    CHECK:
+        - s['cache_clear']
+        - not s['init_started']
 
 - KEY:
     NAME:  global_batch_size
@@ -21,9 +21,9 @@
 - KEY:
     NAME:  max_sequence_length
     REQ:   EXACTLY_ONE
-    CHECK: >
-        'method' in v['metadata'] and
-        v['metadata']['method'] in ['truncate', 'discard']
+    CHECK:
+        - 'method' in v['metadata']
+        - v['metadata']['method'] in ['truncate', 'discard']
 
 - KEY:
     NAME:  opt_base_learning_rate

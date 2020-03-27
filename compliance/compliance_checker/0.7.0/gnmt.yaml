@@ -47,8 +47,8 @@
 - KEY:
     NAME:  max_sequence_length
     REQ:   EXACTLY_ONE
-    CHECK: >
-        v['value'] > 0 and
-        'method' in v['metadata'] and
-        v['metadata']['method'] in ['truncate', 'discard']
+    CHECK:
+        - "v['value'] > 0"
+        - "'method' in v['metadata']"
+        - "v['metadata']['method'] in ['truncate', 'discard']"
 

@@ -16,6 +16,7 @@ LogLine = collections.namedtuple('LogLine', [
     'timestamp',   # seconds as a float, e.g. 1234.567
     'key',         # the string key
     'value',       # the parsed value associated with the tag, or None if no value
+    'lineno',      # the line number in the file
     ])
 
 
@@ -29,7 +30,7 @@ def parse_line(line):
     return json.loads(line[len(TOKEN):])
 
 
-def string_to_logline(string):
+def string_to_logline(lineno, string):
     ''' Returns a LogLine or raises a ValueError '''
     m = parse_line(string)
 
@@ -48,6 +49,7 @@ def string_to_logline(string):
     j = { 'value': m['value'], 'metadata': m['metadata'] }
     args.append(j)
 
+    args.append(lineno)
     return LogLine(*args)
 
 
@@ -73,10 +75,10 @@ def parse_generator(gen):
     '''
     loglines = []
     failed = []
-    for line in strip_and_dedup(gen):
+    for lineno, line in enumerate(strip_and_dedup(gen)):
         line = line.strip()
         try:
-            ll = string_to_logline(line)
+            ll = string_to_logline(lineno, line)
             loglines.append(ll)
         except ValueError as e:
             failed.append((line, str(e)))

@@ -69,9 +69,9 @@
     CHECK: " v['value'] > 0"
 
 - END:
-    CHECK: >
-        (s['sgd_decay']==s['sgd']) and 
-        (s['lars_decay_steps']==s['lars']) and 
-        (s['lars_decay_power']==s['lars']) and 
-        (s['lars_wd']==s['lars']) and 
-        (s['lars_eps']==s['lars'])
+    CHECK:
+        - s['sgd_decay'] == s['sgd']
+        - s['lars_decay_steps'] == s['lars']
+        - s['lars_decay_power'] == s['lars']
+        - s['lars_wd'] == s['lars']
+        - s['lars_eps'] == s['lars']

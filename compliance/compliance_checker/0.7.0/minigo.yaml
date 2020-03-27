@@ -2,7 +2,10 @@
 - KEY:
     NAME:  save_model
     REQ:   AT_LEAST_ONE
-    CHECK: " s['in_epoch'] and ( v['value']['iteration'] == s['last_epoch'] ) and not s['model_saved'] "
+    CHECK:
+        - "s['in_epoch']"
+        - "v['value']['iteration'] == s['last_epoch']"
+        - "not s['model_saved']"
     POST:  " s['model_saved'] = True ; s['save_model_ts'].append(ll.timestamp) "
 
 

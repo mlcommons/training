@@ -47,10 +47,10 @@
 - KEY:
     NAME:  eval_accuracy
     REQ:   AT_LEAST_ONE
-    CHECK: >
-        'BBOX' in v['value'] and
-        'SEGM' in v['value'] and
-        'epoch_num' in v['metadata'] and
-        ( v['metadata']['epoch_num'] == s['last_eval'] )
+    CHECK:
+        - "'BBOX' in v['value']"
+        - "'SEGM' in v['value']"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] == s['last_eval']"
     POST: " s['accuracy_printed'] = True "
 

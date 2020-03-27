@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import yaml
+import json
 
 import mlp_parser
 
@@ -15,6 +16,10 @@ import mlp_parser
 
 class CCError(Exception): 
     pass
+
+
+def preety_dict(d):
+    return json.dumps(d, sort_keys=True, indent=2)
 
 
 enqueued_configs = []
@@ -49,10 +54,13 @@ class ComplianceChecker:
 
 
     def log_messages(self):
+        message_separator = '-' * 30
         for key in self.overwritable:
+            print(message_separator)
             print(self.overwritable[key])
 
         for msg in self.not_overwritable:
+            print(message_separator)
             print(msg)
 
 
@@ -60,21 +68,29 @@ class ComplianceChecker:
         return self.not_overwritable or self.overwritable
 
 
-    def run_check_eval(self, ll, tag, code, state):
-        if code is None: return
+    def run_check_eval(self, ll, tag, tests, state):
+        if type(tests) is not list:
+            tests = [tests]
 
         try:
-            result = eval(code.strip(), state, {'ll': ll, 'v': ll.value })
+            failed_test = ''
+
+            for test in tests:
+                if not eval(test.strip(), state, {'ll': ll, 'v': ll.value }):
+                    failed_test = test
+                    break
         except:
             self.put_message(f'Failed executing CHECK code triggered by line :\n{ll.full_string}',
                              key=ll.key)
             return
 
-        if not result:
+        if failed_test:
             self.put_message(
-                f"CHECK failed in line \n '{ll.full_string}'"
-                f" for '{tag}',\n v={ll.value},\n s={state['s']},\n"
-                f" code '{code}'",
+                f"CHECK for '{tag}' failed in line {ll.lineno}:"
+                f"\n{ll.full_string}"
+                f"\nfailed test: {failed_test}"
+                f"\ncurrent context[s]={preety_dict(state['s'])}"
+                f"\ncurrent line[v]={preety_dict(ll.value)}",
                 key=ll.key)
 
 

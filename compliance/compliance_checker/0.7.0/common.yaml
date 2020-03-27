@@ -3,9 +3,9 @@
 # The code will be launched using local state 'v' which is the content of value field in log line, and global state 's'.
 # Global state 's' exists to allow cross-line checks, like start/stop pairs etc. To initialize 's' use BEGIN record which CODE will
 # be executed before any checks.
-# In addition, occurrence of each key will be counted and at the end if a requirement regarding the number of occurrences is defined it will 
+# In addition, occurrence of each key will be counted and at the end if a requirement regarding the number of occurrences is defined it will
 # be confirmed. This could be implemented using global state, but since this is a common thing to do it is natively supported.
-# 
+#
 # KEY record:
 # NAME
 # REQ   - optional - {EXACTLY_ONE, AT_LEAST_ONE}
@@ -60,20 +60,27 @@
 - KEY:
     NAME:  cache_clear
     REQ:   AT_LEAST_ONE
-    CHECK: " ( v['value'] == True ) and ( s['init_started'] == False ) "
+    CHECK:
+        - "v['value'] == True"
+        - "s['init_started'] == False"
 
 # frequency not checked
 - KEY:
     NAME:  init_start
     REQ:   AT_LEAST_ONE
-    CHECK: " not s['init_stopped'] and not s['run_started'] "
+    CHECK:
+        - "not s['init_stopped']"
+        - "not s['run_started']"
     POST:  " s['init_started'] = True; s['first_init_start']=min(s['first_init_start'], ll.timestamp) "
 
 # confirm less than 20min since the very first init_start
 - KEY:
     NAME:  init_stop
     REQ:   EXACTLY_ONE
-    CHECK: " s['init_started'] and not s['run_started'] and ( (ll.timestamp-s['first_init_start']) < (20*60*1e3) )"
+    CHECK:
+        - "s['init_started']"
+        - "not s['run_started']"
+        - "ll.timestamp - s['first_init_start'] < (20*60*1e3)"
     POST:  " s['init_stopped'] = True"
 
 - KEY:
@@ -87,73 +94,89 @@
 - KEY:
     NAME:  run_stop
     REQ:   EXACTLY_ONE
-    CHECK: " s['run_started']  and not s['in_eval'] and ( 'epoch_num' in v['metadata'] and ( v['metadata']['status'] == 'success' ) )"
+    CHECK:
+        - "s['run_started']"
+        - "not s['in_eval']"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['status'] == 'success'"
     POST:  " s['run_stopped'] = True "
 
 # FIXME: check epoch_count value match
 - KEY:
     NAME:  block_start
     REQ:   AT_LEAST_ONE
-    CHECK: >
-        s['run_started'] and
-        not s['run_stopped'] and
-        not s['in_block'] and
-        'epoch_num' in v['metadata'] and
-        'first_epoch_num' in v['metadata'] and
-        v['metadata']['epoch_count'] > 0 and
-        ( v['metadata']['first_epoch_num'] == (s['last_eval'] if s['in_epoch'] else s['last_epoch'] + 1) )
+    CHECK:
+        - "s['run_started']"
+        - "not s['run_stopped']"
+        - "not s['in_block']"
+        - "'epoch_num' in v['metadata']"
+        - "'first_epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_count'] > 0"
+        - "v['metadata']['first_epoch_num'] == (s['last_eval'] if s['in_epoch'] else s['last_epoch'] + 1)"
     POST: >
         s['in_block'] = True;
         s['accuracy_printed'] = True;
-        s['block_first_epoch'] = v['metadata'].get('first_epoch_num', -1)
+        s['block_first_epoch'] = v['metadata'].get('first_epoch_num', 'not set in block_start')
 
 - KEY:
     NAME:  block_stop
     REQ:   AT_LEAST_ONE
-    CHECK: " s['in_block'] and s['accuracy_printed'] and 'epoch_num' in v['metadata'] and ( s['block_first_epoch'] == v['metadata']['first_epoch_num'] ) "
+    CHECK:
+        - "s['in_block']"
+        - "s['accuracy_printed']"
+        - "'first_epoch_num' in v['metadata']"
+        - "s['block_first_epoch'] == v['metadata']['first_epoch_num']"
     POST:  " s['in_block'] = False "
 
 - KEY:
     NAME:  epoch_start
     REQ:   AT_LEAST_ONE
-    CHECK: >
-        s['run_started'] and
-        not s['in_epoch'] and
-        'epoch_num' in v['metadata'] and
-        ( v['metadata']['epoch_num'] == s['last_epoch'] + 1 and )
-        not s['run_stopped']
-    POST:  " s['in_epoch'] = True; s['last_epoch'] = v['metadata'].get('epoch_num', -1) "
+    CHECK:
+        - "s['run_started']"
+        - "not s['in_epoch']"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] == s['last_epoch'] + 1"
+        - "not s['run_stopped']"
+    POST:  " s['in_epoch'] = True; s['last_epoch'] = v['metadata'].get('epoch_num', 'not set in eval_start') "
 
 - KEY:
     NAME:  epoch_stop
     REQ:   AT_LEAST_ONE
-    CHECK: " s['in_epoch'] and 'epoch_num' in v['metadata'] and ( v['metadata']['epoch_num'] == s['last_epoch'] ) "
+    CHECK:
+        - "s['in_epoch']"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] == s['last_epoch']"
     POST:  " s['in_epoch'] = False "
 
 # making sure previous eval did print it's accuracy result
 - KEY:
     NAME:  eval_start
     REQ:   AT_LEAST_ONE
-    CHECK: >
-        s['run_started'] and
-        not s['in_eval'] and
-        'epoch_num' in v['metadata'] and
-        v['metadata']['epoch_num'] > s['last_eval'] and
-        s['accuracy_printed'] and
-        v['metadata']['epoch_num'] <= s['last_epoch'] and
-        not s['run_stopped']
-    POST:  " s['in_eval'] = True; s['accuracy_printed'] = False; s['last_eval'] = v['metadata'].get('epoch_num',-1) "
+    CHECK:
+        - "s['run_started']"
+        - "not s['in_eval']"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] > s['last_eval']"
+        - "s['accuracy_printed']"
+        - "v['metadata']['epoch_num'] <= s['last_epoch']"
+        - "not s['run_stopped']"
+    POST:  " s['in_eval'] = True; s['accuracy_printed'] = False; s['last_eval'] = v['metadata'].get('epoch_num', 'not set in eval_start') "
 
 - KEY:
     NAME:  eval_stop
     REQ:   AT_LEAST_ONE
-    CHECK: " s['in_eval'] and ('epoch_num' in v['metadata']) and ( v['metadata']['epoch_num'] == s['last_eval'] ) "
+    CHECK:
+        - "s['in_eval']"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] == s['last_eval']"
     POST:  " s['in_eval'] = False "
 
 - KEY:
     NAME:  eval_accuracy
     REQ:   AT_LEAST_ONE
-    CHECK: " 'epoch_num' in v['metadata'] and ( v['metadata']['epoch_num'] == s['last_eval'] ) "
+    CHECK:
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] == s['last_eval']"
     POST:  " s['accuracy_printed'] = True "
 
 - KEY:
@@ -174,7 +197,10 @@
 - KEY:
     NAME:  epoch_training_samples
     REQ:   AT_LEAST_ONE_OR(block_trainings_samples)
-    CHECK: " v['value'] != '' and 'epoch_num' in v['metadata'] and ( v['metadata']['epoch_num'] == s['last_epoch'] + 1 ) "
+    CHECK:
+        - "v['value'] != ''"
+        - "'epoch_num' in v['metadata']"
+        - "v['metadata']['epoch_num'] == s['last_epoch'] + 1"
 
 - KEY:
     NAME:  block_trainings_samples
