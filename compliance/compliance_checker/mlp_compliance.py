@@ -224,7 +224,7 @@ def get_parser():
 
     parser.add_argument('filename', type=str,
                     help='the file to check for compliance')
-    parser.add_argument('--ruleset', type=str, default='0.6.0',
+    parser.add_argument('--ruleset', type=str, default='0.7.0',
                     help='what version of rules to check the log against')
     parser.add_argument('--config',  type=str,
                     help='mlperf logging config, by default it loads {ruleset}/common.yaml', default=None)
