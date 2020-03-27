@@ -19,8 +19,27 @@ The clean up scripts (some references here) are in the scripts directory.
 The following command will run the clean up steps, and put the results in ./results
 ./process_wiki.sh '<data dir>/*/wiki_??'
 
-
 After running the process_wiki.sh script, for the 20200101 wiki dump, there will be 500 files, named part-00xxx-of-00500 in the ./results directory.
+
+Exact steps (starting in the bert path)  
+cd cleanup_scripts  
+mkdir -p wiki  
+cd wiki  
+wget https://dumps.wikimedia.org/enwiki/20200101/enwiki-20200101-pages-articles-multistream.xml.bz2    # Optionally use curl instead  
+bzip2 -d enwiki-20200101-pages-articles-multistream.xml.bz2  
+cd ..    # back to bert/cleanup_scripts  
+git clone https://github.com/attardi/wikiextractor.git  
+python3 wikiextractor/WikiExtractor.py wiki/enwiki-20200101-pages-articles-multistream.xml    # Results are placed in bert/cleanup_scripts/text  
+./process_wiki.sh '<text/*/wiki_??'  
+python3 extract_test_set_articles.py  
+  
+MD5sums:  
+7f59165e21b7d566db610ff6756c926b - bert_config.json  
+00d47075e0f583fb7c0791fac1c57cb3 - enwiki-20200101-pages-articles-multistream.xml.bz2  
+80f7e609749c962e492f50f8317a5721 - model.ckpt-7037.data-00000-of-00001  
+c4f503f6661cabec96174eb3849c5c8b - model.ckpt-7037.index  
+b322f2eb77f5ea4a02afd69fbc22209a - model.ckpt-7037.meta  
+64800d5d8528ce344256daf115d4965e - vocab.txt  
 
 # Generate the BERT input dataset
 
@@ -41,6 +60,13 @@ python3 create_pretraining_data.py \
 
 The generated tfrecord has 500 parts, totalling to ~365GB.
 
+# Stopping criteria
+The training should occur over a minimum of 9,600,000 samples (e.g., 150k steps x 64 global batch size). A valid submission will evaluate a masked lm accuracy >= 0.678. The requirement for both minimum step count and accuracy is due to the inherent fluctuations in accuracy wrt pretraining steps, which has a standard deviation of step count measured at ~10% to meet the targer mlm_accuracy of 0.678 on a sample of 10 training runs. Based on this data, it is expected that ~95% of runs will be >= 0.678 mlm_accuracy after training 9.6M samples using the reference code and data.  
+  
+The evaluation will be on the first 500 consecutive samples of the withheld test set. Slightly more data than was needed was withheld in the test set for experimentation to determine the stopping criteria. 500 samples was chosen to minimize evaluation cost while maintaining stability of the results.  
+  
+The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. In particular the seed (12345) must be set to ensure everyone evaluates on the same data.
+
 # Running the model
 
 To run this model, use the following command.
@@ -59,13 +85,13 @@ python run_pretraining.py \
   --iterations_per_loop=1000 \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
-  --num_train_steps=1365333333 \
+  --num_train_steps=150000 \
   --num_warmup_steps=0 \
   --optimizer=lamb \
   --save_checkpoints_steps=1000 \
   --start_warmup_step=0 \
-   --num_gpus=8 \
-  --train_batch_size=24/
+   --num_gpus=16 \
+  --train_batch_size=4/
 
 ```
 
@@ -87,12 +113,12 @@ python3 run_pretraining.py \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
   --num_gpus=1 \
-  --num_train_steps=1365333333 \
+  --num_train_steps=2400000 \
   --num_warmup_steps=3125 \
   --optimizer=lamb \
   --save_checkpoints_steps=1000 \
   --start_warmup_step=0 \
-  --train_batch_size=24 \
+  --train_batch_size=4 \
   --nouse_tpu
    
 ```

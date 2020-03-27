@@ -20,6 +20,12 @@ done
 # Sentence segmentation
 python ./do_sentence_segmentation.py --data=$inputs --input_suffix='.2' --output_suffix='.3'
 
-# Gather into fixed size packages
 mkdir -p ./results
+
+## Choose file size method or number of packages by uncommenting only one of the following do_gather options
+# Gather into fixed size packages
 python ./do_gather.py --data=$inputs --input_suffix='.3' --block_size=26.92 --out_dir='./results'
+
+# Gather into fixed number of packages
+#NUM_PACKAGES=512
+#python ./do_gather.py --data=$inputs --input_suffix='.3' --num_outputs=$NUM_PACKAGES --out_dir='./results'
