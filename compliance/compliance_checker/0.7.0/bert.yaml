@@ -1,0 +1,50 @@
+
+- KEY:
+    NAME:  initial_eval_accuracy
+    REQ:   EXACTLY_ONE
+    CHECK: >
+        s['cache_clear'] and
+        not s['init_started']
+
+- KEY:
+    NAME:  global_batch_size
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_epochs
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  max_sequence_length
+    REQ:   EXACTLY_ONE
+    CHECK: >
+        'method' in v['metadata'] and
+        v['metadata']['method'] in ['truncate', 'discard']
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_lamb_beta_1
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_lamb_beta_2
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_lamb_learning_rate_decay_poly_power
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_gradient_accumulation_steps
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  max_predictions_per_seq
+    REQ:   EXACTLY_ONE

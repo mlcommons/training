@@ -1,0 +1,17 @@
+
+- KEY:
+    NAME:  global_batch_size
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_base_learning_rate
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_steps
+    REQ:   EXACTLY_ONE
+
+- KEY:
+    NAME:  opt_learning_rate_warmup_factor
+    REQ:   EXACTLY_ONE
+
