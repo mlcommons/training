@@ -8,48 +8,44 @@ The checker works with both python2 and python3, requires PyYaml package.
 
 To check a log file for compliance:
 
-    python mlp_compliance.py [--config YAML] FILENAME
+    python mlp_compliance.py [--config YAML] [--ruleset MLPERF_EDITION] FILENAME
 
-Default config is set to `0.6.0/common.yaml`. This config will check all common keys and enqueue benchmark specific config to be checked as well.
-
-Note that `minigo` has a specialized config, therefore to check minigo please use
-
-    python mlp_compliance.py --config 0.6.0/minigo.yaml FILENAME 
-
+By default, 0.7.0 edition rules are used and the default config is set to `0.7.0/common.yaml`.
+This config will check all common keys and enqueue benchmark specific config to be checked as well.
 
 Prints `SUCCESS` when no issues were found. Otherwise will print error details.
-Fails on the first error.
 
 As log examples use [NVIDIA's v0.6 training logs](https://github.com/mlperf/training_results_v0.6/tree/master/NVIDIA/results).
 
 ### Existing config files
 
-    0.6.0/common.yaml        - currently the default config file, checks common fields complience(excluding minigo) and equeues benchmark-specific config file
-    0.6.0/score.yaml         - printing out the score (in sec) from a log of any benchmark - example of how this infrastructure can be used
-    0.6.0/resnet.yaml        
-    0.6.0/ssd.yaml
-    0.6.0/minigo.yaml
-    0.6.0/maskrcnn.yaml
-    0.6.0/gnmt.yaml
-    0.6.0/transformer.yaml
+    0.7.0/common.yaml        - currently the default config file, checks common fields complience and equeues benchmark-specific config file
+    0.7.0/resnet.yaml
+    0.7.0/ssd.yaml
+    0.7.0/minigo.yaml
+    0.7.0/maskrcnn.yaml
+    0.7.0/gnmt.yaml
+    0.7.0/transformer.yaml
 
 ### Implementation details
-Compliance checking is done following below algorithm. It will be aborted in case of an error at any phase.
+Compliance checking is done following below algorithm.
 
 1. Parser converts the log into a list of records, each record corresponds to MLL 
    line and contains all relevant extracted information
 2. Set of rules to be checked in loaded from provided config yaml file
 3. Process optional `BEGIN` rule if present by executing provided `CODE` section
+3. Remove messages for rules that are overridden
 4. Loop through the records of the log
    1. If the key in the record is defined in rules process the rule:
       1. If present, execute `PRE` section
-      2. If present, evaluate `CHECK` section, and raise an exception if the result is false
+      2. If present, evaluate `CHECK` section, and store a warning message if the result is false
       3. If present, execute `POST` section
    2. Increment occurrences counter
-5. Fail if any occurrences requirements (`AT_LEAST_ONE`/`EXACTLY_ONE`) were violated
+5. Store a warning message if any occurrences requirements were violated
 6. Process optional `END` rule if present:
    1. If present, execute `PRE`
    2. If present, evaluate `CHECK` section, and raise an exception if the result is false
+7. Print all warning messages
 
 Possible side effects of yaml sections execution can be [printing output](#other-operations), or [enqueueing 
 additional yaml files to be verified](#enqueuing-additional-config-files).
@@ -71,7 +67,11 @@ Example:
 Defines the actions to be triggered while processing a specific `KEY`. The name of the `KEY` is specified in field `NAME`.
 
 The following fields are optional:
-- `REQ` - specifies the requirement regarding occurrence. Possible values : `AT_LEAST_ONE` or `EXACTLY_ONE`
+- `REQ` - specifies the requirement regarding occurrence. Possible values :
+    - `EXACTLY_ONE` - current key has to appear exactly once
+    - `AT_LEAST_ONE` - current key has to appear at least once
+    - `AT_LEAST_ONE_OR(alternatives)` - current key or one of the alternative has to appear at least once;
+            alternatives is a comma separated list of keys
 - `PRE` - code to be executed before performing checks
 - `CHECK` - expression to be evaluated as part of checking this key. False result would mean a failure.
 - `POST` - code to be executed after performing checks
@@ -115,6 +115,7 @@ that can be accessed:
 - `timestamp` - seconds as a float, e.g. 1234.567
 - `key` - the string key
 - `value` - the parsed value associated with the key, or None if no value
+- `lineno` - line number in the original file of the current key
 
 `v` is a shortcut for `ll.value`
 
@@ -131,7 +132,6 @@ Example:
 
 To enqueue additional rule config files to be verified use `enqueue_config(YAML)` function.
 Config files in the queue are processed independently, meaning that they do not share state or any rules.
-A failure in any rule will result in an immediate termination and remaining configs will not be processed.
 
 Each config file may define it's `BEGIN` and `END` records, as well as any other `KEY` rules.
 
@@ -141,7 +141,7 @@ Example:
         NAME:  submission_benchmark
         REQ:   EXACTLY_ONE
         CHECK: " v['value'] in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt'] "
-        POST:  " enqueue_config('0.6.0/{}.yaml'.format(v['value'])) "
+        POST:  " enqueue_config('0.7.0/{}.yaml'.format(v['value'])) "
 
 
 #### Other operations

@@ -132,6 +132,7 @@ class ComplianceChecker:
 
         occurrence_counter = {k:0 for k in key_records.keys()}
 
+        # if config overrides some rules from previous config, corresponding messages are not needed
         self.overwrite_messages(key_records)
 
         # executing the rules through log records
