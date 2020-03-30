@@ -1,0 +1,20 @@
+
+- BEGIN:
+    CODE: " s.update({'run_start':None}) "
+
+- KEY:
+    NAME:  run_start
+    REQ:   EXACTLY_ONE
+    POST:  " s['run_start'] = ll.timestamp "
+
+- KEY:
+    NAME:  run_stop
+    CHECK: " ( v['metadata']['status'] == 'success' )"
+    POST:  " print('score [sec]:' , ll.timestamp - s['run_start']) "
+
+#the case of minigo
+- KEY:
+    NAME:  eval_result
+    CHECK: " (v['metadata']['timestamp'] > 0) "
+    POST:  " print('score [sec]:' , v['metadata']['timestamp'] ) "
+

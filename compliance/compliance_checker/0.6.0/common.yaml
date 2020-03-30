@@ -1,0 +1,135 @@
+# This file lists all the KEYs to be checked. Every line that matches mlperf logging regex (::MLL...) will be checked against these rules.
+# In the order of the appearance in the log, for each line will execute the code specified under CHECK for the KEY in that line.
+# The code will be launched using local state 'v' which is the content of value field in log line, and global state 's'.
+# Global state 's' exists to allow cross-line checks, like start/stop pairs etc. To initialize 's' use BEGIN record which CODE will
+# be executed before any checks.
+# In addition, occurrence of each key will be counted and at the end if a requirement regarding the number of occurrences is defined it will 
+# be confirmed. This could be implemented using global state, but since this is a common thing to do it is natively supported.
+# 
+# KEY record:
+# NAME
+# REQ   - optional - {EXACTLY_ONE, AT_LEAST_ONE}
+# PRE   - optional - code to be executed before CHECK
+# CHECK - optional - expression to be evaluated to verify correctness
+# POST  - optional - code to be executed after CHECK
+
+- BEGIN:
+    CODE: " s.update({'init_started': False, 'init_stopped' : False, 'run_started' : False, 'run_stopped' : False, 'in_epoch' : False, 'last_epoch' : 0, 'in_eval' : False, 'accuracy_printed' : True, 'in_block' : False, 'block_first_epoch' : -1, 'last_eval' : 0, 'first_init_start': 9e99}) "
+
+- KEY:
+    NAME:  submission_org
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] != '' "
+
+- KEY:
+    NAME:  submission_platform
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] != '' "
+
+- KEY:
+    NAME:  submission_division
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in ['closed', 'open'] "
+
+- KEY:
+    NAME:  submission_status
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in ['cloud', 'onprem', 'research'] "
+
+# minigo should use it's dedicated config directly
+- KEY:
+    NAME:  submission_benchmark
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] in ['resnet', 'ssd', 'maskrcnn', 'transformer', 'gnmt'] "
+    POST:  " enqueue_config('0.6.0/{}.yaml'.format(v['value'])) "
+
+- KEY:
+    NAME:  submission_poc_name
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] != '' "
+
+- KEY:
+    NAME:  submission_entry
+    REQ:   EXACTLY_ONE
+    CHECK: " v['value'] != '' "
+
+# at least one record should be found, but any found records must pass the test
+- KEY:
+    NAME:  cache_clear
+    REQ:   AT_LEAST_ONE
+    CHECK: " ( v['value'] == True ) and ( s['init_started'] == False ) "
+
+# frequency not checked
+- KEY:
+    NAME:  init_start
+    REQ:   AT_LEAST_ONE
+    CHECK: " not s['init_stopped'] and not s['run_started'] "
+    POST:  " s['init_started'] = True; s['first_init_start']=min(s['first_init_start'], ll.timestamp) "
+
+# confirm less than 20min since the very first init_start
+- KEY:
+    NAME:  init_stop
+    REQ:   EXACTLY_ONE
+    CHECK: " s['init_started'] and not s['run_started'] and ( (ll.timestamp-s['first_init_start']) < (20*60) )"
+    POST:  " s['init_stopped'] = True"
+
+- KEY:
+    NAME:  run_start
+    REQ:   EXACTLY_ONE
+    CHECK: " s['init_stopped'] == True "
+    POST:  " s['run_started'] = True "
+
+# status can also be aborted, but not allowing it here for now
+# if eval is inside epoch and we decide to terminate, we can lack epoch_stop, it is ok
+- KEY:
+    NAME:  run_stop
+    REQ:   EXACTLY_ONE
+    CHECK: " s['run_started']  and not s['in_eval'] and ( v['metadata']['status'] == 'success' )"
+    POST:  " s['run_stopped'] = True "
+
+- KEY:
+    NAME:  epoch_start
+    REQ:   AT_LEAST_ONE
+    CHECK: " s['run_started'] and not s['in_epoch'] and ( v['metadata']['epoch_num'] == (s['last_epoch']+1) ) and not s['run_stopped']"
+    POST:  " s['in_epoch'] = True; s['last_epoch'] = v['metadata']['epoch_num'] "
+
+- KEY:
+    NAME:  epoch_stop
+    REQ:   AT_LEAST_ONE
+    CHECK: " s['in_epoch'] and ( v['metadata']['epoch_num'] == s['last_epoch'] ) "
+    POST:  " s['in_epoch'] = False "
+
+# making sure previous eval did print it's accuracy result
+- KEY:
+    NAME:  eval_start
+    REQ:   AT_LEAST_ONE
+    CHECK: " s['run_started'] and not s['in_eval'] and ( v['metadata']['epoch_num'] > s['last_eval'] ) and s['accuracy_printed'] and (v['metadata']['epoch_num'] <= s['last_epoch']) and not s['run_stopped']"
+    POST:  " s['in_eval'] = True; s['accuracy_printed'] = False; s['last_eval'] = v['metadata']['epoch_num'] "
+
+- KEY:
+    NAME:  eval_stop
+    REQ:   AT_LEAST_ONE
+    CHECK: " s['in_eval'] and ( v['metadata']['epoch_num'] == s['last_eval'] ) "
+    POST:  " s['in_eval'] = False "
+
+# since target is not printed I can not confirm the accuracy
+# FIXME: should it be inside eval scope? or after it?
+- KEY:
+    NAME:  eval_accuracy
+    REQ:   AT_LEAST_ONE
+    CHECK: " ( v['metadata']['epoch_num'] == s['last_eval'] ) "
+    POST:  " s['accuracy_printed'] = True "
+
+# FIXME: check epoch_count value match
+- KEY:
+    NAME:  block_start
+    REQ:   AT_LEAST_ONE
+    CHECK: " s['run_started'] and not s['in_block'] and ((s['in_epoch'] and (v['metadata']['first_epoch_num'] == s['last_eval'])) or (not s['in_epoch'] and (v['metadata']['first_epoch_num'] == (s['last_epoch']+1)))) and (v['metadata']['epoch_count']>0) and not s['run_stopped']"
+    POST:  " s['in_block'] = True; s['accuracy_printed'] = True; s['block_first_epoch']=v['metadata']['first_epoch_num'] "
+
+- KEY:
+    NAME:  block_stop
+    REQ:   AT_LEAST_ONE
+    CHECK: " s['in_block'] and s['accuracy_printed'] and (s['block_first_epoch'] == v['metadata']['first_epoch_num'])"
+    POST:  " s['in_block'] = False "
+
