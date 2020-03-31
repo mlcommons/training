@@ -22,7 +22,7 @@ from seq2seq.data.tokenizer import Tokenizer
 from seq2seq.inference.inference import Translator
 from seq2seq.models.gnmt import GNMT
 from seq2seq.train.smoothing import LabelSmoothing
-from seq2seq.utils import gnmt_start, gnmt_end, gnmt_event
+from seq2seq.utils import gnmt_start, gnmt_end, gnmt_event, mlperf_submission_log
 
 
 def parse_args():
@@ -266,6 +266,9 @@ def main():
 
     args.rank = utils.get_rank()
 
+    if args.rank == 0:
+        mlperf_submission_log(benchmark=constants.GNMT)
+
     if not args.cudnn:
         torch.backends.cudnn.enabled = False
 
@@ -295,6 +298,7 @@ def main():
         logging.info(f'Global batch size was set in the config, '
                      f'Setting train_iter_size to {args.train_iter_size}')
 
+    gnmt_event(key='seed', value=args.seed)
     worker_seeds, shuffling_seeds = utils.setup_seeds(args.seed, args.epochs,
                                                       device)
     worker_seed = worker_seeds[args.rank]
@@ -341,7 +345,8 @@ def main():
 
     # build datasets
     gnmt_event(key=constants.MAX_SEQUENCE_LENGTH,
-               value=args.max_length_train, sync=False)
+               value=args.max_length_train, sync=False,
+               metadata={ 'method': 'discard' })
 
     train_data = LazyParallelDataset(
         src_fname=os.path.join(args.dataset_dir, config.SRC_TRAIN_FNAME),
@@ -392,6 +397,9 @@ def main():
                                        shuffle=False,
                                        pad=True,
                                        num_workers=args.test_loader_workers)
+
+    gnmt_event(key='training_samples', value=len(train_loader), sync=False)
+    gnmt_event(key='evaluation_samples', value=len(val_loader), sync=False)
 
     translator = Translator(model=model,
                             tokenizer=tokenizer,
@@ -449,12 +457,24 @@ def main():
     break_training = False
     test_bleu = None
     for epoch in range(args.start_epoch, args.epochs):
+        gnmt_start(key=constants.BLOCK_START,
+                   metadata={'first_epoch_num': epoch + 1,
+                             'epoch_count': 1},
+                   sync=True)
+        gnmt_start(key=constants.EPOCH_START,
+                   metadata={'epoch_num': epoch + 1},
+                   sync=True)
+
         logging.info(f'Starting epoch {epoch}')
 
         train_loader.sampler.set_epoch(epoch)
 
         trainer.epoch = epoch
         train_loss, train_perf = trainer.optimize(train_loader)
+
+        gnmt_end(key=constants.EPOCH_STOP,
+                 metadata={'epoch_num': epoch + 1},
+                 sync=True)
 
         # evaluate on validation set
         if args.eval:
@@ -468,13 +488,19 @@ def main():
                 trainer.save(save_all=args.save_all, is_best=is_best)
 
         if args.eval:
-            gnmt_start(key=constants.EVAL_START, value=epoch, sync=True)
+            gnmt_start(key=constants.EVAL_START,
+                       value=epoch,
+                       metadata={'epoch_num': epoch + 1},
+                       sync=True)
             test_bleu, break_training = translator.run(calc_bleu=True,
                                                        epoch=epoch)
             gnmt_event(key=constants.EVAL_ACCURACY,
                        value={"epoch": epoch, "value": round(test_bleu, 2)},
+                       metadata={'epoch_num': epoch + 1},
                        sync=False)
-            gnmt_end(key=constants.EVAL_STOP, sync=True)
+            gnmt_end(key=constants.EVAL_STOP,
+                     metadata={'epoch_num': epoch + 1},
+                     sync=True)
 
         acc_log = []
         acc_log += [f'Summary: Epoch: {epoch}']
@@ -493,12 +519,18 @@ def main():
             logging.info('\t'.join(acc_log))
             logging.info('\t'.join(perf_log))
 
+        gnmt_end(key=constants.BLOCK_STOP,
+                 metadata={'first_epoch_num': epoch + 1,
+                           'epoch_count': 1},
+                 sync=True)
+
         logging.info(f'Finished epoch {epoch}')
         if break_training:
             break
 
     gnmt_end(key=constants.RUN_STOP,
-               value={"success": bool(break_training)}, sync=True)
+             metadata={ 'status': 'success' if break_training else 'aborted' },
+             sync=True)
 
 
 if __name__ == '__main__':

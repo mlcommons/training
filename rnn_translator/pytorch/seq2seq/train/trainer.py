@@ -310,6 +310,12 @@ class Seq2SeqTrainer:
         torch.set_grad_enabled(True)
         self.model.train()
         torch.cuda.empty_cache()
+
+        gnmt_event(key='epoch_training_samples',
+                   value=len(data_loader) * data_loader.batch_size,
+                   metadata={'epoch_num': self.epoch + 1 },
+                   sync=False)
+
         self.preallocate(data_loader, training=True)
         output = self.feed_data(data_loader, training=True)
         self.model.zero_grad()

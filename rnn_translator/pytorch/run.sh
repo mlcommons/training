@@ -46,6 +46,12 @@ while [ "$1" != "" ]; do
   shift
 done
 
+# clear your caches here
+python -c \
+'from seq2seq.utils import gnmt_event;'\
+'from mllog import constants;'\
+'gnmt_event(constants.CACHE_CLEAR, value=True)'
+
 # run training
 python3 $MULTI_GPU_WRAPPER train.py \
   --dataset-dir ${DATASET_DIR} \

@@ -37,6 +37,27 @@ def _gnmt_print(logger, *args, **kwargs):
     if get_rank() == 0:
         logger(*args, **kwargs, stack_offset=3)
 
+def mlperf_submission_log(benchmark):
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_BENCHMARK,
+        value=benchmark,
+        )
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_ORG,
+        value='your-company')
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_DIVISION,
+        value='closed')
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_STATUS,
+        value='onprem')
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_PLATFORM,
+        value=f'your_platform')
 
 def init_lstm_(lstm, init_weight=0.1):
     """

@@ -74,8 +74,21 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
                          f'remain_steps, setting warmup_steps=remain_steps')
             self.warmup_steps = self.remain_steps
 
-        gnmt_event(key=constants.OPT_LR_WARMUP_STEPS, value=self.warmup_steps,
-                   sync=False)
+        gnmt_event(key=constants.OPT_LR_ALT_DECAY_FUNC,
+                     value=True)
+        gnmt_event(key=constants.OPT_LR_ALT_WARMUP_FUNC,
+                     value=True)
+
+        gnmt_event(key=constants.OPT_LR_DECAY_INTERVAL,
+                     value=self.decay_interval)
+        gnmt_event(key=constants.OPT_LR_DECAY_FACTOR,
+                     value=self.decay_factor)
+        gnmt_event(key=constants.OPT_LR_DECAY_STEPS,
+                     value=self.decay_steps)
+        gnmt_event(key=constants.OPT_LR_REMAIN_STEPS,
+                     value=self.remain_steps)
+        gnmt_event(key=constants.OPT_LR_WARMUP_STEPS,
+                     value=self.warmup_steps)
 
         super(WarmupMultiStepLR, self).__init__(optimizer, last_epoch)
 
