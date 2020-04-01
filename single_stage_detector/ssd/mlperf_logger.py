@@ -48,7 +48,7 @@ def get_rank():
     if torch.distributed.is_initialized():
         rank = torch.distributed.get_rank()
     else:
-        rank = 0
+        rank = os.getenv('RANK', os.getenv('LOCAL_RANK', 0))
     return rank
 
 def broadcast_seeds(seed, device):
