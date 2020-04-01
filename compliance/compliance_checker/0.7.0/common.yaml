@@ -97,7 +97,7 @@
     CHECK:
         - "s['run_started']"
         - "not s['in_eval']"
-        - "'epoch_num' in v['metadata']"
+        - "'status' in v['metadata']"
         - "v['metadata']['status'] == 'success'"
     POST:  " s['run_stopped'] = True "
 
@@ -109,7 +109,7 @@
         - "s['run_started']"
         - "not s['run_stopped']"
         - "not s['in_block']"
-        - "'epoch_num' in v['metadata']"
+        - "'epoch_count' in v['metadata']"
         - "'first_epoch_num' in v['metadata']"
         - "v['metadata']['epoch_count'] > 0"
         - "v['metadata']['first_epoch_num'] == (s['last_eval'] if s['in_epoch'] else s['last_epoch'] + 1)"
@@ -200,7 +200,7 @@
     CHECK:
         - "v['value'] != ''"
         - "'epoch_num' in v['metadata']"
-        - "v['metadata']['epoch_num'] == s['last_epoch'] + 1"
+        - "v['metadata']['epoch_num'] == s['last_epoch']"
 
 - KEY:
     NAME:  block_trainings_samples
@@ -209,11 +209,9 @@
 
 - KEY:
     NAME:  epoch_training_throughput
-    REQ:   AT_LEAST_ONE_OR(block_training_throughput)
     CHECK: " v['value'] != '' "
 
 - KEY:
     NAME:  block_training_throughput
-    REQ:   AT_LEAST_ONE_OR(epoch_training_throughput)
     CHECK: " v['value'] != '' "
 
