@@ -14,6 +14,7 @@
 
 import torch
 import numpy as np
+import os
 from mlperf_logging import mllog
 from mlperf_logging.mllog import constants as mllog_const
 mllogger = mllog.get_mllogger()
