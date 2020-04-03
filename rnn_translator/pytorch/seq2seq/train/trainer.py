@@ -8,7 +8,7 @@ import torch
 import torch.optim
 import torch.utils.data
 from apex.parallel import DistributedDataParallel as DDP
-from mllog import constants
+from mlperf_logging.mllog import constants
 
 from seq2seq.train.fp_optimizers import Fp16Optimizer
 from seq2seq.train.fp_optimizers import Fp32Optimizer

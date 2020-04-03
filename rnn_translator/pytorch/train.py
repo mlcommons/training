@@ -9,8 +9,8 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data.distributed
-import mllog
-from mllog import constants
+from mlperf_logging import mllog
+from mlperf_logging.mllog import constants
 
 import seq2seq.data.config as config
 import seq2seq.train.trainer as trainers

@@ -12,7 +12,7 @@ import torch.nn.init as init
 import torch.utils.collect_env
 
 
-import mllog
+from mlperf_logging import mllog
 
 mllogger = mllog.get_mllogger()
 

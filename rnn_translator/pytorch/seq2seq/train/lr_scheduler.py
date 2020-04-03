@@ -2,7 +2,7 @@ import logging
 import math
 
 import torch
-from mllog import constants
+from mlperf_logging.mllog import constants
 
 from seq2seq.utils import gnmt_event
 

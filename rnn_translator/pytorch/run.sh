@@ -49,7 +49,7 @@ done
 # clear your caches here
 python -c \
 'from seq2seq.utils import gnmt_event;'\
-'from mllog import constants;'\
+'from mlperf_logging.mllog import constants;'\
 'gnmt_event(constants.CACHE_CLEAR, value=True)'
 
 # run training

@@ -1,3 +1,3 @@
 sacrebleu==1.2.10
 git+git://github.com/NVIDIA/apex.git@9041a868a1a253172d94b113a963375b9badd030#egg=apex
-git+git://github.com/mlperf/training@00570abf77d351e474d57830014f6a3e501dece1#subdirectory=compliance
+git+https://github.com/mlperf/logging.git@44d26ff1341eaf7ed5a7105176c8ccc36e088d59
