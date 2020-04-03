@@ -93,8 +93,6 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
 
     overlap_threshold = 0.50
     nms_max_detections = 200
-    ssd_print(key=mllog_const.MAX_SAMPLES,
-                         value=nms_max_detections, sync=False)
 
     mllogger.start(
         key=mllog_const.EVAL_START,
@@ -110,7 +108,8 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
             if use_cuda:
                 inp = inp.cuda()
             ploc, plabel = model(inp)
-
+            ssd_print(key=mllog_const.MAX_SAMPLES,
+                        value=len(ploc), sync=False)
             try:
                 result = encoder.decode_batch(ploc, plabel,
                                               overlap_threshold,
