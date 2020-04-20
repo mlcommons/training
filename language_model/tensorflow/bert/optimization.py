@@ -7,7 +7,7 @@ from __future__ import print_function
 import re
 import tensorflow.compat.v1 as tf
 
-from tensorflow.contrib import tpu as contrib_tpu
+# from tensorflow.contrib import tpu as contrib_tpu
 
 import lamb_optimizer_v1 as lamb_optimizer
 
@@ -77,8 +77,8 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
   else:
     raise ValueError("Not supported optimizer: ", optimizer)
 
-  if use_tpu:
-    optimizer = contrib_tpu.CrossShardOptimizer(optimizer)
+  # if use_tpu:
+  #   optimizer = contrib_tpu.CrossShardOptimizer(optimizer)
 
   tvars = tf.trainable_variables()
   grads = tf.gradients(loss, tvars)
