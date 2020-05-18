@@ -347,7 +347,8 @@ def input_fn_builder(input_files,
                      max_predictions_per_seq,
                      is_training,
                      input_context = None,
-                     num_cpu_threads=4):
+                     num_cpu_threads=4,
+                     num_eval_steps=1):
   """Creates an `input_fn` closure to be passed to TPUEstimator."""
 
   def input_fn(params, input_context = None):
@@ -397,6 +398,7 @@ def input_fn_builder(input_files,
       d = d.shuffle(buffer_size=100)
     else:
       d = tf.data.TFRecordDataset(input_files)
+      d = d.take(batch_size * num_eval_steps)
       # Since we evaluate for a fixed number of steps we don't want to encounter
       # out-of-range exceptions.
       d = d.repeat()
@@ -555,7 +557,8 @@ def main(_):
         max_predictions_per_seq=FLAGS.max_predictions_per_seq,
         is_training=False,
         input_context=None,
-        num_cpu_threads=8)
+        num_cpu_threads=8,
+        num_eval_steps=FLAGS.max_eval_steps)
 
     while True:
       if FLAGS.use_tpu:
