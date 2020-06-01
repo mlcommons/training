@@ -25,6 +25,8 @@ from absl import app, flags
 import numpy as np
 import tensorflow as tf
 
+from mlperf_logging import mllog
+
 import bigtable_input
 import dual_net
 import preprocessing
@@ -171,12 +173,17 @@ class UpdateRatioSessionHook(tf.train.SessionRunHook):
 
 def train(*tf_records: "Records to train on"):
     """Train on examples."""
+    mllogger = mllog.get_mllogger()
+
     tf.logging.set_verbosity(tf.logging.INFO)
     estimator = dual_net.get_estimator()
 
     effective_batch_size = FLAGS.train_batch_size
     if FLAGS.use_tpu:
         effective_batch_size *= FLAGS.num_tpu_cores
+    mllogger.event(key=mllog.constants.GLOBAL_BATCH_SIZE, value=effective_batch_size)
+    mllogger.event(key='filter_amount', value=FLAGS.filter_amount)
+    mllogger.event(key='window_size', value=FLAGS.window_size)
 
     if FLAGS.use_tpu:
         if FLAGS.use_bt:

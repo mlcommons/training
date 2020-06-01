@@ -26,6 +26,8 @@ import tensorflow as tf
 import time
 from ml_perf.utils import *
 
+from mlperf_logging import mllog
+
 from absl import app, flags
 
 flags.DEFINE_integer('iterations', 100, 'Number of iterations of the RL loop.')
@@ -74,6 +76,49 @@ flags.DEFINE_string('selfplay_dir', None, 'Selfplay example directory.')
 flags.DEFINE_string('work_dir', None, 'Training work directory.')
 
 flags.DEFINE_string('tpu_name', None, 'Name of the TPU to train on.')
+
+# ML Perf Logging related flags.
+flags.DEFINE_integer(
+    'mlperf_num_games', -1,
+    'Total number of games to self play. 0 implies self '
+    'play forever.')
+flags.DEFINE_integer(
+    'mlperf_num_readouts', -1,
+    'Number of readouts to make during tree search for '
+    'each move.')
+flags.DEFINE_float(
+    'mlperf_value_init_penalty', -1.0,
+    'New children value initialization penalty. '
+    'Child value = parent\'s value - penalty * color, '
+    'clamped to [-1, 1].  Penalty should be in [0.0, 2.0]. '
+    '0 is init-to-parent, 2.0 is init-to-loss [default]. '
+    'This behaves similiarly to Leela\'s FPU '
+    '"First Play Urgency".')
+flags.DEFINE_float('mlperf_holdout_pct', -1.0,
+                   'Fraction of games to hold out for validation.')
+flags.DEFINE_float('mlperf_disable_resign_pct', -1.0,
+                   'Fraction of games to disable resignation for.')
+flags.DEFINE_multi_float(
+    'mlperf_resign_threshold', [0.0, 0.0],
+    'Each game\'s resign threshold is picked randomly '
+    'from the range '
+    '[min_resign_threshold, max_resign_threshold)')
+flags.DEFINE_integer(
+    'mlperf_parallel_games', -1,
+    'Number of games to play concurrently on each selfplay '
+    'thread. Inferences from a thread\'s concurrent games are '
+    'batched up and evaluated together. Increasing '
+    'concurrent_games_per_thread can help improve GPU or '
+    'TPU utilization, especially for small models.')
+flags.DEFINE_integer('mlperf_virtual_losses', -1,
+                     'Number of virtual losses when running tree search')
+flags.DEFINE_float(
+    'mlperf_gating_win_rate', -1.0,
+    'Win pct against the target model to define a converged '
+    'model.')
+flags.DEFINE_integer(
+    'mlperf_eval_games', -1, 'Number of games to play against the target to '
+    'when determining the win pct.')
 
 FLAGS = flags.FLAGS
 
@@ -255,10 +300,28 @@ def validate(state):
 
 def main(unused_argv):
     """Run the reinforcement learning loop."""
+    mllogger = mllog.get_mllogger()
+
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('[%(asctime)s] %(message)s',
                                   '%Y-%m-%d %H:%M:%S')
+
+    # ML Perf Logging.
+    mllogger.event(key='num_games', value=FLAGS.mlperf_num_games)
+    mllogger.event(key='num_readouts', value=FLAGS.mlperf_num_readouts)
+    mllogger.event(
+        key='value_init_penalty', value=FLAGS.mlperf_value_init_penalty)
+    mllogger.event(key='holdout_pct', value=FLAGS.mlperf_holdout_pct)
+    mllogger.event(
+        key='disable_resign_pct', value=FLAGS.mlperf_disable_resign_pct)
+    mllogger.event(
+        key='resign_threshold', value=FLAGS.mlperf_resign_threshold)
+    mllogger.event(key='parallel_games', value=FLAGS.mlperf_parallel_games)
+    mllogger.event(key='virtual_losses', value=FLAGS.mlperf_virtual_losses)
+    mllogger.event(
+        key='gating_win_rate', value=FLAGS.mlperf_gating_win_rate)
+    mllogger.event(key='eval_games', value=FLAGS.mlperf_eval_games)
 
     for handler in logger.handlers:
         handler.setFormatter(formatter)
@@ -280,6 +343,9 @@ def main(unused_argv):
             while state.iter_num <= FLAGS.iterations:
                 state.iter_num += 1
                 train(state)
+                mllogger.event(
+                    key='save_model',
+                    value='{iteration_num: ' + str(state.iter_num) + ' }')
         finally:
                 asyncio.get_event_loop().close()
 

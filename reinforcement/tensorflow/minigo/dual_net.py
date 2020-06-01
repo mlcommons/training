@@ -29,6 +29,8 @@ import time
 import numpy as np
 import random
 
+from mlperf_logging import mllog
+
 import tensorflow as tf
 from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
 from tensorflow.contrib import quantize as contrib_quantize
@@ -291,6 +293,7 @@ def model_fn(features, labels, mode, params):
     return dict of tensors
         logits: [BATCH_SIZE, go.N * go.N + 1]
     """
+    mllogger = mllog.get_mllogger()
 
     policy_output, value_output, logits = model_inference_fn(
         features, mode == tf.estimator.ModeKeys.TRAIN, params)
@@ -311,6 +314,11 @@ def model_fn(features, labels, mode, params):
     combined_cost = policy_cost + value_cost + l2_cost
 
     global_step = tf.train.get_or_create_global_step()
+    mllogger.event(
+        key=mllog.constants.OPT_LR_DECAY_BOUNDARY_STEPS,
+        value=params['lr_boundaries'])
+    mllogger.event(key=mllog.constants.OPT_BASE_LR, value=params['lr_rates'])
+
     learning_rate = tf.train.piecewise_constant(
         global_step, params['lr_boundaries'], params['lr_rates'])
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
