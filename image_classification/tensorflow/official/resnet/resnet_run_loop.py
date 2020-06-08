@@ -153,18 +153,6 @@ def learning_rate_with_decay(
   initial_learning_rate = base_lr * batch_size / batch_denom
   batches_per_epoch = num_images / batch_size
 
-  # Multiply the learning rate by 0.1 at 100, 150, and 200 epochs.
-  boundaries = [int(batches_per_epoch * epoch) for epoch in boundary_epochs]
-  vals = [initial_learning_rate * decay for decay in decay_rates]
-
-  def learning_rate_fn(global_step):
-    lr = tf.train.piecewise_constant(global_step, boundaries, vals)
-    warmup_steps = int(batches_per_epoch * 5)
-    warmup_lr = (
-        initial_learning_rate * tf.cast(global_step, tf.float32) / tf.cast(
-        warmup_steps, tf.float32))
-    return tf.cond(global_step < warmup_steps, lambda: warmup_lr, lambda: lr)
-
   def poly_rate_fn(global_step):
     """Handles linear scaling rule, gradual warmup, and LR decay.
 
@@ -211,11 +199,7 @@ def learning_rate_with_decay(
         power=2.0)
     return tf.where(global_step <= w_steps, wrate, poly_rate)
 
-  # For LARS we have a new learning rate schedule
-  if enable_lars:
-    return poly_rate_fn
-
-  return learning_rate_fn
+  return poly_rate_fn
 
 
 def resnet_model_fn(features, labels, mode, model_class,
