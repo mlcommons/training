@@ -132,10 +132,10 @@ We use the same optimizer as the original authors, which is the Adam Optimizer. 
 
 ### Quality metric
 We use the BLEU scores with data from [Attention is All You Need](https://arxiv.org/abs/1706.03762). 
-
-
-    https://nlp.stanford.edu/projects/nmt/data/wmt14.en-de/newstest2014.en
-    https://nlp.stanford.edu/projects/nmt/data/wmt14.en-de/newstest2014.de
+ 
+    http://www.statmt.org/wmt14/test-full.tgz
+    test-full/newstest2014-deen-src.en.sgm
+    test-full/newstest2014-deen-ref.de.sgm
 
 
 ### Quality target
@@ -147,4 +147,4 @@ Evaluation of BLEU score is done after every epoch.
 
 
 ### Evaluation thoroughness
-Evaluation uses all of `newstest2014.en`.
+Evaluation uses all of `newstest2014-deen-src.en.sgm`.
