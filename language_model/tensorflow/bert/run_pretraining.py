@@ -72,6 +72,13 @@ flags.DEFINE_integer("start_warmup_step", 0, "The starting step of warmup.")
 flags.DEFINE_integer("save_checkpoints_steps", 1000,
                      "How often to save the model checkpoint.")
 
+flags.DEFINE_integer("save_checkpoints_skip_steps", None,
+                     "The minimum step number to start saving checkpoints. "
+                     "Step 0 will not be skipped.")
+
+flags.DEFINE_integer("keep_checkpoint_max", 10,
+                     "The maximum number of recent checkpoint files to keep.")
+
 flags.DEFINE_integer("iterations_per_loop", 1000,
                      "How many steps to make in each estimator call.")
 
@@ -104,8 +111,8 @@ flags.DEFINE_integer(
     "Only used if `use_tpu` is True. Total number of TPU cores to use.")
 
 flags.DEFINE_integer(
-            "num_gpus", 0,
-                "Use the GPU backend if this value is set to more than zero.")
+    "num_gpus", 0,
+    "Use the GPU backend if this value is set to more than zero.")
 
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
@@ -433,6 +440,36 @@ def _decode_record(record, name_to_features):
   return example
 
 
+class CheckpointSaverHookWithSkip(tf.train.CheckpointSaverHook):
+  """Skip a number of steps before saving checkpoints."""
+  def __init__(self,
+               checkpoint_dir,
+               save_secs=None,
+               save_steps=None,
+               skip_steps=None,
+               saver=None,
+               checkpoint_basename="model.ckpt",
+               scaffold=None,
+               listeners=None,
+               save_graph_def=True):
+    super(CheckpointSaverHookWithSkip, self).__init__(
+        checkpoint_dir, save_secs, save_steps, saver,
+        checkpoint_basename, scaffold, listeners, save_graph_def)
+    self.skip_steps = skip_steps
+
+  def _save(self, session, step):
+    if step != 0:
+      if self.skip_steps:
+        if step < self.skip_steps:
+          return False
+
+    tf.logging.info("Check point saving starting.")
+    should_stop = super(CheckpointSaverHookWithSkip, self)._save(
+        session, step)
+    tf.logging.info("Check point saving ended.")
+    return should_stop
+
+
 def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -474,7 +511,7 @@ def main(_):
         cluster=tpu_cluster_resolver,
         master=FLAGS.master,
         model_dir=FLAGS.output_dir,
-        keep_checkpoint_max=5,
+        keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
         tpu_config=contrib_tpu.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
@@ -508,7 +545,7 @@ def main(_):
         train_distribute=distribution_strategy,
         model_dir=FLAGS.output_dir,
         session_config=session_config,
-        keep_checkpoint_max=5,
+        keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
     )
 
@@ -536,11 +573,19 @@ def main(_):
         is_training=True,
         input_context=None,
         num_cpu_threads=8)
+    ckpt_hook = CheckpointSaverHookWithSkip(
+        checkpoint_dir=FLAGS.output_dir,
+        save_steps=FLAGS.save_checkpoints_steps,
+        skip_steps=FLAGS.save_checkpoints_skip_steps)
+
     if FLAGS.use_tpu:
-      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps)
+      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps,
+                      hooks=[ckpt_hook])
     else:
       estimator.train(input_fn=lambda input_context=None: train_input_fn(
-          params=hparams, input_context=input_context), max_steps=FLAGS.num_train_steps)
+          params=hparams, input_context=input_context),
+                      max_steps=FLAGS.num_train_steps,
+                      hooks=[ckpt_hook])
 
   if FLAGS.do_eval:
     tf.logging.info("***** Running evaluation *****")
