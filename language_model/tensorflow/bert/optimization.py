@@ -7,13 +7,13 @@ from __future__ import print_function
 import re
 import tensorflow.compat.v1 as tf
 
-from tensorflow.contrib import tpu as contrib_tpu
+# from tensorflow.contrib import tpu as contrib_tpu
 
 import lamb_optimizer_v1 as lamb_optimizer
 
 
 def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
-                     optimizer='adamw', poly_power=1.0, start_warmup_step=0):
+                     optimizer_name='adamw', poly_power=1.0, start_warmup_step=0):
   """Creates an optimizer training op."""
   global_step = tf.train.get_or_create_global_step()
 
@@ -56,7 +56,7 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
   # As report in the Bert pulic github, the learning rate for SQuAD 1.1 finetune
   # is 3e-5, 4e-5 or 5e-5. For LAMB, the users can use 3e-4, 4e-4,or 5e-4 for a
   # batch size of 64 in the finetune.
-  if optimizer == "adamw":
+  if optimizer_name == "adamw":
     tf.logging.info('using adamw')
     optimizer = AdamWeightDecayOptimizer(
         learning_rate=learning_rate,
@@ -65,7 +65,7 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
         beta_2=0.999,
         epsilon=1e-6,
         exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
-  elif optimizer == "lamb":
+  elif optimizer_name == "lamb":
     tf.logging.info('using lamb')
     optimizer = lamb_optimizer.LAMBOptimizer(
         learning_rate=learning_rate,
@@ -75,10 +75,10 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
         epsilon=1e-6,
         exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
   else:
-    raise ValueError("Not supported optimizer: ", optimizer)
+    raise ValueError("Not supported optimizer: ", optimizer_name)
 
-  if use_tpu:
-    optimizer = contrib_tpu.CrossShardOptimizer(optimizer)
+  # if use_tpu:
+  #   optimizer = contrib_tpu.CrossShardOptimizer(optimizer)
 
   tvars = tf.trainable_variables()
   grads = tf.gradients(loss, tvars)
@@ -90,11 +90,12 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
       zip(grads, tvars), global_step=global_step)
 
   # Normally the global step update is done inside of `apply_gradients`.
-  # However, neither `AdamWeightDecayOptimizer` nor `LAMBOptimizer` do this.
+  # However, `AdamWeightDecayOptimizer` doesn't do this.
   # But if you use a different optimizer, you should probably take this line
   # out.
-  new_global_step = global_step + 1
-  train_op = tf.group(train_op, [global_step.assign(new_global_step)])
+  if optimizer_name == "adamw":
+    new_global_step = global_step + 1
+    train_op = tf.group(train_op, [global_step.assign(new_global_step)])
   return train_op
 
 

@@ -5,14 +5,16 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import absl
 import modeling
 import optimization
-import tensorflow as tf
-from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
-from tensorflow.contrib import data as contrib_data
-from tensorflow.contrib import tpu as contrib_tpu
+import tensorflow.compat.v1 as tf
+# from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
+# from tensorflow.contrib import data as contrib_data
+# from tensorflow.contrib import tpu as contrib_tpu
+import distribution_utils
 
-flags = tf.flags
+flags = absl.flags
 
 FLAGS = flags.FLAGS
 
@@ -77,29 +79,33 @@ flags.DEFINE_integer("max_eval_steps", 100, "Maximum number of eval steps.")
 
 flags.DEFINE_bool("use_tpu", False, "Whether to use TPU or GPU/CPU.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "tpu_name", None,
     "The Cloud TPU to use for training. This should be either the name "
     "used when creating the Cloud TPU, or a grpc://ip.address.of.tpu:8470 "
     "url.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "tpu_zone", None,
     "[Optional] GCE zone where the Cloud TPU is located in. If not "
     "specified, we will attempt to automatically detect the GCE project from "
     "metadata.")
 
-tf.flags.DEFINE_string(
+flags.DEFINE_string(
     "gcp_project", None,
     "[Optional] Project name for the Cloud TPU-enabled project. If not "
     "specified, we will attempt to automatically detect the GCE project from "
     "metadata.")
 
-tf.flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
+flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
 
 flags.DEFINE_integer(
     "num_tpu_cores", 8,
     "Only used if `use_tpu` is True. Total number of TPU cores to use.")
+
+flags.DEFINE_integer(
+            "num_gpus", 0,
+                "Use the GPU backend if this value is set to more than zero.")
 
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
@@ -175,11 +181,17 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           total_loss, learning_rate, num_train_steps, num_warmup_steps,
           use_tpu, optimizer, poly_power, start_warmup_step)
 
-      output_spec = contrib_tpu.TPUEstimatorSpec(
-          mode=mode,
-          loss=total_loss,
-          train_op=train_op,
-          scaffold_fn=scaffold_fn)
+      if use_tpu:
+        output_spec = contrib_tpu.TPUEstimatorSpec(
+            mode=mode,
+            loss=total_loss,
+            train_op=train_op,
+            scaffold_fn=scaffold_fn)
+      else:
+        output_spec = tf.estimator.EstimatorSpec(
+            mode=mode,
+            loss=total_loss,
+            train_op=train_op)
     elif mode == tf.estimator.ModeKeys.EVAL:
 
       def metric_fn(masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
@@ -222,11 +234,21 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           masked_lm_weights, next_sentence_example_loss,
           next_sentence_log_probs, next_sentence_labels
       ])
-      output_spec = contrib_tpu.TPUEstimatorSpec(
-          mode=mode,
-          loss=total_loss,
-          eval_metrics=eval_metrics,
-          scaffold_fn=scaffold_fn)
+      if use_tpu:
+          output_spec = contrib_tpu.TPUEstimatorSpec(
+              mode=mode,
+              loss=total_loss,
+              eval_metrics=eval_metrics,
+              scaffold_fn=scaffold_fn)
+      else:
+          output_spec = tf.estimator.EstimatorSpec(
+              mode=mode,
+              loss=total_loss,
+              eval_metric_ops=metric_fn(
+                masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
+                masked_lm_weights, next_sentence_example_loss,
+                next_sentence_log_probs, next_sentence_labels))
+
     else:
       raise ValueError("Only TRAIN and EVAL modes are supported: %s" % (mode))
 
@@ -320,13 +342,16 @@ def gather_indexes(sequence_tensor, positions):
 
 
 def input_fn_builder(input_files,
+                     batch_size,
                      max_seq_length,
                      max_predictions_per_seq,
                      is_training,
-                     num_cpu_threads=4):
+                     input_context = None,
+                     num_cpu_threads=4,
+                     num_eval_steps=1):
   """Creates an `input_fn` closure to be passed to TPUEstimator."""
 
-  def input_fn(params):
+  def input_fn(params, input_context = None):
     """The actual input function."""
     batch_size = params["batch_size"]
 
@@ -351,6 +376,12 @@ def input_fn_builder(input_files,
     # For eval, we want no shuffling and parallel reading doesn't matter.
     if is_training:
       d = tf.data.Dataset.from_tensor_slices(tf.constant(input_files))
+      if input_context:
+        tf.logging.info(
+            'Sharding the dataset: input_pipeline_id=%d num_input_pipelines=%d' % (
+            input_context.input_pipeline_id, input_context.num_input_pipelines))
+        d = d.shard(input_context.num_input_pipelines,
+                    input_context.input_pipeline_id)
       d = d.repeat()
       d = d.shuffle(buffer_size=len(input_files))
 
@@ -360,13 +391,14 @@ def input_fn_builder(input_files,
       # `sloppy` mode means that the interleaving is not exact. This adds
       # even more randomness to the training pipeline.
       d = d.apply(
-          contrib_data.parallel_interleave(
+          tf.data.experimental.parallel_interleave(
               tf.data.TFRecordDataset,
               sloppy=is_training,
               cycle_length=cycle_length))
       d = d.shuffle(buffer_size=100)
     else:
       d = tf.data.TFRecordDataset(input_files)
+      d = d.take(batch_size * num_eval_steps)
       # Since we evaluate for a fixed number of steps we don't want to encounter
       # out-of-range exceptions.
       d = d.repeat()
@@ -424,18 +456,6 @@ def main(_):
     tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
         FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
 
-  is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
-  run_config = contrib_tpu.RunConfig(
-      cluster=tpu_cluster_resolver,
-      master=FLAGS.master,
-      model_dir=FLAGS.output_dir,
-      keep_checkpoint_max = 10,
-      save_checkpoints_steps=FLAGS.save_checkpoints_steps,
-      tpu_config=contrib_tpu.TPUConfig(
-          iterations_per_loop=FLAGS.iterations_per_loop,
-          num_shards=FLAGS.num_tpu_cores,
-          per_host_input_for_training=is_per_host))
-
   model_fn = model_fn_builder(
       bert_config=bert_config,
       init_checkpoint=FLAGS.init_checkpoint,
@@ -448,38 +468,107 @@ def main(_):
       poly_power=FLAGS.poly_power,
       start_warmup_step=FLAGS.start_warmup_step)
 
-  # If TPU is not available, this will fall back to normal Estimator on CPU
-  # or GPU.
-  estimator = contrib_tpu.TPUEstimator(
-      use_tpu=FLAGS.use_tpu,
-      model_fn=model_fn,
-      config=run_config,
-      train_batch_size=FLAGS.train_batch_size,
-      eval_batch_size=FLAGS.eval_batch_size)
+  if FLAGS.use_tpu:
+    is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
+    run_config = contrib_tpu.RunConfig(
+        cluster=tpu_cluster_resolver,
+        master=FLAGS.master,
+        model_dir=FLAGS.output_dir,
+        keep_checkpoint_max=5,
+        save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+        tpu_config=contrib_tpu.TPUConfig(
+            iterations_per_loop=FLAGS.iterations_per_loop,
+            num_shards=FLAGS.num_tpu_cores,
+            per_host_input_for_training=is_per_host))
+
+    # If TPU is not available, this will fall back to normal Estimator on CPU
+    # or GPU.
+    estimator = contrib_tpu.TPUEstimator(
+        use_tpu=FLAGS.use_tpu,
+        model_fn=model_fn,
+        config=run_config,
+        train_batch_size=FLAGS.train_batch_size,
+        eval_batch_size=FLAGS.eval_batch_size)
+  else:
+    # GPU path uses MirroredStrategy.
+
+    # Creates session config. allow_soft_placement = True, is required for
+    # multi-GPU and is not harmful for other modes.
+    session_config = tf.compat.v1.ConfigProto(
+        inter_op_parallelism_threads=8,
+        allow_soft_placement=True)
+
+    distribution_strategy = distribution_utils.get_distribution_strategy(
+        distribution_strategy='mirrored',
+        num_gpus=FLAGS.num_gpus,
+        all_reduce_alg='nccl',
+        num_packs=0)
+
+    dist_gpu_config = tf.estimator.RunConfig(
+        train_distribute=distribution_strategy,
+        model_dir=FLAGS.output_dir,
+        session_config=session_config,
+        keep_checkpoint_max=5,
+        save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+    )
+
+    hparams = {"batch_size": FLAGS.train_batch_size}
+    estimator = tf.estimator.Estimator(
+        model_fn=model_fn,
+        config=dist_gpu_config,
+        model_dir=FLAGS.output_dir,
+        params=hparams,
+    )
 
   if FLAGS.do_train:
     tf.logging.info("***** Running training *****")
     tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
+    batch_size = FLAGS.train_batch_size
+    if FLAGS.num_gpus > 1:
+      batch_size = distribution_utils.per_replica_batch_size(
+            batch_size, FLAGS.num_gpus)
+    hparams = {"batch_size": batch_size}
     train_input_fn = input_fn_builder(
         input_files=input_files,
+        batch_size=batch_size,
         max_seq_length=FLAGS.max_seq_length,
         max_predictions_per_seq=FLAGS.max_predictions_per_seq,
-        is_training=True)
-    estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps)
+        is_training=True,
+        input_context=None,
+        num_cpu_threads=8)
+    if FLAGS.use_tpu:
+      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps)
+    else:
+      estimator.train(input_fn=lambda input_context=None: train_input_fn(
+          params=hparams, input_context=input_context), max_steps=FLAGS.num_train_steps)
 
   if FLAGS.do_eval:
     tf.logging.info("***** Running evaluation *****")
     tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
-
+    batch_size = FLAGS.eval_batch_size
+    if FLAGS.num_gpus > 1:
+      batch_size = distribution_utils.per_replica_batch_size(
+            batch_size, FLAGS.num_gpus)
+    hparams = {"batch_size": batch_size}
     eval_input_fn = input_fn_builder(
         input_files=input_files,
+        batch_size=batch_size,
         max_seq_length=FLAGS.max_seq_length,
         max_predictions_per_seq=FLAGS.max_predictions_per_seq,
-        is_training=False)
+        is_training=False,
+        input_context=None,
+        num_cpu_threads=8,
+        num_eval_steps=FLAGS.max_eval_steps)
 
     while True:
-      result = estimator.evaluate(
+      if FLAGS.use_tpu:
+        result = estimator.evaluate(
           input_fn=eval_input_fn, steps=FLAGS.max_eval_steps)
+      else:
+        result = estimator.evaluate(
+            input_fn=lambda input_context=None: eval_input_fn(
+                params=hparams, input_context=input_context),
+            steps=FLAGS.max_eval_steps)
 
       output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
       with tf.gfile.GFile(output_eval_file, "w") as writer:
@@ -493,4 +582,4 @@ if __name__ == "__main__":
   flags.mark_flag_as_required("input_file")
   flags.mark_flag_as_required("bert_config_file")
   flags.mark_flag_as_required("output_dir")
-  tf.app.run()
+  absl.app.run(main)
