@@ -4,6 +4,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import collections
 import os
 import absl
 import modeling
@@ -157,6 +158,13 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     if init_checkpoint:
       (assignment_map, initialized_variable_names
       ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+
+      tvar_index = {var.name.replace(":0", ""): var for var in tvars}
+      assignment_map = collections.OrderedDict([
+          (name, tvar_index.get(name, value))
+          for name, value in assignment_map.items()
+      ])
+
       if use_tpu:
 
         def tpu_scaffold():
@@ -382,7 +390,6 @@ def input_fn_builder(input_files,
             input_context.input_pipeline_id, input_context.num_input_pipelines))
         d = d.shard(input_context.num_input_pipelines,
                     input_context.input_pipeline_id)
-      d = d.repeat()
       d = d.shuffle(buffer_size=len(input_files))
 
       # `cycle_length` is the number of parallel files that get read.
@@ -395,7 +402,8 @@ def input_fn_builder(input_files,
               tf.data.TFRecordDataset,
               sloppy=is_training,
               cycle_length=cycle_length))
-      d = d.shuffle(buffer_size=100)
+      d = d.shuffle(buffer_size=1000)
+      d = d.repeat()
     else:
       d = tf.data.TFRecordDataset(input_files)
       d = d.take(batch_size * num_eval_steps)
