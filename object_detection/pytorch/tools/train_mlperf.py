@@ -236,8 +236,7 @@ def main():
 
     if is_main_process:
         # Setting logging file parameters for compliance logging
-        os.environ["COMPLIANCE_FILE"] = '/MASKRCNN_complVv0.5.0_' + str(datetime.datetime.now())
-        mlperf_log.LOG_FILE = os.getenv("COMPLIANCE_FILE")
+        mlperf_log.LOG_FILE = os.getenv("COMPLIANCE_FILE", default='/MASKRCNN_complVv0.5.0_' + str(datetime.datetime.now()))
         mlperf_log._FILE_HANDLER = logging.FileHandler(mlperf_log.LOG_FILE)
         mlperf_log._FILE_HANDLER.setLevel(logging.DEBUG)
         mlperf_log.LOGGER.addHandler(mlperf_log._FILE_HANDLER)
