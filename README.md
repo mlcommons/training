@@ -1,25 +1,12 @@
 # MLPerf Reference Implementations
 
-This is a repository of reference implementations for the MLPerf benchmark. These implementations are valid as starting points for benchmark implementations but are not fully optimized and are not intended to be used for "real" performance measurements of software frameworks or hardware. 
+This is a repository of reference implementations for the MLPerf benchmarks. These implementations are valid as starting points for benchmark implementations but are not fully optimized and are not intended to be used for "real" performance measurements of software frameworks or hardware. 
 
-# Preliminary release (v0.5)
-
-This release is very much an "alpha" release -- it could be improved in many ways. The benchmark suite is still being developed and refined, see the Suggestions section below to learn how to contribute. 
-
-We anticipate a significant round of updates at the end of May based on input from users.
+These reference implementations are still very much "alpha" or "beta" quality. They could be improved in many ways. Please file issues or pull requests to help us improve quality.
 
 # Contents
 
-We provide reference implementations for each of the 7 benchmarks in the MLPerf suite. 
-
-* image_classification - Resnet-50 v1 applied to Imagenet.
-* object_detection - Mask R-CNN applied to COCO. 
-* single_stage_detector - SSD applied to COCO 2017.
-* speech_recognition - DeepSpeech2 applied to Librispeech.
-* translation - Transformer applied to WMT English-German.
-* recommendation - Neural Collaborative Filtering applied to MovieLens 20 Million (ml-20m).
-* sentiment_analysis - Seq-CNN applied to IMDB dataset.
-* reinforcement - Mini-go applied to predicting pro game moves.
+We provide reference implementations for benchmarks in the MLPerf suite, as well as several benchmarks under development. 
 
 Each reference implementation provides the following:
  
@@ -48,7 +35,6 @@ Generally, a benchmark can be run with the following steps:
 Each benchmark will run until the target quality is reached and then stop, printing timing results. 
 
 Some these benchmarks are rather slow or take a long time to run on the reference hardware (i.e. 16 CPUs and one P100). We expect to see significant performance improvements with more hardware and optimized implementations. 
-
 
 ## Running with Popper
 
@@ -81,5 +67,3 @@ popper run -f wf.yml -c settings.py
 Here, the `settings.py` file contains necessary configuration that needs to be passed to the container engine in order to use the nvidia drivers. For more information about customizing container engine parameters, see [here](https://popper.readthedocs.io/en/latest/sections/cli_features.html#customizing-container-engine-behavior).
 
 # Suggestions
-
-We are still in the early stages of developing MLPerf and we are looking for areas to improve, partners, and contributors. If you have recommendations for new benchmarks, or otherwise would like to be involved in the process, please reach out to `info@mlperf.org`. For technical bugs or support, email `support@mlperf.org`.
