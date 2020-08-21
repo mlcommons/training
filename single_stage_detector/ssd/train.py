@@ -34,9 +34,8 @@ def parse_args():
                         help='path to model checkpoint file')
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
-    parser.add_argument('--evaluation', nargs='*', type=int,
-                        default=[40, 50, 55, 60, 65, 70, 75, 80],
-                        help='epochs at which to evaluate')
+    parser.add_argument('--evaluation_frequency', type=int, default=5,
+                        help='number of epochs between two evaluates')
     parser.add_argument('--lr-decay-schedule', nargs='*', type=int,
                         default=[40, 50],
                         help='epochs at which to decay the learning rate')
@@ -267,7 +266,6 @@ def train300_mlperf_coco(args):
     ssd_print(key=mlperf_log.OPT_MOMENTUM, value=current_momentum)
     ssd_print(key=mlperf_log.OPT_WEIGHT_DECAY,
                          value=current_weight_decay)
-    eval_points = args.evaluation
     print("epoch", "nbatch", "loss")
 
     iter_num = args.iteration
@@ -325,7 +323,7 @@ def train300_mlperf_coco(args):
 
             iter_num += 1
 
-        if epoch + 1 in eval_points:
+        if epoch % args.evaluation_frequency == 1:
             rank = dist.get_rank() if args.distributed else args.local_rank
             if args.distributed:
                 world_size = float(dist.get_world_size())
