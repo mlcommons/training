@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=2.5e-3,
                         help='base learning rate')
     # Distributed stuff
-    parser.add_argument('--local_rank', default=0, type=int,
+    parser.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                         help='Used for multi-process training. Can either be manually set '
                              'or automatically set by using \'python -m multiproc\'.')
 
@@ -186,6 +186,10 @@ def train300_mlperf_coco(args):
     torch.manual_seed(local_seed)
     np.random.seed(seed=local_seed)
 
+    args.rank = dist.get_rank() if args.distributed else args.local_rank
+    print("args.rank = {}".format(args.rank))
+    print("local rank = {}".format(args.local_rank))
+    print("distributed={}".format(args.distributed))
 
     dboxes = dboxes300_coco()
     encoder = Encoder(dboxes)
@@ -312,7 +316,6 @@ def train300_mlperf_coco(args):
 
             iter_num += 1
         if epoch + 1 in eval_points:
-            rank = dist.get_rank() if args.distributed else args.local_rank
             if args.distributed:
                 world_size = float(dist.get_world_size())
                 for bn_name, bn_buf in ssd300.module.named_buffers(recurse=True):
@@ -321,7 +324,7 @@ def train300_mlperf_coco(args):
                         bn_buf /= world_size
                         ssd_print(key=mllog_const.MODEL_BN_SPAN,
                             value=bn_buf)
-            if rank == 0:
+            if args.rank == 0:
                 if not args.no_save:
                     print("")
                     print("saving model...")
