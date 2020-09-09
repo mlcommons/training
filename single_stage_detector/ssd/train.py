@@ -20,6 +20,9 @@ def parse_args():
                                         " on COCO")
     parser.add_argument('--data', '-d', type=str, default='/coco',
                         help='path to test and training data files')
+    parser.add_argument('--pretrained-backbone', type=str, default=None,
+                        help='path to pretrained backbone weights file, '
+                             'default is to get it from online torchvision repository')
     parser.add_argument('--epochs', '-e', type=int, default=800,
                         help='number of epochs for training')
     parser.add_argument('--batch-size', '-b', type=int, default=32,
@@ -220,7 +223,7 @@ def train300_mlperf_coco(args):
                                   num_workers=4)
     # set shuffle=True in DataLoader
 
-    ssd300 = SSD300(train_coco.labelnum)
+    ssd300 = SSD300(train_coco.labelnum, model_path=args.pretrained_backbone)
     if args.checkpoint is not None:
         print("loading model checkpoint", args.checkpoint)
         od = torch.load(args.checkpoint)

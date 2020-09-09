@@ -10,14 +10,14 @@ class SSD300(nn.Module):
         vggt: pretrained vgg16 (partial) model
         label_num: number of classes (including background 0)
     """
-    def __init__(self, label_num, backbone='resnet34', model_path="./resnet34-333f7ec4.pth"):
+    def __init__(self, label_num, backbone='resnet34', model_path=None):
 
         super(SSD300, self).__init__()
 
         self.label_num = label_num
 
         if backbone == 'resnet34':
-            self.model = ResNet34()
+            self.model = ResNet34(model_path=model_path)
             out_channels = 256
             out_size = 38
             self.out_chan = [out_channels, 512, 512, 256, 256, 256]
