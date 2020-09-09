@@ -10,9 +10,11 @@ RUN apt-get update && \
 RUN pip install --upgrade pip
 
 # Necessary pip packages
-COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
-RUN python3 -m pip install pycocotools==2.0.0
+COPY requirements.txt /requirements.txt
+
+RUN pip install --no-cache-dir cython \
+ && pip install --no-cache-dir https://github.com/mlperf/logging/archive/9ea0afa.zip \
+ && pip install --no-cache-dir -r /requirements.txt
 
 # Copy SSD code
 COPY ssd .

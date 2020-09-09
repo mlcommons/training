@@ -21,7 +21,7 @@ mllogger = mllog.get_mllogger()
 mllog.config(
     filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
     root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
-    
+
 def ssd_print(*args, sync=True, **kwargs):
     if sync:
         barrier()
