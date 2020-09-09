@@ -260,7 +260,14 @@ def train300_mlperf_coco(args):
     mllogger.event(key=mllog_const.GLOBAL_BATCH_SIZE, value=global_batch_size)
     # Reference doesn't support group batch norm, so bn_span==local_batch_size
     mllogger.event(key=mllog_const.MODEL_BN_SPAN, value=args.batch_size)
-    current_lr = args.lr * (global_batch_size / 32)
+    requested_lr_multiplier = (args.lr / _BASE_LR) * (global_batch_size / 32)
+    actual_lr_multiplier  = max(1, round(requested_lr_multiplier))
+    current_lr = _BASE_LR * actual_lr_multiplier
+
+    print("using lr of {} = {}*{}, global batch is {}*32".format(current_lr,
+                                                                 current_lr/_BASE_LR,
+                                                                 _BASE_LR,
+                                                                 global_batch_size/32))
 
     current_momentum = 0.9
     optim = torch.optim.SGD(ssd300.parameters(), lr=current_lr,
