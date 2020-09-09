@@ -15,6 +15,8 @@ from mlperf_logging.mllog import constants as mllog_const
 from mlperf_logger import ssd_print, broadcast_seeds
 from mlperf_logger import mllogger
 
+_BASE_LR=2.5e-3
+
 def parse_args():
     parser = ArgumentParser(description="Train Single Shot MultiBox Detector"
                                         " on COCO")
@@ -49,8 +51,18 @@ def parse_args():
                         help='how long the learning rate will be warmed up in fraction of epochs')
     parser.add_argument('--warmup-factor', type=int, default=0,
                         help='mlperf rule parameter for controlling warmup curve')
-    parser.add_argument('--lr', type=float, default=2.5e-3,
+    parser.add_argument('--lr', type=float, default=_BASE_LR,
                         help='base learning rate')
+    parser.add_argument('--weight-decay', type=float, default=5e-4,
+                        help='weight decay factor')
+    parser.add_argument('--num-cropping-iterations', type=int, default=1,
+                        help='cropping retries in augmentation pipeline, '
+                             'default 1, other legal value is 50')
+    parser.add_argument('--nms-valid-thresh', type=float, default=0.05,
+                        help='in eval, filter input boxes to those with score greater '
+                             'than nms_valid_thresh.')
+    parser.add_argument('--log-interval', type=int, default=100,
+                        help='Logging mini-batch interval.')
     # Distributed stuff
     parser.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                         help='Used for multi-process training. Can either be manually set '
@@ -78,7 +90,8 @@ def dboxes300_coco():
 
 
 def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
-              epoch, iteration, use_cuda=True):
+              epoch, iteration, log_interval=100,
+              use_cuda=True, nms_valid_thresh=0.05):
     from pycocotools.cocoeval import COCOeval
     print("")
     model.eval()
@@ -88,6 +101,7 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
 
     overlap_threshold = 0.50
     nms_max_detections = 200
+    print("nms_valid_thresh is set to {}".format(nms_valid_thresh))
 
     mllogger.start(
         key=mllog_const.EVAL_START,
@@ -106,7 +120,8 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
             try:
                 result = encoder.decode_batch(ploc, plabel,
                                               overlap_threshold,
-                                              nms_max_detections)[0]
+                                              nms_max_detections,
+                                              nms_valid_thresh=nms_valid_thresh)[0]
 
             except:
                 #raise
@@ -198,7 +213,8 @@ def train300_mlperf_coco(args):
     encoder = Encoder(dboxes)
 
     input_size = 300
-    train_trans = SSDTransformer(dboxes, (input_size, input_size), val=False)
+    train_trans = SSDTransformer(dboxes, (input_size, input_size), val=False,
+                                 num_cropping_iterations=args.num_cropping_iterations)
     val_trans = SSDTransformer(dboxes, (input_size, input_size), val=True)
 
     val_annotate = os.path.join(args.data, "annotations/instances_val2017.json")
@@ -248,13 +264,13 @@ def train300_mlperf_coco(args):
     # Reference doesn't support group batch norm, so bn_span==local_batch_size
     mllogger.event(key=mllog_const.MODEL_BN_SPAN, value=args.batch_size)
     current_lr = args.lr * (global_batch_size / 32)
+
     current_momentum = 0.9
-    current_weight_decay = 5e-4
     optim = torch.optim.SGD(ssd300.parameters(), lr=current_lr,
                             momentum=current_momentum,
-                            weight_decay=current_weight_decay)
+                            weight_decay=args.weight_decay)
     ssd_print(key=mllog_const.OPT_BASE_LR, value=current_lr)
-    ssd_print(key=mllog_const.OPT_WEIGHT_DECAY, value=current_weight_decay)
+    ssd_print(key=mllog_const.OPT_WEIGHT_DECAY, value=args.weight_decay)
     eval_points = args.evaluation
 
     iter_num = args.iteration
@@ -309,9 +325,9 @@ def train300_mlperf_coco(args):
             loss = loss_func(ploc, plabel, gloc, glabel)
 
             if not np.isinf(loss.item()): avg_loss = 0.999*avg_loss + 0.001*loss.item()
-
-            print("Iteration: {:6d}, Loss function: {:5.3f}, Average Loss: {:.3f}"\
-                        .format(iter_num, loss.item(), avg_loss), end="\r")
+            if args.rank == 0 and args.log_interval and not iter_num % args.log_interval:
+                print("Iteration: {:6d}, Loss function: {:5.3f}, Average Loss: {:.3f}"\
+                    .format(iter_num, loss.item(), avg_loss))
             optim.zero_grad()
             loss.backward()
             warmup_step(iter_num, current_lr)
@@ -335,7 +351,9 @@ def train300_mlperf_coco(args):
                                "./models/iter_{}.pt".format(iter_num))
 
                 if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
-                             args.threshold, epoch + 1,iter_num):
+                             args.threshold, epoch + 1, iter_num,
+                             log_interval=args.log_interval,
+                             nms_valid_thresh=args.nms_valid_thresh):
                     success = torch.ones(1)
                     if use_cuda:
                         success = success.cuda()
