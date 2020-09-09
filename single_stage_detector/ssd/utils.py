@@ -16,6 +16,9 @@ import time
 import bz2
 import pickle
 from math import sqrt, ceil
+from mlperf_logger import ssd_print
+from mlperf_logging.mllog import constants as mllog_const
+
 
 # This function is from https://github.com/kuangliu/pytorch-ssd.
 def calc_iou_tensor(box1, box2):
@@ -301,6 +304,7 @@ class SSDCropping(object):
         # Implementation uses 1 iteration to find a possible candidate, this
         # was shown to produce the same mAP as using more iterations.
         self.num_cropping_iterations = 1
+        ssd_print(key=mllog_const.MAX_SAMPLES, value=self.num_cropping_iterations, sync=False)
 
     def __call__(self, img, img_size, bboxes, labels):
 

@@ -11,3 +11,4 @@ python-dateutil==2.7.3
 pytz==2018.5
 six==1.11.0
 torchvision==0.2.1
+pycocotools==2.0.0
