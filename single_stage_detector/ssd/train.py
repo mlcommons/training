@@ -11,15 +11,9 @@ import time
 import random
 import numpy as np
 import logging
-from mlperf_logging import mllog
 from mlperf_logging.mllog import constants as mllog_const
 from mlperf_logger import ssd_print, broadcast_seeds
-
-mllogger = mllog.get_mllogger()
-mllog.config(
-    filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
-    root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
-
+from mlperf_logger import mllogger
 
 def parse_args():
     parser = ArgumentParser(description="Train Single Shot MultiBox Detector"
