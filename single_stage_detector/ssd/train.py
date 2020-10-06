@@ -15,8 +15,6 @@ from mlperf_logging.mllog import constants as mllog_const
 from mlperf_logger import ssd_print, broadcast_seeds
 from mlperf_logger import mllogger
 
-_BASE_LR=2.5e-3
-
 def parse_args():
     parser = ArgumentParser(description="Train Single Shot MultiBox Detector"
                                         " on COCO")
@@ -48,7 +46,7 @@ def parse_args():
                         help='how long the learning rate will be warmed up in fraction of epochs')
     parser.add_argument('--warmup-factor', type=int, default=0,
                         help='mlperf rule parameter for controlling warmup curve')
-    parser.add_argument('--lr', type=float, default=_BASE_LR,
+    parser.add_argument('--lr', type=float, default=2.5e-3,
                         help='base learning rate')
     parser.add_argument('--weight-decay', type=float, default=5e-4,
                         help='weight decay factor')
@@ -260,14 +258,9 @@ def train300_mlperf_coco(args):
     mllogger.event(key=mllog_const.GLOBAL_BATCH_SIZE, value=global_batch_size)
     # Reference doesn't support group batch norm, so bn_span==local_batch_size
     mllogger.event(key=mllog_const.MODEL_BN_SPAN, value=args.batch_size)
-    requested_lr_multiplier = (args.lr / _BASE_LR) * (global_batch_size / 32)
-    actual_lr_multiplier  = max(1, round(requested_lr_multiplier))
-    current_lr = _BASE_LR * actual_lr_multiplier
+    current_lr = args.lr * (global_batch_size / 32) # Scale LR with global batch size
 
-    print("using lr of {} = {}*{}, global batch is {}*32".format(current_lr,
-                                                                 current_lr/_BASE_LR,
-                                                                 _BASE_LR,
-                                                                 global_batch_size/32))
+    print("using lr of {} = {}*{}".format(current_lr, args.lr, global_batch_size/32))
 
     current_momentum = 0.9
     optim = torch.optim.SGD(ssd300.parameters(), lr=current_lr,
