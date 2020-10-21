@@ -16,7 +16,8 @@ import time
 import bz2
 import pickle
 from math import sqrt, ceil
-from mlperf_compliance import mlperf_log
+from mlperf_logger import ssd_print
+from mlperf_logging.mllog import constants as mllog_const
 
 
 # This function is from https://github.com/kuangliu/pytorch-ssd.
@@ -303,8 +304,7 @@ class SSDCropping(object):
         # Implementation uses 1 iteration to find a possible candidate, this
         # was shown to produce the same mAP as using more iterations.
         self.num_cropping_iterations = 1
-        mlperf_log.ssd_print(key=mlperf_log.NUM_CROPPING_ITERATIONS,
-                             value=self.num_cropping_iterations)
+        ssd_print(key=mllog_const.MAX_SAMPLES, value=self.num_cropping_iterations, sync=False)
 
     def __call__(self, img, img_size, bboxes, labels):
 
@@ -426,8 +426,6 @@ class LightingNoice(object):
 class RandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
-        mlperf_log.ssd_print(key=mlperf_log.RANDOM_FLIP_PROBABILITY,
-                             value=self.p)
 
     def __call__(self, image, bboxes):
         if random.random() < self.p:
@@ -471,10 +469,6 @@ class SSDTransformer(object):
         # https://discuss.pytorch.org/t/how-to-preprocess-input-for-pre-trained-networks/683
         normalization_mean = [0.485, 0.456, 0.406]
         normalization_std = [0.229, 0.224, 0.225]
-        mlperf_log.ssd_print(key=mlperf_log.DATA_NORMALIZATION_MEAN,
-                             value=normalization_mean)
-        mlperf_log.ssd_print(key=mlperf_log.DATA_NORMALIZATION_STD,
-                             value=normalization_std)
         self.normalize = transforms.Normalize(mean=normalization_mean,
                                               std=normalization_std)
         # self.normalize = transforms.Normalize(mean = [104.0, 117.0, 123.0],
