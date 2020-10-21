@@ -48,6 +48,8 @@ def parse_args():
     parser.add_argument('--val-epochs', nargs='*', type=int,
                         default=[40, 50, 55, 60, 65, 70, 75, 80],
                         help='epochs at which to evaluate in addition to --val-interval')
+    parser.add_argument('--batch-splits', type=int, default=1,
+                        help='Split batch to N steps (gradient accumulation)')
     parser.add_argument('--lr-decay-schedule', nargs='*', type=int,
                         default=[40, 50],
                         help='epochs at which to decay the learning rate')
@@ -282,6 +284,11 @@ def train300_mlperf_coco(args):
     mllogger.event(key=mllog_const.MODEL_BN_SPAN, value=args.batch_size)
     current_lr = args.lr * (global_batch_size / 32)
 
+    assert args.batch_size % args.batch_splits == 0, "--batch-size must be divisible by --batch-splits"
+    fragment_size = args.batch_size // args.batch_splits
+    if args.batch_splits != 1:
+        print("using gradient accumulation with fragments of size {}".format(fragment_size))
+
     current_momentum = 0.9
     optim = torch.optim.SGD(ssd300.parameters(), lr=current_lr,
                             momentum=current_momentum,
@@ -311,6 +318,8 @@ def train300_mlperf_coco(args):
         key=mllog_const.BLOCK_START,
         metadata={mllog_const.FIRST_EPOCH_NUM: 1,
                   mllog_const.EPOCH_COUNT: args.epochs})
+
+    optim.zero_grad()
     for epoch in range(args.epochs):
         mllogger.start(
             key=mllog_const.EPOCH_START,
@@ -327,27 +336,34 @@ def train300_mlperf_coco(args):
                 param_group['lr'] = current_lr
 
         for nbatch, (img, img_id, img_size, bbox, label) in enumerate(train_dataloader):
-            if use_cuda:
-                img = img.cuda()
-            img = Variable(img, requires_grad=True)
-            ploc, plabel = ssd300(img)
-            trans_bbox = bbox.transpose(1,2).contiguous()
-            if use_cuda:
-                trans_bbox = trans_bbox.cuda()
-                label = label.cuda()
-            gloc, glabel = Variable(trans_bbox, requires_grad=False), \
-                           Variable(label, requires_grad=False)
-            loss = loss_func(ploc, plabel, gloc, glabel)
+            current_batch_size = img.shape[0]
+            # Split batch for gradient accumulation
+            img = torch.split(img, fragment_size)
+            bbox = torch.split(bbox, fragment_size)
+            label = torch.split(label, fragment_size)
 
+            for (fimg, fbbox, flabel) in zip(img, bbox, label):
+                current_fragment_size = fimg.shape[0]
+                trans_bbox = fbbox.transpose(1,2).contiguous()
+                if use_cuda:
+                    fimg = fimg.cuda()
+                    trans_bbox = trans_bbox.cuda()
+                    flabel = flabel.cuda()
+                fimg = Variable(fimg, requires_grad=True)
+                ploc, plabel = ssd300(fimg)
+                gloc, glabel = Variable(trans_bbox, requires_grad=False), \
+                               Variable(flabel, requires_grad=False)
+                loss = loss_func(ploc, plabel, gloc, glabel)
+                loss = loss * (current_fragment_size / current_batch_size) # weighted mean
+                loss.backward()
+
+            warmup_step(iter_num, current_lr)
+            optim.step()
+            optim.zero_grad()
             if not np.isinf(loss.item()): avg_loss = 0.999*avg_loss + 0.001*loss.item()
             if args.rank == 0 and args.log_interval and not iter_num % args.log_interval:
                 print("Iteration: {:6d}, Loss function: {:5.3f}, Average Loss: {:.3f}"\
                     .format(iter_num, loss.item(), avg_loss))
-            optim.zero_grad()
-            loss.backward()
-            warmup_step(iter_num, current_lr)
-            optim.step()
-
             iter_num += 1
 
 
