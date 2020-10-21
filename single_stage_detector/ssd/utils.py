@@ -156,20 +156,21 @@ class Encoder(object):
 
         return bboxes_in, F.softmax(scores_in, dim=-1)
 
-    def decode_batch(self, bboxes_in, scores_in, criteria=0.45, max_output=200):
+    def decode_batch(self, bboxes_in, scores_in, criteria=0.45, max_output=200, nms_valid_thresh=0.05):
         bboxes, probs = self.scale_back_batch(bboxes_in, scores_in)
 
         output = []
         for bbox, prob in zip(bboxes.split(1, 0), probs.split(1, 0)):
             bbox = bbox.squeeze(0)
             prob = prob.squeeze(0)
-            output.append(self.decode_single(bbox, prob, criteria, max_output))
+            output.append(self.decode_single(bbox, prob, criteria, max_output,
+					     nms_valid_thresh=nms_valid_thresh))
             # print(output[-1])
         return output
 
     # perform non-maximum suppression
     def decode_single(self, bboxes_in, scores_in, criteria, max_output,
-                      max_num=200):
+                      max_num=200, nms_valid_thresh=0.05):
         # Reference to https://github.com/amdegroot/ssd.pytorch
 
         bboxes_out = []
@@ -183,7 +184,7 @@ class Encoder(object):
             # print(i)
 
             score = score.squeeze(1)
-            mask = score > 0.05
+            mask = score > nms_valid_thresh
 
             bboxes, score = bboxes_in[mask, :], score[mask]
             if score.size(0) == 0: continue
@@ -287,7 +288,7 @@ class SSDCropping(object):
         Reference to https://github.com/chauhan-utk/ssd.DomainAdaptation
     """
 
-    def __init__(self):
+    def __init__(self, num_cropping_iterations=1):
 
         self.sample_options = (
             # Do nothing
@@ -303,7 +304,7 @@ class SSDCropping(object):
         )
         # Implementation uses 1 iteration to find a possible candidate, this
         # was shown to produce the same mAP as using more iterations.
-        self.num_cropping_iterations = 1
+        self.num_cropping_iterations = num_cropping_iterations
         ssd_print(key=mllog_const.MAX_SAMPLES, value=self.num_cropping_iterations, sync=False)
 
     def __call__(self, img, img_size, bboxes, labels):
@@ -444,7 +445,7 @@ class SSDTransformer(object):
         Jittering
     """
 
-    def __init__(self, dboxes, size=(300, 300), val=False):
+    def __init__(self, dboxes, size=(300, 300), val=False, num_cropping_iterations=1):
         # define vgg16 mean
         self.size = size
         self.val = val
@@ -452,7 +453,7 @@ class SSDTransformer(object):
         self.dboxes_ = dboxes  # DefaultBoxes300()
         self.encoder = Encoder(self.dboxes_)
 
-        self.crop = SSDCropping()
+        self.crop = SSDCropping(num_cropping_iterations=num_cropping_iterations)
         self.img_trans = transforms.Compose([
             transforms.Resize(self.size),
             # transforms.Resize((300, 300)),
