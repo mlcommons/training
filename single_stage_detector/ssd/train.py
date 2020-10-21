@@ -28,7 +28,9 @@ def parse_args():
     parser.add_argument('--epochs', '-e', type=int, default=800,
                         help='number of epochs for training')
     parser.add_argument('--batch-size', '-b', type=int, default=32,
-                        help='number of examples for each iteration')
+                        help='number of examples for each training iteration')
+    parser.add_argument('--val-batch-size', type=int, default=None,
+                        help='number of examples for each validation iteration (defaults to --batch-size)')
     parser.add_argument('--no-cuda', action='store_true',
                         help='use available GPUs')
     parser.add_argument('--seed', '-s', type=int, default=random.SystemRandom().randint(0, 2**32 - 1),
@@ -41,9 +43,11 @@ def parse_args():
                         help='path to model checkpoint file')
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
-    parser.add_argument('--evaluation', nargs='*', type=int,
+    parser.add_argument('--val-interval', type=int, default=None,
+                        help='epoch interval for validation in addition to --val-epochs.')
+    parser.add_argument('--val-epochs', nargs='*', type=int,
                         default=[40, 50, 55, 60, 65, 70, 75, 80],
-                        help='epochs at which to evaluate')
+                        help='epochs at which to evaluate in addition to --val-interval')
     parser.add_argument('--lr-decay-schedule', nargs='*', type=int,
                         default=[40, 50],
                         help='epochs at which to decay the learning rate')
@@ -89,7 +93,7 @@ def dboxes300_coco():
     return dboxes
 
 
-def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
+def coco_eval(model, val_dataloader, cocoGt, encoder, inv_map, threshold,
               epoch, iteration, log_interval=100,
               use_cuda=True, nms_valid_thresh=0.05):
     from pycocotools.cocoeval import COCOeval
@@ -108,35 +112,40 @@ def coco_eval(model, coco, cocoGt, encoder, inv_map, threshold,
         metadata={mllog_const.EPOCH_NUM: epoch})
 
     start = time.time()
-    for idx, image_id in enumerate(coco.img_keys):
-        img, (htot, wtot), _, _ = coco[idx]
-
+    for nbatch, (img, img_id, img_size, bbox, label) in enumerate(val_dataloader):
         with torch.no_grad():
-            print("Parsing image: {}/{}".format(idx+1, len(coco)), end="\r")
-            inp = img.unsqueeze(0)
             if use_cuda:
-                inp = inp.cuda()
-            ploc, plabel = model(inp)
-            try:
-                result = encoder.decode_batch(ploc, plabel,
-                                              overlap_threshold,
-                                              nms_max_detections,
-                                              nms_valid_thresh=nms_valid_thresh)[0]
+                img = img.cuda()
+            ploc, plabel = model(img)
 
+            try:
+                results = encoder.decode_batch(ploc, plabel,
+                                               overlap_threshold,
+                                               nms_max_detections,
+                                               nms_valid_thresh=nms_valid_thresh)
             except:
                 #raise
                 print("")
-                print("No object detected in idx: {}".format(idx))
+                print("No object detected in batch: {}".format(nbatch))
                 continue
 
-            loc, label, prob = [r.cpu().numpy() for r in result]
-            for loc_, label_, prob_ in zip(loc, label, prob):
-                ret.append([image_id, loc_[0]*wtot, \
-                                      loc_[1]*htot,
-                                      (loc_[2] - loc_[0])*wtot,
-                                      (loc_[3] - loc_[1])*htot,
-                                      prob_,
-                                      inv_map[label_]])
+            (htot, wtot) = [d.cpu().numpy() for d in img_size]
+            img_id = img_id.cpu().numpy()
+            # Iterate over batch elements
+            for img_id_, wtot_, htot_, result in zip(img_id, wtot, htot, results):
+                loc, label, prob = [r.cpu().numpy() for r in result]
+
+                # Iterate over image detections
+                for loc_, label_, prob_ in zip(loc, label, prob):
+                    ret.append([img_id_, loc_[0]*wtot_, \
+                                         loc_[1]*htot_,
+                                         (loc_[2] - loc_[0])*wtot_,
+                                         (loc_[3] - loc_[1])*htot_,
+                                         prob_,
+                                         inv_map[label_]])
+        if log_interval and not (nbatch+1) % log_interval:
+                print("Completed inference on batch: {}".format(nbatch+1))
+
     print("")
     print("Predicting Ended, total time: {:.2f} s".format(time.time()-start))
 
@@ -238,6 +247,14 @@ def train300_mlperf_coco(args):
                                   sampler=train_sampler,
                                   num_workers=4)
     # set shuffle=True in DataLoader
+    if args.rank==0:
+        val_dataloader = DataLoader(val_coco,
+                                    batch_size=args.val_batch_size or args.batch_size,
+                                    shuffle=False,
+                                    sampler=None,
+                                    num_workers=4)
+    else:
+        val_dataloader = None
 
     ssd300 = SSD300(train_coco.labelnum, model_path=args.pretrained_backbone)
     if args.checkpoint is not None:
@@ -271,7 +288,6 @@ def train300_mlperf_coco(args):
                             weight_decay=args.weight_decay)
     ssd_print(key=mllog_const.OPT_BASE_LR, value=current_lr)
     ssd_print(key=mllog_const.OPT_WEIGHT_DECAY, value=args.weight_decay)
-    eval_points = args.evaluation
 
     iter_num = args.iteration
     avg_loss = 0.0
@@ -310,8 +326,7 @@ def train300_mlperf_coco(args):
             for param_group in optim.param_groups:
                 param_group['lr'] = current_lr
 
-        for nbatch, (img, img_size, bbox, label) in enumerate(train_dataloader):
-
+        for nbatch, (img, img_id, img_size, bbox, label) in enumerate(train_dataloader):
             if use_cuda:
                 img = img.cuda()
             img = Variable(img, requires_grad=True)
@@ -334,7 +349,10 @@ def train300_mlperf_coco(args):
             optim.step()
 
             iter_num += 1
-        if epoch + 1 in eval_points:
+
+
+        if (args.val_epochs and (epoch+1) in args.val_epochs) or \
+           (args.val_interval and not (epoch+1) % args.val_interval):
             if args.distributed:
                 world_size = float(dist.get_world_size())
                 for bn_name, bn_buf in ssd300.module.named_buffers(recurse=True):
@@ -350,7 +368,7 @@ def train300_mlperf_coco(args):
                     torch.save({"model" : ssd300.state_dict(), "label_map": train_coco.label_info},
                                "./models/iter_{}.pt".format(iter_num))
 
-                if coco_eval(ssd300, val_coco, cocoGt, encoder, inv_map,
+                if coco_eval(ssd300, val_dataloader, cocoGt, encoder, inv_map,
                              args.threshold, epoch + 1, iter_num,
                              log_interval=args.log_interval,
                              nms_valid_thresh=args.nms_valid_thresh):

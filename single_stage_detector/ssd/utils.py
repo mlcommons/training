@@ -606,7 +606,7 @@ class COCODetection(data.Dataset):
         else:
             pass
 
-        return img, (htot, wtot), bbox_sizes, bbox_labels
+        return img, img_id, (htot, wtot), bbox_sizes, bbox_labels
 
     # Implement a datareader for VOC dataset
 
