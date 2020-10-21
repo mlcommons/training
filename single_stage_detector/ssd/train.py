@@ -20,6 +20,9 @@ def parse_args():
                                         " on COCO")
     parser.add_argument('--data', '-d', type=str, default='/coco',
                         help='path to test and training data files')
+    parser.add_argument('--pretrained-backbone', type=str, default=None,
+                        help='path to pretrained backbone weights file, '
+                             'default is to get it from online torchvision repository')
     parser.add_argument('--epochs', '-e', type=int, default=800,
                         help='number of epochs for training')
     parser.add_argument('--batch-size', '-b', type=int, default=32,
@@ -49,7 +52,7 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=2.5e-3,
                         help='base learning rate')
     # Distributed stuff
-    parser.add_argument('--local_rank', default=0, type=int,
+    parser.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                         help='Used for multi-process training. Can either be manually set '
                              'or automatically set by using \'python -m multiproc\'.')
 
@@ -186,6 +189,10 @@ def train300_mlperf_coco(args):
     torch.manual_seed(local_seed)
     np.random.seed(seed=local_seed)
 
+    args.rank = dist.get_rank() if args.distributed else args.local_rank
+    print("args.rank = {}".format(args.rank))
+    print("local rank = {}".format(args.local_rank))
+    print("distributed={}".format(args.distributed))
 
     dboxes = dboxes300_coco()
     encoder = Encoder(dboxes)
@@ -214,9 +221,9 @@ def train300_mlperf_coco(args):
                                   shuffle=(train_sampler is None),
                                   sampler=train_sampler,
                                   num_workers=4)
-    # set shuffle=True in DataLoader    
+    # set shuffle=True in DataLoader
 
-    ssd300 = SSD300(train_coco.labelnum)
+    ssd300 = SSD300(train_coco.labelnum, model_path=args.pretrained_backbone)
     if args.checkpoint is not None:
         print("loading model checkpoint", args.checkpoint)
         od = torch.load(args.checkpoint)
@@ -312,7 +319,6 @@ def train300_mlperf_coco(args):
 
             iter_num += 1
         if epoch + 1 in eval_points:
-            rank = dist.get_rank() if args.distributed else args.local_rank
             if args.distributed:
                 world_size = float(dist.get_world_size())
                 for bn_name, bn_buf in ssd300.module.named_buffers(recurse=True):
@@ -321,7 +327,7 @@ def train300_mlperf_coco(args):
                         bn_buf /= world_size
                         ssd_print(key=mllog_const.MODEL_BN_SPAN,
                             value=bn_buf)
-            if rank == 0:
+            if args.rank == 0:
                 if not args.no_save:
                     print("")
                     print("saving model...")

@@ -54,9 +54,11 @@ class ResNet18(nn.Module):
         return [layer2_activation]
 
 class ResNet34(nn.Module):
-    def __init__(self):
+    def __init__(self, model_path=None):
         super().__init__()
-        rn34 = resnet34(pretrained=True)
+        rn34 = resnet34(pretrained=(model_path is None))
+        if model_path is not None:
+            rn34.load_state_dict(torch.load(model_path))
 
         # discard last Resnet block, avrpooling and classification FC
         self.layer1 = nn.Sequential(*list(rn34.children())[:6])

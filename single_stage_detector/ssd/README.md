@@ -30,6 +30,21 @@ cd reference/single_stage_detector/
 source download_dataset.sh
 ```
 
+### ResNet34 pretrained weights
+ResNet34 backbone is initialized with weights from PyTorch hub:
+https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
+
+By default, the code will automatically download the weights to
+`$TORCH_HOME/models` (default is `~/.torch/models/`) and save them for later use.
+
+Alternatively, you can manually download the weights with:
+```
+cd reference/single_stage_detector/
+./download_resnet34_backbone.sh
+```
+
+Then use the downloaded file with `--pretrained-backbone <PATH TO WEIGHTS>` .
+
 ### Steps to run benchmark.
 
 ## Steps to launch training
