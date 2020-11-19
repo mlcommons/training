@@ -43,10 +43,10 @@ def parse_args():
                         help='path to model checkpoint file')
     parser.add_argument('--no-save', action='store_true',
                         help='save model checkpoints')
-    parser.add_argument('--val-interval', type=int, default=None,
+    parser.add_argument('--val-interval', type=int, default=5,
                         help='epoch interval for validation in addition to --val-epochs.')
     parser.add_argument('--val-epochs', nargs='*', type=int,
-                        default=[40, 50, 55, 60, 65, 70, 75, 80],
+                        default=[],
                         help='epochs at which to evaluate in addition to --val-interval')
     parser.add_argument('--batch-splits', type=int, default=1,
                         help='Split batch to N steps (gradient accumulation)')
