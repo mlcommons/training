@@ -7,7 +7,97 @@ MLPerf has neither finalized on a decision to add a speech recognition benchmark
 Speech recognition accepts raw audio samples and produces a corresponding text transcription.
 
 # 2. Directions
-See https://github.com/NVIDIA/DeepLearningExamples/blob/master/PyTorch/SpeechRecognition/Jasper/README.md. This implementation shares significant code with that repository.
+
+## Steps to configure machine
+From Source
+
+Standard script.
+
+From Docker
+1. Checkout the MLPerf repository
+```
+git clone https://github.com/mlcommon/training.git
+```
+2. Install CUDA and Docker
+```
+source training/install_cuda_docker.sh
+```
+3. Build the docker image for the single stage detection task
+```
+# Build from Dockerfile
+cd training/rnn_speech_recognition/pytorch/
+bash scripts/docker/build.sh
+```
+
+## Steps to download data
+1. Start an interactive session in the NGC container to run data download/training/inference
+```
+bash scripts/docker/launch.sh <DATA_DIR> <CHECKPOINT_DIR> <RESULTS_DIR>
+```
+
+Within the container, the contents of this repository will be copied to the `/workspace/rnnt` directory. The `/datasets`, `/checkpoints`, `/results` directories are mounted as volumes
+and mapped to the corresponding directories `<DATA_DIR>`, `<CHECKPOINT_DIR>`, `<RESULT_DIR>` on the host.
+
+2. Download and preprocess the dataset.
+
+No GPU is required for data download and preprocessing. Therefore, if GPU usage is a limited resource, launch the container for this section on a CPU machine by following prevoius steps.
+
+Note: Downloading and preprocessing the dataset requires 500GB of free disk space and can take several hours to complete.
+
+This repository provides scripts to download, and extract the following datasets:
+
+* LibriSpeech [http://www.openslr.org/12](http://www.openslr.org/12)
+
+LibriSpeech contains 1000 hours of 16kHz read English speech derived from public domain audiobooks from LibriVox project and has been carefully segmented and aligned. For more information, see the [LIBRISPEECH: AN ASR CORPUS BASED ON PUBLIC DOMAIN AUDIO BOOKS](http://www.danielpovey.com/files/2015_icassp_librispeech.pdf) paper.
+
+Inside the container, download and extract the datasets into the required format for later training and inference:
+```bash
+bash scripts/download_librispeech.sh
+```
+Once the data download is complete, the following folders should exist:
+
+* `/datasets/LibriSpeech/`
+   * `train-clean-100/`
+   * `train-clean-360/`
+   * `train-other-500/`
+   * `dev-clean/`
+   * `dev-other/`
+   * `test-clean/`
+   * `test-other/`
+
+Since `/datasets/` is mounted to `<DATA_DIR>` on the host (see Step 3),  once the dataset is downloaded it will be accessible from outside of the container at `<DATA_DIR>/LibriSpeech`.
+
+Next, convert the data into WAV files:
+```bash
+bash scripts/preprocess_librispeech.sh
+```
+Once the data is converted, the following additional files and folders should exist:
+* `datasets/LibriSpeech/`
+   * `librispeech-train-clean-100-wav.json`
+   * `librispeech-train-clean-360-wav.json`
+   * `librispeech-train-other-500-wav.json`
+   * `librispeech-dev-clean-wav.json`
+   * `librispeech-dev-other-wav.json`
+   * `librispeech-test-clean-wav.json`
+   * `librispeech-test-other-wav.json`
+   * `train-clean-100-wav/`
+   * `train-clean-360-wav/`
+   * `train-other-500-wav/`
+   * `dev-clean-wav/`
+   * `dev-other-wav/`
+   * `test-clean-wav/`
+   * `test-other-wav/`
+
+## Steps to run benchmark.
+
+### Steps to launch training
+
+Inside the container, use the following script to start training.
+Make sure the downloaded and preprocessed dataset is located at `<DATA_DIR>/LibriSpeech` on the host (see Step 3), which corresponds to `/datasets/LibriSpeech` inside the container.
+
+```bash
+NUM_GPUS=<NUM_GPUS> bash scripts/train.sh
+```
 
 # 3. Dataset/Environment
 ### Publication/Attribution

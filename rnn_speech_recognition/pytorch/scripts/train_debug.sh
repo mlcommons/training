@@ -16,13 +16,17 @@
 
 export OMP_NUM_THREADS=1
 
+DATA_DIR="/datasets/LibriSpeech"
+TRAIN_MANIFESTS="$DATA_DIR/librispeech-train-clean-100-wav.json"
+NUM_GPUS=1
+
 : ${DATA_DIR:=${1:-"/datasets/LibriSpeech"}}
-: ${MODEL_CONFIG:=${2:-"configs/baseline_v3-1023sp.yaml"}}
+: ${MODEL_CONFIG:=${2:-"configs/rnnt.yaml"}}
 : ${OUTPUT_DIR:=${3:-"/results"}}
 : ${CHECKPOINT:=${4:-}}
 : ${CUDNN_BENCHMARK:=true}
 : ${NUM_GPUS:=8}
-: ${AMP:=false}
+: ${AMP:=true}
 : ${BATCH_SIZE:=8}
 : ${VAL_BATCH_SIZE:=8}
 : ${OPTIMIZER:=adamw}
@@ -31,7 +35,6 @@ export OMP_NUM_THREADS=1
 # : ${MIN_LEARNING_RATE:=0.00001}
 : ${LR_POLICY:=legacy}
 : ${LR_EXP_GAMMA:=0.935}  # ~0.005 in 80 epochs
-: ${NUM_BUCKETS:=6} # empty means to use torch.utils.data.distributed.DistributedSampler
 : ${EMA:=0.999}
 : ${SEED:=1}
 : ${EPOCHS:=100}
@@ -40,15 +43,16 @@ export OMP_NUM_THREADS=1
 : ${SAVE_FREQUENCY:=10}
 : ${EPOCHS_THIS_JOB:=0}
 : ${RESUME:=true}
-: ${DALI_DEVICE:="cpu"}
+: ${DALI_DEVICE:="none"}
 : ${PAD_TO_MAX_DURATION:=false}
 : ${VAL_FREQUENCY:=10000}
 : ${PREDICTION_FREQUENCY:=1000}
-: ${LOG_FREQUENCY:=1}
 : ${TRAIN_MANIFESTS:="$DATA_DIR/librispeech-train-clean-100-wav.json \
                       $DATA_DIR/librispeech-train-clean-360-wav.json \
                       $DATA_DIR/librispeech-train-other-500-wav.json"}
 : ${VAL_MANIFESTS:="$DATA_DIR/librispeech-dev-clean-wav.json"}
+
+: ${PDB:=false}
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -74,7 +78,7 @@ ARGS+=" --weight_decay=1e-3"
 ARGS+=" --save_frequency=$SAVE_FREQUENCY"
 ARGS+=" --keep_milestones 50 100 150 200"
 ARGS+=" --save_best_from=80"
-ARGS+=" --log_frequency=$LOG_FREQUENCY"
+ARGS+=" --log_frequency=1"
 ARGS+=" --val_frequency=$VAL_FREQUENCY"
 ARGS+=" --prediction_frequency=$PREDICTION_FREQUENCY"
 ARGS+=" --grad_accumulation_steps=$GRAD_ACCUMULATION_STEPS "
@@ -84,7 +88,9 @@ ARGS+=" --dali_device=$DALI_DEVICE"
 [ "$RESUME" = true ] &&              ARGS+=" --resume"
 [ "$CUDNN_BENCHMARK" = true ] &&     ARGS+=" --cudnn_benchmark"
 [ -n "$CHECKPOINT" ] &&              ARGS+=" --ckpt=$CHECKPOINT"
-[ -n "$NUM_BUCKETS" ] &&             ARGS+=" --num_buckets=$NUM_BUCKETS"
 
 DISTRIBUTED=${DISTRIBUTED:-"-m torch.distributed.launch --nproc_per_node=$NUM_GPUS"}
+
+[ "$PDB" = true ] &&                 DISTRIBUTED="-m ipdb"
+
 python ${DISTRIBUTED} train.py ${ARGS}

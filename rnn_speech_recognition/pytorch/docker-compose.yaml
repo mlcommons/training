@@ -1,0 +1,10 @@
+version: '3.3'
+services:
+    test:
+        build:
+            context: .
+            dockerfile: tests/Dockerfile
+        volumes:
+            - .:/code
+        stdin_open: true
+        tty: true
