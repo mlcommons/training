@@ -110,6 +110,14 @@ res4* layers (the res5* layers and the fully connected stuff).
 (our network has an effective stride of 8, not 16, and has no
 atrous convolutions).
 
+Backbone is ResNet-34 pretrained on ILSVRC 2012 (from
+torchvision). Modifications to the backbone networks: remove conv_5x residual
+blocks, change the first 3x3 convolution of the conv_4x block from stride 2 to
+stride1 (this increases the resolution of the feature map to which detector
+heads are attached), attach all 6 detector heads to the output of the last
+conv_4x residual block. Thus detections are attached to 38x38, 19x19, 10x10,
+5x5, 3x3, and 1x1 feature maps.
+
 Input images are 300x300 RGB. They are fed to a 7x7 stride 2 convolution with 64 output channels, then through a 3x3 stride 2 max-pool layer, resulting in a 75x75x64 (HWC) tensor.  The rest of the backbone is built from "building blocks": pairs of 3x3 convolutions with a "short-cut" residual connection around the pair.  All convolutions in the backbone are followed by batch-norm and relu.
 
 ![](https://miro.medium.com/max/570/1*D0F3UitQ2l5Q0Ak-tjEdJg.png)
@@ -161,10 +169,10 @@ the other hand, must associate ground truth with anchor boxes:
 
     4. For each "positive" anchor identified in steps b and c, calculate the 4 offset channels as the difference between the ground truth bounding-box and the defaults for that anchor.
 
-2. _Hard negative mining_ in the loss function.  (implemented with multiple
-kernels in `opt_loss.py`).  The ground-truth tells you which anchors are
-assigned as "positives", but most anchors will be negatives and so would
-overwhelm the loss calculation, so we need to choose a subset to train against.
+2. _Hard negative mining_ in the loss function (implemented in `opt_loss.py`).
+The ground-truth tells you which anchors are assigned as "positives", but most
+anchors will be negatives and so would overwhelm the loss calculation, so we
+need to choose a subset to train against.
 
     1. Count the number of positive anchors, P, identified in steps 1b and 1c.
 
@@ -204,17 +212,20 @@ saturation=0.5, hue=0.05)` in `utils.py`.
 
 ## Publication/Attribution
 
-_Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed,
-Cheng-Yang Fu, Alexander C. Berg. SSD: Single Shot MultiBox Detector. In the
-Proceedings of the European Conference on Computer Vision (ECCV), 2016_
+Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed,
+Cheng-Yang Fu, Alexander C. Berg.  [SSD: Single Shot MultiBox
+Detector](https://arxiv.org/abs/1512.02325). In the _Proceedings of the
+European Conference on Computer Vision_, (ECCV-14):21-37, 2016.
 
-Backbone is ResNet-34 pretrained on ILSVRC 2012 (from
-torchvision). Modifications to the backbone networks: remove conv_5x residual
-blocks, change the first 3x3 convolution of the conv_4x block from stride 2 to
-stride1 (this increases the resolution of the feature map to which detector
-heads are attached), attach all 6 detector heads to the output of the last
-conv_4x residual block. Thus detections are attached to 38x38, 19x19, 10x10,
-5x5, 3x3, and 1x1 feature maps.
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun.  [Deep Residual Learning for
+Image Recognition](https://arxiv.org/abs/1512.03385).  In the _Proceedings of
+the Conference on Computer Vision and Pattern Recognition_, (CVPR):770-778, 2016.
+
+Jonathan Huang, Vivek Rathod, Chen Sun, Menglong Zhu, Anoop Korattikara,
+Alireza Fathi, Ian Fischer, Zbigniew Wojna, Yang Song, Sergio Guadarrama, Kevin
+Murphy. [Speed/accuracy trade-offs for modern convolutional object
+detectors](https://arxiv.org/abs/1611.10012).  In the _Proceedings of the
+Conference on Computer Vision and Pattern Recognition_, (CVPR):3296-3305, 2017.
 
 # 5. Quality
 ## Quality metric
