@@ -99,7 +99,16 @@ Train on 2017 COCO train data set, compute mAP on 2017 COCO val data set.
 Given an input 300x300 image from [Coco 2017](https://cocodataset.org/) with 80 categories, the output of this network is a set of category and bounding boxes.  Other detectors make these two predictions in multiple stages, by first proposing a region of interest, then iterating over the regions of interest to try to categorize each object.  SSD does both of these in one stage, making inference faster.
 
 ## Backbone
-The backbone is loosely based on adapting a ResNet as described in [this paper](https://arxiv.org/pdf/1611.10012.pdf) by Google Research.  It is similar to a ResNet-34 backbone, modified by removing the strides from the convolution at the beginning of the res4* layers (so that the res4* layers work with 38x38 images instead of 19x19 images), and removing everything after the res4* layers (the res5* layers and the fully connected stuff).  This is similar to the modifications to ResNet-101 described in Section 3.1.3 of the Google Research paper (our network has an effective stride of 8, not 16, and has no atrous convolutions).  Most other implementations of SSD are based on ResNet-50 or ResNet-101 or Mobilenet backbones, the ResNet-34 backbone we used here is unique to this implementation.
+
+The backbone is based on adapting a ResNet-34 as described in Section 3.1.3 of
+[this paper](https://arxiv.org/pdf/1611.10012.pdf) by Google Research.  It is
+similar to a ResNet-34 backbone, modified by removing the strides from the
+convolution at the beginning of the res4* layers (so that the res4* layers work
+with 38x38 images instead of 19x19 images), and removing everything after the
+res4* layers (the res5* layers and the fully connected stuff).
+
+(our network has an effective stride of 8, not 16, and has no
+atrous convolutions).
 
 Input images are 300x300 RGB. They are fed to a 7x7 stride 2 convolution with 64 output channels, then through a 3x3 stride 2 max-pool layer, resulting in a 75x75x64 (HWC) tensor.  The rest of the backbone is built from "building blocks": pairs of 3x3 convolutions with a "short-cut" residual connection around the pair.  All convolutions in the backbone are followed by batch-norm and relu.
 
