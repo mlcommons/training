@@ -144,13 +144,13 @@ the other hand, must associate ground truth with anchor boxes:
 
 1. Encode the ground truth tensor from the list of ground truth bounding boxes (this is implemented in function box_encoder in `csrc/box_encoder_cuda.cu`):
 
-    a. Calculate the Jaccard overlap of each anchor's default box with each ground truth bounding box.
+    1. Calculate the Jaccard overlap of each anchor's default box with each ground truth bounding box.
 
-    b. For each ground-truth bounding box: assign a "positive" to the single anchor box with the highest Jaccard overlap for that ground truth.
+    2. For each ground-truth bounding box: assign a "positive" to the single anchor box with the highest Jaccard overlap for that ground truth.
 
-    c. For each remaining unassigned anchor box: assign a "positive" for the ground truth bounding box with the highest Jaccard overlap > 0.5 (if any).
+    3. For each remaining unassigned anchor box: assign a "positive" for the ground truth bounding box with the highest Jaccard overlap > 0.5 (if any).
 
-    d. For each "positive" anchor identified in steps b and c, calculate the 4 offset channels as the difference between the ground truth bounding-box and the defaults for that anchor.
+    4. For each "positive" anchor identified in steps b and c, calculate the 4 offset channels as the difference between the ground truth bounding-box and the defaults for that anchor.
 
 2. _Hard negative mining_ in the loss function.  (implemented with multiple
 kernels in `opt_loss.py`).  The ground-truth tells you which anchors are
