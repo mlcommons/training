@@ -157,9 +157,9 @@ kernels in `opt_loss.py`).  The ground-truth tells you which anchors are
 assigned as "positives", but most anchors will be negatives and so would
 overwhelm the loss calculation, so we need to choose a subset to train against.
 
-    a. Count the number of positive anchors, P, identified in steps 1b and 1c.
+    1. Count the number of positive anchors, P, identified in steps 1b and 1c.
 
-    b. Of the remaining unassigned anchors, choose the 3P of them that are most
+    2. Of the remaining unassigned anchors, choose the 3P of them that are most
     strongly predicting a category other than "background", and assign them to
     the "background" category.
 
@@ -175,15 +175,15 @@ The input images are assumed to be sRGB with values in range 0.0 through 1.0.  T
 
 2. To both the image and its ground-truth bounding boxes:
 
-    a. Random crop with equal probability choose between (1) original input,
+    1. Random crop with equal probability choose between (1) original input,
     (2-7) minimum overlap crop of 0, 0.1, 0.3, 0.5, 0.7, 0.9, with the
     additional constraints that the width and height are (uniformly) chosen
     between 30% and 100% of the original image, and the aspect ratio is less
     than 2:1 (or 1:2).
 
-    b. Random horizontal flip.
+    2. Random horizontal flip.
 
-    b. Scale to 300x300.
+    3. Scale to 300x300.
 
 3. Color is jittered by adjusting brightness by a multiplicative factor chosen
 uniformly between (.875, 1.125), adjusting contrast by a multiplicative factor
