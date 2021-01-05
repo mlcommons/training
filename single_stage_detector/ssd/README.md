@@ -144,23 +144,23 @@ of 26.7 and a Top-5 error rate of 8.58.
 
 ## Head network
 
-The 38x38, 256 channel output of the conv4 layer gets fed into a downsizing
+The 38x38, 256 channel output of the conv4_6 layer gets fed into a downsizing
 network with the following structure:
 
-| layer name | input channels | input size | output channels | filter size | padding | stride | output size |
-| :------: | :-: | :---: | :-: | :-: | :-: | :-: | :---: | 
-| conv7_1  | 256 | 38x38 | 256 | 1x1 | 0 | 1 | 38x38 |
-| conv7_2  | 256 | 38x38 | 512 | 3x3 | 1 | 2 | 19x19 |
-| conv8_1  | 512 | 19x19 | 256 | 1x1 | 0 | 1 | 19x19 |
-| conv8_2  | 256 | 19x19 | 512 | 3x3 | 1 | 2 | 10x10 |
-| conv9_1  | 512 | 10x10 | 128 | 1x1 | 0 | 1 | 10x10 |
-| conv9_2  | 128 | 10x10 | 256 | 3x3 | 1 | 2 | 5x5 |
-| conv10_1 | 256 |   5x5 | 128 | 1x1 | 0 | 1 | 5x5 |
-| conv10_2 | 128 |   5x5 | 256 | 3x3 | 0 | 1 | 3x3 |
-| conv11_1 | 256 |   3x3 | 128 | 1x1 | 0 | 1 | 3x3 |
-| conv11_2 | 128 |   3x3 | 256 | 3x3 | 0 | 1 | 1x1 |
+| layer name | input size | input channels | filter size | padding | stride | output size | output channels |
+| :------: | :---: | :-: | :-: | :-: | :-: | :---: | :-: | 
+| conv7_1  | 38x38 | 256 | 1x1 | 0 | 1 | 38x38 | 256 |
+| conv7_2  | 38x38 | 256 | 3x3 | 1 | 2 | 19x19 | 512 |
+| conv8_1  | 19x19 | 512 | 1x1 | 0 | 1 | 19x19 | 256 |
+| conv8_2  | 19x19 | 256 | 3x3 | 1 | 2 | 10x10 | 512 |
+| conv9_1  | 10x10 | 512 | 1x1 | 0 | 1 | 10x10 | 128 |
+| conv9_2  | 10x10 | 128 | 3x3 | 1 | 2 |   5x5 | 256 |
+| conv10_1 |   5x5 | 256 | 1x1 | 0 | 1 |   5x5 | 128 |
+| conv10_2 |   5x5 | 128 | 3x3 | 0 | 1 |   3x3 | 256 |
+| conv11_1 |   3x3 | 256 | 1x1 | 0 | 1 |   3x3 | 128 |
+| conv11_2 |   3x3 | 128 | 3x3 | 0 | 1 |   1x1 | 256 |
 
-As in the original SSD paper, Each convolution in the downsizing network is
+As in the original SSD paper, each convolution in the downsizing network is
 followed by bias/relu, but not batch-norm.
 
 ## Detection heads and anchors
