@@ -145,27 +145,45 @@ of 26.7 and a Top-5 error rate of 8.58.
 ## Head network
 
 The 38x38, 256 channel output of the conv4_6 layer gets fed into a downsizing
-network with the following structure:
+network with a set of detector head layers.
 
-| layer name | input size | input channels | filter size | padding | stride | output size | output channels |
-| :------: | :---: | :-: | :-: | :-: | :-: | :---: | :-: | 
-| conv7_1  | 38x38 | 256 | 1x1 | 0 | 1 | 38x38 | 256 |
-| conv7_2  | 38x38 | 256 | 3x3 | 1 | 2 | 19x19 | 512 |
-| conv8_1  | 19x19 | 512 | 1x1 | 0 | 1 | 19x19 | 256 |
-| conv8_2  | 19x19 | 256 | 3x3 | 1 | 2 | 10x10 | 512 |
-| conv9_1  | 10x10 | 512 | 1x1 | 0 | 1 | 10x10 | 128 |
-| conv9_2  | 10x10 | 128 | 3x3 | 1 | 2 |   5x5 | 256 |
-| conv10_1 |   5x5 | 256 | 1x1 | 0 | 1 |   5x5 | 128 |
-| conv10_2 |   5x5 | 128 | 3x3 | 0 | 1 |   3x3 | 256 |
-| conv11_1 |   3x3 | 256 | 1x1 | 0 | 1 |   3x3 | 128 |
-| conv11_2 |   3x3 | 128 | 3x3 | 0 | 1 |   1x1 | 256 |
+| layer name | input size | input channels | filter size | padding | stride | output size | output channels | detector head layer | anchors per centerpoint | default scale |
+| :------: | :---: | :-: | :-: | :-: | :-: | :---: | :-: | :-----: | :-: | --: |
+| conv4_6  | 38x38 | 256 | 3x3 | 1 | 1 | 38x38 | 256 |  conv4_mbox | 4 |  21 |
+| conv7_1  | 38x38 | 256 | 1x1 | 0 | 1 | 38x38 | 256 |             |   |     |
+| conv7_2  | 38x38 | 256 | 3x3 | 1 | 2 | 19x19 | 512 |  conv7_mbox | 6 |  45 |
+| conv8_1  | 19x19 | 512 | 1x1 | 0 | 1 | 19x19 | 256 |             |   |     |
+| conv8_2  | 19x19 | 256 | 3x3 | 1 | 2 | 10x10 | 512 |  conv8_mbox | 6 |  99 |
+| conv9_1  | 10x10 | 512 | 1x1 | 0 | 1 | 10x10 | 128 |             |   |     |
+| conv9_2  | 10x10 | 128 | 3x3 | 1 | 2 |   5x5 | 256 |  conv9_mbox | 6 | 153 |
+| conv10_1 |   5x5 | 256 | 1x1 | 0 | 1 |   5x5 | 128 |             |   |     |
+| conv10_2 |   5x5 | 128 | 3x3 | 0 | 1 |   3x3 | 256 | conv10_mbox | 4 | 207 |
+| conv11_1 |   3x3 | 256 | 1x1 | 0 | 1 |   3x3 | 128 |             |   |     |
+| conv11_2 |   3x3 | 128 | 3x3 | 0 | 1 |   1x1 | 256 | conv11_mbox | 4 | 261 |
 
 As in the original SSD paper, each convolution in the downsizing network is
 followed by bias/ReLU, but not batch-norm.
 
 ## Detection heads and anchors
-The last layers of the network are the detector heads.  These consist of a total of 8732 _anchors_, each with an implicit default center and bounding box size (some papers call the implicit defaults a _prior_).  Each anchor has 85 channels associated with it.  The Coco dataset has 80 categories, so each anchor has 80 channels for categorization of what's "in" that anchor, plus an 81st channel indicating "nothing here", and then 4 channels to indicate adjustments to the bounding box.  The adjustment channels are xywh where xy are centered at the default center, and in the scale of the default bounding box (so a value of 0 in this channel indicates "at the default center", while a value of 1 in this channel indicates "a very large deviation from center."  The wh channels are given in natural log of a multiplicative factor to the implicit default bounding box width and height.  (So a multiplicative factor of 1 (log(1)=0) indicates no adjustment, a multiplicative factor of 1.1 (log(1.1) = .095) indicates a larger bounding box, and multiplicative factor of 0.9 (log(0.9) = -0.105) indicates a smaller bounding box.  Each of the 8732 pixels in the image pyramid has either 4 or 6 anchors associated with it.  4 anchors for the 38x38, 5x5, 3x3, 1x1 levels, 6 anchors for the 19x19, and 10x10.  When there are 4 anchors they have aspect ratios 1:1, 1:1, 1:2, and 2:1.  When there are 6 anchors they have aspect ratios 1:1, 1:1, 1:2, 2:1, 1:3, 3:1.  The first 1:1 box is at the default scale for the image pyramid layer, while the second 1:1 box is at a scale halfway between the scale of this image pyramid layer and the next.  The scales for 38, 19, 10, 5, 3, 1 with respect to 300x300 are 21, 45, 99, 153, 207, 261, 315.
 
+The last layers of the network are the detector heads.  These consist of a
+total of 8732 _anchors_, each with an implicit default center and bounding box
+size (some papers call the implicit defaults a _prior_).  Each anchor has 85
+channels associated with it.  The Coco dataset has 80 categories, so each
+anchor has 80 channels for categorization of what's "in" that anchor, plus an
+81st channel indicating "nothing here", and then 4 channels to indicate
+adjustments to the bounding box.  The adjustment channels are xywh where xy are
+centered at the default center, and in the scale of the default bounding box.
+The wh channels are given in natural log of a multiplicative factor to the
+implicit default bounding box width and height.  Each of the 8732 default
+anchor center points in the pyramid has either 4 or 6 anchors associated with
+it.  When there are 4 anchors, they have default aspect ratios 1:1, 1:1, 1:2,
+and 2:1.  When there are 6 anchors, the additional two have aspect ratios 1:3,
+and 3:1.  The first 1:1 box is at the default scale for the image pyramid
+layer, while the second 1:1 box is at a scale which is the geometric mean of
+the default scale this image pyramid layer and the next.  For the final, 1x1,
+image pyramid layer, conv11_mbox, the default scale is 261 and the scale for
+the "next" layer is assumed to be 315.
 
 ## Ground truth and loss function
 
