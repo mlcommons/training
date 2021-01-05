@@ -147,7 +147,7 @@ of 26.7 and a Top-5 error rate of 8.58.
 The 38x38, 256 channel output of the conv4_6 layer gets fed into a downsizing
 network with a set of detector head layers.
 
-| layer name | input size | input channels | filter size | padding | stride | output size | output channels | detector head layer | anchors per centerpoint | default scale |
+| layer name | input size | input channels | filter size | padding | stride | output size | output channels | detector head layer | anchors per center point | default scale |
 | :------: | :---: | :-: | :-: | :-: | :-: | :---: | :-: | :-----: | :-: | --: |
 | conv4_6  | 38x38 | 256 | 3x3 | 1 | 1 | 38x38 | 256 |  conv4_mbox | 4 |  21 |
 | conv7_1  | 38x38 | 256 | 1x1 | 0 | 1 | 38x38 | 256 |             |   |     |
