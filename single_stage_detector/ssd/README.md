@@ -101,42 +101,46 @@ Given an input 300x300 image from [Coco 2017](https://cocodataset.org/) with 80 
 ## Backbone
 
 The backbone is based on adapting a ResNet-34 as described in Section 3.1.3 of
-[this paper](https://arxiv.org/pdf/1611.10012.pdf) by Google Research.  It is
-similar to a ResNet-34 backbone, modified by removing the strides from the
-convolution at the beginning of the res4* layers (so that the res4* layers work
-with 38x38 images instead of 19x19 images), and removing everything after the
-res4* layers (the res5* layers and the fully connected stuff).
+[this paper](https://arxiv.org/abs/1611.10012) by Google Research.  Using the
+same notation as Table 1 of the [original ResNet
+paper](https://arxiv.org/abs/1512.03385) the backbone looks like:
 
-(our network has an effective stride of 8, not 16, and has no
-atrous convolutions).
+| layer name | output size | ssd-backbone |
+| :--------: | :---------: | :----------: |
+| conv1      | 150x150     | 7x7, 64, stride 2 |
+|            | 75x75       | 3x3 max pool, stride 2 |
+| conv2_x    | 75x75       | pair-of[3x3, 64] x 3 |
+| conv3_x    | 38x38       | pair-of[3x3, 128] x 4 |
+| conv4_x    | 38x38       | pair-of[3x3, 256] x 6 |
 
-Backbone is ResNet-34 pretrained on ILSVRC 2012 (from
-torchvision). Modifications to the backbone networks: remove conv_5x residual
-blocks, change the first 3x3 convolution of the conv_4x block from stride 2 to
-stride1 (this increases the resolution of the feature map to which detector
-heads are attached), attach all 6 detector heads to the output of the last
-conv_4x residual block. Thus detections are attached to 38x38, 19x19, 10x10,
-5x5, 3x3, and 1x1 feature maps.
+The original ResNet-34 network is adapted by removing the conv5_x layers and
+the fully-connected layer at the end, and by only downsampling in conv3_1,
+_not_ in conv4_1.  Using the terminology of Section 3.1.3 of the Google
+Research paper, our network has an effective stride of 8, and no atrous
+convolution.
 
-Input images are 300x300 RGB. They are fed to a 7x7 stride 2 convolution with 64 output channels, then through a 3x3 stride 2 max-pool layer, resulting in a 75x75x64 (HWC) tensor.  The rest of the backbone is built from "building blocks": pairs of 3x3 convolutions with a "short-cut" residual connection around the pair.  All convolutions in the backbone are followed by batch-norm and relu.
+Input images are 300x300 RGB. They are fed to a 7x7 stride 2 convolution with
+64 output channels, then through a 3x3 stride 2 max-pool layer, resulting in a
+75x75x64 (HWC) tensor.  The rest of the backbone is built from "building
+blocks": pairs of 3x3 convolutions with a "short-cut" residual connection
+around the pair.  All convolutions in the backbone are followed by batch-norm
+and relu.
 
 ![](https://miro.medium.com/max/570/1*D0F3UitQ2l5Q0Ak-tjEdJg.png)
 
-The building blocks are organized into 3 groups:
+The conv3_1 layer is stride 2 in the first convolution, while also increasing
+the number of channels from 64 to 128, and has a 1x1 stride 2 convolution in
+its residual shortcut path to increase the number of channels to 128.  The
+conv4_1 layer is _not_ strided, but does increase the number of channels from
+128 to 256, and so also has a 1x1 convolution in the residual shortcut path to
+increas the number of channels to 256.
 
-The conv2 layers consist of 3 building blocks, (so 6 3x3 convolutions), each of which inputs and outputs 75x75x64 tensors.
-
-The conv3 layers start with a special downsizing building block that changes the activation size to 38x38x128, followed by 3 normal building blocks.  The downsizing building block replaces the identity connection with a 1x1 stride 2 convolution, and the first 3x3 convolution is made stride 2 and doubles the number of output channels to 128.
-
-The conv4 layers consist of 6 building blocks.  The very first convolution in the conv4 layers doubles the number of channels to 256, so these convolutions all output 38x38x256 activations.  The identity connection on this initial building block is a 1x1 unstrided convolution.  (This is an artifact of the way the backbone was derived from the original ResNet-34 architecture).
-
-The backbone is initialized with the pretrained weights from the [Torchvision model zoo](https://download.pytorch.org/models/resnet34-333f7ec4.pth), described in detail [here](https://pytorch.org/docs/stable/torchvision/models.html) (This is a ResNet-34 network trained on Imagenet to achieve a Top-1 error rate of 26.7 and a Top-5 error rate of 8.58.)
-
-The resulting network looks somewhat similar to this picture chopped from the ResNet paper:
-
-![](https://miro.medium.com/max/700/1*1CSCPAEhvtBPcjNA9bll0A.png)
-
-The purple layers are "conv2", the green layers are "conv3" and the pink layers are "conv4".  The picture is accurate except for the first pink layer which is stride 1 in the SSD reference backbone, rather than stride 2.
+The backbone is initialized with the pretrained weights from the corresponding
+layers of the ResNet-34 implementation from the [Torchvision model
+zoo](https://download.pytorch.org/models/resnet34-333f7ec4.pth), described in
+detail [here](https://pytorch.org/docs/stable/torchvision/models.html).  It is
+a ResNet-34 network trained on 224x224 Imagenet to achieve a Top-1 error rate
+of 26.7 and a Top-5 error rate of 8.58.)
 
 ## Head network
 The 38x38 output of res4f gets fed into the following "head" network:
