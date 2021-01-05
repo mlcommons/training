@@ -133,23 +133,35 @@ the number of channels from 64 to 128, and has a 1x1 stride 2 convolution in
 its residual shortcut path to increase the number of channels to 128.  The
 conv4_1 layer is _not_ strided, but does increase the number of channels from
 128 to 256, and so also has a 1x1 convolution in the residual shortcut path to
-increas the number of channels to 256.
+increase the number of channels to 256.
 
 The backbone is initialized with the pretrained weights from the corresponding
 layers of the ResNet-34 implementation from the [Torchvision model
 zoo](https://download.pytorch.org/models/resnet34-333f7ec4.pth), described in
 detail [here](https://pytorch.org/docs/stable/torchvision/models.html).  It is
 a ResNet-34 network trained on 224x224 Imagenet to achieve a Top-1 error rate
-of 26.7 and a Top-5 error rate of 8.58.)
+of 26.7 and a Top-5 error rate of 8.58.
 
 ## Head network
-The 38x38 output of res4f gets fed into the following "head" network:
 
-TODO: find public image of the head network from Matt's picture.
+The 38x38, 256 channel output of the conv4 layer gets fed into a downsizing
+network with the following structure:
 
-In the head network, the convolutions coming down vertically from the center to the right hand side are simply downconverting.  The downconversion network is described in the following table.  All of these are followed by bias/relu, but not batch-norm
+| layer name | input channels | input size | output channels | filter size | padding | stride | output size |
+| :------: | :-: | :---: | :-: | :-: | :-: | :-: | :---: | 
+| conv7_1  | 256 | 38x38 | 256 | 1x1 | 0 | 1 | 38x38 |
+| conv7_2  | 256 | 38x38 | 512 | 3x3 | 1 | 2 | 19x19 |
+| conv8_1  | 512 | 19x19 | 256 | 1x1 | 0 | 1 | 19x19 |
+| conv8_2  | 256 | 19x19 | 512 | 3x3 | 1 | 2 | 10x10 |
+| conv9_1  | 512 | 10x10 | 128 | 1x1 | 0 | 1 | 10x10 |
+| conv9_2  | 128 | 10x10 | 256 | 3x3 | 1 | 2 | 5x5 |
+| conv10_1 | 256 |   5x5 | 128 | 1x1 | 0 | 1 | 5x5 |
+| conv10_2 | 128 |   5x5 | 256 | 3x3 | 0 | 1 | 3x3 |
+| conv11_1 | 256 |   3x3 | 128 | 1x1 | 0 | 1 | 3x3 |
+| conv11_2 | 128 |   3x3 | 256 | 3x3 | 0 | 1 | 1x1 |
 
-TODO: copy Matt's table to markdown format
+As in the original SSD paper, Each convolution in the downsizing network is
+followed by bias/relu, but not batch-norm.
 
 ## Detection heads and anchors
 The last layers of the network are the detector heads.  These consist of a total of 8732 _anchors_, each with an implicit default center and bounding box size (some papers call the implicit defaults a _prior_).  Each anchor has 85 channels associated with it.  The Coco dataset has 80 categories, so each anchor has 80 channels for categorization of what's "in" that anchor, plus an 81st channel indicating "nothing here", and then 4 channels to indicate adjustments to the bounding box.  The adjustment channels are xywh where xy are centered at the default center, and in the scale of the default bounding box (so a value of 0 in this channel indicates "at the default center", while a value of 1 in this channel indicates "a very large deviation from center."  The wh channels are given in natural log of a multiplicative factor to the implicit default bounding box width and height.  (So a multiplicative factor of 1 (log(1)=0) indicates no adjustment, a multiplicative factor of 1.1 (log(1.1) = .095) indicates a larger bounding box, and multiplicative factor of 0.9 (log(0.9) = -0.105) indicates a smaller bounding box.  Each of the 8732 pixels in the image pyramid has either 4 or 6 anchors associated with it.  4 anchors for the 38x38, 5x5, 3x3, 1x1 levels, 6 anchors for the 19x19, and 10x10.  When there are 4 anchors they have aspect ratios 1:1, 1:1, 1:2, and 2:1.  When there are 6 anchors they have aspect ratios 1:1, 1:1, 1:2, 2:1, 1:3, 3:1.  The first 1:1 box is at the default scale for the image pyramid layer, while the second 1:1 box is at a scale halfway between the scale of this image pyramid layer and the next.  The scales for 38, 19, 10, 5, 3, 1 with respect to 300x300 are 21, 45, 99, 153, 207, 261, 315.
