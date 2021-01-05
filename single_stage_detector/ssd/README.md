@@ -89,7 +89,7 @@ DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> DGXSYSTEM=DGX1_multinode 
 Hyperparameters are recorded in the `config_*.sh` files for each configuration and in `run_and_time.sh`.
 
 # 3. Dataset/Environment
-## Publiction/Attribution
+## Publication/Attribution
 Microsoft COCO: COmmon Objects in Context. 2017.
 
 ### Training and test data separation
@@ -124,7 +124,7 @@ Input images are 300x300 RGB. They are fed to a 7x7 stride 2 convolution with
 75x75x64 (HWC) tensor.  The rest of the backbone is built from "building
 blocks": pairs of 3x3 convolutions with a "short-cut" residual connection
 around the pair.  All convolutions in the backbone are followed by batch-norm
-and relu.
+and ReLU.
 
 ![](https://miro.medium.com/max/570/1*D0F3UitQ2l5Q0Ak-tjEdJg.png)
 
@@ -139,7 +139,7 @@ The backbone is initialized with the pretrained weights from the corresponding
 layers of the ResNet-34 implementation from the [Torchvision model
 zoo](https://download.pytorch.org/models/resnet34-333f7ec4.pth), described in
 detail [here](https://pytorch.org/docs/stable/torchvision/models.html).  It is
-a ResNet-34 network trained on 224x224 Imagenet to achieve a Top-1 error rate
+a ResNet-34 network trained on 224x224 ImageNet to achieve a Top-1 error rate
 of 26.7 and a Top-5 error rate of 8.58.
 
 ## Head network
@@ -161,7 +161,7 @@ network with the following structure:
 | conv11_2 |   3x3 | 128 | 3x3 | 0 | 1 |   1x1 | 256 |
 
 As in the original SSD paper, each convolution in the downsizing network is
-followed by bias/relu, but not batch-norm.
+followed by bias/ReLU, but not batch-norm.
 
 ## Detection heads and anchors
 The last layers of the network are the detector heads.  These consist of a total of 8732 _anchors_, each with an implicit default center and bounding box size (some papers call the implicit defaults a _prior_).  Each anchor has 85 channels associated with it.  The Coco dataset has 80 categories, so each anchor has 80 channels for categorization of what's "in" that anchor, plus an 81st channel indicating "nothing here", and then 4 channels to indicate adjustments to the bounding box.  The adjustment channels are xywh where xy are centered at the default center, and in the scale of the default bounding box (so a value of 0 in this channel indicates "at the default center", while a value of 1 in this channel indicates "a very large deviation from center."  The wh channels are given in natural log of a multiplicative factor to the implicit default bounding box width and height.  (So a multiplicative factor of 1 (log(1)=0) indicates no adjustment, a multiplicative factor of 1.1 (log(1.1) = .095) indicates a larger bounding box, and multiplicative factor of 0.9 (log(0.9) = -0.105) indicates a smaller bounding box.  Each of the 8732 pixels in the image pyramid has either 4 or 6 anchors associated with it.  4 anchors for the 38x38, 5x5, 3x3, 1x1 levels, 6 anchors for the 19x19, and 10x10.  When there are 4 anchors they have aspect ratios 1:1, 1:1, 1:2, and 2:1.  When there are 6 anchors they have aspect ratios 1:1, 1:1, 1:2, 2:1, 1:3, 3:1.  The first 1:1 box is at the default scale for the image pyramid layer, while the second 1:1 box is at a scale halfway between the scale of this image pyramid layer and the next.  The scales for 38, 19, 10, 5, 3, 1 with respect to 300x300 are 21, 45, 99, 153, 207, 261, 315.
