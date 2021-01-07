@@ -94,19 +94,19 @@ python3 create_pretraining_data.py \
 
 python3 pick_eval_samples.py \
   --input_tfrecord=<path to eval from the previous command> \
-  --output_tfrecord=<output path for eval_10k \
+  --output_tfrecord=<output path for eval_10k> \
   --num_examples_to_pick=10000
 ```
 
 Some stats of the generated tfrecords:
 
-| File                | Size (bytes) |
-|---------------------|  ----------: |
-| eval                |  843,343,183 |
-| eval_10k            |   25,382,591 |
-| part-00000-of-00500 |  514,241,279 |
-| part-00499-of-00500 |  898,392,312 |
-| part-00XXX-of-00500 |  382,262,888 | 
+| File                |    Size (bytes) |
+|---------------------|  -------------: |
+| eval                |     843,343,183 |
+| eval_10k            |      25,382,591 |
+| part-00000-of-00500 |     514,241,279 |
+| part-00499-of-00500 |     898,392,312 |
+| part-00XXX-of-00500 | 391,434,110,129 | 
 
 The dataset was generated using Python 3.7.6 and tensorflow-gpu 1.15.2.
 
