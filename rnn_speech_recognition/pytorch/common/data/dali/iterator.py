@@ -63,7 +63,7 @@ class DaliRnntIterator(object):
         """
         Generate transcripts in format expected by NN
         """
-        ids = labels.flatten().long()
+        ids = labels.flatten().numpy()
         transcripts = self.tr[ids]
         transcripts = torch.nn.utils.rnn.pad_sequence(transcripts, batch_first=True)
 
