@@ -46,7 +46,7 @@ RUN COMMIT_SHA=f546575109111c455354861a0567c8aa794208a2 && \
 
 WORKDIR /workspace/rnnt
 
-RUN pip install --no-cache --extra-index-url https://developer.download.nvidia.com/compute/redist/nightly nvidia-dali-nightly-cuda110==0.28.0.dev20201026
+RUN pip install --no-cache --extra-index-url https://developer.download.nvidia.com/compute/redist nvidia-dali-cuda110==0.28.0
 
 RUN pip install --global-option="--cpp_ext" --global-option="--cuda_ext" https://github.com/NVIDIA/apex/archive/8a1ed9e8d35dfad26fb973996319965e4224dcdd.zip
 
