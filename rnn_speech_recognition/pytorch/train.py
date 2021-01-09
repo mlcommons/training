@@ -88,6 +88,8 @@ def parse_args():
     optim.add_argument('--optimizer', default='novograd', type=str,
                        choices=['novograd', 'adamw', 'adam', 'lamb', 'adam98', 'lamb98'],
                        help='Optimization algorithm')
+    optim.add_argument('--b1', default=0.9, type=float, help='Beta 1 for optimizer')
+    optim.add_argument('--b2', default=0.999, type=float, help='Beta 2 for optimizer')
     optim.add_argument('--ema', type=float, default=0.0,
                        help='Discount factor for exp averaging of model weights')
 
@@ -402,17 +404,13 @@ def main():
     print_once(f'Starting with LRs: {initial_lrs}')
 
     if args.optimizer == "novograd":
-        optimizer = Novograd(**kw)
+        optimizer = Novograd(**kw, betas=(args.b1, args.b2), eps=1e-9)
     elif args.optimizer == "adamw":
         optimizer = AdamW(**kw)
     elif args.optimizer == 'adam':
-        optimizer = FusedAdam(**kw)
+        optimizer = FusedAdam(betas=(args.b1, args.b2), eps=1e-9, **kw)
     elif args.optimizer == 'lamb':
-        optimizer = FusedLAMB(**kw)
-    elif args.optimizer == 'adam98':
-        optimizer = FusedAdam(betas=(0.9, 0.98), eps=1e-9, **kw)
-    elif args.optimizer == 'lamb98':
-        optimizer = FusedLAMB(betas=(0.9, 0.98), eps=1e-9, **kw)
+        optimizer = FusedLAMB(betas=(args.b1, args.b2), eps=1e-9, **kw)
     else:
         raise ValueError(f'Invalid optimizer "{args.optimizer}"')
 

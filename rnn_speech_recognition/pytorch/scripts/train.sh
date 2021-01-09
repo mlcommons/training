@@ -44,11 +44,14 @@ export OMP_NUM_THREADS=1
 : ${PAD_TO_MAX_DURATION:=false}
 : ${VAL_FREQUENCY:=1}
 : ${PREDICTION_FREQUENCY:=1000}
+: ${B1:=0.9}
+: ${B2:=0.999}
 : ${LOG_FREQUENCY:=1}
 : ${TRAIN_MANIFESTS:="$DATA_DIR/librispeech-train-clean-100-wav.json \
                       $DATA_DIR/librispeech-train-clean-360-wav.json \
                       $DATA_DIR/librispeech-train-other-500-wav.json"}
 : ${VAL_MANIFESTS:="$DATA_DIR/librispeech-dev-clean-wav.json"}
+: ${SAVE:=true}
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -72,17 +75,19 @@ ARGS+=" --seed=$SEED"
 ARGS+=" --optimizer=$OPTIMIZER"
 ARGS+=" --weight_decay=1e-3"
 ARGS+=" --save_frequency=$SAVE_FREQUENCY"
-ARGS+=" --keep_milestones 50 100 150 200"
-ARGS+=" --save_best_from=80"
 ARGS+=" --log_frequency=$LOG_FREQUENCY"
 ARGS+=" --val_frequency=$VAL_FREQUENCY"
 ARGS+=" --prediction_frequency=$PREDICTION_FREQUENCY"
 ARGS+=" --grad_accumulation_steps=$GRAD_ACCUMULATION_STEPS "
 ARGS+=" --dali_device=$DALI_DEVICE"
+ARGS+=" --b1=$B1"
+ARGS+=" --b2=$B2"
 
 [ "$AMP" = true ] &&                 ARGS+=" --amp"
 [ "$RESUME" = true ] &&              ARGS+=" --resume"
 [ "$CUDNN_BENCHMARK" = true ] &&     ARGS+=" --cudnn_benchmark"
+[ "$SAVE" = true ] &&                ARGS+=" --keep_milestones 50 100 150 200"
+[ "$SAVE" = true ] &&                ARGS+=" --save_best_from=80"
 [ -n "$CHECKPOINT" ] &&              ARGS+=" --ckpt=$CHECKPOINT"
 [ -n "$NUM_BUCKETS" ] &&             ARGS+=" --num_buckets=$NUM_BUCKETS"
 [ -n "$TARGET" ] &&                  ARGS+=" --target=$TARGET"
