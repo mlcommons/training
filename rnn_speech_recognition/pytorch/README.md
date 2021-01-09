@@ -9,12 +9,8 @@ Speech recognition accepts raw audio samples and produces a corresponding text t
 # 2. Directions
 
 ## Steps to configure machine
-From Source
+### From Docker
 
-Standard script.
-
-From Docker
-1. Checkout the MLPerf repository
 ```
 git clone https://github.com/mlcommon/training.git
 ```
@@ -28,6 +24,10 @@ source training/install_cuda_docker.sh
 cd training/rnn_speech_recognition/pytorch/
 bash scripts/docker/build.sh
 ```
+
+#### Requirements
+Currently, the reference uses CUDA-11.0 (see [Dockerfile](Dockerfile#L15)).
+Here you can find a table listing compatible drivers: https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver
 
 ## Steps to download data
 1. Start an interactive session in the NGC container to run data download/training/inference
