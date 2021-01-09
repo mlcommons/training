@@ -42,7 +42,7 @@ export OMP_NUM_THREADS=1
 : ${RESUME:=true}
 : ${DALI_DEVICE:="cpu"}
 : ${PAD_TO_MAX_DURATION:=false}
-: ${VAL_FREQUENCY:=10000}
+: ${VAL_FREQUENCY:=1}
 : ${PREDICTION_FREQUENCY:=1000}
 : ${LOG_FREQUENCY:=1}
 : ${TRAIN_MANIFESTS:="$DATA_DIR/librispeech-train-clean-100-wav.json \
@@ -85,6 +85,7 @@ ARGS+=" --dali_device=$DALI_DEVICE"
 [ "$CUDNN_BENCHMARK" = true ] &&     ARGS+=" --cudnn_benchmark"
 [ -n "$CHECKPOINT" ] &&              ARGS+=" --ckpt=$CHECKPOINT"
 [ -n "$NUM_BUCKETS" ] &&             ARGS+=" --num_buckets=$NUM_BUCKETS"
+[ -n "$TARGET" ] &&                  ARGS+=" --target=$TARGET"
 
 DISTRIBUTED=${DISTRIBUTED:-"-m torch.distributed.launch --nproc_per_node=$NUM_GPUS"}
 python ${DISTRIBUTED} train.py ${ARGS}

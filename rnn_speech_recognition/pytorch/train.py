@@ -66,6 +66,7 @@ def parse_args():
     training.add_argument('--seed', default=42, type=int, help='Random seed')
     training.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                           help='GPU id used for distributed training')
+    training.add_argument('--target', default=-1, type=float, help='Target accuracy')
 
     optim = parser.add_argument_group('optimization setup')
     optim.add_argument('--batch_size', default=32, type=int,
@@ -103,8 +104,8 @@ def parse_args():
                     help='Milestone checkpoints to keep from removing')
     io.add_argument('--save_best_from', default=380, type=int,
                     help='Epoch on which to begin tracking best checkpoint (dev WER)')
-    io.add_argument('--val_frequency', default=200, type=int,
-                    help='Number of steps between evaluations on dev set')
+    io.add_argument('--val_frequency', default=1, type=int,
+                    help='Number of epochs between evaluations on dev set')
     io.add_argument('--log_frequency', default=25, type=int,
                     help='Number of steps between printing training stats')
     io.add_argument('--prediction_frequency', default=100, type=int,
@@ -448,6 +449,7 @@ def main():
 
     start_epoch = meta['start_epoch']
     best_wer = meta['best_wer']
+    last_wer = meta['best_wer']
     epoch = 1
     step = start_epoch * steps_per_epoch + 1
 
@@ -540,16 +542,6 @@ def main():
 
                 step_start_time = time.time()
 
-                if step % args.val_frequency == 0:
-                    wer = evaluate(epoch, step, val_loader, val_feat_proc,
-                                   tokenizer.detokenize, model, ema_model, loss_fn,
-                                   greedy_decoder, args.amp, use_dali)
-
-                    if wer < best_wer and epoch >= args.save_best_from:
-                        checkpointer.save(model, ema_model, optimizer, epoch,
-                                          step, best_wer, is_best=True)
-                        best_wer = wer
-
                 step += 1
                 accumulated_batches = 0
                 # end of step
@@ -562,8 +554,6 @@ def main():
         logging.log_end(logging.constants.EPOCH_STOP,
                         metadata=dict(epoch_num=epoch))
 
-        logging.log_end(logging.constants.BLOCK_STOP, metadata=dict(first_epoch_num=epoch))
-
         epoch_time = time.time() - epoch_start_time
         log((epoch,), None, 'train_avg', {'throughput': epoch_utts / epoch_time,
                                           'took': epoch_time})
@@ -571,12 +561,32 @@ def main():
         if epoch % args.save_frequency == 0 or epoch in args.keep_milestones:
             checkpointer.save(model, ema_model, optimizer, epoch, step, best_wer)
 
+        if epoch % args.val_frequency == 0:
+            wer = evaluate(epoch, step, val_loader, val_feat_proc,
+                           tokenizer.detokenize, model, ema_model, loss_fn,
+                           greedy_decoder, args.amp, use_dali)
+
+            last_wer = wer
+            if wer < best_wer and epoch >= args.save_best_from:
+                checkpointer.save(model, ema_model, optimizer, epoch,
+                                  step, best_wer, is_best=True)
+                best_wer = wer
+
+        logging.log_end(logging.constants.BLOCK_STOP, metadata=dict(first_epoch_num=epoch))
+
+        if last_wer <= args.target:
+            logging.log_end(logging.constants.RUN_STOP, metadata={'status': 'success'})
+            print_once(f'Finished after {args.epochs_this_job} epochs.')
+            break
         if 0 < args.epochs_this_job <= epoch - start_epoch:
             print_once(f'Finished after {args.epochs_this_job} epochs.')
             break
         # end of epoch
 
     log((), None, 'train_avg', {'throughput': epoch_utts / epoch_time})
+
+    if last_wer > args.target:
+        logging.log_end(logging.constants.RUN_STOP, metadata={'status': 'aborted'})
 
     if epoch == args.epochs:
         evaluate(epoch, step, val_loader, val_feat_proc, tokenizer.detokenize, model,
