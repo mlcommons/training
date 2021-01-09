@@ -85,6 +85,10 @@ def parse_args():
                        help='Weight decay for the optimizer')
     optim.add_argument('--grad_accumulation_steps', default=1, type=int,
                        help='Number of accumulation steps')
+    optim.add_argument('--clip_norm', default=None, type=float,
+                       help='If provided, gradients will be clipped above this norm')
+    optim.add_argument('--start_clip', default=None, type=int,
+                       help='If provided, gradients will be clipped after this iteration')
     optim.add_argument('--optimizer', default='novograd', type=str,
                        choices=['novograd', 'adamw', 'adam', 'lamb', 'adam98', 'lamb98'],
                        help='Optimization algorithm')
@@ -508,9 +512,16 @@ def main():
                 step_utts += batch[0].size(0) * world_size
                 epoch_utts += batch[0].size(0) * world_size
                 accumulated_batches += 1
-                assert args.grad_accumulation_steps == 1, "Probes do not yet support accumulation"
 
             if accumulated_batches % args.grad_accumulation_steps == 0:
+
+                if args.clip_norm is not None:
+                    if args.start_clip is None or args.start_clip < step:
+                        torch.nn.utils.clip_grad_norm_(
+                            getattr(model, 'module', model).parameters(),
+                            max_norm=args.clip_norm,
+                            norm_type=2)
+
                 optimizer.step()
                 apply_ema(model, ema_model, args.ema)
 

@@ -91,6 +91,8 @@ ARGS+=" --b2=$B2"
 [ -n "$CHECKPOINT" ] &&              ARGS+=" --ckpt=$CHECKPOINT"
 [ -n "$NUM_BUCKETS" ] &&             ARGS+=" --num_buckets=$NUM_BUCKETS"
 [ -n "$TARGET" ] &&                  ARGS+=" --target=$TARGET"
+[ -n "$CLIP_NORM" ] &&               ARGS+=" --clip_norm=$CLIP_NORM"
+[ -n "$START_CLIP" ] &&              ARGS+=" --start_clip=$START_CLIP"
 
 DISTRIBUTED=${DISTRIBUTED:-"-m torch.distributed.launch --nproc_per_node=$NUM_GPUS"}
 python ${DISTRIBUTED} train.py ${ARGS}
