@@ -234,7 +234,8 @@ def main():
     torch.manual_seed(args.seed + args.local_rank)
     np.random.seed(args.seed + args.local_rank)
     random.seed(args.seed + args.local_rank)
-    np_rng = np.random.default_rng(seed=args.seed + args.local_rank)
+    # np_rng is used for buckets generation, and needs the same seed on every worker
+    np_rng = np.random.default_rng(seed=args.seed)
 
     init_log(args)
 
@@ -298,7 +299,8 @@ def main():
         if args.num_buckets is not None:
             sampler = dali_sampler.BucketingSampler(
                 args.num_buckets,
-                batch_size*world_size,
+                batch_size,
+                world_size,
                 args.epochs,
                 np_rng
             )

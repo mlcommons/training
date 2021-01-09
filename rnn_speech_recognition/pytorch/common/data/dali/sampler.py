@@ -28,7 +28,7 @@ class SimpleSampler:
 
     def write_file_list(self, files):
         with open(self.file_list_path, 'w') as f:
-            f.writelines(f'{name} {label}' for name, label in files)
+            f.writelines(f'{name} {label}\n' for name, label in files)
 
     def get_file_list_path(self):
         assert self.file_list_path, 'File list not initialized. Run make_file_list first'
@@ -54,20 +54,22 @@ class SimpleSampler:
 
 
 class BucketingSampler(SimpleSampler):
-    def __init__(self, num_buckets, global_batch_size, num_epochs, rng):
+    def __init__(self, num_buckets, batch_size, num_workers, num_epochs, rng):
         super(BucketingSampler, self).__init__()
         self.rng = rng
         self.num_buckets = num_buckets
         self.num_epochs = num_epochs
-        self.global_batch_size = global_batch_size
+        self.batch_size = batch_size
+        self.num_workers = num_workers
 
     def process_output_files(self, output_files):
         names = list(output_files)
         lengths = [output_files[name]['duration'] for name in names]
+        labels = np.array([output_files[name]['label'] for name in names])
         len_ids = np.argsort(lengths)
         buckets = np.array_split(len_ids, self.num_buckets)
 
-        gbs = self.global_batch_size
+        gbs = self.batch_size * self.num_workers
         shuffled_buckets = np.array([
             perm
             for _ in range(self.num_epochs)          # for every epoch
@@ -77,18 +79,28 @@ class BucketingSampler(SimpleSampler):
 
         # drop last batch
         epochs = np.reshape(shuffled_buckets, [self.num_epochs, -1])
+        to_drop = epochs.shape[1] - (epochs.shape[1] // gbs * gbs)
+        for epoch in epochs:
+            dropped_idxs = self.rng.choice(epochs.shape[1], to_drop)
+            epoch[dropped_idxs] = epoch[-to_drop:]
         epochs = epochs[:, :epochs.shape[1] // gbs * gbs]
         self.dataset_size = epochs.shape[1]
 
         epochs_iters_batch = np.reshape(epochs, [self.num_epochs, -1, gbs])
 
-        # shuffle iterations in epochs
+        # shuffle iterations in epochs perserving batches
         for epoch in epochs_iters_batch:
             self.rng.shuffle(epoch, axis=0)
 
+        epochs_iters_batch_worker = np.reshape(
+            epochs_iters_batch,
+            [self.num_epochs, -1, self.batch_size, self.num_workers]
+        )
+        workers_epochs_iters_batch = np.moveaxis(epochs_iters_batch_worker, -1, 0)
+
         return [
-            (names[i], output_files[names[i]]['label'])
-            for i in epochs_iters_batch.flatten()
+            (names[i], labels[i])
+            for i in workers_epochs_iters_batch.flatten()
         ]
 
     def is_sampler_random(self):
