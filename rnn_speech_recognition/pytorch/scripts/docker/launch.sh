@@ -20,7 +20,7 @@ CHECKPOINT_DIR=$2
 RESULT_DIR=$3
 
 docker run -it --rm \
-  --gpus='"device=1"' \
+  --gpus='all' \
   --shm-size=4g \
   --ulimit memlock=-1 \
   --ulimit stack=67108864 \
