@@ -39,11 +39,10 @@ source download_dataset.sh
 The ResNet-34 backbone is initialized with weights from PyTorch hub file
 https://download.pytorch.org/models/resnet34-333f7ec4.pth by calling
 [`torchvision.models.resnet34(pretrained=True)`](https://pytorch.org/docs/stable/torchvision/models.html#torchvision.models.resnet34)
-as described in the Torch Model Zoo code
-https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py#15.
+as described in the [Torch Model Zoo code](https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py#15).
 
 By default, the code will automatically download the weights to
-`$TORCH_HOME/models` (default is `~/.torch/models/`) and save them for later use.
+`$TORCH_HOME/hub` (default is `~/.cache/torch/hub`) and save them for later use.
 
 Alternatively, you can manually download the weights with:
 ```
