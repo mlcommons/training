@@ -187,7 +187,7 @@ def train(cfg, local_rank, distributed):
 
     start_train_time = time.time()
 
-    do_train(
+    success = do_train(
         model,
         data_loader,
         optimizer,
@@ -206,7 +206,7 @@ def train(cfg, local_rank, distributed):
             "&&&& MLPERF METRIC THROUGHPUT per GPU={:.4f} iterations / s".format((arguments["iteration"] * 1.0) / total_training_time)
     )
 
-    return model
+    return model, success
 
 
 
@@ -304,7 +304,7 @@ def main():
         logger.info(config_str)
     logger.info("Running with config:\n{}".format(cfg))
 
-    model = train(cfg, args.local_rank, args.distributed)
+    model, success = train(cfg, args.local_rank, args.distributed)
 
     print_mlperf(key=mlperf_log.RUN_FINAL)
 

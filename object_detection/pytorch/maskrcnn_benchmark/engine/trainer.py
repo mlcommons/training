@@ -137,3 +137,10 @@ def do_train(
             total_time_str, total_training_time / (max_iter)
         )
     )
+    if per_iter_end_callback_fn is not None:
+        if early_exit:
+            return True
+        else:
+            return False
+    else:
+        return None
