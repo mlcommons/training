@@ -117,39 +117,6 @@ class SpecAugment(BaseFeatures):
         return x.masked_fill(mask, 0) + noise, x_lens
 
 
-class CutoutAugment(BaseFeatures):
-    """Cutout. refer to https://arxiv.org/pdf/1708.04552.pdf
-    """
-    def __init__(self, optim_level, masks=0, min_freq=20, max_freq=20, min_time=5, max_time=5):
-        super(CutoutAugment, self).__init__(optim_level)
-        assert 0 <= min_freq <= max_freq
-        assert 0 <= min_time <= max_time
-
-        self.masks = masks
-        self.min_freq = min_freq
-        self.max_freq = max_freq
-        self.min_time = min_time
-        self.max_time = max_time
-
-    @torch.no_grad()
-    def calculate_features(self, x, x_lens):
-        sh = x.shape
-        mask = torch.zeros(x.shape, dtype=torch.bool, device=x.device)
-
-        for idx in range(sh[0]):
-            for i in range(self.masks):
-
-                w = torch.randint(self.min_freq, self.max_freq + 1, size=(1,)).item()
-                h = torch.randint(self.min_time, self.max_time + 1, size=(1,)).item()
-
-                f0 = int(random.uniform(0, sh[1] - w))
-                t0 = int(random.uniform(0, sh[2] - h))
-
-                mask[idx, f0:f0+w, t0:t0+h] = 1
-
-        return x.masked_fill(mask, 0), x_lens
-
-
 @torch.jit.script
 def normalize_batch(x, x_lens, normalize_type: str):
     if normalize_type == "per_feature":

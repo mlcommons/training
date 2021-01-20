@@ -86,7 +86,7 @@ def gather_transcripts(transcript_list, transcript_len_list, detokenize):
     ]
 
 
-def process_evaluation_epoch(aggregates, tag=None):
+def process_evaluation_epoch(aggregates):
     """
     Processes results from each worker at the end of evaluation and combine to final result
     Args:

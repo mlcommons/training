@@ -16,8 +16,7 @@ import copy
 import inspect
 import yaml
 
-from common.audio import SpeedPerturbation
-from common.data.dataset import AudioDataset
+from common.data.dali.pipeline import PipelineParams, SpeedPerturbationParams
 from common.data.text import Tokenizer
 from common.data import features
 from common.helpers import print_once
@@ -77,7 +76,7 @@ def input(conf_yaml, split='train'):
 
     # Validate known inner classes
     inner_classes = [
-        (conf_dataset, 'speed_perturbation', SpeedPerturbation),
+        (conf_dataset, 'speed_perturbation', SpeedPerturbationParams),
     ]
     amp=['optim_level']
     for conf_tgt, key, klass in inner_classes:
@@ -88,13 +87,11 @@ def input(conf_yaml, split='train'):
         raise ValueError(f'Unknown key {k}')
 
     # Validate outer classes
-    conf_dataset = validate_and_fill(AudioDataset, conf_dataset,
-                                     optional=['data_dir', 'manifest_fpaths', 'tokenizer'] + amp)
+    conf_dataset = validate_and_fill(PipelineParams, conf_dataset)
 
     conf_features = validate_and_fill(features.FilterbankFeatures, conf_features, optional=amp)
     conf_splicing = validate_and_fill(features.FrameSplicing, conf_splicing, optional=amp)
     conf_specaugm = conf_specaugm and validate_and_fill(features.SpecAugment, conf_specaugm, optional=amp)
-    conf_cutoutau = conf_cutoutau and validate_and_fill(features.CutoutAugment, conf_cutoutau, optional=amp)
 
     # Check params shared between classes
     for shared in ['sample_rate']:
@@ -102,7 +99,7 @@ def input(conf_yaml, split='train'):
             f'{shared} should match in Dataset and FeatureProcessor: '
             f'{conf_dataset[shared]}, {conf_features[shared]}')
 
-    return conf_dataset, conf_features, conf_splicing, conf_specaugm, conf_cutoutau
+    return conf_dataset, conf_features, conf_splicing, conf_specaugm
 
 
 def rnnt(conf):

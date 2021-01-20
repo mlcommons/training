@@ -16,7 +16,7 @@ import os
 import math
 import numpy as np
 import torch.distributed as dist
-from .iterator import DaliRnntIterator, SyntheticDataIterator
+from .iterator import DaliRnntIterator
 from .pipeline import DaliPipeline
 from common.helpers import print_once
 
@@ -66,12 +66,12 @@ class DaliDataLoader:
 
     Args:
         device_type: Which device to use for preprocessing. Choose: "cpu", "gpu"
-        pipeline_type: Choose: "train", "val", "synth"
+        pipeline_type: Choose: "train", "val"
     """
 
     def __init__(self, gpu_id, dataset_path: str, config_data: dict, config_features: dict, json_names: list,
                  tokenizer, batch_size: int, sampler, pipeline_type: str, grad_accumulation_steps: int = 1,
-                 synth_iters_per_epoch: int = 544, device_type: str = "gpu"):
+                 device_type: str = "gpu"):
         import torch
         self.batch_size = batch_size
         self.grad_accumulation_steps = grad_accumulation_steps
@@ -79,16 +79,11 @@ class DaliDataLoader:
         self.device_type = device_type
         pipeline_type = self._parse_pipeline_type(pipeline_type)
         self.sampler = sampler
-        if pipeline_type == "synth":
-            self._dali_data_iterator = self._init_synth_iterator(self.batch_size, config_features['nfilt'],
-                                                                 iters_per_epoch=synth_iters_per_epoch,
-                                                                 ngpus=torch.distributed.get_world_size())
-        else:
-            self._dali_data_iterator = self._init_iterator(gpu_id=gpu_id, dataset_path=dataset_path,
-                                                           config_data=config_data,
-                                                           config_features=config_features,
-                                                           json_names=json_names, tokenizer=tokenizer,
-                                                           train_pipeline=pipeline_type == "train")
+        self._dali_data_iterator = self._init_iterator(gpu_id=gpu_id, dataset_path=dataset_path,
+                                                       config_data=config_data,
+                                                       config_features=config_features,
+                                                       json_names=json_names, tokenizer=tokenizer,
+                                                       train_pipeline=pipeline_type == "train")
 
     def _init_iterator(self, gpu_id, dataset_path, config_data, config_features, json_names: list, tokenizer: list,
                        train_pipeline: bool):
@@ -115,14 +110,10 @@ class DaliDataLoader:
         return DaliRnntIterator([pipeline], transcripts=transcripts, tokenizer=tokenizer, batch_size=self.batch_size,
                                   shard_size=self._shard_size(), train_iterator=train_pipeline)
 
-    def _init_synth_iterator(self, batch_size, nfeatures, iters_per_epoch, ngpus):
-        self.dataset_size = ngpus * iters_per_epoch * batch_size
-        return SyntheticDataIterator(batch_size, nfeatures, regenerate=True)
-
     @staticmethod
     def _parse_pipeline_type(pipeline_type):
         pipe = pipeline_type.lower()
-        assert pipe in ("train", "val", "synth"), 'Invalid pipeline type (choices: "train", "val", "synth").'
+        assert pipe in ("train", "val"), 'Invalid pipeline type (choices: "train", "val").'
         return pipe
 
     def _shard_size(self):

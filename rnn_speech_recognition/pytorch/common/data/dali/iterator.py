@@ -17,7 +17,21 @@ import torch.distributed as dist
 import numpy as np
 from common.helpers import print_once
 from common.text import _clean_text, punctuation_map
-from common.data.dataset import normalize_string
+
+
+def normalize_string(s, charset, punct_map):
+    """Normalizes string.
+
+    Example:
+        'call me at 8:00 pm!' -> 'call me at eight zero pm'
+    """
+    charset = set(charset)
+    try:
+        text = _clean_text(s, ["english_cleaners"], punct_map).strip()
+        return ''.join([tok for tok in text if all(t in charset for t in tok)])
+    except:
+        print(f"WARNING: Normalizing failed: {s}")
+        return None
 
 
 class DaliRnntIterator(object):
@@ -83,53 +97,3 @@ class DaliRnntIterator(object):
         return self
 
 
-# TODO: refactor
-class SyntheticDataIterator(object):
-    def __init__(self, batch_size, nfeatures, feat_min=-5., feat_max=0., txt_min=0., txt_max=23., feat_lens_max=1760,
-                 txt_lens_max=231, regenerate=False):
-        """
-        Args:
-            batch_size
-            nfeatures: number of features for melfbanks
-            feat_min: minimum value in `feat` tensor, used for randomization
-            feat_max: maximum value in `feat` tensor, used for randomization
-            txt_min: minimum value in `txt` tensor, used for randomization
-            txt_max: maximum value in `txt` tensor, used for randomization
-            regenerate: If True, regenerate random tensors for every iterator step.
-                        If False, generate them only at start.
-        """
-        self.batch_size = batch_size
-        self.nfeatures = nfeatures
-        self.feat_min = feat_min
-        self.feat_max = feat_max
-        self.feat_lens_max = feat_lens_max
-        self.txt_min = txt_min
-        self.txt_max = txt_max
-        self.txt_lens_max = txt_lens_max
-        self.regenerate = regenerate
-
-        if not self.regenerate:
-            self.feat, self.feat_lens, self.txt, self.txt_lens = self._generate_sample()
-
-    def _generate_sample(self):
-        feat = (self.feat_max - self.feat_min) * np.random.random_sample(
-            (self.batch_size, self.nfeatures, self.feat_lens_max)) + self.feat_min
-        feat_lens = np.random.randint(0, int(self.feat_lens_max) - 1, size=self.batch_size)
-        txt = (self.txt_max - self.txt_min) * np.random.random_sample(
-            (self.batch_size, self.txt_lens_max)) + self.txt_min
-        txt_lens = np.random.randint(0, int(self.txt_lens_max) - 1, size=self.batch_size)
-        return torch.Tensor(feat).cuda(), \
-               torch.Tensor(feat_lens).cuda(), \
-               torch.Tensor(txt).cuda(), \
-               torch.Tensor(txt_lens).cuda()
-
-    def __next__(self):
-        if self.regenerate:
-            return self._generate_sample()
-        return self.feat, self.feat_lens, self.txt, self.txt_lens
-
-    def next(self):
-        return self.__next__()
-
-    def __iter__(self):
-        return self

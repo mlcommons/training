@@ -22,19 +22,17 @@ import torch
 import numpy as np
 import torch.distributed as dist
 from apex import amp
-from apex.optimizers import FusedAdam, FusedLAMB
+from apex.optimizers import FusedLAMB
 from apex.parallel import DistributedDataParallel
 
 from common import helpers
 from common.data.dali import sampler as dali_sampler
 from common.data.dali.data_loader import DaliDataLoader
-from common.data.dataset import AudioDataset, get_data_loader
 from common.data.text import Tokenizer
 from common.data import features
-from common.data import dataset_size
 from common.helpers import (Checkpointer, greedy_wer, num_weights, print_once,
                             process_evaluation_epoch)
-from common.optimizers import AdamW, lr_policy, Novograd
+from common.optimizers import lr_policy
 from common.tb_dllogger import flush_log, init_log, log
 from rnnt import config
 from rnnt.decoder import RNNTGreedyDecoder
@@ -50,11 +48,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description='RNN-T Training Reference')
 
     training = parser.add_argument_group('training setup')
-    training.add_argument('--epochs', default=400, type=int,
-                          help='Number of epochs for the entire training; influences the lr schedule')
-    training.add_argument("--warmup_epochs", default=0, type=int,
+    training.add_argument('--epochs', default=100, type=int,
+                          help='Number of epochs for the entire training')
+    training.add_argument("--warmup_epochs", default=6, type=int,
                           help='Initial epochs of increasing learning rate')
-    training.add_argument("--hold_epochs", default=0, type=int,
+    training.add_argument("--hold_epochs", default=40, type=int,
                           help='Constant max learning rate epochs after warmup')
     training.add_argument('--epochs_this_job', default=0, type=int,
                           help=('Run for a number of epochs with no effect on the lr schedule.'
@@ -63,74 +61,70 @@ def parse_args():
                           help='Enable cudnn benchmark')
     training.add_argument('--amp', '--fp16', action='store_true', default=False,
                           help='Use mixed precision training')
-    training.add_argument('--seed', default=42, type=int, help='Random seed')
+    training.add_argument('--seed', default=None, type=int, help='Random seed')
     training.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                           help='GPU id used for distributed training')
-    training.add_argument('--target', default=-1, type=float, help='Target accuracy')
+    training.add_argument('--target', default=0.058, type=float, help='Target WER accuracy')
 
     optim = parser.add_argument_group('optimization setup')
-    optim.add_argument('--batch_size', default=32, type=int,
-                       help='Global batch size')
+    optim.add_argument('--batch_size', default=128, type=int,
+                       help='Effective batch size per GPU (might require grad accumulation')
     optim.add_argument('--val_batch_size', default=2, type=int,
                        help='Evalution time batch size')
-    optim.add_argument('--lr', default=1e-3, type=float,
+    optim.add_argument('--lr', default=4e-3, type=float,
                        help='Peak learning rate')
     optim.add_argument("--min_lr", default=1e-5, type=float,
                        help='minimum learning rate')
-    optim.add_argument("--lr_policy", default='exponential', type=str,
-                       choices=['exponential', 'legacy', 'transformer'], help='lr scheduler')
-    optim.add_argument("--lr_exp_gamma", default=0.99, type=float,
+    optim.add_argument("--lr_exp_gamma", default=0.935, type=float,
                        help='gamma factor for exponential lr scheduler')
     optim.add_argument('--weight_decay', default=1e-3, type=float,
                        help='Weight decay for the optimizer')
-    optim.add_argument('--grad_accumulation_steps', default=1, type=int,
+    optim.add_argument('--grad_accumulation_steps', default=8, type=int,
                        help='Number of accumulation steps')
+    optim.add_argument('--log_norm', action='store_true',
+                       help='If enabled, gradient norms will be logged')
     optim.add_argument('--clip_norm', default=None, type=float,
                        help='If provided, gradients will be clipped above this norm')
-    optim.add_argument('--start_clip', default=None, type=int,
-                       help='If provided, gradients will be clipped after this iteration')
-    optim.add_argument('--optimizer', default='novograd', type=str,
-                       choices=['novograd', 'adamw', 'adam', 'lamb', 'adam98', 'lamb98'],
-                       help='Optimization algorithm')
-    optim.add_argument('--b1', default=0.9, type=float, help='Beta 1 for optimizer')
-    optim.add_argument('--b2', default=0.999, type=float, help='Beta 2 for optimizer')
-    optim.add_argument('--ema', type=float, default=0.0,
+    optim.add_argument('--beta1', default=0.9, type=float, help='Beta 1 for optimizer')
+    optim.add_argument('--beta2', default=0.999, type=float, help='Beta 2 for optimizer')
+    optim.add_argument('--ema', type=float, default=0.999,
                        help='Discount factor for exp averaging of model weights')
 
     io = parser.add_argument_group('feature and checkpointing setup')
-    io.add_argument('--dali_device', type=str, choices=['none', 'cpu', 'gpu'],
-                    default='gpu', help='Use DALI pipeline for fast data processing')
+    io.add_argument('--dali_device', type=str, choices=['cpu', 'gpu'],
+                    default='cpu', help='Use DALI pipeline for fast data processing')
     io.add_argument('--resume', action='store_true',
                     help='Try to resume from last saved checkpoint.')
     io.add_argument('--ckpt', default=None, type=str,
                     help='Path to a checkpoint for resuming training')
-    io.add_argument('--save_frequency', default=10, type=int,
+    io.add_argument('--save_at_the_end', action='store_true',
+                    help='Saves model checkpoint at the end of training')
+    io.add_argument('--save_frequency', default=None, type=int,
                     help='Checkpoint saving frequency in epochs')
-    io.add_argument('--keep_milestones', default=[100, 200, 300], type=int, nargs='+',
+    io.add_argument('--keep_milestones', default=[], type=int, nargs='+',
                     help='Milestone checkpoints to keep from removing')
-    io.add_argument('--save_best_from', default=380, type=int,
+    io.add_argument('--save_best_from', default=200, type=int,
                     help='Epoch on which to begin tracking best checkpoint (dev WER)')
     io.add_argument('--val_frequency', default=1, type=int,
                     help='Number of epochs between evaluations on dev set')
     io.add_argument('--log_frequency', default=25, type=int,
                     help='Number of steps between printing training stats')
-    io.add_argument('--prediction_frequency', default=100, type=int,
+    io.add_argument('--prediction_frequency', default=None, type=int,
                     help='Number of steps between printing sample decodings')
-    io.add_argument('--model_config', type=str, required=True,
+    io.add_argument('--model_config', default='configs/baseline_v3-1023sp.yaml',
+                    type=str, required=True,
                     help='Path of the model configuration file')
+    io.add_argument('--num_buckets', type=int, default=6,
+                    help='If provided, samples will be grouped by audio duration, '
+                         'to this number of backets, for each bucket, '
+                         'random samples are batched, and finally '
+                         'all batches are randomly shuffled')
     io.add_argument('--train_manifests', type=str, required=True, nargs='+',
                     help='Paths of the training dataset manifest file')
     io.add_argument('--val_manifests', type=str, required=True, nargs='+',
                     help='Paths of the evaluation datasets manifest files')
     io.add_argument('--max_duration', type=float,
                     help='Discard samples longer than max_duration')
-    io.add_argument('--legacy_bucketing', action='store_true',
-                    help='buckets are clipped to multiple of batch_size')
-    io.add_argument('--num_buckets', type=int, default=None,
-                    help='If provided, samples will be grouped by audio duration, '
-                         'to this number of backets, for each bucket, '
-                         'random samples are batched, and finally '
-                         'all batches are randomly shuffled')
     io.add_argument('--dataset_dir', required=True, type=str,
                     help='Root dir of dataset')
     io.add_argument('--output_dir', type=str, required=True,
@@ -138,23 +132,6 @@ def parse_args():
     io.add_argument('--log_file', type=str, default=None,
                     help='Path to save the training logfile.')
     return parser.parse_args()
-
-
-def barrier():
-    """
-    Works as a temporary distributed barrier, currently pytorch
-    doesn't implement barrier for NCCL backend.
-    Calls all_reduce on dummy tensor and synchronizes with GPU.
-    """
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        torch.distributed.all_reduce(torch.cuda.FloatTensor(1))
-        torch.cuda.synchronize()
-
-
-def reduce_tensor(tensor, num_gpus):
-    rt = tensor.clone()
-    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
-    return rt.true_divide(num_gpus)
 
 
 def apply_ema(model, ema_model, decay):
@@ -167,52 +144,45 @@ def apply_ema(model, ema_model, decay):
 
 
 @torch.no_grad()
-def evaluate(epoch, step, val_loader, val_feat_proc, detokenize, model,
-             ema_model, loss_fn, greedy_decoder, use_amp, use_dali=False):
+def evaluate(epoch, step, val_loader, val_feat_proc, detokenize,
+             ema_model, loss_fn, greedy_decoder, use_amp):
+    logging.log_start(logging.constants.EVAL_START,
+                      metadata=dict(epoch_num=epoch))
 
-    for model, subset in [(ema_model, 'dev_ema')]:
-        if model is None:
-            continue
+    ema_model.eval()
+    start_time = time.time()
+    agg = {'losses': [], 'preds': [], 'txts': []}
 
-        logging.log_start(logging.constants.EVAL_START,
-                          metadata=dict(epoch_num=epoch))
+    for i, batch in enumerate(val_loader):
+        print(f'evaluation: {i:>10}/{len(val_loader):<10}', end='\r')
 
-        model.eval()
-        start_time = time.time()
-        agg = {'losses': [], 'preds': [], 'txts': []}
+        audio, audio_lens, txt, txt_lens = batch
 
-        for i, batch in enumerate(val_loader):
-            print(f'evaluation: {i:>10}/{len(val_loader):<10}', end='\r')
+        feats, feat_lens = val_feat_proc([audio, audio_lens])
 
-            if not use_dali:
-                batch = [t.cuda(non_blocking=True) for t in batch]
-            audio, audio_lens, txt, txt_lens = batch
+        log_probs, log_prob_lens = ema_model(feats, feat_lens, txt, txt_lens)
+        loss = loss_fn(log_probs[:, :log_prob_lens.max().item()],
+                                  log_prob_lens, txt, txt_lens)
 
-            feats, feat_lens = val_feat_proc([audio, audio_lens])
+        pred = greedy_decoder.decode(ema_model, feats, feat_lens)
 
-            log_probs, log_prob_lens = model(feats, feat_lens, txt, txt_lens)
-            loss = loss_fn(log_probs[:, :log_prob_lens.max().item()],
-                                      log_prob_lens, txt, txt_lens)
+        agg['losses'] += helpers.gather_losses([loss.cpu()])
+        agg['preds'] += helpers.gather_predictions([pred], detokenize)
+        agg['txts'] += helpers.gather_transcripts([txt.cpu()], [txt_lens.cpu()], detokenize)
 
-            pred = greedy_decoder.decode(model, feats, feat_lens)
+    wer, loss = process_evaluation_epoch(agg)
 
-            agg['losses'] += helpers.gather_losses([loss.cpu()])
-            agg['preds'] += helpers.gather_predictions([pred], detokenize)
-            agg['txts'] += helpers.gather_transcripts([txt.cpu()], [txt_lens.cpu()], detokenize)
+    logging.log_end(logging.constants.EVAL_STOP)
 
-        wer, loss = process_evaluation_epoch(agg)
+    logging.log_event(logging.constants.EVAL_ACCURACY,
+                      value=wer,
+                      metadata=dict(epoch_num=epoch))
+    logging.log_end(logging.constants.EVAL_STOP,
+                    metadata=dict(epoch_num=epoch))
 
-        logging.log_end(logging.constants.EVAL_STOP)
-
-        logging.log_event(logging.constants.EVAL_ACCURACY,
-                          value=wer,
-                          metadata=dict(epoch_num=epoch))
-        logging.log_end(logging.constants.EVAL_STOP,
-                        metadata=dict(epoch_num=epoch))
-
-        log((epoch,), step, subset, {'loss': loss, 'wer': 100.0 * wer,
-                                     'took': time.time() - start_time})
-        model.train()
+    log((epoch,), step, 'dev_ema', {'loss': loss, 'wer': 100.0 * wer,
+                                 'took': time.time() - start_time})
+    ema_model.train()
     return wer
 
 
@@ -223,7 +193,7 @@ def main():
     args = parse_args()
 
     assert(torch.cuda.is_available())
-    assert args.prediction_frequency % args.log_frequency == 0
+    assert args.prediction_frequency is None or args.prediction_frequency % args.log_frequency == 0
 
     torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
@@ -237,12 +207,13 @@ def main():
     else:
         world_size = 1
 
-    logging.log_event(logging.constants.SEED, value=args.seed)
-    torch.manual_seed(args.seed + args.local_rank)
-    np.random.seed(args.seed + args.local_rank)
-    random.seed(args.seed + args.local_rank)
-    # np_rng is used for buckets generation, and needs the same seed on every worker
-    np_rng = np.random.default_rng(seed=args.seed)
+    if args.seed is not None:
+        logging.log_event(logging.constants.SEED, value=args.seed)
+        torch.manual_seed(args.seed + args.local_rank)
+        np.random.seed(args.seed + args.local_rank)
+        random.seed(args.seed + args.local_rank)
+        # np_rng is used for buckets generation, and needs the same seed on every worker
+        np_rng = np.random.default_rng(seed=args.seed)
 
     init_log(args)
 
@@ -250,17 +221,22 @@ def main():
     config.apply_duration_flags(cfg, args.max_duration)
 
     assert args.grad_accumulation_steps >= 1
-    assert args.batch_size % args.grad_accumulation_steps == 0
+    assert args.batch_size % args.grad_accumulation_steps == 0, f'{args.batch_size} % {args.grad_accumulation_steps} != 0'
+    logging.log_event('gradient_accumulation_steps', value=args.grad_accumulation_steps)
     batch_size = args.batch_size // args.grad_accumulation_steps
 
-    logging.log_end(logging.constants.INIT_STOP)
-    barrier()
-    logging.log_start(logging.constants.RUN_START)
-    barrier()
+    logging.log_event(logging.constants.SUBMISSION_BENCHMARK, value='RNN-T')
+    logging.log_event(logging.constants.SUBMISSION_ORG, value='my-organization')
+    logging.log_event(logging.constants.SUBMISSION_DIVISION, value='closed/open')
+    logging.log_event(logging.constants.SUBMISSION_STATUS, value='onprem/cloud/research')
+    logging.log_event(logging.constants.SUBMISSION_PLATFORM, value='my platform')
 
-    logging.log_event(logging.constants.MAX_SEQUENCE_LENGTH, value=args.max_duration)
-    logging.log_event(logging.constants.GLOBAL_BATCH_SIZE,
-                      value=batch_size * world_size)
+    logging.log_end(logging.constants.INIT_STOP)
+    if multi_gpu:
+        torch.distributed.barrier()
+    logging.log_start(logging.constants.RUN_START)
+    if multi_gpu:
+        torch.distributed.barrier()
 
     print_once('Setting up datasets...')
     (
@@ -268,15 +244,18 @@ def main():
         train_features_kw,
         train_splicing_kw,
         train_specaugm_kw,
-        train_cutoutau_kw,
     ) = config.input(cfg, 'train')
     (
         val_dataset_kw,
         val_features_kw,
         val_splicing_kw,
         val_specaugm_kw,
-        val_cutoutau_kw,
     ) = config.input(cfg, 'val')
+
+    logging.log_event(logging.constants.MAX_SEQUENCE_LENGTH,
+                      value=train_dataset_kw['max_duration'])
+    logging.log_event(logging.constants.GLOBAL_BATCH_SIZE,
+                      value=batch_size * world_size * args.grad_accumulation_steps)
 
     tokenizer_kw = config.tokenizer(cfg)
     tokenizer = Tokenizer(**tokenizer_kw)
@@ -286,106 +265,64 @@ def main():
             return (x[0].permute(2, 0, 1), *x[1:])
 
     train_augmentations = torch.nn.Sequential(
-        train_cutoutau_kw and features.CutoutAugment(optim_level=args.amp, **train_cutoutau_kw) or torch.nn.Identity(),
         train_specaugm_kw and features.SpecAugment(optim_level=args.amp, **train_specaugm_kw) or torch.nn.Identity(),
         features.FrameSplicing(optim_level=args.amp, **train_splicing_kw),
         features.FillPadding(optim_level=args.amp, ),
         PermuteAudio(),
     )
     val_augmentations = torch.nn.Sequential(
-        val_cutoutau_kw and features.CutoutAugment(optim_level=args.amp, **val_cutoutau_kw) or torch.nn.Identity(),
         val_specaugm_kw and features.SpecAugment(optim_level=args.amp, **val_specaugm_kw) or torch.nn.Identity(),
         features.FrameSplicing(optim_level=args.amp, **val_splicing_kw),
         features.FillPadding(optim_level=args.amp, ),
         PermuteAudio(),
     )
 
-    use_dali = args.dali_device in ('cpu', 'gpu')
-    if use_dali:
+    logging.log_event('num_buckets', value=args.num_buckets)
 
-        if args.num_buckets is not None:
-            sampler = dali_sampler.BucketingSampler(
-                args.num_buckets,
-                batch_size,
-                world_size,
-                args.epochs,
-                np_rng
-            )
-        else:
-            sampler = dali_sampler.SimpleSampler()
-
-        train_loader = DaliDataLoader(gpu_id=args.local_rank,
-                                      dataset_path=args.dataset_dir,
-                                      config_data=train_dataset_kw,
-                                      config_features=train_features_kw,
-                                      json_names=args.train_manifests,
-                                      batch_size=batch_size,
-                                      sampler=sampler,
-                                      grad_accumulation_steps=args.grad_accumulation_steps,
-                                      pipeline_type="train",
-                                      device_type=args.dali_device,
-                                      tokenizer=tokenizer)
-
-        val_loader = DaliDataLoader(gpu_id=args.local_rank,
-                                    dataset_path=args.dataset_dir,
-                                    config_data=val_dataset_kw,
-                                    config_features=val_features_kw,
-                                    json_names=args.val_manifests,
-                                    batch_size=args.val_batch_size,
-                                    sampler=dali_sampler.SimpleSampler(),
-                                    pipeline_type="val",
-                                    device_type=args.dali_device,
-                                    tokenizer=tokenizer)
-
-        train_feat_proc = train_augmentations
-        val_feat_proc   = val_augmentations
+    if args.num_buckets is not None:
+        sampler = dali_sampler.BucketingSampler(
+            args.num_buckets,
+            batch_size,
+            world_size,
+            args.epochs,
+            np_rng
+        )
     else:
-        train_dataset = AudioDataset(args.dataset_dir,
-                                     args.train_manifests,
-                                     tokenizer=tokenizer,
-                                     **train_dataset_kw)
-        train_loader = get_data_loader(train_dataset,
-                                       batch_size,
-                                       world_size,
-                                       args.local_rank,
-                                       num_buckets=args.num_buckets,
-                                       shuffle=True,
-                                       num_workers=4)
+        sampler = dali_sampler.SimpleSampler()
 
-        val_dataset = AudioDataset(args.dataset_dir,
-                                   args.val_manifests,
-                                   tokenizer=tokenizer,
-                                   **val_dataset_kw)
-        val_loader = get_data_loader(val_dataset,
-                                     args.val_batch_size,
-                                     world_size,
-                                     args.local_rank,
-                                     shuffle=False,
-                                     num_workers=4,
-                                     drop_last=False)
+    train_loader = DaliDataLoader(gpu_id=args.local_rank,
+                                  dataset_path=args.dataset_dir,
+                                  config_data=train_dataset_kw,
+                                  config_features=train_features_kw,
+                                  json_names=args.train_manifests,
+                                  batch_size=batch_size,
+                                  sampler=sampler,
+                                  grad_accumulation_steps=args.grad_accumulation_steps,
+                                  pipeline_type="train",
+                                  device_type=args.dali_device,
+                                  tokenizer=tokenizer)
 
-        train_feat_proc = torch.nn.Sequential(
-            features.FilterbankFeatures(optim_level=args.amp, **train_features_kw),
-            train_augmentations,
-        )
-        val_feat_proc = torch.nn.Sequential(
-            features.FilterbankFeatures(optim_level=args.amp, **val_features_kw),
-            val_augmentations,
-        )
+    val_loader = DaliDataLoader(gpu_id=args.local_rank,
+                                dataset_path=args.dataset_dir,
+                                config_data=val_dataset_kw,
+                                config_features=val_features_kw,
+                                json_names=args.val_manifests,
+                                batch_size=args.val_batch_size,
+                                sampler=dali_sampler.SimpleSampler(),
+                                pipeline_type="val",
+                                device_type=args.dali_device,
+                                tokenizer=tokenizer)
 
-        dur = train_dataset.duration / 3600
-        dur_f = train_dataset.duration_filtered / 3600
-        nsampl = len(train_dataset)
-        print_once(f'Training samples: {nsampl} ({dur:.1f}h, '
-                   f'filtered {dur_f:.1f}h)')
+    train_feat_proc = train_augmentations
+    val_feat_proc   = val_augmentations
 
     train_feat_proc.cuda()
     val_feat_proc.cuda()
 
     steps_per_epoch = len(train_loader) // args.grad_accumulation_steps
 
-    logging.log_event(logging.constants.TRAIN_SAMPLES, value=dataset_size(train_loader))
-    logging.log_event(logging.constants.EVAL_SAMPLES, value=len(val_loader))
+    logging.log_event(logging.constants.TRAIN_SAMPLES, value=train_loader.dataset_size)
+    logging.log_event(logging.constants.EVAL_SAMPLES, value=val_loader.dataset_size)
 
     # set up the model
     model = RNNT(n_classes=tokenizer.num_labels + 1, **config.rnnt(cfg))
@@ -396,8 +333,16 @@ def main():
 
     print_once(f'Model size: {num_weights(model) / 10**6:.1f}M params\n')
 
-    logging.log_event(logging.constants.OPT_NAME, value=args.optimizer)
+    logging.log_event(logging.constants.OPT_NAME, value='lamb')
     logging.log_event(logging.constants.OPT_BASE_LR, value=args.lr)
+    logging.log_event('optimizer_epsilon', value=1e-9)
+    logging.log_event('optimizer_lr_exp_gamma', value=args.lr_exp_gamma)
+    logging.log_event('optimizer_lr_warmup_epochs', value=args.warmup_epochs)
+    logging.log_event('optimizer_hold_lr_epochs', value=args.hold_epochs)
+    logging.log_event('optimizer_beta1', value=args.beta1)
+    logging.log_event('optimizer_beta2', value=args.beta2)
+    logging.log_event('optimizer_epsilon', value=1e-9)
+    logging.log_event('clip_norm', value=args.clip_norm)
 
     # optimization
     kw = {'params': model.param_groups(args.lr), 'lr': args.lr,
@@ -406,23 +351,20 @@ def main():
     initial_lrs = [group['lr'] for group in kw['params']]
 
     print_once(f'Starting with LRs: {initial_lrs}')
+    optimizer = FusedLAMB(betas=(args.beta1, args.beta2), eps=1e-9, **kw)
 
-    if args.optimizer == "novograd":
-        optimizer = Novograd(**kw, betas=(args.b1, args.b2), eps=1e-9)
-    elif args.optimizer == "adamw":
-        optimizer = AdamW(**kw)
-    elif args.optimizer == 'adam':
-        optimizer = FusedAdam(betas=(args.b1, args.b2), eps=1e-9, **kw)
-    elif args.optimizer == 'lamb':
-        optimizer = FusedLAMB(betas=(args.b1, args.b2), eps=1e-9, **kw)
-    else:
-        raise ValueError(f'Invalid optimizer "{args.optimizer}"')
+    logging.log_event(logging.constants.OPT_BASE_LR, value=args.lr)
+    logging.log_event(logging.constants.OPT_LR_ALT_DECAY_FUNC, value=True)
+    logging.log_event(logging.constants.OPT_LR_ALT_WARMUP_FUNC, value=True)
+    logging.log_event('optimizer_lr_exp_gamma', value=args.lr_exp_gamma)
+    logging.log_event('min_lr', value=args.min_lr)
+    logging.log_event('optimizer_lr_warmup_epochs', value=args.warmup_epochs)
+    logging.log_event('optimizer_hold_lr_epochs', value=args.hold_epochs)
 
     adjust_lr = lambda step, epoch: lr_policy(
         step, epoch, initial_lrs, optimizer, steps_per_epoch=steps_per_epoch,
         warmup_epochs=args.warmup_epochs, hold_epochs=args.hold_epochs,
-        num_epochs=args.epochs, policy=args.lr_policy, min_lr=args.min_lr,
-        exp_gamma=args.lr_exp_gamma)
+        min_lr=args.min_lr, exp_gamma=args.lr_exp_gamma)
 
     if args.amp:
         model, optimizer = amp.initialize(
@@ -435,6 +377,7 @@ def main():
         ema_model = copy.deepcopy(model).cuda()
     else:
         ema_model = None
+    logging.log_event('ema_factor', value=args.ema)
 
     if multi_gpu:
         model = DistributedDataParallel(model)
@@ -465,9 +408,6 @@ def main():
         logging.log_start(logging.constants.EPOCH_START,
                           metadata=dict(epoch_num=epoch))
 
-        if multi_gpu and not use_dali:
-            train_loader.sampler.set_epoch(epoch)
-
         epoch_utts = 0
         accumulated_batches = 0
         epoch_start_time = time.time()
@@ -477,15 +417,14 @@ def main():
             if accumulated_batches == 0:
                 adjust_lr(step, epoch)
                 optimizer.zero_grad()
-                step_loss = 0
                 step_utts = 0
                 step_start_time = time.time()
+                all_feat_lens = []
 
-            if not use_dali:
-                batch = [t.cuda(non_blocking=True) for t in batch]
             audio, audio_lens, txt, txt_lens = batch
 
             feats, feat_lens = train_feat_proc([audio, audio_lens])
+            all_feat_lens += feat_lens
 
             log_probs, log_prob_lens = model(feats, feat_lens, txt, txt_lens)
             loss = loss_fn(log_probs[:, :log_prob_lens.max().item()],
@@ -493,22 +432,18 @@ def main():
 
             loss /= args.grad_accumulation_steps
 
-            # TODO why ? is decoding memory-intensive?
-            del log_probs
+            del log_probs, log_prob_lens
 
             if torch.isnan(loss).any():
                 print_once(f'WARNING: loss is NaN; skipping update')
             else:
-                if multi_gpu:
-                    step_loss += reduce_tensor(loss.data, world_size).item()
-                else:
-                    step_loss += loss.item()
-
                 if args.amp:
                     with amp.scale_loss(loss, optimizer) as scaled_loss:
                         scaled_loss.backward()
                 else:
                     loss.backward()
+                loss_item = loss.item()
+                del loss
                 step_utts += batch[0].size(0) * world_size
                 epoch_utts += batch[0].size(0) * world_size
                 accumulated_batches += 1
@@ -516,18 +451,29 @@ def main():
             if accumulated_batches % args.grad_accumulation_steps == 0:
 
                 if args.clip_norm is not None:
-                    if args.start_clip is None or args.start_clip < step:
-                        torch.nn.utils.clip_grad_norm_(
-                            getattr(model, 'module', model).parameters(),
-                            max_norm=args.clip_norm,
-                            norm_type=2)
+                    torch.nn.utils.clip_grad_norm_(
+                        getattr(model, 'module', model).parameters(),
+                        max_norm=args.clip_norm,
+                        norm_type=2)
+
+                total_norm = 0.0
+
+                try:
+                    if args.log_norm:
+                        for p in getattr(model, 'module', model).parameters():
+                            param_norm = p.grad.data.norm(2)
+                            total_norm += param_norm.item() ** 2
+                        total_norm = total_norm ** (1. / 2)
+                except AttributeError as e:
+                    print_once(f'Exception happened: {e}')
+                    total_norm = 0.0
 
                 optimizer.step()
                 apply_ema(model, ema_model, args.ema)
 
                 if step % args.log_frequency == 0:
 
-                    if step % args.prediction_frequency == 0:
+                    if args.prediction_frequency is None or step % args.prediction_frequency == 0:
                         preds = greedy_decoder.decode(model, feats, feat_lens)
                         wer, pred_utt, ref = greedy_wer(
                                 preds,
@@ -541,12 +487,16 @@ def main():
                         wer = {}
 
                     step_time = time.time() - step_start_time
+
                     log((epoch, step % steps_per_epoch or steps_per_epoch, steps_per_epoch),
                         step, 'train',
-                        {'loss': loss.item(),
+                        {'loss': loss_item,
                          **wer,  # optional entry
                          'throughput': step_utts / step_time,
                          'took': step_time,
+                         'grad-norm': total_norm,
+                         'seq-len-min': min(all_feat_lens).item(),
+                         'seq-len-max': max(all_feat_lens).item(),
                          'lrate': optimizer.param_groups[0]['lr']})
 
                 step_start_time = time.time()
@@ -555,11 +505,6 @@ def main():
                 accumulated_batches = 0
                 # end of step
 
-            # DALI iterator need to be exhausted;
-            # if not using DALI, simulate drop_last=True with grad accumulation
-            if not use_dali and step > steps_per_epoch * epoch:
-                break
-
         logging.log_end(logging.constants.EPOCH_STOP,
                         metadata=dict(epoch_num=epoch))
 
@@ -567,19 +512,21 @@ def main():
         log((epoch,), None, 'train_avg', {'throughput': epoch_utts / epoch_time,
                                           'took': epoch_time})
 
-        if epoch % args.save_frequency == 0 or epoch in args.keep_milestones:
-            checkpointer.save(model, ema_model, optimizer, epoch, step, best_wer)
-
         if epoch % args.val_frequency == 0:
             wer = evaluate(epoch, step, val_loader, val_feat_proc,
-                           tokenizer.detokenize, model, ema_model, loss_fn,
-                           greedy_decoder, args.amp, use_dali)
+                           tokenizer.detokenize, ema_model, loss_fn,
+                           greedy_decoder, args.amp)
 
             last_wer = wer
             if wer < best_wer and epoch >= args.save_best_from:
                 checkpointer.save(model, ema_model, optimizer, epoch,
                                   step, best_wer, is_best=True)
                 best_wer = wer
+
+        save_this_epoch = (args.save_frequency is not None and epoch % args.save_frequency == 0) \
+                       or (epoch in args.keep_milestones)
+        if save_this_epoch:
+            checkpointer.save(model, ema_model, optimizer, epoch, step, best_wer)
 
         logging.log_end(logging.constants.BLOCK_STOP, metadata=dict(first_epoch_num=epoch))
 
@@ -598,11 +545,12 @@ def main():
         logging.log_end(logging.constants.RUN_STOP, metadata={'status': 'aborted'})
 
     if epoch == args.epochs:
-        evaluate(epoch, step, val_loader, val_feat_proc, tokenizer.detokenize, model,
-                 ema_model, loss_fn, greedy_decoder, args.amp, use_dali)
+        evaluate(epoch, step, val_loader, val_feat_proc, tokenizer.detokenize,
+                 ema_model, loss_fn, greedy_decoder, args.amp)
 
     flush_log()
-    checkpointer.save(model, ema_model, optimizer, epoch, step, best_wer)
+    if args.save_at_the_end:
+        checkpointer.save(model, ema_model, optimizer, epoch, step, best_wer)
 
 
 if __name__ == "__main__":

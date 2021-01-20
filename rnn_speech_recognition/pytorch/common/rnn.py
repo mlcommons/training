@@ -15,8 +15,6 @@
 
 import math
 
-from typing import List, Optional, Tuple
-
 import torch
 from torch.nn import Parameter
 
@@ -25,14 +23,14 @@ def rnn(input_size, hidden_size, num_layers,
         forget_gate_bias=1.0, dropout=0.0,
         **kwargs):
 
-    kwargs = dict(input_size=input_size,
-                  hidden_size=hidden_size,
-                  num_layers=num_layers,
-                  dropout=dropout,
-                  forget_gate_bias=forget_gate_bias,
-                  **kwargs)
-
-    return LSTM(**kwargs)
+    return LSTM(
+        input_size=input_size,
+        hidden_size=hidden_size,
+        num_layers=num_layers,
+        dropout=dropout,
+        forget_gate_bias=forget_gate_bias,
+        **kwargs,
+    )
 
 class LSTM(torch.nn.Module):
 

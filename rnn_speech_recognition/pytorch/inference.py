@@ -34,8 +34,6 @@ from common import helpers
 from common.data import features
 from common.data.dali import sampler as dali_sampler
 from common.data.dali.data_loader import DaliDataLoader
-from common.data.dataset import (AudioDataset, FilelistDataset, get_data_loader,
-                           SingleAudioDataset)
 from common.data.features import BaseFeatures, FilterbankFeatures
 from common.data.text import Tokenizer
 from common.helpers import print_once, process_evaluation_epoch
@@ -173,7 +171,6 @@ def main():
         dataset_kw,
         features_kw,
         splicing_kw,
-        padalign_kw,
         _, _
     ) = config.input(cfg, 'val')
 
@@ -182,82 +179,26 @@ def main():
 
     optim_level = 3 if args.amp else 0
 
-    val_augmentations = torch.nn.Sequential(
+    feature_proc  = torch.nn.Sequential(
         torch.nn.Identity(),
         torch.nn.Identity(),
         features.FrameSplicing(optim_level=optim_level, **splicing_kw),
         features.FillPadding(optim_level=optim_level, ),
-        features.PadAlign(optim_level=optim_level, **padalign_kw),
     )
 
     # dataset
-    if args.transcribe_wav:
-        assert not use_dali, "DALI is not supported for a single audio"
-        assert not args.transcribe_filelist
-        assert not args.pad_to_max_duration
-        # TODO Which flags should also be ignored?
 
-        dataset = SingleAudioDataset(args.transcribe_wav)
-        data_loader = get_data_loader(dataset, batch_size=1, multi_gpu=multi_gpu,
-                                      shuffle=False, num_workers=0, drop_last=False)
-
-        _, features_kw = config.input(cfg, 'val')
-        feature_proc = FilterbankFeatures(**features_kw)
-
-    elif args.transcribe_filelist:
-        assert not args.transcribe_wav
-        assert not args.pad_to_max_duration
-
-        dataset = FilelistDataset(args.transcribe_filelist)
-        data_loader = get_data_loader(dataset, batch_size=1, multi_gpu=multi_gpu,
-                                      shuffle=False, num_workers=0, drop_last=False)
-
-        _, features_kw = config.input(cfg, 'val')
-        feature_proc = FilterbankFeatures(**features_kw)
-
-    else:
-        if use_dali:
-
-            data_loader = DaliDataLoader(
-                gpu_id=args.local_rank or 0,
-                dataset_path=args.dataset_dir,
-                config_data=dataset_kw,
-                config_features=features_kw,
-                json_names=[args.val_manifest],
-                batch_size=args.batch_size,
-                sampler=dali_sampler.SimpleSampler(),
-                pipeline_type="val",
-                device_type=args.dali_device,
-                tokenizer=tokenizer)
-
-            feature_proc = val_augmentations
-
-            # feature_proc = BaseFeatures(
-            #     pad_align=features_kw['pad_align'],
-            #     pad_to_max_duration=features_kw['pad_to_max_duration'],
-            #     max_duration=features_kw['max_duration'],
-            #     sample_rate=features_kw['sample_rate'],
-            #     window_size=features_kw['window_size'],
-            #     window_stride=features_kw['window_stride'],
-            #     spec_augment=features_kw['spec_augment'],
-            #     cutout_augment=features_kw['cutout_augment'])
-
-        else:
-
-            dataset = AudioDataset(args.dataset_dir, [args.val_manifest],
-                                   tokenizer=tokenizer, **dataset_kw)
-
-            data_loader = get_data_loader(dataset, args.batch_size,
-                                          # multi_gpu=multi_gpu,
-                                          world_size=1, rank=0, # XXX
-                                          shuffle=False, num_workers=0,
-                                          drop_last=False)
-
-            # feature_proc = FilterbankFeatures(**features_kw)
-            feature_proc = torch.nn.Sequential(
-                features.FilterbankFeatures(optim_level=optim_level, **features_kw),
-                val_augmentations,
-            )
+    data_loader = DaliDataLoader(
+        gpu_id=args.local_rank or 0,
+        dataset_path=args.dataset_dir,
+        config_data=dataset_kw,
+        config_features=features_kw,
+        json_names=[args.val_manifest],
+        batch_size=args.batch_size,
+        sampler=dali_sampler.SimpleSampler(),
+        pipeline_type="val",
+        device_type=args.dali_device,
+        tokenizer=tokenizer)
 
     model = RNNT(n_classes=tokenizer.num_labels + 1, **config.rnnt(cfg))
 
@@ -312,7 +253,6 @@ def main():
                 feats = feats.half()
 
             sz.append(feats.size(0))
-            print(feats.size(), np.mean(sz))
 
             t1 = sync_time()
             log_probs, log_prob_lens = model(feats, feat_lens, txt, txt_lens)
@@ -345,10 +285,11 @@ def main():
         elif args.transcribe_filelist:
             pass
 
-        elif not multi_gpu or distrib.get_rank() == 0:
+        else:
             wer, loss = process_evaluation_epoch(agg)
 
-            dllogger.log(step=(), data={'eval_wer': 100 * wer})
+            if not multi_gpu or distrib.get_rank() == 0:
+                dllogger.log(step=(), data={'eval_wer': 100 * wer})
 
         if args.save_predictions:
             with open(args.save_predictions, 'w') as f:
@@ -357,8 +298,6 @@ def main():
     # report timings
     if len(dur['data']) >= 20:
         ratios = [0.9, 0.95, 0.99]
-        latency_data = durs_to_percentiles(dur['data'], ratios)
-        latency_data_dnn = durs_to_percentiles(dur['data+dnn'], ratios)
 
         for stage in dur:
             lat = durs_to_percentiles(dur[stage], ratios)

@@ -18,7 +18,7 @@ import math
 
 
 def lr_policy(step, epoch, initial_lr, optimizer, steps_per_epoch, warmup_epochs,
-              hold_epochs, num_epochs=None, policy='linear', min_lr=1e-5,
+              hold_epochs, min_lr=1e-5,
               exp_gamma=None):
     """
     learning rate decay
@@ -31,37 +31,14 @@ def lr_policy(step, epoch, initial_lr, optimizer, steps_per_epoch, warmup_epochs
     warmup_steps = warmup_epochs * steps_per_epoch
     hold_steps = hold_epochs * steps_per_epoch
 
-    if policy == 'legacy':
-        assert num_epochs is not None
-        tot_steps = num_epochs * steps_per_epoch
+    assert exp_gamma is not None
 
-        if step < warmup_steps:
-            a = (step + 1) / (warmup_steps + 1)
-        elif step < warmup_steps + hold_steps:
-            a = 1.0
-        else:
-            a = (((tot_steps - step)
-                 / (tot_steps - warmup_steps - hold_steps)) ** 2)
-
-    elif policy == 'exponential':
-        assert exp_gamma is not None
-
-        if step < warmup_steps:
-            a = (step + 1) / (warmup_steps + 1)
-        elif step < warmup_steps + hold_steps:
-            a = 1.0
-        else:
-            a = exp_gamma ** (epoch - warmup_epochs - hold_epochs)
-
-    elif policy == 'transformer':
-
-        epoch_frac = step / steps_per_epoch
-        if epoch < warmup_epochs:
-            a = epoch_frac / (warmup_epochs ** 1.5)
-        else:
-            a = 1.0 / (epoch_frac ** 0.5)
+    if step < warmup_steps:
+        a = (step + 1) / (warmup_steps + 1)
+    elif step < warmup_steps + hold_steps:
+        a = 1.0
     else:
-        raise ValueError
+        a = exp_gamma ** (epoch - warmup_epochs - hold_epochs)
 
     if type(initial_lr) is float:
         initial_lr = [initial_lr]

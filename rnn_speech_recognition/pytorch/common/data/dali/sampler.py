@@ -82,7 +82,8 @@ class BucketingSampler(SimpleSampler):
         to_drop = epochs.shape[1] - (epochs.shape[1] // gbs * gbs)
         for epoch in epochs:
             dropped_idxs = self.rng.choice(epochs.shape[1], to_drop)
-            epoch[dropped_idxs] = epoch[-to_drop:]
+            if dropped_idxs is not None:
+                epoch[dropped_idxs] = epoch[-to_drop:]
         epochs = epochs[:, :epochs.shape[1] // gbs * gbs]
         self.dataset_size = epochs.shape[1]
 

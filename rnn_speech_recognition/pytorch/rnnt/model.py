@@ -40,11 +40,6 @@ class StackTime(nn.Module):
         return torch.cat(seq, dim=2)[::self.factor, :, :], x_lens
 
 
-class NoOpModule(nn.Module):
-    def forward(self, x, *args):
-        return (x,) + args if args else x
-
-
 class RNNT(nn.Module):
     """A Recurrent Neural Network Transducer (RNN-T).
 
@@ -67,10 +62,7 @@ class RNNT(nn.Module):
                  enc_dropout, pred_dropout, joint_dropout,
                  pred_n_hid, pred_rnn_layers, joint_n_hid,
                  forget_gate_bias,
-                 enc_lr_factor=1.0, pred_lr_factor=1.0, joint_lr_factor=1.0,
-                 no_joint_net=False,
-                 in_conv=False, in_conv_out_channels=256, in_conv_subsampling=3,
-                 enc_stack_time_conv=False, tie_embeddings=False):
+                 enc_lr_factor=1.0, pred_lr_factor=1.0, joint_lr_factor=1.0):
         super(RNNT, self).__init__()
 
         self.enc_lr_factor = enc_lr_factor
@@ -79,39 +71,29 @@ class RNNT(nn.Module):
 
         self.pred_n_hid = pred_n_hid
 
-        if in_conv:
-            pre_rnn_input_size = in_conv_out_channels
-        else:
-            pre_rnn_input_size = in_feats
-
+        pre_rnn_input_size = in_feats
 
         post_rnn_input_size = enc_stack_time_factor * enc_n_hid
-
-        self.in_conv = NoOpModule()
 
         enc_mod = {}
         enc_mod["pre_rnn"] = rnn(input_size=pre_rnn_input_size,
                                  hidden_size=enc_n_hid,
                                  num_layers=enc_pre_rnn_layers,
-                                 forget_gate_bias=forget_gate_bias,
-                                 dropout=enc_dropout,
-                                )
+                                 forget_gate_bias=forget_gate_bias)
 
         enc_mod["stack_time"] = StackTime(enc_stack_time_factor)
 
-        enc_mod["post_rnn"] = rnn(
-                                  input_size=post_rnn_input_size,
+        enc_mod["post_rnn"] = rnn(input_size=post_rnn_input_size,
                                   hidden_size=enc_n_hid,
                                   num_layers=enc_post_rnn_layers,
                                   forget_gate_bias=forget_gate_bias,
                                   norm_first_rnn=True,
-                                  dropout=enc_dropout,
-                                  )
+                                  dropout=enc_dropout)
 
         self.encoder = torch.nn.ModuleDict(enc_mod)
 
         self.prediction = torch.nn.ModuleDict({
-            "embed": torch.nn.Embedding(n_classes - 1 if not tie_embeddings else n_classes, pred_n_hid),
+            "embed": torch.nn.Embedding(n_classes - 1, pred_n_hid),
             "dec_rnn": rnn(
                 input_size=pred_n_hid,
                 hidden_size=pred_n_hid,
@@ -121,36 +103,17 @@ class RNNT(nn.Module):
             ),
         })
 
-        self.tie_embeddings = tie_embeddings
+        self.joint_pred = torch.nn.Linear(
+            pred_n_hid,
+            joint_n_hid)
+        self.joint_enc = torch.nn.Linear(
+            enc_n_hid,
+            joint_n_hid)
 
-        if no_joint_net:
-            assert not tie_embeddings
-
-            self.joint_pred = torch.nn.Linear(
-                pred_n_hid,
-                n_classes)
-            self.joint_enc = torch.nn.Linear(
-                enc_n_hid,
-                n_classes)
-            self.joint_net = NoOpModule()
-        else:
-
-            self.joint_pred = torch.nn.Linear(
-                pred_n_hid,
-                joint_n_hid)
-            self.joint_enc = torch.nn.Linear(
-                enc_n_hid,
-                joint_n_hid)
-
-            if tie_embeddings:
-                self.joint_net = nn.Sequential(
-                    torch.nn.ReLU(inplace=True),
-                    torch.nn.Dropout(p=joint_dropout))
-            else:
-                self.joint_net = nn.Sequential(
-                    torch.nn.ReLU(inplace=True),
-                    torch.nn.Dropout(p=joint_dropout),
-                    torch.nn.Linear(joint_n_hid, n_classes))
+        self.joint_net = nn.Sequential(
+            torch.nn.ReLU(inplace=True),
+            torch.nn.Dropout(p=joint_dropout),
+            torch.nn.Linear(joint_n_hid, n_classes))
 
     def forward(self, x, x_lens, y, y_lens, state=None):
         # x: (B, channels, features, seq_len)
@@ -174,8 +137,6 @@ class RNNT(nn.Module):
             f: tuple of ``(output, output_lens)``. ``output`` has shape
                 (B, T, H), ``output_lens``
         """
-        x, x_lens = self.in_conv(x, x_lens)
-
         x, _ = self.encoder["pre_rnn"](x, None)
         x, x_lens = self.encoder["stack_time"](x, x_lens)
         x, _ = self.encoder["post_rnn"](x, None)
@@ -218,14 +179,6 @@ class RNNT(nn.Module):
         else:
             start = None   # makes del call later easier
 
-        #if state is None:
-        #    batch = y.size(0)
-        #    state = [
-        #        (torch.zeros(batch, self.pred_n_hidden, dtype=y.dtype, device=y.device),
-        #         torch.zeros(batch, self.pred_n_hidden, dtype=y.dtype, device=y.device))
-        #        for _ in range(self.pred_rnn_layers)
-        #    ]
-
         y = y.transpose(0, 1)#.contiguous()   # (U + 1, B, H)
         g, hid = self.prediction["dec_rnn"](y, state)
         g = g.transpose(0, 1)#.contiguous()   # (B, U + 1, H)
@@ -248,9 +201,6 @@ class RNNT(nn.Module):
         g = g.unsqueeze(dim=1)   # (B, 1, U + 1, H)
 
         res = self.joint_net(f + g)
-
-        if self.tie_embeddings:
-            res = F.linear(res, self.prediction['embed'].weight)
 
         del f, g
         return res

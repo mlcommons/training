@@ -82,19 +82,6 @@ def remove_punctuation(text, table):
     text = re.sub(r'\+', " plus ", text)
     return text
 
-def basic_cleaners(text):
-    '''Basic pipeline that lowercases and collapses whitespace without transliteration.'''
-    text = lowercase(text)
-    text = collapse_whitespace(text)
-    return text
-
-def transliteration_cleaners(text):
-    '''Pipeline for non-English text that transliterates to ASCII.'''
-    text = convert_to_ascii(text)
-    text = lowercase(text)
-    text = collapse_whitespace(text)
-    return text
-
 def english_cleaners(text, table=None):
     '''Pipeline for English text, including number and abbreviation expansion.'''
     text = convert_to_ascii(text)

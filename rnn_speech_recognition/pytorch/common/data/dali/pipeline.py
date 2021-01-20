@@ -19,7 +19,26 @@ import multiprocessing
 import numpy as np
 import torch
 import math
-import itertools
+
+class PipelineParams:
+    def __init__(
+            self,
+            sample_rate=16000,
+            max_duration=float("inf"),
+            normalize_transcripts=True,
+            trim_silence=False,
+            speed_perturbation=None
+        ):
+        pass
+
+class SpeedPerturbationParams:
+    def __init__(
+            self,
+            min_rate=0.85,
+            max_rate=1.15,
+            p=1.0,
+        ):
+        pass
 
 class DaliPipeline(nvidia.dali.pipeline.Pipeline):
     def __init__(self, *,
@@ -30,7 +49,6 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
                  file_root: str,
                  sampler,
                  sample_rate,
-                 discrete_resample_range: bool,
                  resample_range: list,
                  window_size,
                  window_stride,
@@ -57,7 +75,6 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
             "Incorrect preprocessing device. Please choose either 'cpu' or 'gpu'"
 
         self.resample_range = resample_range
-        self.discrete_resample_range = discrete_resample_range
 
         self.train = train_pipeline
         self.sample_rate = sample_rate
@@ -66,14 +83,12 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         self.max_duration = max_duration
         self.do_remove_silence = True if silence_threshold is not None else False
 
+        shuffle = train_pipeline and not sampler.is_sampler_random()
         self.read = ops.FileReader(device="cpu", file_root=file_root, file_list=sampler.get_file_list_path(), shard_id=shard_id,
-                                   num_shards=n_shards, shuffle_after_epoch=not sampler.is_sampler_random())
+                                   num_shards=n_shards, shuffle_after_epoch=shuffle)
 
         # TODO change ExternalSource to Uniform for new DALI release
-        if discrete_resample_range and resample_range is not None:
-            self.speed_perturbation_coeffs = ops.ExternalSource(device="cpu", cycle=True,
-                                                                source=self._discrete_resample_coeffs_generator)
-        elif resample_range is not None:
+        if resample_range is not None:
             self.speed_perturbation_coeffs = ops.Uniform(device="cpu", range=resample_range)
         else:
             self.speed_perturbation_coeffs = None
@@ -121,10 +136,8 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         if do_resampling and config_data['speed_perturbation'] is not None:
             resample_range = [config_data['speed_perturbation']['min_rate'],
                               config_data['speed_perturbation']['max_rate']]
-            discrete_resample_range = config_data['speed_perturbation']['discrete']
         else:
             resample_range = None
-            discrete_resample_range = False
 
         window_size = config_features['window_size']
         window_stride = config_features['window_stride']
@@ -141,7 +154,6 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
                    file_root=file_root,
                    sampler=sampler,
                    sample_rate=sample_rate,
-                   discrete_resample_range=discrete_resample_range,
                    resample_range=resample_range,
                    window_size=window_size,
                    window_stride=window_stride,
@@ -167,13 +179,6 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         begin, length = self.get_nonsilent_region(inp)
         out = self.trim_silence(inp, self.to_float(begin), self.to_float(length))
         return out
-
-    def _discrete_resample_coeffs_generator(self):
-        """
-        Generate resample coeffs from discrete set
-        """
-        yield np.random.choice([self.resample_range[0], 1.0, self.resample_range[1]],
-                               size=self.batch_size).astype('float32')
 
     def define_graph(self):
         audio, label = self.read()
@@ -208,19 +213,3 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         # When modifying DALI pipeline returns, make sure you update `output_map` in DALIGenericIterator invocation
         return audio.gpu(), label, audio_len.gpu()
 
-
-class DaliTritonPipeline(DaliPipeline):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        assert not kwargs['train_pipeline'], "Pipeline for Triton shall be a validation pipeline"
-        if torch.distributed.is_initialized():
-            raise RuntimeError(
-                "You're creating Triton pipeline, using multi-process mode. Please use single-process mode.")
-        self.read = ops.ExternalSource(name="DALI_INPUT_0", no_copy=True, device="cpu")
-
-
-def serialize_dali_triton_pipeline(output_path: str, config_data: dict, config_features: dict):
-    pipe = DaliTritonPipeline.from_config(train_pipeline=False, device_id=-1, batch_size=-1, file_root=None,
-                                          sampler=None, config_data=config_data, config_features=config_features,
-                                          do_resampling=False, num_cpu_threads=-1)
-    pipe.serialize(filename=output_path)

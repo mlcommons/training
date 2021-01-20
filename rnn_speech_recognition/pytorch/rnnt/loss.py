@@ -13,9 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
-from typing import Tuple
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,19 +23,11 @@ class RNNTLoss(torch.nn.Module):
     """Wrapped :py:class:`warprnnt_pytorch.RNNTLoss`.
     Args:
         blank_idx: Index of the blank label.
-        reduction: (string) Specifies the reduction to apply to the output:
-            none:
-                No reduction will be applied.
-            mean:
-                The output losses will be divided by the target lengths and
-                then the mean over the batch is taken.
-            sum:
-                Sum all losses in a batch.
     Attributes:
         rnnt_loss: A :py:class:`warprnnt_pytorch.RNNTLoss` instance.
     """
 
-    def __init__(self, blank_idx, reduction="mean"):
+    def __init__(self, blank_idx):
         super().__init__()
         self.rnnt_loss = WarpRNNTLoss(blank=blank_idx)
         self.use_cuda = torch.cuda.is_available()
@@ -70,9 +59,7 @@ class RNNTLoss(torch.nn.Module):
 
         # cast to required types
         if logits.dtype != torch.float:
-            logits_orig = logits
             logits = logits.float()
-            del logits_orig  # save memory *before* computing the loss
 
         if y.dtype != torch.int32:
             y = y.int()

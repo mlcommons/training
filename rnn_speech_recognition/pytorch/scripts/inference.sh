@@ -34,7 +34,7 @@
 : ${DALI_DEVICE:="none"}
 : ${CPU:=false}
 : ${LOGITS_FILE:=}
-: ${PREDICTION_FILE:="${OUTPUT_DIR}/${DATASET}.predictions"}
+: ${PREDICTION_FILE="${OUTPUT_DIR}/${DATASET}.predictions"}
 : ${REPEATS:=1}
 
 mkdir -p "$OUTPUT_DIR"
