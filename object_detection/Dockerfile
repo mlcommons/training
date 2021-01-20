@@ -19,6 +19,7 @@ RUN pip install ninja==1.8.2.post2 \
                 torchvision==0.2.2 \
                 pycocotools==2.0.2
 
+RUN pip install --no-cache-dir https://github.com/mlperf/logging/archive/9ea0afa.zip
 
 # For information purposes only, these are the versions of the packages which we've successfully used:
 # $ pip list

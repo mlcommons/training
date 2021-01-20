@@ -8,8 +8,6 @@ import torch.distributed as dist
 
 from maskrcnn_benchmark.utils.comm import get_world_size, is_main_process
 from maskrcnn_benchmark.utils.metric_logger import MetricLogger
-from maskrcnn_benchmark.utils.mlperf_logger import print_mlperf
-from mlperf_compliance import mlperf_log
 
 def reduce_loss_dict(loss_dict):
     """
