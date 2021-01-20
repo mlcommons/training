@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:1.0.1-cuda10.0-cudnn7-devel
+FROM pytorch/pytorch:1.6.0-cuda10.1-cudnn7-devel
 
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
