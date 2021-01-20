@@ -17,7 +17,7 @@
 #
 
 tokenizer:
-    sentpiece_model: /datasets/sentpieces/librispeech1023.model
+    sentpiece_model: /datasets/sentencepieces/librispeech1023.model
     labels: [" ", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
              "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"]
 
@@ -26,10 +26,6 @@ input_val:
     sample_rate: &sample_rate 16000
     trim_silence: true
     normalize_transcripts: true
-    speed_perturbation:
-        min_rate: 0.85
-        max_rate: 1.15
-        p: 1.0
 
   filterbank_features: &val_features
     normalize: per_feature
@@ -49,7 +45,10 @@ input_train:
   audio_dataset:
     <<: *val_dataset
     max_duration: 16.7
-    ignore_offline_speed_perturbation: true
+    speed_perturbation:
+        min_rate: 0.85
+        max_rate: 1.15
+        p: 1.0
 
   filterbank_features: *val_features
   frame_splicing: *val_splicing
