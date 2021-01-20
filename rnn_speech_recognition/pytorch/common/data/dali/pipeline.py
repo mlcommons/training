@@ -42,7 +42,7 @@ class SpeedPerturbationParams:
 
 class DaliPipeline(nvidia.dali.pipeline.Pipeline):
     def __init__(self, *,
-                 train_pipeline: bool,  # True if train pipeline, False if validation pipeline
+                 pipeline_type,
                  device_id,
                  num_threads,
                  batch_size,
@@ -76,6 +76,7 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
 
         self.resample_range = resample_range
 
+        train_pipeline = pipeline_type == 'train'
         self.train = train_pipeline
         self.sample_rate = sample_rate
         self.dither_coeff = dither_coeff
@@ -84,7 +85,7 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         self.do_remove_silence = True if silence_threshold is not None else False
 
         shuffle = train_pipeline and not sampler.is_sampler_random()
-        self.read = ops.FileReader(device="cpu", file_root=file_root, file_list=sampler.get_file_list_path(), shard_id=shard_id,
+        self.read = ops.FileReader(name="Reader", pad_last_batch=(pipeline_type == 'new_val'), device="cpu", file_root=file_root, file_list=sampler.get_file_list_path(), shard_id=shard_id,
                                    num_shards=n_shards, shuffle_after_epoch=shuffle)
 
         # TODO change ExternalSource to Uniform for new DALI release
@@ -122,7 +123,7 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         self.to_float = ops.Cast(device="cpu", dtype=types.FLOAT)
 
     @classmethod
-    def from_config(cls, train_pipeline: bool, device_id, batch_size, file_root: str, sampler, config_data: dict,
+    def from_config(cls, pipeline_type, device_id, batch_size, file_root: str, sampler, config_data: dict,
                     config_features: dict, device_type: str = "gpu", do_resampling: bool = True,
                     num_cpu_threads=multiprocessing.cpu_count()):
 
@@ -146,7 +147,7 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         dither_coeff = config_features['dither']
         preemph_coeff = .97
 
-        return cls(train_pipeline=train_pipeline,
+        return cls(pipeline_type=pipeline_type,
                    device_id=device_id,
                    preprocessing_device=device_type,
                    num_threads=num_cpu_threads,

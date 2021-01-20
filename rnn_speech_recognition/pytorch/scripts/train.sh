@@ -48,6 +48,8 @@ export OMP_NUM_THREADS=1
                       $DATA_DIR/librispeech-train-other-500-wav.json"}
 : ${VAL_MANIFESTS:="$DATA_DIR/librispeech-dev-clean-wav.json"}
 : ${LOG_NORM:=false}
+: ${USE_OLD_VAL:=true}
+: ${USE_NEW_VAL:=false}
 
 BATCH_SIZE=$(( $GLOBAL_BATCH_SIZE / $NUM_GPUS ))
 
@@ -77,6 +79,8 @@ ARGS+=" --dali_device=$DALI_DEVICE"
 ARGS+=" --beta1=$BETA1"
 ARGS+=" --beta2=$BETA2"
 
+[ "$USE_OLD_VAL" = false ] &&        ARGS+=" --no_old_eval"
+[ "$USE_NEW_VAL" = true ] &&         ARGS+=" --new_eval"
 [ "$AMP" = true ] &&                 ARGS+=" --amp"
 [ "$RESUME" = true ] &&              ARGS+=" --resume"
 [ "$CUDNN_BENCHMARK" = true ] &&     ARGS+=" --cudnn_benchmark"

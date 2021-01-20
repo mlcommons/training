@@ -43,7 +43,7 @@ class DaliRnntIterator(object):
     Use DataLoader instead.
     """
 
-    def __init__(self, dali_pipelines, transcripts, tokenizer, batch_size, shard_size, train_iterator: bool, normalize_transcripts=False):
+    def __init__(self, dali_pipelines, transcripts, tokenizer, batch_size, shard_size, pipeline_type, normalize_transcripts=False):
         self.normalize_transcripts = normalize_transcripts
         self.tokenizer = tokenizer
         self.batch_size = batch_size
@@ -51,10 +51,16 @@ class DaliRnntIterator(object):
         from nvidia.dali.plugin.base_iterator import LastBatchPolicy
 
         # in train pipeline shard_size is set to divisable by batch_size, so PARTIAL policy is safe
-        self.dali_it = DALIGenericIterator(
-            dali_pipelines, ["audio", "label", "audio_shape"], size=shard_size,
-            dynamic_shape=True, auto_reset=True, last_batch_padded=True,
-            last_batch_policy=LastBatchPolicy.PARTIAL)
+        if pipeline_type == 'new_val':
+            self.dali_it = DALIGenericIterator(
+                dali_pipelines, ["audio", "label", "audio_shape"], reader_name="Reader",
+                dynamic_shape=True, auto_reset=True,
+                last_batch_policy=LastBatchPolicy.PARTIAL)
+        else:
+            self.dali_it = DALIGenericIterator(
+                dali_pipelines, ["audio", "label", "audio_shape"], size=shard_size,
+                dynamic_shape=True, auto_reset=True, last_batch_padded=True,
+                last_batch_policy=LastBatchPolicy.PARTIAL)
 
         self.tokenize(transcripts)
 
@@ -86,6 +92,10 @@ class DaliRnntIterator(object):
     def __next__(self):
         data = self.dali_it.__next__()
         audio, audio_shape = data[0]["audio"], data[0]["audio_shape"][:, 1]
+        if audio.shape[0] == 0:
+            # empty tensor means, other GPUs got last samples from dataset
+            # and this GPU has nothing to do; calling `__next__` raises StopIteration
+            return self.dali_it.__next__()
         audio = audio[:, :, :audio_shape.max()] # the last batch
         transcripts, transcripts_lengths = self._gen_transcripts(data[0]["label"])
         return audio, audio_shape, transcripts, transcripts_lengths

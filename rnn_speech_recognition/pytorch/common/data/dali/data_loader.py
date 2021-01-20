@@ -77,16 +77,16 @@ class DaliDataLoader:
         self.grad_accumulation_steps = grad_accumulation_steps
         self.drop_last = (pipeline_type == 'train')
         self.device_type = device_type
-        pipeline_type = self._parse_pipeline_type(pipeline_type)
+        self.pipeline_type = self._parse_pipeline_type(pipeline_type)
         self.sampler = sampler
         self._dali_data_iterator = self._init_iterator(gpu_id=gpu_id, dataset_path=dataset_path,
                                                        config_data=config_data,
                                                        config_features=config_features,
                                                        json_names=json_names, tokenizer=tokenizer,
-                                                       train_pipeline=pipeline_type == "train")
+                                                       pipeline_type=pipeline_type)
 
     def _init_iterator(self, gpu_id, dataset_path, config_data, config_features, json_names: list, tokenizer: list,
-                       train_pipeline: bool):
+                       pipeline_type):
         """
         Returns data iterator. Data underneath this operator is preprocessed within Dali
         """
@@ -105,15 +105,15 @@ class DaliDataLoader:
         pipeline = DaliPipeline.from_config(config_data=config_data, config_features=config_features, device_id=gpu_id,
                                             file_root=dataset_path, sampler=self.sampler,
                                             device_type=self.device_type, batch_size=self.batch_size,
-                                            train_pipeline=train_pipeline)
+                                            pipeline_type=pipeline_type)
 
         return DaliRnntIterator([pipeline], transcripts=transcripts, tokenizer=tokenizer, batch_size=self.batch_size,
-                                  shard_size=self._shard_size(), train_iterator=train_pipeline)
+                                  shard_size=self._shard_size(), pipeline_type=pipeline_type)
 
     @staticmethod
     def _parse_pipeline_type(pipeline_type):
         pipe = pipeline_type.lower()
-        assert pipe in ("train", "val"), 'Invalid pipeline type (choices: "train", "val").'
+        assert pipe in ("train", "old_val", "new_val"), 'Invalid pipeline type ("train", "old_val", "new_val").'
         return pipe
 
     def _shard_size(self):
