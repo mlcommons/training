@@ -152,9 +152,9 @@ def evaluate(epoch, step, val_loaders, val_feat_proc, detokenize,
              ema_model, loss_fn, greedy_decoder, use_amp):
 
     ema_model.eval()
-    start_time = time.time()
 
     for val_loader in val_loaders:
+        start_time = time.time()
         agg = {'losses': [], 'preds': [], 'txts': [], 'idx': []}
         logging.log_start(logging.constants.EVAL_START,
                           metadata=dict(epoch_num=epoch, pipeline=val_loader.pipeline_type))
@@ -257,6 +257,22 @@ def main():
 
     logging.log_event(logging.constants.MAX_SEQUENCE_LENGTH,
                       value=train_dataset_kw['max_duration'])
+    logging.log_event('data_speed_perturbation_max',
+                      value=train_dataset_kw['speed_perturbation']['max_rate'])
+    logging.log_event('data_speed_perturbation_min',
+                      value=train_dataset_kw['speed_perturbation']['min_rate'])
+    logging.log_event('data_spec_augment_freq_n',
+                      value=train_specaugm_kw['freq_masks'])
+    logging.log_event('data_spec_augment_freq_min',
+                      value=train_specaugm_kw['min_freq'])
+    logging.log_event('data_spec_augment_freq_max',
+                      value=train_specaugm_kw['max_freq'])
+    logging.log_event('data_spec_augment_time_n',
+                      value=train_specaugm_kw['time_masks'])
+    logging.log_event('data_spec_augment_time_min',
+                      value=train_specaugm_kw['min_time'])
+    logging.log_event('data_spec_augment_time_max',
+                      value=train_specaugm_kw['max_time'])
     logging.log_event(logging.constants.GLOBAL_BATCH_SIZE,
                       value=batch_size * world_size * args.grad_accumulation_steps)
 
