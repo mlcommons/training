@@ -1,0 +1,4 @@
+git+https://github.com/NVIDIA/dllogger
+git+https://github.com/mlperf/logging.git@44d26ff1341eaf7ed5a7105176c8ccc36e088d59
+nibabel==3.2.1
+scipy==1.5.2
