@@ -36,6 +36,24 @@ flags.DEFINE_boolean('trace_warmup', default=False,
                      ' trace in the warmup loop.')
 
 
+class _UnwrapPreventer(object):
+  """Wrapper that DistributionStrategy will not unwrap.
+
+  Typically, DistributionStrategy will unwrap values when going from a cross-
+  replica context to a replica context via `call_for_each_replica`. This class
+  is a wrapper that DistributionStrategy will not unwrap, so it can be used to
+  prevent it from unwrapping a value.
+
+  TODO(reedwm): Find/implement a better way of preventing values from being
+  unwrapped by DistributionStrategy
+  """
+
+  __slots__ = ['value']
+
+  def __init__(self, value):
+    self.value = value
+
+
 class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
   """Implements the training and evaluation APIs for Resnet model."""
 
@@ -161,6 +179,19 @@ class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
 
     self.epochs_between_evals = flags_obj.epochs_between_evals
     self.training_vars = self.model.trainable_variables
+    self.accum_grads = []
+    self.accum_grads_dtype = tf.float32
+
+    if self.num_accumulation_steps > 1:
+      for var in self.training_vars:
+        self.accum_grads.append(self.optimizer.add_weight(
+            name=var.name + '_accum',
+            shape=var.shape,
+            dtype=self.accum_grads_dtype,
+            initializer='zeros',
+            trainable=False,
+            synchronization=tf.VariableSynchronization.ON_READ,
+            aggregation=tf.VariableAggregation.SUM))
 
   def build_train_dataset(self):
     """See base class."""
@@ -232,7 +263,7 @@ class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
     """See base class."""
 
     @tf.function(experimental_compile=True)
-    def local_step(images, labels, accum_grads):
+    def local_step(images, labels):
       """Local computation of a step."""
 
       with tf.GradientTape() as tape:
@@ -245,7 +276,7 @@ class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
           prediction_loss = tf.keras.losses.sparse_categorical_crossentropy(
               labels, logits)
         loss = tf.reduce_sum(prediction_loss) * (
-            1.0 * self.num_accumulation_steps / self.flags_obj.batch_size)
+            1.0 / self.flags_obj.batch_size)
 
         # Save ~3 seconds per epoch on GPU when skipping
         # L2 loss computation; can only skip when using LARS
@@ -273,34 +304,58 @@ class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
       # Unscale the grads
       if self.flags_obj.dtype == 'fp16':
         grads = self.optimizer.get_unscaled_gradients(grads)
-      if accum_grads is None:
-        return logits, loss, grads
-      else:
-        new_accum_grads = []
-        for i, grad in  enumerate(grads):
-          new_accum_grads.append(
-              accum_grads[i] +
-              tf.math.scalar_mul(1.0 / self.num_accumulation_steps, grad))
+      
+      return logits, loss, grads
 
-        return logits, loss, new_accum_grads
+    def _maybe_apply_grads_and_clear(distribution):
+      def _apply_grads_and_clear_for_each_replica():
+        local_replica_id = tf.get_static_value(
+            self.strategy.extended._get_local_replica_id(
+                tf.distribute.get_replica_context().replica_id_in_sync_group))
+        replica_accum_grads = []
+        for accum_grad, var in zip(self.accum_grads, self.training_vars):
+          local_accum_grad = self.strategy.experimental_local_results(
+              accum_grad)
+          replica_accum_grad = local_accum_grad[local_replica_id]
+          replica_accum_grad = tf.cast(replica_accum_grad, var.dtype)
+          replica_accum_grads.append(replica_accum_grad)
+
+        self.optimizer.apply_gradients(
+            zip(replica_accum_grads, self.training_vars))
+        for accum_grad in self.accum_grads:
+          accum_grad.assign(tf.zeros_like(accum_grad,
+                                          dtype=self.accum_grads_dtype),
+                            read_value=False)
+      def _apply_grads_and_clear():
+        distribution.extended.call_for_each_replica(
+            _apply_grads_and_clear_for_each_replica,
+            args=())
+        return self.optimizer.iterations.assign_add(0, read_value=False)
+
+      def _advance_iteration():
+        return self.optimizer.iterations.assign_add(1, read_value=False)
+
+      tf.cond(
+          tf.equal(self.optimizer.iterations % self.num_accumulation_steps,
+                   self.num_accumulation_steps - 1),
+          _apply_grads_and_clear,
+          _advance_iteration)
 
     def step_fn(inputs):
       """Function to run on the device."""
       images, labels = inputs
+      logits, loss, grads = local_step(images, labels)
+
       if self.num_accumulation_steps > 1:
-        accum_grads = [tf.zeros_like(tvar, dtype=tf.float32)
-                       for tvar in self.training_vars]
-        split_images = tf.split(images,
-                                num_or_size_splits=self.num_accumulation_steps)
-        split_labels = tf.split(labels,
-                                num_or_size_splits=self.num_accumulation_steps)
-        for sub_step in range(self.num_accumulation_steps):
-          logits, loss, accum_grads = local_step(
-              split_images[sub_step], split_labels[sub_step], accum_grads)
-        self.optimizer.apply_gradients(zip(accum_grads, self.training_vars))
+        for grad, accum_grad in zip(grads, self.accum_grads):
+          accum_grad.assign_add(tf.cast(grad, self.accum_grads_dtype),
+                                read_value=False)
+        tf.distribute.get_replica_context().merge_call(
+            _maybe_apply_grads_and_clear,
+            args=())
       else:
-        logits, loss, grads = local_step(images, labels, None)
         self.optimizer.apply_gradients(zip(grads, self.training_vars))
+
       if self.train_loss:
         self.train_loss.update_state(loss)
       if self.train_accuracy:
@@ -402,8 +457,7 @@ class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
         })
 
     continue_training = True
-    if (eval_accuracy >= self.flags_obj.target_accuracy or
-        eval_accuracy <= 0.002):
+    if eval_accuracy >= self.flags_obj.target_accuracy:
       continue_training = False
     else:
       mlp_log.mlperf_print(
@@ -435,6 +489,10 @@ class ResnetRunnable(standard_runnable.StandardRunnableWithWarmup):
     # Reset the state
     self.model.reset_states()
     tf.keras.backend.set_value(self.optimizer.iterations, 0)
+    for accum_grad in self.accum_grads:
+      accum_grad.assign(tf.zeros_like(accum_grad,
+                                      dtype=self.accum_grads_dtype),
+                        read_value=False)
     logging.info('Exiting the warmup loop.')
 
   def _epoch_begin(self):
