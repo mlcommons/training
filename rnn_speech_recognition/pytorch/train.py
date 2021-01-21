@@ -351,14 +351,16 @@ def main():
 
     logging.log_event(logging.constants.OPT_NAME, value='lamb')
     logging.log_event(logging.constants.OPT_BASE_LR, value=args.lr)
-    logging.log_event('optimizer_epsilon', value=1e-9)
-    logging.log_event('optimizer_lr_exp_gamma', value=args.lr_exp_gamma)
-    logging.log_event('optimizer_lr_warmup_epochs', value=args.warmup_epochs)
-    logging.log_event('optimizer_hold_lr_epochs', value=args.hold_epochs)
-    logging.log_event('optimizer_beta1', value=args.beta1)
-    logging.log_event('optimizer_beta2', value=args.beta2)
-    logging.log_event('optimizer_epsilon', value=1e-9)
+    logging.log_event('opt_epsilon', value=1e-9)
+    logging.log_event('opt_learning_rate_exp_gamma', value=args.lr_exp_gamma)
+    logging.log_event('opt_learning_rate_warmup_epochs', value=args.warmup_epochs)
+    logging.log_event('opt_hold_learning_rate_epochs', value=args.hold_epochs)
+    logging.log_event('opt_beta1', value=args.beta1)
+    logging.log_event('opt_beta2', value=args.beta2)
     logging.log_event('clip_norm', value=args.clip_norm)
+    logging.log_event(logging.constants.OPT_LR_ALT_DECAY_FUNC, value=True)
+    logging.log_event(logging.constants.OPT_LR_ALT_WARMUP_FUNC, value=True)
+    logging.log_event('min_learning_rate', value=args.min_lr)
 
     # optimization
     kw = {'params': model.param_groups(args.lr), 'lr': args.lr,
@@ -368,14 +370,6 @@ def main():
 
     print_once(f'Starting with LRs: {initial_lrs}')
     optimizer = FusedLAMB(betas=(args.beta1, args.beta2), eps=1e-9, **kw)
-
-    logging.log_event(logging.constants.OPT_BASE_LR, value=args.lr)
-    logging.log_event(logging.constants.OPT_LR_ALT_DECAY_FUNC, value=True)
-    logging.log_event(logging.constants.OPT_LR_ALT_WARMUP_FUNC, value=True)
-    logging.log_event('optimizer_lr_exp_gamma', value=args.lr_exp_gamma)
-    logging.log_event('min_lr', value=args.min_lr)
-    logging.log_event('optimizer_lr_warmup_epochs', value=args.warmup_epochs)
-    logging.log_event('optimizer_hold_lr_epochs', value=args.hold_epochs)
 
     adjust_lr = lambda step, epoch: lr_policy(
         step, epoch, initial_lrs, optimizer, steps_per_epoch=steps_per_epoch,
