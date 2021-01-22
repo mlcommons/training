@@ -1,7 +1,6 @@
-import numpy as np
 from tqdm import tqdm
 
-# import apex
+import apex
 import torch
 from torch.optim import Adam, SGD
 from torch.cuda.amp import autocast, GradScaler
@@ -11,13 +10,7 @@ from runtime.inference import evaluate
 from runtime.logging import mllog_event, mllog_start, mllog_end, CONSTANTS
 
 
-EVAL_EPOCHS = [100]
-EVAL_EPOCHS.extend([i for i in range(1000, 4000, 1000)])  # 3
-EVAL_EPOCHS.extend([i for i in range(3100, 4100, 100)])  # 10
-EVAL_EPOCHS.extend([i for i in range(4025, 5025, 25)])  # 40
-EVAL_EPOCHS.extend([i for i in range(5010, 6010, 10)])  # 100
-
-HITS_REQUIRED = 3
+START_EVAL_AT = 1000
 DICE_THRESHOLD = 0.91
 
 
@@ -27,9 +20,9 @@ def get_optimizer(params, flags):
     elif flags.optimizer == "sgd":
         optim = SGD(params, lr=flags.learning_rate, momentum=flags.momentum, nesterov=True,
                     weight_decay=flags.weight_decay)
-    # elif flags.optimizer == "lamb":
-    #     optim = apex.optimizers.FusedLAMB(params, lr=flags.learning_rate, betas=flags.lamb_betas,
-    #                                       weight_decay=flags.weight_decay)
+    elif flags.optimizer == "lamb":
+        optim = apex.optimizers.FusedLAMB(params, lr=flags.learning_rate, betas=flags.lamb_betas,
+                                          weight_decay=flags.weight_decay)
     else:
         raise ValueError("Optimizer {} unknown.".format(flags.optimizer))
     return optim
@@ -44,8 +37,8 @@ def lr_warmup(optimizer, init_lr, lr, current_epoch, warmup_epochs):
 def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
     rank = get_rank()
     world_size = get_world_size()
-    # torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = flags.cudnn_benchmark
+    torch.backends.cudnn.deterministic = flags.cudnn_deterministic
 
     optimizer = get_optimizer(model.parameters(), flags)
     if flags.lr_decay_epochs:
@@ -64,8 +57,6 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                                                           output_device=flags.local_rank)
 
     stop_training = False
-    consecutive_hits = 0
-    eval_epochs = EVAL_EPOCHS
     for epoch in range(1, flags.epochs + 1):
         cumulative_loss = []
         if epoch <= flags.lr_warmup_epochs and flags.lr_warmup_epochs > 0:
@@ -73,7 +64,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         mllog_start(key=CONSTANTS.BLOCK_START, sync=True,
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
         mllog_start(key=CONSTANTS.EPOCH_START, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)
-        if is_distributed:
+        if is_distributed and (flags.loader == "monai" or flags.loader == "pytorch"):
             train_loader.sampler.set_epoch(epoch)
             val_loader.sampler.set_epoch(epoch)
 
@@ -115,7 +106,6 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         if flags.lr_decay_epochs:
             scheduler.step()
         if ((epoch % flags.evaluate_every) == 0) and not flags.benchmark:
-        # if (epoch in eval_epochs) and not flags.benchmark:
             del output
             mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)
 
@@ -128,23 +118,15 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                         sync=False)
             mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)
 
-            if eval_metrics["mean_dice"] > DICE_THRESHOLD:
-                consecutive_hits += 1
-                eval_epochs = range(epoch, flags.epochs, 5)
-            else:
-                consecutive_hits = 0
-
-            eval_metrics["consecutive_hits"] = consecutive_hits
             for callback in callbacks:
                 callback.on_epoch_end(epoch, eval_metrics, model, optimizer)
             model.train()
+            if eval_metrics["mean_dice"] > DICE_THRESHOLD:
+                stop_training = True
+                # break
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=True,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
-
-        if consecutive_hits == HITS_REQUIRED:
-            stop_training = True
-            # break
 
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,
               metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if stop_training else CONSTANTS.ABORTED})
