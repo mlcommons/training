@@ -1,6 +1,5 @@
 from tqdm import tqdm
 
-import apex
 import torch
 from torch.optim import Adam, SGD
 from torch.cuda.amp import autocast, GradScaler
@@ -21,6 +20,7 @@ def get_optimizer(params, flags):
         optim = SGD(params, lr=flags.learning_rate, momentum=flags.momentum, nesterov=True,
                     weight_decay=flags.weight_decay)
     elif flags.optimizer == "lamb":
+        import apex
         optim = apex.optimizers.FusedLAMB(params, lr=flags.learning_rate, betas=flags.lamb_betas,
                                           weight_decay=flags.weight_decay)
     else:
