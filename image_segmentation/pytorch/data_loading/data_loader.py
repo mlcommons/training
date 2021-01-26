@@ -85,8 +85,8 @@ def get_data_loaders(flags, num_shards):
         raise ValueError(f"Loader {flags.loader} unknown. Valid loaders are: synthetic, pytorch")
 
     train_sampler = DistributedSampler(train_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
-    # val_sampler = None  # DistributedSampler(val_dataset, seed=flags.seed) if num_shards > 1 else None
-    val_sampler = DistributedSampler(val_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
+    val_sampler = None
+    # val_sampler = DistributedSampler(val_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
 
     train_dataloader = DataLoader(train_dataset,
                                   batch_size=flags.batch_size,
