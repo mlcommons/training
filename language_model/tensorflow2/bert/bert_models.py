@@ -48,12 +48,15 @@ class BertPretrainLossAndMetricLayer(tf.keras.layers.Layer):
     numerator = tf.reduce_sum(masked_lm_accuracy * lm_label_weights)
     denominator = tf.reduce_sum(lm_label_weights)
     masked_lm_accuracy = numerator / denominator
+    masked_lm_sum_loss = tf.reduce_sum(lm_example_loss * lm_label_weights)
     # self.add_metric(
     #     masked_lm_accuracy, name='masked_lm_accuracy', aggregation='mean')
     # self.add_metric(lm_example_loss, name='lm_example_loss', aggregation='mean')
 
     next_sentence_accuracy = tf.keras.metrics.sparse_categorical_accuracy(
         sentence_labels, sentence_output)
+    next_sentence_num = tf.reduce_sum(next_sentence_accuracy)
+    next_sentence_denom = tf.size(next_sentence_accuracy)
     # self.add_metric(
     #     next_sentence_accuracy,
     #     name='next_sentence_accuracy',
@@ -65,8 +68,11 @@ class BertPretrainLossAndMetricLayer(tf.keras.layers.Layer):
       masked_lm_denom = denominator,
       masked_lm_accuracy = masked_lm_accuracy,
       lm_example_loss = lm_example_loss,
+      masked_lm_sum_loss = masked_lm_sum_loss,
       next_sentence_accuracy = next_sentence_accuracy,
-      next_sentence_loss = next_sentence_loss)
+      next_sentence_loss = next_sentence_loss,
+      next_sentence_num = next_sentence_num,
+      next_sentence_denom = next_sentence_denom)
     return other_outputs
 
 

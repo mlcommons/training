@@ -268,9 +268,13 @@ def run_customized_training_loop(
     train_loss_metric = tf.keras.metrics.Mean(
         'training_loss', dtype=tf.float32)
     if eval_input_fn:
-      eval_metric_num = tf.keras.metrics.Sum('masked_lm_num', dtype=tf.float32)
-      eval_metric_denom = tf.keras.metrics.Sum(
+      eval_mlm_num = tf.keras.metrics.Sum('masked_lm_num', dtype=tf.float32)
+      eval_mlm_denom = tf.keras.metrics.Sum(
           'masked_lm_denom', dtype=tf.float32)
+      eval_mlm_loss = tf.keras.metrics.Sum('masked_lm_loss', dtype=tf.float32)
+      eval_ns_num = tf.keras.metrics.Sum('next_sentence_num', dtype=tf.float32)
+      eval_ns_denom = tf.keras.metrics.Sum('next_sentence_denom', dtype=tf.float32)
+      eval_ns_loss = tf.keras.metrics.Mean('next_sentence_loss', dtype=tf.float32)
 
     # If evaluation is required, make a copy of metric as it will be used by
     # both train and evaluation.
@@ -401,8 +405,12 @@ def run_customized_training_loop(
 
         inputs, labels = inputs
         model_outputs, metric_outputs = model(inputs, training=False)
-        eval_metric_num.update_state(metric_outputs['masked_lm_num'])
-        eval_metric_denom.update_state(metric_outputs['masked_lm_denom'])
+        eval_mlm_num.update_state(metric_outputs['masked_lm_num'])
+        eval_mlm_denom.update_state(metric_outputs['masked_lm_denom'])
+        eval_mlm_loss.update_state(metric_outputs['masked_lm_sum_loss'])
+        eval_ns_num.update_state(metric_outputs['next_sentence_num'])
+        eval_ns_denom.update_state(metric_outputs['next_sentence_denom'])
+        eval_ns_loss.update_state(metric_outputs['next_sentence_loss'])
       strategy.run(_test_step_fn, args=(next(iterator),))
 
     if not run_eagerly:
@@ -421,12 +429,30 @@ def run_customized_training_loop(
           'eval_stop', None, metadata={'epoch_num': mlperf_block_number})
 
       with eval_summary_writer.as_default():
-        masked_lm_accuracy = (_float_metric_value(eval_metric_num)/
-                              _float_metric_value(eval_metric_denom))
-        logging.info('Step: [%d] Validation %s = %f', current_training_step,
-                     'masked_lm_accuracy', masked_lm_accuracy)
+        masked_lm_accuracy = (_float_metric_value(eval_mlm_num)/
+                              _float_metric_value(eval_mlm_denom))
+        masked_lm_loss = (_float_metric_value(eval_mlm_loss)/
+                          _float_metric_value(eval_mlm_denom))
+        next_sentence_accuracy = (_float_metric_value(eval_ns_num)/
+                                  _float_metric_value(eval_ns_denom))
+        next_sentence_loss = _float_metric_value(eval_ns_loss)
+        logging.info('Step: [%d] Validation %s = %f, %s = %f, %s = %f, %s = %f',
+                     current_training_step,
+                     'masked_lm_accuracy', masked_lm_accuracy,
+                     'masked_lm_loss', masked_lm_loss,
+                     'next_sentence_accuracy', next_sentence_accuracy,
+                     'next_sentence_loss', next_sentence_loss)
         tf.summary.scalar(
             'masked_lm_accuracy', masked_lm_accuracy,
+            step=current_training_step)
+        tf.summary.scalar(
+            'masked_lm_loss', masked_lm_loss,
+            step=current_training_step)
+        tf.summary.scalar(
+            'next_sentence_accuracy', next_sentence_accuracy,
+            step=current_training_step)
+        tf.summary.scalar(
+            'next_sentence_loss', next_sentence_loss,
             step=current_training_step)
         mlp_log.mlperf_print(
             'eval_accuracy',
@@ -512,6 +538,11 @@ def run_customized_training_loop(
 
     masked_lm_accuracy = 0
     mlp_log.mlperf_print('init_stop', None)
+    if steps_before_eval_start == 0:
+      logging.info('Running evaluation before step: %s.', current_step)
+      masked_lm_accuracy = _run_evaluation(
+          current_step, _get_input_iterator(eval_input_fn, strategy))
+ 
     mlp_log.mlperf_print('run_start', None)
     mlp_log.mlperf_print(
         'block_start',
@@ -573,8 +604,12 @@ def run_customized_training_loop(
           break
 
         # Re-initialize evaluation metric.
-        eval_metric_num.reset_states()
-        eval_metric_denom.reset_states()
+        eval_mlm_num.reset_states()
+        eval_mlm_denom.reset_states()
+        eval_mlm_loss.reset_states()
+        eval_ns_num.reset_states()
+        eval_ns_denom.reset_states()
+        eval_ns_loss.reset_states()
 
     if masked_lm_accuracy < stop_threshold:
       mlp_log.mlperf_print('run_stop', None, metadata={'status': 'aborted'})
