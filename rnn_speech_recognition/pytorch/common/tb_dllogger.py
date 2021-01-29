@@ -123,7 +123,7 @@ def init_log(args):
     dllogger.metadata("train_lrate", {"name": "lrate", "format": ":>3.2e"})
 
     for id_, pref in [('train', ''), ('train_avg', 'avg train '),
-                      ('val', '  val ')]:
+                      ('dev_ema', '  dev ema ')]:
 
         dllogger.metadata(f"{id_}_loss",
                           {"name": f"{pref}loss", "format": ":>7.2f"})
@@ -140,7 +140,7 @@ def init_log(args):
         dllogger.metadata(f"{id_}_took",
                           {"name": "took", "unit": "s", "format": ":>5.2f"})
 
-    tb_subsets = ['train', 'val']
+    tb_subsets = ['train', 'dev_ema']
     global tb_loggers
     tb_loggers = {s: TBLogger(enabled, args.output_dir, name=s)
                   for s in tb_subsets}
