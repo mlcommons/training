@@ -79,7 +79,9 @@ class RNNT(nn.Module):
         enc_mod["pre_rnn"] = rnn(input_size=pre_rnn_input_size,
                                  hidden_size=enc_n_hid,
                                  num_layers=enc_pre_rnn_layers,
-                                 forget_gate_bias=forget_gate_bias)
+                                 forget_gate_bias=forget_gate_bias,
+                                 dropout=enc_dropout,
+                                )
 
         enc_mod["stack_time"] = StackTime(enc_stack_time_factor)
 
@@ -87,7 +89,6 @@ class RNNT(nn.Module):
                                   hidden_size=enc_n_hid,
                                   num_layers=enc_post_rnn_layers,
                                   forget_gate_bias=forget_gate_bias,
-                                  norm_first_rnn=True,
                                   dropout=enc_dropout)
 
         self.encoder = torch.nn.ModuleDict(enc_mod)
