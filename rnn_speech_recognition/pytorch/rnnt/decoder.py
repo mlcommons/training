@@ -32,10 +32,12 @@ class RNNTGreedyDecoder:
         cutoff_prob: Skip to next step in search if current highest character
             probability is less than this.
     """
-    def __init__(self, blank_idx, max_symbols_per_step=30):
+    def __init__(self, blank_idx, max_symbols_per_step=30, max_symbol_per_sample=None):
         self.blank_idx = blank_idx
         assert max_symbols_per_step is None or max_symbols_per_step > 0
         self.max_symbols = max_symbols_per_step
+        assert max_symbol_per_sample is None or max_symbol_per_sample > 0
+        self.max_symbol_per_sample = max_symbol_per_sample
         self._SOS = -1   # start of sequence
 
     def _pred_step(self, model, label, hidden, device):
@@ -93,6 +95,9 @@ class RNNTGreedyDecoder:
         hidden = None
         label = []
         for time_idx in range(out_len):
+            if  self.max_symbol_per_sample is not None \
+                and len(label) > self.max_symbol_per_sample:
+                break
             f = x[time_idx, :, :].unsqueeze(0)
 
             not_blank = True

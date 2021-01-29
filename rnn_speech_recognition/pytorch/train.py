@@ -137,6 +137,8 @@ def parse_args():
                     help='Eval dataset is wrapped to fill the last batch')
     io.add_argument('--new_eval', action='store_true',
                     help='Eval on every sample once')
+    io.add_argument('--max_symbol_per_sample', type=int, default=None,
+                    help='maximum number of symbols per sample can have during eval')
     return parser.parse_args()
 
 
@@ -368,7 +370,8 @@ def main():
     model.cuda()
     blank_idx = tokenizer.num_labels
     loss_fn = RNNTLoss(blank_idx=blank_idx)
-    greedy_decoder = RNNTGreedyDecoder(blank_idx=blank_idx)
+    greedy_decoder = RNNTGreedyDecoder( blank_idx=blank_idx,
+                                        max_symbol_per_sample=args.max_symbol_per_sample)
 
     print_once(f'Model size: {num_weights(model) / 10**6:.1f}M params\n')
 

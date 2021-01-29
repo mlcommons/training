@@ -50,6 +50,7 @@ export OMP_NUM_THREADS=1
 : ${LOG_NORM:=false}
 : ${USE_OLD_VAL:=true}
 : ${USE_NEW_VAL:=false}
+: ${MAX_SYMBOL_PER_SAMPLE=300}
 
 BATCH_SIZE=$(( $GLOBAL_BATCH_SIZE / $NUM_GPUS ))
 
@@ -97,6 +98,7 @@ ARGS+=" --beta2=$BETA2"
 [ -n "$START_CLIP" ] &&              ARGS+=" --start_clip=$START_CLIP"
 [ -n "$HIDDEN_HIDDEN_BIAS_SCALED" ] && ARGS+=" --hidden_hidden_bias_scale=$HIDDEN_HIDDEN_BIAS_SCALED"
 [ -n "$WEIGHTS_INIT_SCALE" ] &&      ARGS+=" --weights_init_scale=$WEIGHTS_INIT_SCALE"
+[ -n "$MAX_SYMBOL_PER_SAMPLE" ] &&  ARGS+=" --max_symbol_per_sample=$MAX_SYMBOL_PER_SAMPLE"
 
 DISTRIBUTED=${DISTRIBUTED:-"-m torch.distributed.launch --nproc_per_node=$NUM_GPUS"}
 python ${DISTRIBUTED} train.py ${ARGS}
