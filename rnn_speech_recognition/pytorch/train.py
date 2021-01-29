@@ -65,6 +65,8 @@ def parse_args():
     training.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                           help='GPU id used for distributed training')
     training.add_argument('--target', default=0.058, type=float, help='Target WER accuracy')
+    training.add_argument('--weights_init_scale', type=float, help='If set, overwrites value in config.')
+    training.add_argument('--hidden_hidden_bias_scale', type=float, help='If set, overwrites value in config.')
 
     optim = parser.add_argument_group('optimization setup')
     optim.add_argument('--batch_size', default=128, type=int,
@@ -357,7 +359,12 @@ def main():
     logging.log_event(logging.constants.EVAL_SAMPLES, value=val_loaders[0].dataset_size)
 
     # set up the model
-    model = RNNT(n_classes=tokenizer.num_labels + 1, **config.rnnt(cfg))
+    rnnt_config = config.rnnt(cfg)
+    if args.weights_init_scale is not None:
+        rnnt_config['weights_init_scale'] = args.weights_init_scale
+    if args.hidden_hidden_bias_scale is not None:
+        rnnt_config['hidden_hidden_bias_scale'] = args.hidden_hidden_bias_scale
+    model = RNNT(n_classes=tokenizer.num_labels + 1, **rnnt_config)
     model.cuda()
     blank_idx = tokenizer.num_labels
     loss_fn = RNNTLoss(blank_idx=blank_idx)

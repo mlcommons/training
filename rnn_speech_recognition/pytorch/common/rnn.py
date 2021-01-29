@@ -35,7 +35,8 @@ def rnn(input_size, hidden_size, num_layers,
 class LSTM(torch.nn.Module):
 
     def __init__(self, input_size, hidden_size, num_layers, dropout,
-                 forget_gate_bias, **kwargs):
+                 forget_gate_bias, weights_init_scale=1.0,
+                 hidden_hidden_bias_scale=0.0, **kwargs):
         """Returns an LSTM with forget gate bias init to `forget_gate_bias`.
 
         Args:
@@ -67,7 +68,11 @@ class LSTM(torch.nn.Module):
                     bias.data[hidden_size:2*hidden_size].fill_(forget_gate_bias)
                 if "bias_hh" in name:
                     bias = getattr(self.lstm, name)
-                    bias.data[hidden_size:2*hidden_size].fill_(0)
+                    bias.data[hidden_size:2*hidden_size] *= float(hidden_hidden_bias_scale)
+
+        for name, v in self.named_parameters():
+            if 'weight' in name or 'bias' in name:
+                v.data *= float(weights_init_scale)
 
 
     def forward(self, x, h=None):

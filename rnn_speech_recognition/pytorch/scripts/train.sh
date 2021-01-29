@@ -94,6 +94,9 @@ ARGS+=" --beta2=$BETA2"
 [ -n "$SAVE_MILESTONES" ] &&         ARGS+=" --keep_milestones $SAVE_MILESTONES"
 [ -n "$SAVE_BEST" ] &&               ARGS+=" --save_best_from=$SAVE_BEST"
 [ -n "$SAVE_FREQUENCY" ] &&          ARGS+=" --save_frequency=$SAVE_FREQUENCY"
+[ -n "$START_CLIP" ] &&              ARGS+=" --start_clip=$START_CLIP"
+[ -n "$HIDDEN_HIDDEN_BIAS_SCALED" ] && ARGS+=" --hidden_hidden_bias_scale=$HIDDEN_HIDDEN_BIAS_SCALED"
+[ -n "$WEIGHTS_INIT_SCALE" ] &&      ARGS+=" --weights_init_scale=$WEIGHTS_INIT_SCALE"
 
 DISTRIBUTED=${DISTRIBUTED:-"-m torch.distributed.launch --nproc_per_node=$NUM_GPUS"}
 python ${DISTRIBUTED} train.py ${ARGS}

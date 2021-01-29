@@ -62,6 +62,7 @@ class RNNT(nn.Module):
                  enc_dropout, pred_dropout, joint_dropout,
                  pred_n_hid, pred_rnn_layers, joint_n_hid,
                  forget_gate_bias,
+                 hidden_hidden_bias_scale=0.0, weights_init_scale=1.0,
                  enc_lr_factor=1.0, pred_lr_factor=1.0, joint_lr_factor=1.0):
         super(RNNT, self).__init__()
 
@@ -80,6 +81,8 @@ class RNNT(nn.Module):
                                  hidden_size=enc_n_hid,
                                  num_layers=enc_pre_rnn_layers,
                                  forget_gate_bias=forget_gate_bias,
+                                 hidden_hidden_bias_scale=hidden_hidden_bias_scale,
+                                 weights_init_scale=weights_init_scale,
                                  dropout=enc_dropout,
                                 )
 
@@ -89,6 +92,8 @@ class RNNT(nn.Module):
                                   hidden_size=enc_n_hid,
                                   num_layers=enc_post_rnn_layers,
                                   forget_gate_bias=forget_gate_bias,
+                                  hidden_hidden_bias_scale=hidden_hidden_bias_scale,
+                                  weights_init_scale=weights_init_scale,
                                   dropout=enc_dropout)
 
         self.encoder = torch.nn.ModuleDict(enc_mod)
@@ -100,6 +105,8 @@ class RNNT(nn.Module):
                 hidden_size=pred_n_hid,
                 num_layers=pred_rnn_layers,
                 forget_gate_bias=forget_gate_bias,
+                hidden_hidden_bias_scale=hidden_hidden_bias_scale,
+                weights_init_scale=weights_init_scale,
                 dropout=pred_dropout,
             ),
         })
