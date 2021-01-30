@@ -64,9 +64,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         mllog_start(key=CONSTANTS.BLOCK_START, sync=True,
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
         mllog_start(key=CONSTANTS.EPOCH_START, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)
-        if is_distributed and (flags.loader == "monai" or flags.loader == "pytorch"):
+        if is_distributed:
             train_loader.sampler.set_epoch(epoch)
-            val_loader.sampler.set_epoch(epoch)
+            # val_loader.sampler.set_epoch(epoch)
 
         optimizer.zero_grad()
         accumulated_steps = 0
@@ -105,7 +105,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
 
         if flags.lr_decay_epochs:
             scheduler.step()
-        if ((epoch % flags.evaluate_every) == 0) and not flags.benchmark:
+        if ((epoch % flags.evaluate_every) == 0) and epoch >= flags.start_eval_at:
             del output
             mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)
 
