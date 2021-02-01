@@ -232,7 +232,7 @@ class Checkpointer(object):
             state_dict = checkpoint[key]
             unwrap_ddp(ema_model).load_state_dict(state_dict, strict=False)
 
-        # XXX optimizer.load_state_dict(checkpoint['optimizer'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
 
         if self.use_amp:
             amp.load_state_dict(checkpoint['amp'])
