@@ -85,7 +85,7 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         self.do_remove_silence = True if silence_threshold is not None else False
 
         shuffle = train_pipeline and not sampler.is_sampler_random()
-        self.read = ops.FileReader(name="Reader", pad_last_batch=(pipeline_type == 'new_val'), device="cpu", file_root=file_root, file_list=sampler.get_file_list_path(), shard_id=shard_id,
+        self.read = ops.FileReader(name="Reader", pad_last_batch=(pipeline_type == 'val'), device="cpu", file_root=file_root, file_list=sampler.get_file_list_path(), shard_id=shard_id,
                                    num_shards=n_shards, shuffle_after_epoch=shuffle)
 
         # TODO change ExternalSource to Uniform for new DALI release

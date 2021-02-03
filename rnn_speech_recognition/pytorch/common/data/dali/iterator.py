@@ -51,7 +51,7 @@ class DaliRnntIterator(object):
         from nvidia.dali.plugin.base_iterator import LastBatchPolicy
 
         # in train pipeline shard_size is set to divisable by batch_size, so PARTIAL policy is safe
-        if pipeline_type == 'new_val':
+        if pipeline_type == 'val':
             self.dali_it = DALIGenericIterator(
                 dali_pipelines, ["audio", "label", "audio_shape"], reader_name="Reader",
                 dynamic_shape=True, auto_reset=True,

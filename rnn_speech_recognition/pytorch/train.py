@@ -65,6 +65,8 @@ def parse_args():
     training.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                           help='GPU id used for distributed training')
     training.add_argument('--target', default=0.058, type=float, help='Target WER accuracy')
+    training.add_argument('--weights_init_scale', type=float, help='If set, overwrites value in config.')
+    training.add_argument('--hidden_hidden_bias_scale', type=float, help='If set, overwrites value in config.')
 
     optim = parser.add_argument_group('optimization setup')
     optim.add_argument('--batch_size', default=128, type=int,
@@ -131,10 +133,8 @@ def parse_args():
                     help='Directory for logs and checkpoints')
     io.add_argument('--log_file', type=str, default=None,
                     help='Path to save the training logfile.')
-    io.add_argument('--no_old_eval', default=False, action='store_false',
-                    help='Eval dataset is wrapped to fill the last batch')
-    io.add_argument('--new_eval', action='store_true',
-                    help='Eval on every sample once')
+    io.add_argument('--max_symbol_per_sample', type=int, default=None,
+                    help='maximum number of symbols per sample can have during eval')
     return parser.parse_args()
 
 
@@ -148,43 +148,37 @@ def apply_ema(model, ema_model, decay):
 
 
 @torch.no_grad()
-def evaluate(epoch, step, val_loaders, val_feat_proc, detokenize,
+def evaluate(epoch, step, val_loader, val_feat_proc, detokenize,
              ema_model, loss_fn, greedy_decoder, use_amp):
 
     ema_model.eval()
 
-    for val_loader in val_loaders:
-        start_time = time.time()
-        agg = {'losses': [], 'preds': [], 'txts': [], 'idx': []}
-        logging.log_start(logging.constants.EVAL_START,
-                          metadata=dict(epoch_num=epoch, pipeline=val_loader.pipeline_type))
-        for i, batch in enumerate(val_loader):
-            print(f'{val_loader.pipeline_type} evaluation: {i:>10}/{len(val_loader):<10}', end='\r')
+    start_time = time.time()
+    agg = {'losses': [], 'preds': [], 'txts': [], 'idx': []}
+    logging.log_start(logging.constants.EVAL_START, metadata=dict(epoch_num=epoch))
+    for i, batch in enumerate(val_loader):
+        print(f'{val_loader.pipeline_type} evaluation: {i:>10}/{len(val_loader):<10}', end='\r')
 
-            audio, audio_lens, txt, txt_lens = batch
+        audio, audio_lens, txt, txt_lens = batch
 
-            feats, feat_lens = val_feat_proc([audio, audio_lens])
+        feats, feat_lens = val_feat_proc([audio, audio_lens])
 
-            log_probs, log_prob_lens = ema_model(feats, feat_lens, txt, txt_lens)
-            loss = loss_fn(log_probs[:, :log_prob_lens.max().item()],
-                                      log_prob_lens, txt, txt_lens)
+        log_probs, log_prob_lens = ema_model(feats, feat_lens, txt, txt_lens)
+        loss = loss_fn(log_probs[:, :log_prob_lens.max().item()],
+                                  log_prob_lens, txt, txt_lens)
 
-            pred = greedy_decoder.decode(ema_model, feats, feat_lens)
+        pred = greedy_decoder.decode(ema_model, feats, feat_lens)
 
-            agg['losses'] += helpers.gather_losses([loss.cpu()])
-            agg['preds'] += helpers.gather_predictions([pred], detokenize)
-            agg['txts'] += helpers.gather_transcripts([txt.cpu()], [txt_lens.cpu()], detokenize)
+        agg['losses'] += helpers.gather_losses([loss.cpu()])
+        agg['preds'] += helpers.gather_predictions([pred], detokenize)
+        agg['txts'] += helpers.gather_transcripts([txt.cpu()], [txt_lens.cpu()], detokenize)
 
-        wer, loss = process_evaluation_epoch(agg)
+    wer, loss = process_evaluation_epoch(agg)
 
-        logging.log_event(logging.constants.EVAL_ACCURACY,
-                          value=wer,
-                          metadata=dict(epoch_num=epoch, pipeline=val_loader.pipeline_type))
-        logging.log_end(logging.constants.EVAL_STOP,
-                        metadata=dict(epoch_num=epoch, pipeline=val_loader.pipeline_type))
+    logging.log_event(logging.constants.EVAL_ACCURACY, value=wer, metadata=dict(epoch_num=epoch))
+    logging.log_end(logging.constants.EVAL_STOP, metadata=dict(epoch_num=epoch))
 
-        log((epoch,), step, val_loader.pipeline_type, {'loss': loss, 'wer': 100.0 * wer,
-                                     'took': time.time() - start_time})
+    log((epoch,), step, 'dev_ema', {'loss': loss, 'wer': 100.0 * wer, 'took': time.time() - start_time})
     ema_model.train()
     return wer
 
@@ -321,29 +315,16 @@ def main():
                                   device_type=args.dali_device,
                                   tokenizer=tokenizer)
 
-    val_loaders = []
-    if not args.no_old_eval:
-        val_loaders.append(DaliDataLoader(gpu_id=args.local_rank,
+    val_loader = DaliDataLoader(gpu_id=args.local_rank,
                                     dataset_path=args.dataset_dir,
                                     config_data=val_dataset_kw,
                                     config_features=val_features_kw,
                                     json_names=args.val_manifests,
                                     batch_size=args.val_batch_size,
                                     sampler=dali_sampler.SimpleSampler(),
-                                    pipeline_type="old_val",
+                                    pipeline_type="val",
                                     device_type=args.dali_device,
-                                    tokenizer=tokenizer))
-    if args.new_eval:
-        val_loaders.append(DaliDataLoader(gpu_id=args.local_rank,
-                                    dataset_path=args.dataset_dir,
-                                    config_data=val_dataset_kw,
-                                    config_features=val_features_kw,
-                                    json_names=args.val_manifests,
-                                    batch_size=args.val_batch_size,
-                                    sampler=dali_sampler.SimpleSampler(),
-                                    pipeline_type="new_val",
-                                    device_type=args.dali_device,
-                                    tokenizer=tokenizer))
+                                    tokenizer=tokenizer)
 
     train_feat_proc = train_augmentations
     val_feat_proc   = val_augmentations
@@ -354,14 +335,20 @@ def main():
     steps_per_epoch = len(train_loader) // args.grad_accumulation_steps
 
     logging.log_event(logging.constants.TRAIN_SAMPLES, value=train_loader.dataset_size)
-    logging.log_event(logging.constants.EVAL_SAMPLES, value=val_loaders[0].dataset_size)
+    logging.log_event(logging.constants.EVAL_SAMPLES, value=val_loader.dataset_size)
 
     # set up the model
-    model = RNNT(n_classes=tokenizer.num_labels + 1, **config.rnnt(cfg))
+    rnnt_config = config.rnnt(cfg)
+    if args.weights_init_scale is not None:
+        rnnt_config['weights_init_scale'] = args.weights_init_scale
+    if args.hidden_hidden_bias_scale is not None:
+        rnnt_config['hidden_hidden_bias_scale'] = args.hidden_hidden_bias_scale
+    model = RNNT(n_classes=tokenizer.num_labels + 1, **rnnt_config)
     model.cuda()
     blank_idx = tokenizer.num_labels
     loss_fn = RNNTLoss(blank_idx=blank_idx)
-    greedy_decoder = RNNTGreedyDecoder(blank_idx=blank_idx)
+    greedy_decoder = RNNTGreedyDecoder( blank_idx=blank_idx,
+                                        max_symbol_per_sample=args.max_symbol_per_sample)
 
     print_once(f'Model size: {num_weights(model) / 10**6:.1f}M params\n')
 
@@ -539,7 +526,7 @@ def main():
                                           'took': epoch_time})
 
         if epoch % args.val_frequency == 0:
-            wer = evaluate(epoch, step, val_loaders, val_feat_proc,
+            wer = evaluate(epoch, step, val_loader, val_feat_proc,
                            tokenizer.detokenize, ema_model, loss_fn,
                            greedy_decoder, args.amp)
 
@@ -571,7 +558,7 @@ def main():
         logging.log_end(logging.constants.RUN_STOP, metadata={'status': 'aborted'})
 
     if epoch == args.epochs:
-        evaluate(epoch, step, val_loaders, val_feat_proc, tokenizer.detokenize,
+        evaluate(epoch, step, val_loader, val_feat_proc, tokenizer.detokenize,
                  ema_model, loss_fn, greedy_decoder, args.amp)
 
     flush_log()
