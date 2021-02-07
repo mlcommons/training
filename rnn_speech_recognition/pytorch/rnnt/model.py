@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from mlperf import logging
 
 from common.rnn import rnn
 
@@ -98,8 +99,11 @@ class RNNT(nn.Module):
 
         self.encoder = torch.nn.ModuleDict(enc_mod)
 
+        pred_embed = torch.nn.Embedding(n_classes - 1, pred_n_hid)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION)
+
         self.prediction = torch.nn.ModuleDict({
-            "embed": torch.nn.Embedding(n_classes - 1, pred_n_hid),
+            "embed": pred_embed,
             "dec_rnn": rnn(
                 input_size=pred_n_hid,
                 hidden_size=pred_n_hid,
@@ -114,14 +118,17 @@ class RNNT(nn.Module):
         self.joint_pred = torch.nn.Linear(
             pred_n_hid,
             joint_n_hid)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION)
         self.joint_enc = torch.nn.Linear(
             enc_n_hid,
             joint_n_hid)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION)
 
         self.joint_net = nn.Sequential(
             torch.nn.ReLU(inplace=True),
             torch.nn.Dropout(p=joint_dropout),
             torch.nn.Linear(joint_n_hid, n_classes))
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION)
 
     def forward(self, x, x_lens, y, y_lens, state=None):
         # x: (B, channels, features, seq_len)

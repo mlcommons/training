@@ -17,6 +17,7 @@ import math
 
 import torch
 from torch.nn import Parameter
+from mlperf import logging
 
 
 def rnn(input_size, hidden_size, num_layers,
@@ -73,6 +74,7 @@ class LSTM(torch.nn.Module):
         for name, v in self.named_parameters():
             if 'weight' in name or 'bias' in name:
                 v.data *= float(weights_init_scale)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION)
 
 
     def forward(self, x, h=None):
