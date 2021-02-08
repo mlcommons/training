@@ -9,10 +9,6 @@ from runtime.inference import evaluate
 from runtime.logging import mllog_event, mllog_start, mllog_end, CONSTANTS
 
 
-START_EVAL_AT = 1000
-DICE_THRESHOLD = 0.91
-
-
 def get_optimizer(params, flags):
     if flags.optimizer == "adam":
         optim = Adam(params, lr=flags.learning_rate, weight_decay=flags.weight_decay)
@@ -121,12 +117,14 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             for callback in callbacks:
                 callback.on_epoch_end(epoch, eval_metrics, model, optimizer)
             model.train()
-            if eval_metrics["mean_dice"] > DICE_THRESHOLD:
+            if eval_metrics["mean_dice"] >= flags.quality_threshold:
                 stop_training = True
-                # break
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=True,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
+
+        if stop_training:
+            break
 
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,
               metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if stop_training else CONSTANTS.ABORTED})

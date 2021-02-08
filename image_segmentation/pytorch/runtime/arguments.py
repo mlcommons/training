@@ -11,6 +11,7 @@ PARSER.add_argument('--loader', dest='loader', default="pytorch", type=str)
 PARSER.add_argument("--local_rank", default=os.environ.get("LOCAL_RANK", 0), type=int)
 
 PARSER.add_argument('--epochs', dest='epochs', type=int, default=1)
+PARSER.add_argument('--quality_threshold', dest='quality_threshold', type=float, default=0.91)
 PARSER.add_argument('--ga_steps', dest='ga_steps', type=int, default=1)
 PARSER.add_argument('--warmup_steps', dest='warmup_steps', type=int, default=4)
 PARSER.add_argument('--batch_size', dest='batch_size', type=int, default=2)
@@ -38,6 +39,7 @@ PARSER.add_argument('--verbose', '-v', dest='verbose', action='store_true', defa
 PARSER.add_argument('--normalization', dest='normalization', type=str,
                     choices=['instancenorm', 'batchnorm', "syncbatchnorm"], default='instancenorm')
 PARSER.add_argument('--activation', dest='activation', type=str, choices=['relu', 'leaky_relu'], default='relu')
+PARSER.add_argument('--weight_init_scale', dest='weight_init_scale', type=float, default=1.0)
 
 PARSER.add_argument('--pad_mode', dest='pad_mode', default="reflect", choices=['constant', 'edge', 'reflect',
                                                                                'median', 'symmetric'], type=str)
