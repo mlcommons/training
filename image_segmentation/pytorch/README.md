@@ -1,69 +1,48 @@
-# U-Net3D MLPerf v1.0 Pytorch implementation.
+# 1. Problem
+This benchmark represents a 3D medical image segmentation task using [2019 Kidney Tumor Segmentation Challenge](https://kits19.grand-challenge.org/) dataset called [KiTS19](https://github.com/neheller/kits19). The task is carried out using a [U-Net3D](https://arxiv.org/pdf/1606.06650.pdf) model variant based on the [No New-Net](https://arxiv.org/pdf/1809.10483.pdf) paper.
 
-## Features
+## Dataset
 
-The following features are supported by this model.
+The data is stored in the [KiTS19 github repository](https://github.com/neheller/kits19).
+
+## Publication/Attribution
+Heller, Nicholas and Isensee, Fabian and Maier-Hein, Klaus H and Hou, Xiaoshuai and Xie, Chunmei and Li, Fengyi and Nan, Yang and Mu, Guangrui and Lin, Zhiyong and Han, Miofei and others.
+"The state of the art in kidney and kidney tumor segmentation in contrast-enhanced CT imaging: Results of the KiTS19 Challenge".
+Medical Image Analysis, 101821, Elsevier (2020).
+
+Heller, Nicholas and Sathianathen, Niranjan and Kalapara, Arveen and Walczak, Edward and Moore, Keenan and Kaluzniak, Heather and Rosenberg, Joel and Blake, Paul and Rengel, Zachary and Oestreich, Makinna and others.
+"The kits19 challenge data: 300 kidney tumor cases with clinical context, ct semantic segmentations, and surgical outcomes".
+arXiv preprint arXiv:1904.00445 (2019).
+
+# 2. Directions
+
+## Steps to configure machine
+
+1. Clone the repository.
  
-| **Feature** | **3D-UNet** |
-|---------------------------------|-----|
-| Distributed training            | Yes |
-| Automatic mixed precision (AMP) | Yes |
-| Learning rate decay             | Yes |
-| Learning rate warm up           | Yes |
-| Gradient accumulation           | Yes |
-| Checkpointing                   | Yes |
-| MLPerf logger                   | Yes |
+    Create a folder for the project and clone the repository
+    
+    ```bash
+    git clone https://github.com/mmarcinkiewicz/training.git
+    ```
+    or
+    ```bash
+    git clone https://github.com/mlperf/training.git
+    ```
+    once U-Net3D becomes available in the main repository.
 
-**Distributed training**
+2. Build the U-Net3D Docker container.
+    
+    ```bash
+    cd training/image_segmentation/pytorch
+    docker build -t unet3d .
+    ```
 
-This implementation takes advantage of the [Distributed communication package](https://pytorch.org/docs/stable/distributed.html) for multi-worker training.
+## Steps to download and verify data
 
-**Automatic Mixed Precision (AMP)**
- 
-Passing `--amp` flag will enable Mixed Precision training and evaluation
- 
-**Learning rate decay**
- 
-`MultiStepLR` scheduler can be enabled by passing flag `--lr_decay_epochs` with one or milestones. For example, to have a change of learning rate at epochs 1000 and 2000 you can use
-```bash
---learning_rate 1.0 --lr_decay_epochs 1000 2000 --lr_decay_factor 0.1
-```
-This will keep the learning rate at `1.0` between epochs 0 and 1000. Decrease it to `0.1` between epochs 1000 and 2000, and further decrease it to `0.01` at epoch 2000.
-
-**Learning rate warm up**
- 
-A linear learning rate warm up schedule can be invoked by adding
-```bash
---init_learning_rate 1e-4 --learning_rate 1.0 --lr_warmup_epochs 200
-```
-This will increase the learning rate from `1e-4` to `1.0` in the first 200 epochs of the training.
-
-**Checkpointing**
-
-To save a checkpoint during training you need to pass a path where to save the checkpoint, for example
-```bash
---save_ckpt_path /results/checkpoint.pth
-```
-The script will save two checkpoints at that location - one with the latest state and with the best state. 
-The best state is chosen based on `mean_dice` metric. For details please have a look at `runtime.callbacks.CheckpointCallback`.
-
-To load a checkpoint for evaluation you have to invoke
-```bash
---exec_mode evaluate --load_ckpt_path /results/checkpoint.pth
-```
-
-this will load the best checkpoint from `/results/checkpoint.pth` (or any given path).
-
-**MLPerf logger**
-
-MLPerf logger was added in compliance with the [official repository](https://github.com/mlcommons/logging).
-
-
-## Quick Start Guide
-  
 1. Download the data
    
-    The data is stored in the [KiTS19 github repository](https://github.com/neheller/kits19). To download it please follow the instructions:
+    To download the data please follow the instructions:
     ```bash
     mkdir raw-data-dir
     cd raw-data-dir
@@ -74,22 +53,8 @@ MLPerf logger was added in compliance with the [official repository](https://git
     ```
     This will download the original, non-interpolated data to `raw-data-dir/kits19/data`
 
-2. Clone the repository.
  
-    Create a folder for the project anc clone the repository
-    
-    ```bash
-    git clone https://github.com/mmarcinkiewicz/training/tree/Add_unet3d
-    cd training/image_segmentation/pytorch
-    ```
-
-3. Build the U-Net Docker container.
-    
-    ```bash
-    docker build -t unet3d .
-    ```
- 
-4. Start an interactive session in the container to run preprocessing/training/inference.
+2. Start an interactive session in the container to run preprocessing/training/inference.
  
     You will need to mount two (or three) directories:
     - for raw data (RAW-DATA-DIR) 
@@ -102,23 +67,28 @@ MLPerf logger was added in compliance with the [official repository](https://git
     docker run --ipc=host -it --rm --runtime=nvidia -v RAW-DATA-DIR:/raw_data -v PREPROCESSED-DATA-DIR:/data -v RESULTS-DIR:/results unet3d:latest /bin/bash
     ```
  
-5. Preprocess the dataset.
+3. Preprocess the dataset.
     
     The data preprocessing script is called `preprocess_dataset.py`. All the required hyperparameters are already set. All you need to do is to invoke the script with correct paths:
     ```bash
     python3 preprocess_dataset.py --data_dir /raw_data --results_dir /data
     ```
    
-    The script will preprocess each volume and save it as a numpy array at `/data`. It will also display some statistics like the volume shape, mean and stddev of the voxel intensity.
+    The script will preprocess each volume and save it as a numpy array at `/data`. It will also display some statistics like the volume shape, mean and stddev of the voxel intensity. Also, it will run a checksum on each file comparing it with the source.
 
-6. Start training.
-  
-    The basic command to run on 1 worker takes form:
-    ```bash
-    python3 main.py --data_dir /data/ --loader pytorch --log_dir /results/ --epochs 4000 --seed 0 --batch_size 2 --learning_rate 1.0 --eval_every 20
-    ```
-   
-    Running this command for seeds in range `{0, 1, ..., 9}` should converge to the target accuracy `mean_dice` = 0.91.
+## Steps to run and time
+
+The basic command to run on 1 worker takes form:
+```bash
+bash run_and_time.sh <SEED>
+```
+
+The script assumes that the data is available at `/data` directory.
+
+Running this command for seeds in range `{0, 1, ..., 9}` should converge to the target accuracy `mean_dice` = 0.91. 
+The training will be terminated once the quality threshold is reached or `MAX_EPOCH` (default: 4000) is surpassed. 
+If needed, those variables can be modified within the `run_and_time.sh` script.
+
 
 ## Repository content
  
@@ -128,6 +98,7 @@ In the root directory, the most important files are:
 * `requirements.txt`: Set of extra requirements for running U-Net3D.
 * `preprocess_data.py`: Converts the dataset to numpy format for training.
 * `evaluation_cases.txt`: A list of cases used for evaluation - a fixed split of the whole dataset.
+* `checksum.json`: A list of cases and their checksum for dataset completeness verification.
  
 The `data_loading/` folder contains the necessary load data. Its main components are:
 * `data_loader.py`: Implements the data loading.
@@ -145,51 +116,28 @@ The `runtime/` folder contains scripts with training and inference logic. Its co
 * `inference.py`: Defines the evaluation loop and sliding window.
 * `logging.py`: Defines the MLPerf logger.
 * `training.py`: Defines the training loop.
+
  
-## Parameters
- 
-The complete list of the available parameters for the main.py script contains:
+# 3. Quality
 
-### Input/Output parameters
-* `--data_dir`: Set the input directory containing the dataset (Required, default: `None`).
-* `--log_dir`: Set the output directory for logs (default: `/tmp`).
-* `--save_ckpt_path`: Path with a filename to save the checkpoint to (default: `None`). 
-* `--load_ckpt_path`: Path with a filename to load the checkpoint from (default: `None`). 
-* `--loader`: Loader to use (default: `pytorch`).
-* `--local_rank`: Local rank for distributed training (default: `os.environ.get("LOCAL_RANK", 0)`).
+## Quality metric
 
-### Runtime parameters
-* `--exec_mode`: Select the execution mode to run the model (default: `train`). Modes available:
-  * `train` - trains a model with given parameters. 
-  * `evaluate` - loads checkpoint (if available) and performs evaluation on validation subset.
-* `--batch_size`: Size of each minibatch per GPU (default: `2`).
-* `--ga_steps`: Number of steps for gradient accumulation (default: `1`).
-* `--epochs`: Maximum number of epochs for training (default: `1`).
-* `--evaluate_every`: Epoch interval for evaluation (default: `20`).
-* `--start_eval_at`: First epoch to start running evaluation at (default: `1000`).
-* `--layout`: Data layout (default: `NCDHW`. `NDHWC` is not implemented).
-* `--input_shape`: Input shape for images during training (default: `[128, 128, 128]`).
-* `--val_input_shape`: Input shape for images during evaluation (default: `[128, 128, 128]`).
-* `--seed`: Set random seed for reproducibility (default: `-1` - picks a random number from `/dev/urandom`).
-* `--num_workers`: Number of workers used for dataloading (default: `8`).
-* `--benchmark`: Enable performance benchmarking (disabled by default). If the flag is set, the script runs in a benchmark mode - each iteration is timed and the performance result (in images per second) is printed at the end.
-* `--warmup_steps`: Used only for during benchmarking - the number of steps to skip (default: `200`). First iterations are usually much slower since the graph is being constructed. Skipping the initial iterations is required for a fair performance assessment.
-* `--amp`: Enable automatic mixed precision (disabled by default).
+The quality metric in this benchmark is mean (composite) DICE score for classes 1 (kidney) and 2 (kidney tumor). 
+The metric is reported as `mean_dice` in the code.
 
-### Optimizer parameters
-* `--optimizer`: Type of optimizer to use (default: `sgd`, choices=`sgd, adam, lamb`).
-* `--learning_rate`: Learning rate (default: `1.0`).
-* `--momentum`: Momentum for SGD optimizer (default: `0.9`).
-* `--init_learning_rate`: Initial learning rate used for learning rate warm up (default: `1e-4`).
-* `--lr_warmup_epochs`: Number of epochs for learning rate warm up (default: `0`).
-* `--lr_decay_epochs`: Milestones for MultiStepLR learning rate decay (default: `None`).
-* `--lr_decay_factor`: Factor for MultiStepLR learning rate decay (default: `1.0`).
-* `--lamb_betas`: Beta1 and Beta2 parameters for LAMB optimizer (default: `0.9, 0.999`).
-* `--weight_decay`: Weight decay factor (default: `0.0`).
+## Quality target
 
-### Other parameters
-* `--verbose`: Whether to display `tqdm` progress bars during training (default: `False`).
-* `--oversampling`: Oversampling for biased crop (default: `0.4`).
-* `--overlap`: Overlap for sliding window (default: `0.5`).
-* `--cudnn_benchmark`: Whether to use cuDNN benchmark (default: `False`).
-* `--cudnn_deterministic`: Whether to use cuDNN deterministic (default: `False`).
+The target `mean_dice` is 0.91.
+
+## Evaluation frequency
+
+The evaluation schedule is the following:
+- for epochs 1 - 999: Do not evaluate
+- for epochs > 1000: Evaluate every 20 epochs
+
+## Evaluation thoroughness
+
+The validation dataset is composed of 42 volumes. They were pre-selected and their IDs are stored in the `evaluation_cases.txt` file.
+A valid score is obtained as an average `mean_dice` score across the whole 42 volumes. Please mind that a multi-worker training in popular frameworks is using so-called samplers to shard the data.
+Such samplers tend to shard the data equally across all workers. For convenience, this is achieved by either truncating the dataset so it is divisible by the number of workers,
+or the "missing" data is copied. This most likely will influence the final score - a valid evaluation is performed on exactly 42 volumes and each volume's score has a weight of 1/42 of the total sum of the scores. 

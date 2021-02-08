@@ -1,5 +1,8 @@
-import argparse
 import os
+import argparse
+import hashlib
+import json
+from tqdm import tqdm
 
 import nibabel
 import numpy as np
@@ -117,12 +120,33 @@ class Preprocessor:
         np.save(os.path.join(self.results_dir, f"{case}_y.npy"), label, allow_pickle=False)
 
 
+def verify_dataset(results_dir):
+    with open('checksum.json') as f:
+        source = json.load(f)
+
+    assert len(source) == len(os.listdir(results_dir))
+    for volume in tqdm(os.listdir(results_dir)):
+        with open(os.path.join(results_dir, volume), 'rb') as f:
+            data = f.read()
+            md5_hash = hashlib.md5(data).hexdigest()
+            assert md5_hash == source[volume], f"Invalid hash for {volume}."
+    print("Verification completed. All files' checksums are correct.")
+
+
 if __name__ == '__main__':
 
     PARSER = argparse.ArgumentParser()
     PARSER.add_argument('--data_dir', dest='data_dir', required=True)
     PARSER.add_argument('--results_dir', dest='results_dir', required=True)
+    PARSER.add_argument('--mode', dest='mode', choices=["preprocess", "verify"], default="preprocess")
 
     args = PARSER.parse_args()
-    preprocessor = Preprocessor(args)
-    preprocessor.preprocess_dataset()
+    if args.mode == "preprocess":
+        preprocessor = Preprocessor(args)
+        preprocessor.preprocess_dataset()
+        verify_dataset(args.results_dir)
+
+    if args.mode == "verify":
+        verify_dataset(args.results_dir)
+
+
