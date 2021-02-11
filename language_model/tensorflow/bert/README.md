@@ -96,7 +96,7 @@ The generated wiki pages file will be stored in `<bert>/cleanup_scripts/text/<XX
 
 For example :`<bert>/cleanup_scripts/text/BD/wiki_37`.
 
- Each file is ~1MB, and each sub directory has 100 files from `wiki_00` to `wiki_9`9, except the last sub directory `FE`. For the 20200101 dump, the last file is `FE/wiki_17`.
+ Each file is ~1MB, and each sub directory has 100 files from `wiki_00` to `wiki_99`, except the last sub directory `FE`. For the 20200101 dump, the last file is `FE/wiki_17`.
 
 ```
 # Contents of <bert>/cleanup_scripts/text/FE/
