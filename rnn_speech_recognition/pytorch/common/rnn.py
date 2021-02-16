@@ -74,7 +74,9 @@ class LSTM(torch.nn.Module):
         for name, v in self.named_parameters():
             if 'weight' in name or 'bias' in name:
                 v.data *= float(weights_init_scale)
-        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION)
+        tensor_name = kwargs['tensor_name']
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION,
+                          metadata=dict(tensor=tensor_name))
 
 
     def forward(self, x, h=None):
