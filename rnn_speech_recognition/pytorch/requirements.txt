@@ -1,5 +1,5 @@
 https://github.com/NVIDIA/dllogger/archive/26a0f8f1958de2c0c460925ff6102a4d2486d6cc.zip
-https://github.com/mlcommons/logging/archive/03b986a12aa0821f1bf71cb59788d9b4a60c554b.zip
+https://github.com/mlcommons/logging/archive/8616a247e5c8e53d72c878604e886be7720102d7.zip
 tensorboard==2.3.0
 unidecode==1.1.1
 inflect==4.1.0

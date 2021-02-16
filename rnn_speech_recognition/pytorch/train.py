@@ -222,10 +222,10 @@ def main():
     logging.log_event(logging.constants.GRADIENT_ACCUMULATION_STEPS, value=args.grad_accumulation_steps)
     batch_size = args.batch_size // args.grad_accumulation_steps
 
-    logging.log_event(logging.constants.SUBMISSION_BENCHMARK, value='RNN-T')
+    logging.log_event(logging.constants.SUBMISSION_BENCHMARK, value=logging.constants.RNNT)
     logging.log_event(logging.constants.SUBMISSION_ORG, value='my-organization')
-    logging.log_event(logging.constants.SUBMISSION_DIVISION, value='closed/open')
-    logging.log_event(logging.constants.SUBMISSION_STATUS, value='onprem/cloud/research')
+    logging.log_event(logging.constants.SUBMISSION_DIVISION, value=logging.constants.CLOSED) # closed or open
+    logging.log_event(logging.constants.SUBMISSION_STATUS, value=logging.constants.ONPREM) # on-prem/cloud/research
     logging.log_event(logging.constants.SUBMISSION_PLATFORM, value='my platform')
 
     logging.log_end(logging.constants.INIT_STOP)
@@ -358,7 +358,7 @@ def main():
     logging.log_event(logging.constants.OPT_BASE_LR, value=args.lr)
     logging.log_event(logging.constants.OPT_LAMB_EPSILON, value=opt_eps)
     logging.log_event(logging.constants.OPT_LAMB_LR_DECAY_POLY_POWER, value=args.lr_exp_gamma)
-    logging.log_event(logging.constants.OPT_LAMB_WARMUP_EPOCHS, value=args.warmup_epochs)
+    logging.log_event(logging.constants.OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs)
     logging.log_event(logging.constants.OPT_LAMB_LR_HOLD_EPOCHS, value=args.hold_epochs)
     logging.log_event(logging.constants.OPT_LAMB_BETA_1, value=args.beta1)
     logging.log_event(logging.constants.OPT_LAMB_BETA_2, value=args.beta2)
@@ -366,6 +366,7 @@ def main():
     logging.log_event(logging.constants.OPT_LR_ALT_DECAY_FUNC, value=True)
     logging.log_event(logging.constants.OPT_LR_ALT_WARMUP_FUNC, value=True)
     logging.log_event(logging.constants.OPT_LAMB_LR_MIN, value=args.min_lr)
+    logging.log_event(logging.constants.OPT_WEIGHT_DECAY, value=args.weight_decay)
 
     # optimization
     kw = {'params': model.param_groups(args.lr), 'lr': args.lr,
