@@ -39,7 +39,6 @@ PARSER.add_argument('--verbose', '-v', dest='verbose', action='store_true', defa
 PARSER.add_argument('--normalization', dest='normalization', type=str,
                     choices=['instancenorm', 'batchnorm', "syncbatchnorm"], default='instancenorm')
 PARSER.add_argument('--activation', dest='activation', type=str, choices=['relu', 'leaky_relu'], default='relu')
-PARSER.add_argument('--weight_init_scale', dest='weight_init_scale', type=float, default=1.0)
 
 PARSER.add_argument('--pad_mode', dest='pad_mode', default="reflect", choices=['constant', 'edge', 'reflect',
                                                                                'median', 'symmetric'], type=str)

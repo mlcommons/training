@@ -9,7 +9,7 @@ from model.layers import (
 
 
 class Unet3D(nn.Module):
-    def __init__(self, in_channels, n_class, normalization, activation):
+    def __init__(self, in_channels, n_class, normalization, activation, weights_init_scale=1.0):
         super(Unet3D, self).__init__()
 
         filters = [32, 64, 128, 256, 320]
@@ -30,6 +30,10 @@ class Unet3D(nn.Module):
                          for i, o in zip(reversed(self.out), reversed(self.inp))])
         self.upsample = nn.ModuleList(upsample)
         self.output = OutputLayer(input_dim, n_class)
+
+        for name, v in self.named_parameters():
+            if 'weight' in name or 'bias' in name:
+                v.data *= float(weights_init_scale)
 
     def forward(self, x):
         x = self.input_block(x)

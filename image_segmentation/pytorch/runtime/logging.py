@@ -60,7 +60,7 @@ def _mllog_print(logger, *args, **kwargs):
 def mlperf_submission_log():
     mllog_event(
         key=mllog.constants.SUBMISSION_BENCHMARK,
-        value=constants.GNMT, # TODO change to UNET3D once avalable
+        value=constants.UNET3D,
         )
 
     mllog_event(

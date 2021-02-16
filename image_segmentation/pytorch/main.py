@@ -33,6 +33,7 @@ def main():
     worker_seeds, shuffling_seeds = setup_seeds(flags.seed, flags.epochs, device)
     worker_seed = worker_seeds[local_rank]
     seed_everything(worker_seed)
+    mllog_event(key=constants.SEED, value=flags.seed if flags.seed != -1 else worker_seed, sync=False)
 
     if is_main_process and flags.verbose:
         mlperf_submission_log()

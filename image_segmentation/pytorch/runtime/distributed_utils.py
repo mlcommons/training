@@ -17,9 +17,10 @@ def get_device(local_rank):
 
 def seed_everything(seed):
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
+    if torch.cuda.is_available():  # just in case
+        torch.cuda.manual_seed_all(seed)
 
 
 def generate_seeds(rng, size):
