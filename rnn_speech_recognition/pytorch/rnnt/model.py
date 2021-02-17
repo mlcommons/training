@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from mlperf import logging
 
 from common.rnn import rnn
 
@@ -84,6 +85,7 @@ class RNNT(nn.Module):
                                  hidden_hidden_bias_scale=hidden_hidden_bias_scale,
                                  weights_init_scale=weights_init_scale,
                                  dropout=enc_dropout,
+                                 tensor_name='pre_rnn',
                                 )
 
         enc_mod["stack_time"] = StackTime(enc_stack_time_factor)
@@ -94,12 +96,18 @@ class RNNT(nn.Module):
                                   forget_gate_bias=forget_gate_bias,
                                   hidden_hidden_bias_scale=hidden_hidden_bias_scale,
                                   weights_init_scale=weights_init_scale,
-                                  dropout=enc_dropout)
+                                  dropout=enc_dropout,
+                                  tensor_name='post_rnn',
+                                )
 
         self.encoder = torch.nn.ModuleDict(enc_mod)
 
+        pred_embed = torch.nn.Embedding(n_classes - 1, pred_n_hid)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION,
+                          metadata=dict(tensor='pred_embed'))
+
         self.prediction = torch.nn.ModuleDict({
-            "embed": torch.nn.Embedding(n_classes - 1, pred_n_hid),
+            "embed": pred_embed,
             "dec_rnn": rnn(
                 input_size=pred_n_hid,
                 hidden_size=pred_n_hid,
@@ -108,20 +116,27 @@ class RNNT(nn.Module):
                 hidden_hidden_bias_scale=hidden_hidden_bias_scale,
                 weights_init_scale=weights_init_scale,
                 dropout=pred_dropout,
+                tensor_name='dec_rnn',
             ),
         })
 
         self.joint_pred = torch.nn.Linear(
             pred_n_hid,
             joint_n_hid)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION,
+                          metadata=dict(tensor='joint_pred'))
         self.joint_enc = torch.nn.Linear(
             enc_n_hid,
             joint_n_hid)
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION,
+                          metadata=dict(tensor='joint_enc'))
 
         self.joint_net = nn.Sequential(
             torch.nn.ReLU(inplace=True),
             torch.nn.Dropout(p=joint_dropout),
             torch.nn.Linear(joint_n_hid, n_classes))
+        logging.log_event(logging.constants.WEIGHTS_INITIALIZATION,
+                          metadata=dict(tensor='joint_net'))
 
     def forward(self, x, x_lens, y, y_lens, state=None):
         # x: (B, channels, features, seq_len)

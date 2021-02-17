@@ -219,13 +219,13 @@ def main():
 
     assert args.grad_accumulation_steps >= 1
     assert args.batch_size % args.grad_accumulation_steps == 0, f'{args.batch_size} % {args.grad_accumulation_steps} != 0'
-    logging.log_event('gradient_accumulation_steps', value=args.grad_accumulation_steps)
+    logging.log_event(logging.constants.GRADIENT_ACCUMULATION_STEPS, value=args.grad_accumulation_steps)
     batch_size = args.batch_size // args.grad_accumulation_steps
 
-    logging.log_event(logging.constants.SUBMISSION_BENCHMARK, value='RNN-T')
+    logging.log_event(logging.constants.SUBMISSION_BENCHMARK, value=logging.constants.RNNT)
     logging.log_event(logging.constants.SUBMISSION_ORG, value='my-organization')
-    logging.log_event(logging.constants.SUBMISSION_DIVISION, value='closed/open')
-    logging.log_event(logging.constants.SUBMISSION_STATUS, value='onprem/cloud/research')
+    logging.log_event(logging.constants.SUBMISSION_DIVISION, value=logging.constants.CLOSED) # closed or open
+    logging.log_event(logging.constants.SUBMISSION_STATUS, value=logging.constants.ONPREM) # on-prem/cloud/research
     logging.log_event(logging.constants.SUBMISSION_PLATFORM, value='my platform')
 
     logging.log_end(logging.constants.INIT_STOP)
@@ -249,23 +249,23 @@ def main():
         val_specaugm_kw,
     ) = config.input(cfg, 'val')
 
-    logging.log_event(logging.constants.MAX_SEQUENCE_LENGTH,
+    logging.log_event(logging.constants.DATA_TRAIN_MAX_DURATION,
                       value=train_dataset_kw['max_duration'])
-    logging.log_event('data_speed_perturbation_max',
+    logging.log_event(logging.constants.DATA_SPEED_PERTURBATON_MAX,
                       value=train_dataset_kw['speed_perturbation']['max_rate'])
-    logging.log_event('data_speed_perturbation_min',
+    logging.log_event(logging.constants.DATA_SPEED_PERTURBATON_MIN,
                       value=train_dataset_kw['speed_perturbation']['min_rate'])
-    logging.log_event('data_spec_augment_freq_n',
+    logging.log_event(logging.constants.DATA_SPEC_AUGMENT_FREQ_N,
                       value=train_specaugm_kw['freq_masks'])
-    logging.log_event('data_spec_augment_freq_min',
+    logging.log_event(logging.constants.DATA_SPEC_AUGMENT_FREQ_MIN,
                       value=train_specaugm_kw['min_freq'])
-    logging.log_event('data_spec_augment_freq_max',
+    logging.log_event(logging.constants.DATA_SPEC_AUGMENT_FREQ_MAX,
                       value=train_specaugm_kw['max_freq'])
-    logging.log_event('data_spec_augment_time_n',
+    logging.log_event(logging.constants.DATA_SPEC_AUGMENT_TIME_N,
                       value=train_specaugm_kw['time_masks'])
-    logging.log_event('data_spec_augment_time_min',
+    logging.log_event(logging.constants.DATA_SPEC_AUGMENT_TIME_MIN,
                       value=train_specaugm_kw['min_time'])
-    logging.log_event('data_spec_augment_time_max',
+    logging.log_event(logging.constants.DATA_SPEC_AUGMENT_TIME_MAX,
                       value=train_specaugm_kw['max_time'])
     logging.log_event(logging.constants.GLOBAL_BATCH_SIZE,
                       value=batch_size * world_size * args.grad_accumulation_steps)
@@ -290,7 +290,7 @@ def main():
         PermuteAudio(),
     )
 
-    logging.log_event('num_buckets', value=args.num_buckets)
+    logging.log_event(logging.constants.DATA_TRAIN_NUM_BUCKETS, value=args.num_buckets)
 
     if args.num_buckets is not None:
         sampler = dali_sampler.BucketingSampler(
@@ -347,23 +347,26 @@ def main():
     model.cuda()
     blank_idx = tokenizer.num_labels
     loss_fn = RNNTLoss(blank_idx=blank_idx)
+    logging.log_event(logging.constants.EVAL_MAX_PREDICTION_SYMBOLS, value=args.max_symbol_per_sample)
     greedy_decoder = RNNTGreedyDecoder( blank_idx=blank_idx,
                                         max_symbol_per_sample=args.max_symbol_per_sample)
 
     print_once(f'Model size: {num_weights(model) / 10**6:.1f}M params\n')
 
+    opt_eps=1e-9
     logging.log_event(logging.constants.OPT_NAME, value='lamb')
     logging.log_event(logging.constants.OPT_BASE_LR, value=args.lr)
-    logging.log_event('opt_epsilon', value=1e-9)
-    logging.log_event('opt_learning_rate_exp_gamma', value=args.lr_exp_gamma)
-    logging.log_event('opt_learning_rate_warmup_epochs', value=args.warmup_epochs)
-    logging.log_event('opt_hold_learning_rate_epochs', value=args.hold_epochs)
-    logging.log_event('opt_beta1', value=args.beta1)
-    logging.log_event('opt_beta2', value=args.beta2)
-    logging.log_event('clip_norm', value=args.clip_norm)
+    logging.log_event(logging.constants.OPT_LAMB_EPSILON, value=opt_eps)
+    logging.log_event(logging.constants.OPT_LAMB_LR_DECAY_POLY_POWER, value=args.lr_exp_gamma)
+    logging.log_event(logging.constants.OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs)
+    logging.log_event(logging.constants.OPT_LAMB_LR_HOLD_EPOCHS, value=args.hold_epochs)
+    logging.log_event(logging.constants.OPT_LAMB_BETA_1, value=args.beta1)
+    logging.log_event(logging.constants.OPT_LAMB_BETA_2, value=args.beta2)
+    logging.log_event(logging.constants.OPT_GRADIENT_CLIP_NORM, value=args.clip_norm)
     logging.log_event(logging.constants.OPT_LR_ALT_DECAY_FUNC, value=True)
     logging.log_event(logging.constants.OPT_LR_ALT_WARMUP_FUNC, value=True)
-    logging.log_event('min_learning_rate', value=args.min_lr)
+    logging.log_event(logging.constants.OPT_LAMB_LR_MIN, value=args.min_lr)
+    logging.log_event(logging.constants.OPT_WEIGHT_DECAY, value=args.weight_decay)
 
     # optimization
     kw = {'params': model.param_groups(args.lr), 'lr': args.lr,
@@ -372,7 +375,7 @@ def main():
     initial_lrs = [group['lr'] for group in kw['params']]
 
     print_once(f'Starting with LRs: {initial_lrs}')
-    optimizer = FusedLAMB(betas=(args.beta1, args.beta2), eps=1e-9, **kw)
+    optimizer = FusedLAMB(betas=(args.beta1, args.beta2), eps=opt_eps, **kw)
 
     adjust_lr = lambda step, epoch: lr_policy(
         step, epoch, initial_lrs, optimizer, steps_per_epoch=steps_per_epoch,
@@ -390,7 +393,7 @@ def main():
         ema_model = copy.deepcopy(model).cuda()
     else:
         ema_model = None
-    logging.log_event('ema_factor', value=args.ema)
+    logging.log_event(logging.constants.MODEL_EVAL_EMA_FACTOR, value=args.ema)
 
     if multi_gpu:
         model = DistributedDataParallel(model)
