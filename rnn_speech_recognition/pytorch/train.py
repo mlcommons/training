@@ -65,7 +65,7 @@ def parse_args():
     training.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0), type=int,
                           help='GPU id used for distributed training')
     training.add_argument('--target', default=0.058, type=float, help='Target WER accuracy')
-    training.add_argument('--weights_init_scale', defaul=0.5, type=float, help='If set, overwrites value in config.')
+    training.add_argument('--weights_init_scale', default=0.5, type=float, help='If set, overwrites value in config.')
     training.add_argument('--hidden_hidden_bias_scale', type=float, help='If set, overwrites value in config.')
 
     optim = parser.add_argument_group('optimization setup')
