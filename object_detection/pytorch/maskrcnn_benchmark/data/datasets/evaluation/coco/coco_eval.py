@@ -22,6 +22,10 @@ from maskrcnn_benchmark.modeling.roi_heads.mask_head.inference import Masker
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 
+def remove_dup(l):
+    seen = set()
+    seen_add = seen.add
+    return [x for x in l if not (x in seen or seen_add(x))]
 
 def do_coco_evaluation(
     dataset,
@@ -320,8 +324,11 @@ def evaluate_predictions_on_coco(
 ):
     import json
 
+    set_of_json = remove_dup([json.dumps(d) for d in coco_results])
+    unique_list = [json.loads(s) for s in set_of_json]
+
     with open(json_result_file, "w") as f:
-        json.dump(coco_results, f)
+        json.dump(unique_list, f)
 
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
