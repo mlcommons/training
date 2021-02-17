@@ -115,7 +115,7 @@ def cast_frozen_bn_to_half(module):
         cast_frozen_bn_to_half(child)
     return module
 
-def train(cfg, local_rank, distributed):
+def train(cfg, local_rank, distributed, disable_allreduce_for_logging, random_number_generator):
     # Model logging
     log_event(key=constants.GLOBAL_BATCH_SIZE, value=cfg.SOLVER.IMS_PER_BATCH)
     log_event(key=constants.NUM_IMAGE_CANDIDATES, value=cfg.MODEL.RPN.FPN_POST_NMS_TOP_N_TRAIN)
@@ -166,6 +166,7 @@ def train(cfg, local_rank, distributed):
         is_train=True,
         is_distributed=distributed,
         start_iter=arguments["iteration"],
+        random_number_generator=random_number_generator
     )
     log_event(key=constants.TRAIN_SAMPLES, value=len(data_loader))
 
@@ -294,7 +295,7 @@ def main():
         logger.info(config_str)
     logger.info("Running with config:\n{}".format(cfg))
 
-    model, success = train(cfg, args.local_rank, args.distributed)
+    model, success = train(cfg, args.local_rank, args.distributed, args.disable_allreduce_for_logging, random_number_generator)
 
     if success is not None:
         if success:

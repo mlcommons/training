@@ -98,7 +98,7 @@ def _compute_aspect_ratios(dataset):
 
 
 def make_batch_data_sampler(
-    dataset, sampler, aspect_grouping, images_per_batch, num_iters=None, start_iter=0
+    dataset, sampler, aspect_grouping, images_per_batch, num_iters=None, start_iter=0, random_number_generator=None,
 ):
     if aspect_grouping:
         if not isinstance(aspect_grouping, (list, tuple)):
@@ -114,12 +114,12 @@ def make_batch_data_sampler(
         )
     if num_iters is not None:
         batch_sampler = samplers.IterationBasedBatchSampler(
-            batch_sampler, num_iters, start_iter
+            batch_sampler, num_iters, start_iter, random_number_generator
         )
     return batch_sampler
 
 
-def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
+def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0, random_number_generator=None):
     num_gpus = get_world_size()
     if is_train:
         images_per_batch = cfg.SOLVER.IMS_PER_BATCH
@@ -172,7 +172,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     for dataset in datasets:
         sampler = make_data_sampler(dataset, shuffle, is_distributed)
         batch_sampler = make_batch_data_sampler(
-            dataset, sampler, aspect_grouping, images_per_gpu, num_iters, start_iter
+            dataset, sampler, aspect_grouping, images_per_gpu, num_iters, start_iter, random_number_generator,
         )
         collator = BatchCollator(cfg.DATALOADER.SIZE_DIVISIBILITY)
         num_workers = cfg.DATALOADER.NUM_WORKERS
