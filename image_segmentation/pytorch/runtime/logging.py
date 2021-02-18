@@ -89,7 +89,6 @@ def mlperf_run_param_log(flags):
     mllog_event(key=mllog.constants.OPT_LR_DECAY_FACTOR, value=flags.lr_decay_factor)
     mllog_event(key=mllog.constants.OPT_WEIGHT_DECAY, value=flags.weight_decay)
     mllog_event(key="opt_momentum", value=flags.momentum)
-    mllog_event(key="seed", value=flags.seed)
     mllog_event(key="oversampling", value=flags.oversampling)
     mllog_event(key="training_input_shape", value=flags.input_shape)
     mllog_event(key="validation_input_shape", value=flags.val_input_shape)
