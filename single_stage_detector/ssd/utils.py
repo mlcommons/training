@@ -16,7 +16,8 @@ import time
 import bz2
 import pickle
 from math import sqrt, ceil
-from mlperf_compliance import mlperf_log
+from mlperf_logger import ssd_print
+from mlperf_logging.mllog import constants as mllog_const
 
 
 # This function is from https://github.com/kuangliu/pytorch-ssd.
@@ -155,20 +156,21 @@ class Encoder(object):
 
         return bboxes_in, F.softmax(scores_in, dim=-1)
 
-    def decode_batch(self, bboxes_in, scores_in, criteria=0.45, max_output=200):
+    def decode_batch(self, bboxes_in, scores_in, criteria=0.45, max_output=200, nms_valid_thresh=0.05):
         bboxes, probs = self.scale_back_batch(bboxes_in, scores_in)
 
         output = []
         for bbox, prob in zip(bboxes.split(1, 0), probs.split(1, 0)):
             bbox = bbox.squeeze(0)
             prob = prob.squeeze(0)
-            output.append(self.decode_single(bbox, prob, criteria, max_output))
+            output.append(self.decode_single(bbox, prob, criteria, max_output,
+					     nms_valid_thresh=nms_valid_thresh))
             # print(output[-1])
         return output
 
     # perform non-maximum suppression
     def decode_single(self, bboxes_in, scores_in, criteria, max_output,
-                      max_num=200):
+                      max_num=200, nms_valid_thresh=0.05):
         # Reference to https://github.com/amdegroot/ssd.pytorch
 
         bboxes_out = []
@@ -182,7 +184,7 @@ class Encoder(object):
             # print(i)
 
             score = score.squeeze(1)
-            mask = score > 0.05
+            mask = score > nms_valid_thresh
 
             bboxes, score = bboxes_in[mask, :], score[mask]
             if score.size(0) == 0: continue
@@ -254,7 +256,7 @@ class DefaultBoxes(object):
                     cx, cy = (j + 0.5) / fk[idx], (i + 0.5) / fk[idx]
                     self.default_boxes.append((cx, cy, w, h))
 
-        self.dboxes = torch.tensor(self.default_boxes)
+        self.dboxes = torch.tensor(self.default_boxes, dtype=torch.float)
         self.dboxes.clamp_(min=0, max=1)
         # For IoU calculation
         self.dboxes_ltrb = self.dboxes.clone()
@@ -286,7 +288,7 @@ class SSDCropping(object):
         Reference to https://github.com/chauhan-utk/ssd.DomainAdaptation
     """
 
-    def __init__(self):
+    def __init__(self, num_cropping_iterations=1):
 
         self.sample_options = (
             # Do nothing
@@ -302,9 +304,8 @@ class SSDCropping(object):
         )
         # Implementation uses 1 iteration to find a possible candidate, this
         # was shown to produce the same mAP as using more iterations.
-        self.num_cropping_iterations = 1
-        mlperf_log.ssd_print(key=mlperf_log.NUM_CROPPING_ITERATIONS,
-                             value=self.num_cropping_iterations)
+        self.num_cropping_iterations = num_cropping_iterations
+        ssd_print(key=mllog_const.MAX_SAMPLES, value=self.num_cropping_iterations, sync=False)
 
     def __call__(self, img, img_size, bboxes, labels):
 
@@ -426,8 +427,6 @@ class LightingNoice(object):
 class RandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
-        mlperf_log.ssd_print(key=mlperf_log.RANDOM_FLIP_PROBABILITY,
-                             value=self.p)
 
     def __call__(self, image, bboxes):
         if random.random() < self.p:
@@ -446,7 +445,7 @@ class SSDTransformer(object):
         Jittering
     """
 
-    def __init__(self, dboxes, size=(300, 300), val=False):
+    def __init__(self, dboxes, size=(300, 300), val=False, num_cropping_iterations=1):
         # define vgg16 mean
         self.size = size
         self.val = val
@@ -454,7 +453,7 @@ class SSDTransformer(object):
         self.dboxes_ = dboxes  # DefaultBoxes300()
         self.encoder = Encoder(self.dboxes_)
 
-        self.crop = SSDCropping()
+        self.crop = SSDCropping(num_cropping_iterations=num_cropping_iterations)
         self.img_trans = transforms.Compose([
             transforms.Resize(self.size),
             # transforms.Resize((300, 300)),
@@ -471,10 +470,6 @@ class SSDTransformer(object):
         # https://discuss.pytorch.org/t/how-to-preprocess-input-for-pre-trained-networks/683
         normalization_mean = [0.485, 0.456, 0.406]
         normalization_std = [0.229, 0.224, 0.225]
-        mlperf_log.ssd_print(key=mlperf_log.DATA_NORMALIZATION_MEAN,
-                             value=normalization_mean)
-        mlperf_log.ssd_print(key=mlperf_log.DATA_NORMALIZATION_STD,
-                             value=normalization_std)
         self.normalize = transforms.Normalize(mean=normalization_mean,
                                               std=normalization_std)
         # self.normalize = transforms.Normalize(mean = [104.0, 117.0, 123.0],
@@ -611,7 +606,7 @@ class COCODetection(data.Dataset):
         else:
             pass
 
-        return img, (htot, wtot), bbox_sizes, bbox_labels
+        return img, img_id, (htot, wtot), bbox_sizes, bbox_labels
 
     # Implement a datareader for VOC dataset
 
