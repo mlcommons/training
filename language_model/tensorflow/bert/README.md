@@ -130,8 +130,34 @@ python3 run_pretraining.py \
 ```
 
 The model has been tested using the following stack:
-- Debian GNU/Linux 9.12 GNU/Linux 4.9.0-12-amd64 x86_64
-- NVIDIA Driver 440.64.00
-- NVIDIA Docker 2.2.2-1 + Docker 19.03.8
-- docker image tensorflow/tensorflow:2.2.0rc0-gpu-py3
+- Debian GNU/Linux 10 GNU/Linux 4.19.0-12-amd64 x86_64
+- NVIDIA Driver 450.51.06
+- NVIDIA Docker 2.5.0-1 + Docker 19.03.13
+- docker image tensorflow/tensorflow:2.4.0-gpu
+
+## Gradient Accumulation
+
+The GradientAggregationOptimizer can accumulate gradients across multiple steps, on each accelerators, before actually applying the gradients. To use this feature, please note the following:
+
+- Because an additional set of non-trainable weights are used to store the accumulated gradients, the memory footprint of the model doubles. It is highly recommended to use accelerators with larger memory to overcome the memory limitation, such as A100 GPUs.
+
+- The initial checkpoint needs to be converted using checkpoint_add_gradacc.py. This script adds the extra set of weights to the checkpoint to store accumulated gradients. The converted checkpoint size is roughtly doubled.
+
+```shell
+
+python3 checkpoint_add_gradacc.py --old=<path to the oritinal initial checkpoint> --new=<path to the converted checkpoint>
+
+```
+
+- Adjust the hyper-parameters, assuming the batch size is bs, and gradients are accumulated across n steps:
+    - `--train_batch_size=bs`.
+    - `--steps_per_update=n`.
+    - use the learning rate for batch size bs * n, because that's the effective batch size to the optimizer.
+    - use `num_train_steps`, `num_warmup_steps`, `save_checkpoints_steps` and `start_warmup_steps` for batch size bs * n, but scale them up n times.
+    - note that the step numbers reported by the training script is based on batch size bs.
+
+- Although Gradient Accumulation is a good technique to simulate training with large batch sizes on small hardware systems, there are places that can introduce slightly different behaviors, thus may bring small variances to the achieved accuracies:
+    - when intended to simulate n accelerators each has a sub-batch of size bs, on a single accelerator, the moving mean and variance compuation of LayerNorm layers is performed in serial order, instead of independently on each acclerator;
+    - there is a clip_by_globalnorm op just before calling the optimizer; the clipping maybe different for different per-accelerator batch size;
+    - the accumulation order of gradients is serial under gradient accumulation, which may be different from the accumulation order of cross-device gradient sumations (i.e. allReduce, or cross-replica-sum).
 
