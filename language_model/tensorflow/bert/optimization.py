@@ -5,11 +5,20 @@ from __future__ import division
 from __future__ import print_function
 
 import re
+import absl
 import tensorflow.compat.v1 as tf
 
 # from tensorflow.contrib import tpu as contrib_tpu
 
 import lamb_optimizer_v1 as lamb_optimizer
+
+flags = absl.flags
+
+FLAGS = flags.FLAGS
+flags.DEFINE_float("lamb_weight_decay_rate", 0.01, "Lamb weight decay")
+flags.DEFINE_float("lamb_beta_1", 0.9, "Lamb beta1")
+flags.DEFINE_float("lamb_beta_2", 0.999, "Lamb beta2")
+flags.DEFINE_float("log_epsilon", -6, "Lamb beta2")
 
 
 def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
@@ -57,7 +66,7 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
   # is 3e-5, 4e-5 or 5e-5. For LAMB, the users can use 3e-4, 4e-4,or 5e-4 for a
   # batch size of 64 in the finetune.
   if optimizer_name == "adamw":
-    tf.logging.info('using adamw')
+    tf.logging.info("using adamw")
     optimizer = AdamWeightDecayOptimizer(
         learning_rate=learning_rate,
         weight_decay_rate=0.01,
@@ -66,19 +75,19 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
         epsilon=1e-6,
         exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
   elif optimizer_name == "lamb":
-    tf.logging.info('using lamb')
+    tf.logging.info("using lamb")
     optimizer = lamb_optimizer.LAMBOptimizer(
         learning_rate=learning_rate,
-        weight_decay_rate=0.01,
-        beta_1=0.9,
-        beta_2=0.999,
-        epsilon=1e-6,
+        weight_decay_rate=FLAGS.lamb_weight_decay_rate,
+        beta_1=FLAGS.lamb_beta_1,
+        beta_2=FLAGS.lamb_beta_2,
+        epsilon=10**FLAGS.log_epsilon,
         exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
   else:
     raise ValueError("Not supported optimizer: ", optimizer_name)
 
-  # if use_tpu:
-  #   optimizer = contrib_tpu.CrossShardOptimizer(optimizer)
+  if use_tpu:
+    optimizer = tf.tpu.CrossShardOptimizer(optimizer)
 
   tvars = tf.trainable_variables()
   grads = tf.gradients(loss, tvars)
