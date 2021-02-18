@@ -105,8 +105,8 @@ flags.DEFINE_integer(
     "Only used if `use_tpu` is True. Total number of TPU cores to use.")
 
 flags.DEFINE_integer(
-            "num_gpus", 0,
-                "Use the GPU backend if this value is set to more than zero.")
+    "num_gpus", 0,
+    "Use the GPU backend if this value is set to more than zero.")
 
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
@@ -190,7 +190,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           use_tpu, optimizer, poly_power, start_warmup_step)
 
       if use_tpu:
-        output_spec = contrib_tpu.TPUEstimatorSpec(
+        output_spec = tf.estimator.tpu.TPUEstimatorSpec(
             mode=mode,
             loss=total_loss,
             train_op=train_op,
@@ -243,19 +243,19 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           next_sentence_log_probs, next_sentence_labels
       ])
       if use_tpu:
-          output_spec = contrib_tpu.TPUEstimatorSpec(
-              mode=mode,
-              loss=total_loss,
-              eval_metrics=eval_metrics,
-              scaffold_fn=scaffold_fn)
+        output_spec = tf.estimator.tpu.TPUEstimatorSpec(
+            mode=mode,
+            loss=total_loss,
+            eval_metrics=eval_metrics,
+            scaffold_fn=scaffold_fn)
       else:
-          output_spec = tf.estimator.EstimatorSpec(
-              mode=mode,
-              loss=total_loss,
-              eval_metric_ops=metric_fn(
-                masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
-                masked_lm_weights, next_sentence_example_loss,
-                next_sentence_log_probs, next_sentence_labels))
+        output_spec = tf.estimator.EstimatorSpec(
+            mode=mode,
+            loss=total_loss,
+            eval_metric_ops=metric_fn(
+              masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
+              masked_lm_weights, next_sentence_example_loss,
+              next_sentence_log_probs, next_sentence_labels))
 
     else:
       raise ValueError("Only TRAIN and EVAL modes are supported: %s" % (mode))
@@ -461,7 +461,7 @@ def main(_):
 
   tpu_cluster_resolver = None
   if FLAGS.use_tpu and FLAGS.tpu_name:
-    tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
+    tpu_cluster_resolver = tf.distribute.cluster_resolver.TPUClusterResolver(
         FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
 
   model_fn = model_fn_builder(
@@ -477,21 +477,21 @@ def main(_):
       start_warmup_step=FLAGS.start_warmup_step)
 
   if FLAGS.use_tpu:
-    is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
-    run_config = contrib_tpu.RunConfig(
+    is_per_host = tf.estimator.tpu.InputPipelineConfig.PER_HOST_V2
+    run_config = tf.estimator.tpu.RunConfig(
         cluster=tpu_cluster_resolver,
         master=FLAGS.master,
         model_dir=FLAGS.output_dir,
         keep_checkpoint_max=5,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
-        tpu_config=contrib_tpu.TPUConfig(
+        tpu_config=tf.estimator.tpu.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
             num_shards=FLAGS.num_tpu_cores,
             per_host_input_for_training=is_per_host))
 
     # If TPU is not available, this will fall back to normal Estimator on CPU
     # or GPU.
-    estimator = contrib_tpu.TPUEstimator(
+    estimator = tf.estimator.tpu.TPUEstimator(
         use_tpu=FLAGS.use_tpu,
         model_fn=model_fn,
         config=run_config,
@@ -507,9 +507,9 @@ def main(_):
         allow_soft_placement=True)
 
     distribution_strategy = distribution_utils.get_distribution_strategy(
-        distribution_strategy='mirrored',
+        distribution_strategy="mirrored",
         num_gpus=FLAGS.num_gpus,
-        all_reduce_alg='nccl',
+        all_reduce_alg="nccl",
         num_packs=0)
 
     dist_gpu_config = tf.estimator.RunConfig(
