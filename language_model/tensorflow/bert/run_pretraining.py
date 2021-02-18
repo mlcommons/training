@@ -108,6 +108,8 @@ flags.DEFINE_integer(
     "num_gpus", 0,
     "Use the GPU backend if this value is set to more than zero.")
 
+flags.DEFINE_integer("steps_per_update", 1,
+                     "The number of steps for accumulating gradients.")
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
@@ -187,7 +189,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     if mode == tf.estimator.ModeKeys.TRAIN:
       train_op = optimization.create_optimizer(
           total_loss, learning_rate, num_train_steps, num_warmup_steps,
-          use_tpu, optimizer, poly_power, start_warmup_step)
+          use_tpu, optimizer, poly_power, start_warmup_step, FLAGS.steps_per_update)
 
       if use_tpu:
         output_spec = tf.estimator.tpu.TPUEstimatorSpec(

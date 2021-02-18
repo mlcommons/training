@@ -11,6 +11,7 @@ import tensorflow.compat.v1 as tf
 # from tensorflow.contrib import tpu as contrib_tpu
 
 import lamb_optimizer_v1 as lamb_optimizer
+import deferred_grad_optimizer
 
 flags = absl.flags
 
@@ -21,8 +22,15 @@ flags.DEFINE_float("lamb_beta_2", 0.999, "Lamb beta2")
 flags.DEFINE_float("log_epsilon", -6, "Lamb beta2")
 
 
-def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
-                     optimizer_name='adamw', poly_power=1.0, start_warmup_step=0):
+def create_optimizer(loss,
+                     init_lr,
+                     num_train_steps,
+                     num_warmup_steps,
+                     use_tpu,
+                     optimizer_name="adamw",
+                     poly_power=1.0,
+                     start_warmup_step=0,
+                     steps_per_update=1):
   """Creates an optimizer training op."""
   global_step = tf.train.get_or_create_global_step()
 
@@ -85,6 +93,11 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
         exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
   else:
     raise ValueError("Not supported optimizer: ", optimizer_name)
+
+  if steps_per_update > 1:
+    tf.logging.info("applying gradient aggregation %d " % steps_per_update)
+    optimizer = deferred_grad_optimizer.GradientAggregationOptimizer(
+        optimizer, steps_per_update, use_tpu=use_tpu)
 
   if use_tpu:
     optimizer = tf.tpu.CrossShardOptimizer(optimizer)
