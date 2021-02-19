@@ -1,4 +1,4 @@
 git+https://github.com/NVIDIA/dllogger
-https://github.com/mlcommons/logging/archive/8616a247e5c8e53d72c878604e886be7720102d7.zip
+https://github.com/mlcommons/logging/archive/3af209cfc974e8c9eea0a5da896f284bcc363f97.zip
 nibabel==3.2.1
 scipy==1.5.2

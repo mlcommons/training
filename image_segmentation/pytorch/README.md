@@ -85,7 +85,7 @@ bash run_and_time.sh <SEED>
 
 The script assumes that the data is available at `/data` directory.
 
-Running this command for seeds in range `{0, 1, ..., 9}` should converge to the target accuracy `mean_dice` = 0.91. 
+Running this command for seeds in range `{0, 1, ..., 9}` should converge to the target accuracy `mean_dice` = 0.908. 
 The training will be terminated once the quality threshold is reached or `MAX_EPOCH` (default: 4000) is surpassed. 
 If needed, those variables can be modified within the `run_and_time.sh` script.
 
