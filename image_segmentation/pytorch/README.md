@@ -127,17 +127,17 @@ The metric is reported as `mean_dice` in the code.
 
 ## Quality target
 
-The target `mean_dice` is 0.91.
+The target `mean_dice` is 0.908.
 
 ## Evaluation frequency
 
 The evaluation schedule is the following:
 - for epochs 1 - 999: Do not evaluate
-- for epochs > 1000: Evaluate every 20 epochs
+- for epochs >= 1000: Evaluate every 20 epochs
 
 ## Evaluation thoroughness
 
-The validation dataset is composed of 42 volumes. They were pre-selected and their IDs are stored in the `evaluation_cases.txt` file.
+The validation dataset is composed of 42 volumes. They were pre-selected, and their IDs are stored in the `evaluation_cases.txt` file.
 A valid score is obtained as an average `mean_dice` score across the whole 42 volumes. Please mind that a multi-worker training in popular frameworks is using so-called samplers to shard the data.
-Such samplers tend to shard the data equally across all workers. For convenience, this is achieved by either truncating the dataset so it is divisible by the number of workers,
+Such samplers tend to shard the data equally across all workers. For convenience, this is achieved by either truncating the dataset, so it is divisible by the number of workers,
 or the "missing" data is copied. This most likely will influence the final score - a valid evaluation is performed on exactly 42 volumes and each volume's score has a weight of 1/42 of the total sum of the scores. 
