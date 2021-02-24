@@ -73,13 +73,13 @@ After downloading and extracting files, confirm if the md5sums match the expecte
 
 ### **Extract data from XML**
 
-Next, clone the [WikiExtractor](https://github.com/attardi/wikiextractor/tree/e4abb4cbd019b0257824ee47c23dd163919b731b) repo
+Next, clone the [WikiExtractor](https://github.com/attardi/wikiextractor/tree/3162bb6c3c9ebd2d15be507aa11d6fa818a454ac) repo
 ```
 git clone https://github.com/attardi/wikiextractor.git
 
 cd wikiextractor
 
-git checkout e4abb4cbd019b0257824ee47c23dd163919b731b
+git checkout 3162bb6c3c9ebd2d15be507aa11d6fa818a454ac
 
 # Back to <bert>/cleanup_scripts
 cd .. 
@@ -214,7 +214,7 @@ Type: float32
 `next_sentence_labels`: Carries the next sentence labels. <br/>
 Type: int32
 
-The dataset was generated using Python 3.7.6 and tensorflow-gpu 1.15.2.
+The dataset was generated using Python 3.7.6, nltk 3.4.5 and tensorflow-gpu 1.15.2.
 
 # Stopping criteria
 The training should occur over a minimum of 3,000,000 samples. A valid submission will evaluate a masked lm accuracy >= 0.712. 

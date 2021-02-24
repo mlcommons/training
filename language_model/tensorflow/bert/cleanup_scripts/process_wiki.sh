@@ -7,7 +7,7 @@
 
 inputs=$1
 
-pip install nltk
+pip install nltk==3.4.5
 
 # Remove doc tag and title
 python ./cleanup_file.py --data=$inputs --output_suffix='.1'
