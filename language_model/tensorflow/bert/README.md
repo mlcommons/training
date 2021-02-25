@@ -123,40 +123,57 @@ To run this model, use the following command.
 
 ```shell
 
-TF_GPU_THREAD_MODE=gpu_private python3 run_pretraining.py \
-  --all_reduce_alg=nccl \
-  --bert_config_file=<path to bert_config.json> \
-  --beta_1=0.91063 \
-  --beta_2=0.96497 \
-  --device_warmup \
-  --do_eval \
-  --dtype=fp32 \
-  --eval_batch_size=48 \
-  --init_checkpoint=<path to model.ckpt-28252> \
-  '--train_files=<tf_record dir>/part-*' \
-  '--eval_files=<tf_record dir>/eval_10k' \
-  --learning_rate=0.00035221 \
-  --loss_scale=dynamic \
+TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
+python run_pretraining.py \
+  --bert_config_file=./bert_config.json \
+  --output_dir=/tmp/output/ \
+  --input_file="<tfrecord dir>/part*" \
+  --nodo_eval \
+  --do_train \
+  --eval_batch_size=8 \
+  --learning_rate=4e-05 \
+  --init_checkpoint=./checkpoint/model.ckpt-28252 \
+  --iterations_per_loop=1000 \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
-  --model_dir=<output model dir> \
-  --num_accumulation_steps=24 \
+  --num_train_steps=682666666 \
+  --num_warmup_steps=1562 \
+  --optimizer=lamb \
+  --save_checkpoints_steps=20833 \
+  --start_warmup_step=0 \
   --num_gpus=8 \
-  --num_steps_per_epoch=8000 \
-  --num_train_epochs=1 \
-  --optimizer_type=lamb \
-  --scale_loss \
-  --steps_before_eval_start=3948 \
-  --steps_between_eval=658 \
-  --steps_per_loop=658 \
-  --stop_steps=8000 \
-  --train_batch_size=768 \
-  --verbosity=0 \
-  --warmup_steps=420
+  --train_batch_size=24
 
 ```
 
-The above parameters are for a machine with 8 V100 GPUs with 16GB memory each; the hyper parameters (learning rate, warm up steps, etc.) are from Google's [TF2 BERT submission](https://github.com/mlperf/training_results_v0.7/tree/master/Google/benchmarks/bert/gpu-v100-8-TF2.0) to v0.7, and should converge after about 3.5 to 4.0 million samples.
+The above parameters are for a machine with 8 V100 GPUs with 16GB memory each; the hyper parameters (learning rate, warm up steps, etc.) are for testing only. The training script won’t print out the masked_lm_accuracy; in order to get masked_lm_accuracy, a separately invocation of run_pretraining.py with the following command with a V100 GPU with 16 GB memory:
+
+```shell
+
+TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
+python3 run_pretraining.py \
+  --bert_config_file=./bert_config.json \
+  --output_dir=/tmp/output/ \
+  --input_file="<tfrecord dir>/eval_10k" \
+  --do_eval \
+  --nodo_train \
+  --eval_batch_size=8 \
+  --init_checkpoint=./checkpoint/model.ckpt-28252 \
+  --iterations_per_loop=1000 \
+  --learning_rate=4e-05 \
+  --max_eval_steps=1250 \
+  --max_predictions_per_seq=76 \
+  --max_seq_length=512 \
+  --num_gpus=1 \
+  --num_train_steps=682666666 \
+  --num_warmup_steps=1562 \
+  --optimizer=lamb \
+  --save_checkpoints_steps=20833 \
+  --start_warmup_step=0 \
+  --train_batch_size=24 \
+  --nouse_tpu
+   
+```
 
 The model has been tested using the following stack:
 - Debian GNU/Linux 10 GNU/Linux 4.19.0-12-amd64 x86_64
