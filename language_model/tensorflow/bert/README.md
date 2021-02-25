@@ -111,9 +111,9 @@ Some stats of the generated tfrecords:
 The dataset was generated using Python 3.7.6 and tensorflow-gpu 1.15.2.
 
 # Stopping criteria
-The training should occur over a minimum of 3,000,000 samples. A valid submission will evaluate a masked lm accuracy >= 0.712. 
+A valid submission will evaluate a masked lm accuracy >= 0.720. 
 
-The evaluation will be on the first 10,000 consecutive samples of the training set. The evalution frequency is every 500,000 samples, starting from 3,000,000 samples. The evaluation can be either offline or online for v0.7. More details please refer to the training policy.
+The evaluation will be on the 10,000 samples in the evaluation set. The evalution frequency is every 500,000 samples, starting from 0 examples. The evaluation can be either offline or online for v1.0. More details please refer to the training policy.
 
 The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. In particular the seed (12345) must be set to ensure everyone evaluates on the same data.
 
