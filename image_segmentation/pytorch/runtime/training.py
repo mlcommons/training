@@ -106,10 +106,10 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)
 
             eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, epoch)
-            eval_metrics["train_loss"] = round(sum(cumulative_loss) / len(cumulative_loss), 4)
+            eval_metrics["train_loss"] = sum(cumulative_loss) / len(cumulative_loss)
 
             mllog_event(key=CONSTANTS.EVAL_ACCURACY,
-                        value={"epoch": epoch, "value": round(eval_metrics["mean_dice"], 3)},
+                        value={"epoch": epoch, "value": eval_metrics["mean_dice"]},
                         metadata={CONSTANTS.EPOCH_NUM: epoch},
                         sync=False)
             mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=True)

@@ -56,10 +56,10 @@ def evaluate(flags, model, loader, loss_fn, score_fn, device, epoch=0, is_distri
 
     scores, eval_loss = scores.cpu().numpy(), float(eval_loss.cpu().numpy())
     eval_metrics = {"epoch": epoch,
-                    "L1 dice": round(scores[-2], 4),
-                    "L2 dice": round(scores[-1], 4),
-                    "mean_dice": round((scores[-1] + scores[-2]) / 2, 4),
-                    "eval_loss": round(eval_loss, 4)}
+                    "L1 dice": scores[-2],
+                    "L2 dice": scores[-1],
+                    "mean_dice": (scores[-1] + scores[-2]) / 2,
+                    "eval_loss": eval_loss}
 
     return eval_metrics
 
