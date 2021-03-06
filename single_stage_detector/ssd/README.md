@@ -99,7 +99,7 @@ Microsoft COCO: COmmon Objects in Context. 2017.
 Train on 2017 COCO train data set, compute mAP on 2017 COCO val data set.
 
 # 4. Model
-Given an input 300x300 image from [Coco 2017](https://cocodataset.org/) with 80 categories, the output of this network is a set of category and bounding boxes.  Other detectors make these two predictions in multiple stages, by first proposing a region of interest, then iterating over the regions of interest to try to categorize each object.  SSD does both of these in one stage, making inference faster.
+This network takes an input 300x300 image from [Coco 2017](https://cocodataset.org/) and 80 categories, and computes a set of bounding boxes and categories.  Other detector models use multiple stages, first proposing regions of interest that might contain objects, then iterating over the regions of interest to try to categorize each object.  SSD does both of these in one stage, leading to lower-latency and higher-performance inference.
 
 ## Backbone
 
