@@ -85,6 +85,9 @@ class DaliRnntIterator(object):
         """
         ids = labels.flatten().numpy()
         transcripts = self.tr[ids]
+        # Tensors are padded with 0. In `sentencepiece` we set it to <unk>,
+        # because it cannot be disabled, and is absent in the data.
+        # Note this is different from the RNN-T blank token (index 1023).
         transcripts = torch.nn.utils.rnn.pad_sequence(transcripts, batch_first=True)
 
         return transcripts.cuda(), self.t_sizes[ids].cuda()
