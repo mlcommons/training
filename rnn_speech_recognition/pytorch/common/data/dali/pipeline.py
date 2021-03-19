@@ -88,7 +88,6 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         self.read = ops.FileReader(name="Reader", pad_last_batch=(pipeline_type == 'val'), device="cpu", file_root=file_root, file_list=sampler.get_file_list_path(), shard_id=shard_id,
                                    num_shards=n_shards, shuffle_after_epoch=shuffle)
 
-        # TODO change ExternalSource to Uniform for new DALI release
         if resample_range is not None:
             self.speed_perturbation_coeffs = ops.Uniform(device="cpu", range=resample_range)
         else:
@@ -130,9 +129,6 @@ class DaliPipeline(nvidia.dali.pipeline.Pipeline):
         max_duration = config_data['max_duration']
         sample_rate = config_data['sample_rate']
         silence_threshold = -60 if config_data['trim_silence'] else None
-
-        # TODO Take into account resampling probablity
-        # TODO     config_features['speed_perturbation']['p']
 
         if do_resampling and config_data['speed_perturbation'] is not None:
             resample_range = [config_data['speed_perturbation']['min_rate'],

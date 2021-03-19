@@ -5,7 +5,7 @@ Speech recognition accepts raw audio samples and produces a corresponding text t
 
 ## Steps to configure machine
 ### From Docker
-
+1. Clone the repository
 ```
 git clone https://github.com/mlcommon/training.git
 ```
@@ -83,6 +83,13 @@ Once the data is converted, the following additional files and folders should ex
    * `test-clean-wav/`
    * `test-other-wav/`
 
+For training, the following manifest files are used:
+   * `librispeech-train-clean-100-wav.json`
+   * `librispeech-train-clean-360-wav.json`
+   * `librispeech-train-other-500-wav.json`
+
+For evaluation, the `librispeech-dev-clean-wav.json` is used.
+
 ## Steps to run benchmark.
 
 ### Steps to launch training
@@ -98,7 +105,7 @@ This script tries to use 8 GPUs by default.
 To run 1-gpu training, use the following command:
 
 ```bash
-NUM_GPUS=1 GRADIENT_ACCUMULATION_STEPS=64 scripts/train.sh
+NUM_GPUS=1 GRAD_ACCUMULATION_STEPS=64 scripts/train.sh
 ```
 
 # 3. Dataset/Environment
@@ -119,7 +126,7 @@ Audio processing consists of the following steps:
 1. MelFilterBanks are calculated with 80 features and normalization;
 1. features are translated to decibeles with log(10) multiplier reference magnitude 1 and 1e-20 cutoff (details in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.ToDecibels));
 1. features are normalized along time dimension using algorithm described in the [normalize operator documentation](https://docs.nvidia.com/deeplearning/dali/user-guide/docs/examples/general/normalize.html);
-1. In the train pipeline, an addaptive specaugment augmentation is applied ([arxiv](https://arxiv.org/abs/1912.05533), [code](https://github.com/mwawrzos/training/blob/rnnt/rnn_speech_recognition/pytorch/common/data/features.py#L44-L117)). In the evaluation pipeline, this step is omitted;
+1. In the train pipeline, an adaptive specaugment augmentation is applied ([arxiv](https://arxiv.org/abs/1912.05533), [code](https://github.com/mwawrzos/training/blob/rnnt/rnn_speech_recognition/pytorch/common/data/features.py#L44-L117)). In the evaluation pipeline, this step is omitted;
 1. to reduce accelerator memory usage, frames are spliced (stacked three times, and subsampled three times) ([code](https://github.com/mwawrzos/training/blob/rnnt/rnn_speech_recognition/pytorch/common/data/features.py#L144-L165));
 
 ### Training and test data separation
@@ -130,7 +137,7 @@ To reduce data padding in minibatches, data bucketing is applied.
 The algorithm is implemented here:
 [link](https://github.com/mlcommons/training/blob/2126999a1ffff542064bb3208650a1e673920dcf/rnn_speech_recognition/pytorch/common/data/dali/sampler.py#L65-L105)
 and can be described as follows:
-0. drop samples longer than a given threshold;
+1. drop samples longer than a given threshold;
 1. sort data by audio length;
 2. split data into 6 equally sized buckets;
 3. for every epochs:
@@ -150,7 +157,7 @@ or another publicly available dataset of reasonable size. For that reason, the r
 collection of solutions from several works. It is based on the following articles:
 * Graves 2012 - an invention of RNN-Transducer: https://arxiv.org/abs/1211.3711
 * Rao 2018 - time reduction in the acoustic model, internal dataset: https://arxiv.org/abs/1801.00841
-* Zhang 2020 - Bi-directional LSTM RNN-T result on LibriSpeech: https://arxiv.org/abs/2002.02562
+* Zhang 2020 - Transformer-transducer publication. It includes bi-directional LSTM RNN-T result on LibriSpeech: https://arxiv.org/abs/2002.02562
 * Park 2019 - adaptive spec augment, internal dataset: https://arxiv.org/abs/1912.05533
 * Guo 2020 - RNN-T trained with vanilla LSTM, internal dataset: https://arxiv.org/abs/2007.13802
 
@@ -163,13 +170,16 @@ Model structure is described in the following picture:
 * In the embeding layer, weights are initialized as defined in the [Pytorch 1.7.0 torch.nn.Embeding documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.Embedding.html#torch.nn.Embedding).
 * In all LSTM layers:
     * weights and biases are initialized as defined in the [Pytorch 1.7.0 torch.nn.LSTM documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.LSTM.html#torch.nn.LSTM),
-    * then they weights and biases values are divided by two,
-    * forget gate biases are set to $0$.
+    * then the weights and bias values are divided by two,
+    * forget gate biases are set to 1.
 
 ### Loss function
 Transducer Loss
 ### Optimizer
 RNN-T benchmark uses LAMB optimizer. More details are in [training policies](https://github.com/mlcommons/training_policies/blob/master/training_rules.adoc#appendix-allowed-optimizers).
+
+To decrease the number of epochs needed to reach the target accuracy,
+evaluation is done with an exponential moving average of the trained model weights with a smoothing factor set to 0.999.
 
 # 5. Quality
 ### Quality metric

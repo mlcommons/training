@@ -42,8 +42,6 @@ from rnnt.model import RNNT
 from mlperf import logging
 
 
-# TODO Eval batch size
-
 def parse_args():
     parser = argparse.ArgumentParser(description='RNN-T Training Reference')
 

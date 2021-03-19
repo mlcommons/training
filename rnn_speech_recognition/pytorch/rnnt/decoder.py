@@ -44,9 +44,6 @@ class RNNTGreedyDecoder:
         if label == self._SOS:
             return model.predict(None, hidden, add_sos=False)
 
-        if label > self.blank_idx:
-            label -= 1
-
         label = label_collate([[label]]).to(device)
         return model.predict(label, hidden, add_sos=False)
 
@@ -64,7 +61,6 @@ class RNNTGreedyDecoder:
 
         Args:
             x: A tensor of size (batch, channels, features, seq_len)
-                TODO was (seq_len, batch, in_features).
             out_lens: list of int representing the length of each sequence
                 output sequence.
 
