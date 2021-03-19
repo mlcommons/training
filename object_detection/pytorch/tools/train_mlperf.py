@@ -1,3 +1,16 @@
+# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 r"""
 Basic training script for PyTorch
@@ -30,9 +43,9 @@ from maskrcnn_benchmark.utils.comm import synchronize, get_rank, is_main_process
 from maskrcnn_benchmark.utils.imports import import_file
 from maskrcnn_benchmark.utils.logger import setup_logger
 from maskrcnn_benchmark.utils.miscellaneous import mkdir
-from maskrcnn_benchmark.utils.mlperf_logger import print_mlperf, generate_seeds, broadcast_seeds
+from maskrcnn_benchmark.utils.mlperf_logger import log_end, log_start, log_event, configure_logger, generate_seeds, broadcast_seeds
 
-from mlperf_compliance import mlperf_log
+from mlperf_logging.mllog import constants
 
 def test_and_exchange_map(tester, model, distributed):
     results = tester(model=model, distributed=distributed)
@@ -61,40 +74,38 @@ def mlperf_test_early_exit(iteration, iters_per_epoch, tester, model, distribute
     if iteration > 0 and (iteration + 1)% iters_per_epoch == 0:
         epoch = iteration // iters_per_epoch
 
-        print_mlperf(key=mlperf_log.EVAL_START, value=epoch)
+        log_end(key=constants.EPOCH_STOP, metadata={"epoch_num": epoch})
+        log_end(key=constants.BLOCK_STOP, metadata={"first_epoch_num": epoch})
+        log_start(key=constants.EVAL_START, metadata={"epoch_num":epoch})
 
         bbox_map, segm_map = test_and_exchange_map(tester, model, distributed)
         # necessary for correctness
         model.train()
 
-        print_mlperf(key=mlperf_log.EVAL_TARGET, value={"BBOX": min_bbox_map,
-                                                        "SEGM": min_segm_map})
         logger = logging.getLogger('maskrcnn_benchmark.trainer')
         logger.info('bbox mAP: {}, segm mAP: {}'.format(bbox_map, segm_map))
 
-        print_mlperf(key=mlperf_log.EVAL_ACCURACY, value={"epoch" : epoch, "value":{"BBOX" : bbox_map, "SEGM" : segm_map}})
-        print_mlperf(key=mlperf_log.EVAL_STOP)
+        log_event(key=constants.EVAL_ACCURACY, value={"BBOX" : bbox_map, "SEGM" : segm_map}, metadata={"epoch_num" : epoch} )
+        log_end(key=constants.EVAL_STOP, metadata={"epoch_num": epoch})
 
         # terminating condition
         if bbox_map >= min_bbox_map and segm_map >= min_segm_map:
             logger.info("Target mAP reached, exiting...")
-            print_mlperf(key=mlperf_log.RUN_STOP, value={"success":True})
             return True
 
-        # At this point will start the next epoch, so note this in the log
-        # print_mlperf(key=mlperf_log.TRAIN_EPOCH, value=epoch+1)
     return False
 
 def mlperf_log_epoch_start(iteration, iters_per_epoch):
     # First iteration:
     #     Note we've started training & tag first epoch start
     if iteration == 0:
-        print_mlperf(key=mlperf_log.TRAIN_LOOP)
-        print_mlperf(key=mlperf_log.TRAIN_EPOCH, value=0)
+        log_start(key=constants.BLOCK_START, metadata={"first_epoch_num":1, "epoch_count":1})
+        log_start(key=constants.EPOCH_START, metadata={"epoch_num":1})
         return
     if iteration % iters_per_epoch == 0:
         epoch = iteration // iters_per_epoch
-        print_mlperf(key=mlperf_log.TRAIN_EPOCH, value=epoch)
+        log_start(key=constants.BLOCK_START, metadata={"first_epoch_num": epoch, "epoch_count": 1})
+        log_start(key=constants.EPOCH_START, metadata={"epoch_num": epoch})
 
 from maskrcnn_benchmark.layers.batch_norm import FrozenBatchNorm2d
 def cast_frozen_bn_to_half(module):
@@ -104,28 +115,10 @@ def cast_frozen_bn_to_half(module):
         cast_frozen_bn_to_half(child)
     return module
 
-def train(cfg, local_rank, distributed):
+def train(cfg, local_rank, distributed, disable_allreduce_for_logging, random_number_generator):
     # Model logging
-    print_mlperf(key=mlperf_log.INPUT_BATCH_SIZE, value=cfg.SOLVER.IMS_PER_BATCH)
-    print_mlperf(key=mlperf_log.BATCH_SIZE_TEST, value=cfg.TEST.IMS_PER_BATCH)
-
-    print_mlperf(key=mlperf_log.INPUT_MEAN_SUBTRACTION, value = cfg.INPUT.PIXEL_MEAN)
-    print_mlperf(key=mlperf_log.INPUT_NORMALIZATION_STD, value=cfg.INPUT.PIXEL_STD)
-    print_mlperf(key=mlperf_log.INPUT_RESIZE)
-    print_mlperf(key=mlperf_log.INPUT_RESIZE_ASPECT_PRESERVING)
-    print_mlperf(key=mlperf_log.MIN_IMAGE_SIZE, value=cfg.INPUT.MIN_SIZE_TRAIN)
-    print_mlperf(key=mlperf_log.MAX_IMAGE_SIZE, value=cfg.INPUT.MAX_SIZE_TRAIN)
-    print_mlperf(key=mlperf_log.INPUT_RANDOM_FLIP)
-    print_mlperf(key=mlperf_log.RANDOM_FLIP_PROBABILITY, value=0.5)
-    print_mlperf(key=mlperf_log.FG_IOU_THRESHOLD, value=cfg.MODEL.RPN.FG_IOU_THRESHOLD)
-    print_mlperf(key=mlperf_log.BG_IOU_THRESHOLD, value=cfg.MODEL.RPN.BG_IOU_THRESHOLD)
-    print_mlperf(key=mlperf_log.RPN_PRE_NMS_TOP_N_TRAIN, value=cfg.MODEL.RPN.PRE_NMS_TOP_N_TRAIN)
-    print_mlperf(key=mlperf_log.RPN_PRE_NMS_TOP_N_TEST, value=cfg.MODEL.RPN.PRE_NMS_TOP_N_TEST)
-    print_mlperf(key=mlperf_log.RPN_POST_NMS_TOP_N_TRAIN, value=cfg.MODEL.RPN.FPN_POST_NMS_TOP_N_TRAIN)
-    print_mlperf(key=mlperf_log.RPN_POST_NMS_TOP_N_TEST, value=cfg.MODEL.RPN.FPN_POST_NMS_TOP_N_TEST)
-    print_mlperf(key=mlperf_log.ASPECT_RATIOS, value=cfg.MODEL.RPN.ASPECT_RATIOS)
-    print_mlperf(key=mlperf_log.BACKBONE, value=cfg.MODEL.BACKBONE.CONV_BODY)
-    print_mlperf(key=mlperf_log.NMS_THRESHOLD, value=cfg.MODEL.RPN.NMS_THRESH)
+    log_event(key=constants.GLOBAL_BATCH_SIZE, value=cfg.SOLVER.IMS_PER_BATCH)
+    log_event(key=constants.NUM_IMAGE_CANDIDATES, value=cfg.MODEL.RPN.FPN_POST_NMS_TOP_N_TRAIN)
 
     model = build_detection_model(cfg)
     device = torch.device(cfg.MODEL.DEVICE)
@@ -133,11 +126,14 @@ def train(cfg, local_rank, distributed):
 
     optimizer = make_optimizer(cfg, model)
     # Optimizer logging
-    print_mlperf(key=mlperf_log.OPT_NAME, value=mlperf_log.SGD_WITH_MOMENTUM)
-    print_mlperf(key=mlperf_log.OPT_LR, value=cfg.SOLVER.BASE_LR)
-    print_mlperf(key=mlperf_log.OPT_MOMENTUM, value=cfg.SOLVER.MOMENTUM)
-    print_mlperf(key=mlperf_log.OPT_WEIGHT_DECAY, value=cfg.SOLVER.WEIGHT_DECAY)
-
+    log_event(key=constants.OPT_NAME, value="sgd_with_momentum")
+    log_event(key=constants.OPT_BASE_LR, value=cfg.SOLVER.BASE_LR)
+    log_event(key=constants.OPT_LR_WARMUP_STEPS, value=cfg.SOLVER.WARMUP_ITERS)
+    log_event(key=constants.OPT_LR_WARMUP_FACTOR, value=cfg.SOLVER.WARMUP_FACTOR)
+    log_event(key=constants.OPT_LR_DECAY_FACTOR, value=cfg.SOLVER.GAMMA)
+    log_event(key=constants.OPT_LR_DECAY_STEPS, value=cfg.SOLVER.STEPS)
+    log_event(key=constants.MIN_IMAGE_SIZE, value=cfg.INPUT.MIN_SIZE_TRAIN[0])
+    log_event(key=constants.MAX_IMAGE_SIZE, value=cfg.INPUT.MAX_SIZE_TRAIN)
 
     scheduler = make_lr_scheduler(cfg, optimizer)
 
@@ -162,12 +158,17 @@ def train(cfg, local_rank, distributed):
     extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
     arguments.update(extra_checkpoint_data)
 
+    log_end(key=constants.INIT_STOP)
+    log_start(key=constants.RUN_START)
+
     data_loader, iters_per_epoch = make_data_loader(
         cfg,
         is_train=True,
         is_distributed=distributed,
         start_iter=arguments["iteration"],
+        random_number_generator=random_number_generator
     )
+    log_event(key=constants.TRAIN_SAMPLES, value=len(data_loader))
 
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
@@ -187,7 +188,7 @@ def train(cfg, local_rank, distributed):
 
     start_train_time = time.time()
 
-    do_train(
+    success = do_train(
         model,
         data_loader,
         optimizer,
@@ -206,12 +207,13 @@ def train(cfg, local_rank, distributed):
             "&&&& MLPERF METRIC THROUGHPUT per GPU={:.4f} iterations / s".format((arguments["iteration"] * 1.0) / total_training_time)
     )
 
-    return model
+    return model, success
 
 
 
 def main():
-    mlperf_log.ROOT_DIR_MASKRCNN = os.path.dirname(os.path.abspath(__file__))
+    configure_logger(constants.MASKRCNN)
+    log_start(key=constants.INIT_START)
 
     parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     parser.add_argument(
@@ -234,22 +236,12 @@ def main():
     num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = num_gpus > 1
 
-    if is_main_process:
-        # Setting logging file parameters for compliance logging
-        os.environ["COMPLIANCE_FILE"] = '/MASKRCNN_complVv0.5.0_' + str(datetime.datetime.now())
-        mlperf_log.LOG_FILE = os.getenv("COMPLIANCE_FILE")
-        mlperf_log._FILE_HANDLER = logging.FileHandler(mlperf_log.LOG_FILE)
-        mlperf_log._FILE_HANDLER.setLevel(logging.DEBUG)
-        mlperf_log.LOGGER.addHandler(mlperf_log._FILE_HANDLER)
-
     if args.distributed:
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(
             backend="nccl", init_method="env://"
         )
         synchronize()
-
-        print_mlperf(key=mlperf_log.RUN_START)
 
         # setting seeds - needs to be timed, so after RUN_START
         if is_main_process():
@@ -261,7 +253,6 @@ def main():
         torch.distributed.broadcast(seed_tensor, 0)
         master_seed = int(seed_tensor.item())
     else:
-        print_mlperf(key=mlperf_log.RUN_START)
         # random master seed, random.SystemRandom() uses /dev/urandom on Unix
         master_seed = random.SystemRandom().randint(0, 2 ** 32 - 1)
 
@@ -269,7 +260,7 @@ def main():
     args.seed = master_seed
     # random number generator with seed set to master_seed
     random_number_generator = random.Random(master_seed)
-    print_mlperf(key=mlperf_log.RUN_SET_RANDOM_SEED, value=master_seed)
+    log_event(key=constants.SEED, value=master_seed)
 
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
@@ -304,9 +295,13 @@ def main():
         logger.info(config_str)
     logger.info("Running with config:\n{}".format(cfg))
 
-    model = train(cfg, args.local_rank, args.distributed)
+    model, success = train(cfg, args.local_rank, args.distributed, args.disable_allreduce_for_logging, random_number_generator)
 
-    print_mlperf(key=mlperf_log.RUN_FINAL)
+    if success is not None:
+        if success:
+            log_end(key=constants.RUN_STOP, metadata={"status": "success"})
+        else:
+            log_end(key=constants.RUN_STOP, metadata={"status": "aborted"})
 
 
 if __name__ == "__main__":
