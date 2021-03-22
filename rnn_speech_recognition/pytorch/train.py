@@ -278,13 +278,11 @@ def main():
     train_augmentations = torch.nn.Sequential(
         train_specaugm_kw and features.SpecAugment(optim_level=args.amp, **train_specaugm_kw) or torch.nn.Identity(),
         features.FrameSplicing(optim_level=args.amp, **train_splicing_kw),
-        features.FillPadding(optim_level=args.amp, ),
         PermuteAudio(),
     )
     val_augmentations = torch.nn.Sequential(
         val_specaugm_kw and features.SpecAugment(optim_level=args.amp, **val_specaugm_kw) or torch.nn.Identity(),
         features.FrameSplicing(optim_level=args.amp, **val_splicing_kw),
-        features.FillPadding(optim_level=args.amp, ),
         PermuteAudio(),
     )
 
