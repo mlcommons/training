@@ -118,14 +118,14 @@ Data preprocessing is described by scripts mentioned in the [Steps to download d
 ### Data pipeline
 Transcripts are encoded to sentencepieces using model produced in [Steps to download data](#steps-to-download-data).
 Audio processing consists of the following steps:
-1. audio is decoded with sample rate choosen uniformly between 13800 and 18400;
-2. silience is trimmed with -60 dB threshold (datails in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.NonsilentRegion));
-3. random noise with normal distribution and 0.00001 amplitude is applied to reduce quantization effect (dither);
-4. Pre-emphasis filter is applied (details in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.PreemphasisFilter);
-1. spectograms are calculated with 512 ffts, 20ms window and 10ms stride;
-1. MelFilterBanks are calculated with 80 features and normalization;
-1. features are translated to decibeles with log(10) multiplier reference magnitude 1 and 1e-20 cutoff (details in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.ToDecibels));
-1. features are normalized along time dimension using algorithm described in the [normalize operator documentation](https://docs.nvidia.com/deeplearning/dali/user-guide/docs/examples/general/normalize.html);
+1. audio is decoded with sample rate choosen uniformly between 13800 and 18400 ([code](./common/data/dali/pipeline.py#L91-L97));
+2. silience is trimmed with -60 dB threshold (datails in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.NonsilentRegion)) ([code](./common/data/dali/pipeline.py#L120-L121));
+3. random noise with normal distribution and 0.00001 amplitude is applied to reduce quantization effect (dither) ([code](/common/data/dali/pipeline.py#L197));
+4. Pre-emphasis filter is applied (details in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.PreemphasisFilter) ([code](./common/data/dali/pipeline.py#L101));
+1. spectograms are calculated with 512 ffts, 20ms window and 10ms stride ([code](./common/data/dali/pipeline.py#L103-L105));
+1. MelFilterBanks are calculated with 80 features and normalization ([code](./common/data/dali/pipeline.py#L107-L108));
+1. features are translated to decibeles with log(10) multiplier reference magnitude 1 and 1e-20 cutoff (details in the [DALI documentation](https://docs.nvidia.com/deeplearning/dali/archives/dali_0280/user-guide/docs/supported_ops.html?highlight=nonsilentregion#nvidia.dali.ops.ToDecibels)) ([code](./common/data/dali/pipeline.py#L110-L111));
+1. features are normalized along time dimension using algorithm described in the [normalize operator documentation](https://docs.nvidia.com/deeplearning/dali/user-guide/docs/examples/general/normalize.html) ([code](common/data/dali/pipeline.py#L115));
 1. In the train pipeline, an adaptive specaugment augmentation is applied ([arxiv](https://arxiv.org/abs/1912.05533), [code](https://github.com/mwawrzos/training/blob/rnnt/rnn_speech_recognition/pytorch/common/data/features.py#L44-L117)). In the evaluation pipeline, this step is omitted;
 1. to reduce accelerator memory usage, frames are spliced (stacked three times, and subsampled three times) ([code](https://github.com/mwawrzos/training/blob/rnnt/rnn_speech_recognition/pytorch/common/data/features.py#L144-L165));
 
@@ -137,15 +137,15 @@ To reduce data padding in minibatches, data bucketing is applied.
 The algorithm is implemented here:
 [link](https://github.com/mlcommons/training/blob/2126999a1ffff542064bb3208650a1e673920dcf/rnn_speech_recognition/pytorch/common/data/dali/sampler.py#L65-L105)
 and can be described as follows:
-1. drop samples longer than a given threshold;
-1. sort data by audio length;
-2. split data into 6 equally sized buckets;
+1. drop samples longer than a given threshold ([code](./common/data/dali/data_loader.py#L97-L98));
+1. sort data by audio length ([code](./common/data/dali/sampler.py#L69));
+2. split data into 6 equally sized buckets ([code](./common/data/dali/sampler.py#L70));
 3. for every epochs:
-    1. shuffle data in each bucket;
-    2. as long as all samples are not divisible by global batch size, remove random element from random bucket;
+    1. shuffle data in each bucket ([code](common/data/dali/sampler.py#L73-L78));
+    2. as long as all samples are not divisible by global batch size, remove random element from random bucket ([code](./common/data/dali/sampler.py#L82-L86));
     3. concatenate all buckets;
-    4. split samples into minibatches;
-    5. shuffle minibatches in the epoch.
+    4. split samples into minibatches ([code](./common/data/dali/sampler.py#L90));
+    5. shuffle minibatches in the epoch ([code](./common/data/dali/sampler.py#L93-L94)).
 
 ### Test data order
 Test data order is the same as in the dataset.
@@ -166,15 +166,15 @@ Model structure is described in the following picture:
 ![model layers structure](./rnnt_layers.svg "RNN-T model structure")
 
 ### Weight and bias initialization
-* In all fully connected layers, weights and biases are initialized as defined in the [Pytorch 1.7.0 torch.nn.Linear documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.Linear.html#torch.nn.Linear).
-* In the embeding layer, weights are initialized as defined in the [Pytorch 1.7.0 torch.nn.Embeding documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.Embedding.html#torch.nn.Embedding).
+* In all fully connected layers, weights and biases are initialized as defined in the [Pytorch 1.7.0 torch.nn.Linear documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.Linear.html#torch.nn.Linear) ([code](./rnnt/model.py#L123-L137)).
+* In the embeding layer, weights are initialized as defined in the [Pytorch 1.7.0 torch.nn.Embeding documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.Embedding.html#torch.nn.Embedding) ([code](./rnnt/model.py#L105)).
 * In all LSTM layers:
-    * weights and biases are initialized as defined in the [Pytorch 1.7.0 torch.nn.LSTM documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.LSTM.html#torch.nn.LSTM),
-    * then the weights and bias values are divided by two,
-    * forget gate biases are set to 1.
+    * weights and biases are initialized as defined in the [Pytorch 1.7.0 torch.nn.LSTM documentation](https://pytorch.org/docs/1.7.0/generated/torch.nn.LSTM.html#torch.nn.LSTM) ([code](./common/rnn.py#L56-L61)),
+    * forget gate biases are set to 1 ([code](./common/rnn.py#L67-L69)),
+    * then the weights and bias values are divided by two (in result, the forget gate biases are set to 0.5) ([code](./common/rnn.py#L74-L76)).
 
 ### Loss function
-Transducer Loss
+Transducer Loss 
 ### Optimizer
 RNN-T benchmark uses LAMB optimizer. More details are in [training policies](https://github.com/mlcommons/training_policies/blob/master/training_rules.adoc#appendix-allowed-optimizers).
 
