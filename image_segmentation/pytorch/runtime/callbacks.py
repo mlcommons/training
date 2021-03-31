@@ -27,24 +27,29 @@ def get_callbacks(flags, logger, local_rank, world_size):
     callbacks = []
     if local_rank == 0:
         if not flags.benchmark:
-            callbacks.append(EvaluationCallback(logger, metric="mean_dice", seed=flags.seed))
+            callbacks.append(EvaluationCallback(logger, metric="mean_dice", seed=flags.seed,
+                                                threshold=flags.quality_threshold))
             if flags.save_ckpt_path:
-                callbacks.append(CheckpointCallback(flags.save_ckpt_path, metric="mean_dice"))
+                callbacks.append(CheckpointCallback(flags.save_ckpt_path, metric="mean_dice", seed=flags.seed))
         else:
             callbacks.append(
-                PerformanceCallback(logger, flags.batch_size * world_size, flags.warmup_steps, mode='train'))
+                PerformanceCallback(logger, flags.batch_size * world_size * flags.ga_steps,
+                                    flags.warmup_steps, mode='train'))
 
     return callbacks
 
 
 class BaseCallback:
-    def on_batch_start(self, *args, **kwargs):
+    def on_fit_start(self, **kwargs):
         pass
 
-    def on_epoch_end(self, *args, **kwargs):
+    def on_batch_start(self, **kwargs):
         pass
 
-    def on_fit_end(self, *args, **kwargs):
+    def on_epoch_end(self, **kwargs):
+        pass
+
+    def on_fit_end(self, **kwargs):
         pass
 
 
@@ -81,6 +86,10 @@ class EvaluationCallback(BaseCallback):
         self._first_epoch_above_threshold = 0
         self._threshold = threshold
         self._seed = seed
+        self._training_start_time = None
+
+    def on_fit_start(self, **kwargs):
+        self._training_start_time = time.time()
 
     def on_epoch_end(self, epoch, metrics, *args, **kwargs):
         if not self._initialized:
@@ -95,7 +104,7 @@ class EvaluationCallback(BaseCallback):
         for key in metrics.keys():
             metrics[key] = float(metrics[key])
         self._last_epoch = epoch
-        self._logger.log(step=(metrics["epoch"]), data={**metrics, **self._best_metrics})
+        self._logger.log(step=(metrics["samples"]), data={**metrics, **self._best_metrics})
         self._logger.flush()
 
     def _register_metrics(self, metrics):
@@ -103,21 +112,23 @@ class EvaluationCallback(BaseCallback):
             self._best_metrics[self._prefix + key] = float(metrics[key])
         self._initialized = True
 
-    def on_fit_end(self, *args, **kwargs):
+    def on_fit_end(self, **kwargs):
         self._best_metrics["last_epoch"] = self._last_epoch
         self._best_metrics["first_conv_ep"] = self._first_epoch_above_threshold
         self._best_metrics["seed"] = self._seed
+        self._best_metrics["total_time"] = (time.time() - self._training_start_time) / 60
         self._logger.log(step=(), data=self._best_metrics)
         self._logger.flush()
 
 
 class CheckpointCallback(BaseCallback):
-    def __init__(self, path, metric):
+    def __init__(self, path, metric, seed):
         self._path = path
         self._main_metric = metric
         self._best_metric = 0.0
         self._best_state = {}
         self._last_state = {}
+        self._seed = seed
 
     def on_epoch_end(self, epoch, metrics, model, optimizer, *args, **kwargs):
         try:
@@ -133,4 +144,4 @@ class CheckpointCallback(BaseCallback):
                                 **metrics}
 
     def on_fit_end(self, *args, **kwargs):
-        torch.save({**self._last_state, **self._best_state}, self._path)
+        torch.save({**self._last_state, **self._best_state, "seed": self._seed}, self._path)

@@ -16,7 +16,7 @@ def evaluate(flags, model, loader, loss_fn, score_fn, device, epoch=0, is_distri
     if flags.load_ckpt_path:
         map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
         checkpoint = torch.load(flags.load_ckpt_path, map_location=map_location)
-        epoch = checkpoint['epoch']
+        epoch = checkpoint['samples']
         model.load_state_dict(checkpoint['best_model_state_dict'])
         if is_distributed:
             model = torch.nn.parallel.DistributedDataParallel(model,

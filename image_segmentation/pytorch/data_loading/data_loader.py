@@ -79,8 +79,8 @@ def get_data_loaders(flags, num_shards):
                              "seed": flags.seed, "pad_mode": flags.pad_mode}
         train_dataset = PytTrain(x_train, y_train, **train_data_kwargs)
         val_dataset = PytVal(x_val, y_val)
-        mllog_event(key='training_samples', value=len(x_train), sync=False)
-        mllog_event(key='evaluation_samples', value=len(x_val), sync=False)
+        mllog_event(key='train_samples', value=len(x_train), sync=False)
+        mllog_event(key='eval_samples', value=len(x_val), sync=False)
     else:
         raise ValueError(f"Loader {flags.loader} unknown. Valid loaders are: synthetic, pytorch")
 

@@ -31,16 +31,16 @@ def get_mlperf_logger(path, filename='mlperf.log'):
 
 def mllog_start(*args, **kwargs):
     _mllog_print(mllogger.start, *args, **kwargs)
-    
-    
+
+
 def mllog_end(*args, **kwargs):
     _mllog_print(mllogger.end, *args, **kwargs)
-    
-    
+
+
 def mllog_event(*args, **kwargs):
     _mllog_print(mllogger.event, *args, **kwargs)
-    
-    
+
+
 def _mllog_print(logger, *args, **kwargs):
     """
     Wrapper for MLPerf compliance logging calls.
@@ -61,7 +61,7 @@ def mlperf_submission_log():
     mllog_event(
         key=mllog.constants.SUBMISSION_BENCHMARK,
         value=constants.UNET3D,
-        )
+    )
 
     mllog_event(
         key=mllog.constants.SUBMISSION_ORG,
@@ -83,9 +83,9 @@ def mlperf_submission_log():
 def mlperf_run_param_log(flags):
     mllog_event(key=mllog.constants.OPT_NAME, value=flags.optimizer)
     mllog_event(key=mllog.constants.OPT_BASE_LR, value=flags.learning_rate)
-    mllog_event(key=mllog.constants.OPT_LR_WARMUP_EPOCHS, value=flags.lr_warmup_epochs)
+    mllog_event(key=mllog.constants.OPT_LR_WARMUP_EPOCHS, value=flags.lr_warmup_samples)
     # mllog_event(key=mllog.constants.OPT_LR_WARMUP_FACTOR, value=flags.lr_warmup_factor)
-    mllog_event(key=mllog.constants.OPT_LR_DECAY_BOUNDARY_EPOCHS, value=flags.lr_decay_epochs)
+    mllog_event(key=mllog.constants.OPT_LR_DECAY_BOUNDARY_EPOCHS, value=flags.lr_decay_samples)
     mllog_event(key=mllog.constants.OPT_LR_DECAY_FACTOR, value=flags.lr_decay_factor)
     mllog_event(key=mllog.constants.OPT_WEIGHT_DECAY, value=flags.weight_decay)
     mllog_event(key="opt_momentum", value=flags.momentum)
