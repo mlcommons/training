@@ -89,7 +89,7 @@ def get_data_loaders(flags, num_shards):
     # val_sampler = DistributedSampler(val_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
 
     train_dataloader = DataLoader(train_dataset,
-                                  batch_size=flags.batch_size,
+                                  batch_size=flags.batch_size * flags.ga_steps,
                                   shuffle=not flags.benchmark and train_sampler is None,
                                   sampler=train_sampler,
                                   num_workers=flags.num_workers,
