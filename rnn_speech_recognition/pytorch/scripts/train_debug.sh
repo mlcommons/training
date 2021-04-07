@@ -16,44 +16,43 @@
 
 export OMP_NUM_THREADS=1
 
+DATA_DIR="/datasets/LibriSpeech"
+TRAIN_MANIFESTS="$DATA_DIR/librispeech-train-clean-100-wav.json"
+NUM_GPUS=1
+
 : ${DATA_DIR:=${1:-"/datasets/LibriSpeech"}}
-: ${MODEL_CONFIG:=${2:-"configs/baseline_v3-1023sp.yaml"}}
+: ${MODEL_CONFIG:=${2:-"configs/rnnt.yaml"}}
 : ${OUTPUT_DIR:=${3:-"/results"}}
 : ${CHECKPOINT:=${4:-}}
 : ${CUDNN_BENCHMARK:=true}
 : ${NUM_GPUS:=8}
-: ${AMP:=false}
-: ${GLOBAL_BATCH_SIZE:=1024}
-: ${VAL_BATCH_SIZE:=2}
-: ${GRAD_ACCUMULATION_STEPS:=8}
-: ${LEARNING_RATE:=0.004}
+: ${AMP:=true}
+: ${BATCH_SIZE:=8}
+: ${VAL_BATCH_SIZE:=8}
+: ${OPTIMIZER:=adamw}
+: ${GRAD_ACCUMULATION_STEPS:=1}
+: ${LEARNING_RATE:=0.001}
+# : ${MIN_LEARNING_RATE:=0.00001}
+: ${LR_POLICY:=legacy}
 : ${LR_EXP_GAMMA:=0.935}  # ~0.005 in 80 epochs
-: ${NUM_BUCKETS=6} # empty means to use torch.utils.data.distributed.DistributedSampler
 : ${EMA:=0.999}
-: ${SEED=1}
+: ${SEED:=1}
 : ${EPOCHS:=100}
 : ${WARMUP_EPOCHS:=6}  # 8000 steps with 1x8x24 should be ~5.6 epochs
-: ${HOLD_EPOCHS:=40}
-: ${SAVE_AT_THE_END:=false}
+: ${HOLD_EPOCHS:=0}
+: ${SAVE_FREQUENCY:=10}
 : ${EPOCHS_THIS_JOB:=0}
 : ${RESUME:=true}
-: ${DALI_DEVICE:="cpu"}
-: ${VAL_FREQUENCY:=1}
+: ${DALI_DEVICE:="none"}
+: ${PAD_TO_MAX_DURATION:=false}
+: ${VAL_FREQUENCY:=10000}
 : ${PREDICTION_FREQUENCY:=1000}
-: ${BETA1:=0.9}
-: ${BETA2:=0.999}
-: ${LOG_FREQUENCY:=1}
 : ${TRAIN_MANIFESTS:="$DATA_DIR/librispeech-train-clean-100-wav.json \
                       $DATA_DIR/librispeech-train-clean-360-wav.json \
                       $DATA_DIR/librispeech-train-other-500-wav.json"}
 : ${VAL_MANIFESTS:="$DATA_DIR/librispeech-dev-clean-wav.json"}
-: ${LOG_NORM:=false}
-: ${USE_OLD_VAL:=true}
-: ${USE_NEW_VAL:=false}
-: ${MAX_SYMBOL_PER_SAMPLE=300}
-: ${WEIGHTS_INIT_SCALE=0.5}
 
-BATCH_SIZE=$(( $GLOBAL_BATCH_SIZE / $NUM_GPUS ))
+: ${PDB:=false}
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -66,6 +65,7 @@ ARGS+=" --lr=$LEARNING_RATE"
 ARGS+=" --batch_size=$BATCH_SIZE"
 ARGS+=" --val_batch_size=$VAL_BATCH_SIZE"
 ARGS+=" --min_lr=1e-5"
+ARGS+=" --lr_policy=$LR_POLICY"
 ARGS+=" --lr_exp_gamma=$LR_EXP_GAMMA"
 ARGS+=" --epochs=$EPOCHS"
 ARGS+=" --warmup_epochs=$WARMUP_EPOCHS"
@@ -73,31 +73,24 @@ ARGS+=" --hold_epochs=$HOLD_EPOCHS"
 ARGS+=" --epochs_this_job=$EPOCHS_THIS_JOB"
 ARGS+=" --ema=$EMA"
 ARGS+=" --seed=$SEED"
+ARGS+=" --optimizer=$OPTIMIZER"
 ARGS+=" --weight_decay=1e-3"
-ARGS+=" --log_frequency=$LOG_FREQUENCY"
+ARGS+=" --save_frequency=$SAVE_FREQUENCY"
+ARGS+=" --keep_milestones 50 100 150 200"
+ARGS+=" --save_best_from=80"
+ARGS+=" --log_frequency=1"
 ARGS+=" --val_frequency=$VAL_FREQUENCY"
+ARGS+=" --prediction_frequency=$PREDICTION_FREQUENCY"
 ARGS+=" --grad_accumulation_steps=$GRAD_ACCUMULATION_STEPS "
 ARGS+=" --dali_device=$DALI_DEVICE"
-ARGS+=" --beta1=$BETA1"
-ARGS+=" --beta2=$BETA2"
 
 [ "$AMP" = true ] &&                 ARGS+=" --amp"
 [ "$RESUME" = true ] &&              ARGS+=" --resume"
 [ "$CUDNN_BENCHMARK" = true ] &&     ARGS+=" --cudnn_benchmark"
-[ "$LOG_NORM" = true ] &&            ARGS+=" --log_norm"
-[ "$SAVE_AT_THE_END" = true ] &&     ARGS+=" --save_at_the_end"
 [ -n "$CHECKPOINT" ] &&              ARGS+=" --ckpt=$CHECKPOINT"
-[ -n "$NUM_BUCKETS" ] &&             ARGS+=" --num_buckets=$NUM_BUCKETS"
-[ -n "$TARGET" ] &&                  ARGS+=" --target=$TARGET"
-[ -n "$CLIP_NORM" ] &&               ARGS+=" --clip_norm=$CLIP_NORM"
-[ -n "$PREDICTION_FREQUENCY" ] &&    ARGS+=" --prediction_frequency=$PREDICTION_FREQUENCY"
-[ -n "$SAVE_MILESTONES" ] &&         ARGS+=" --keep_milestones $SAVE_MILESTONES"
-[ -n "$SAVE_BEST" ] &&               ARGS+=" --save_best_from=$SAVE_BEST"
-[ -n "$SAVE_FREQUENCY" ] &&          ARGS+=" --save_frequency=$SAVE_FREQUENCY"
-[ -n "$START_CLIP" ] &&              ARGS+=" --start_clip=$START_CLIP"
-[ -n "$HIDDEN_HIDDEN_BIAS_SCALED" ] && ARGS+=" --hidden_hidden_bias_scale=$HIDDEN_HIDDEN_BIAS_SCALED"
-[ -n "$WEIGHTS_INIT_SCALE" ] &&      ARGS+=" --weights_init_scale=$WEIGHTS_INIT_SCALE"
-[ -n "$MAX_SYMBOL_PER_SAMPLE" ] &&  ARGS+=" --max_symbol_per_sample=$MAX_SYMBOL_PER_SAMPLE"
 
 DISTRIBUTED=${DISTRIBUTED:-"-m torch.distributed.launch --nproc_per_node=$NUM_GPUS"}
+
+[ "$PDB" = true ] &&                 DISTRIBUTED="-m ipdb"
+
 python ${DISTRIBUTED} train.py ${ARGS}
