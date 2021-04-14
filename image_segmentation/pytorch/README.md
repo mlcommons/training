@@ -148,6 +148,9 @@ Two examples:
 - evaluation starts at epoch = 1313
 - evaluation is run every 26 epochs
 
+The training should stop at epoch = CEILING(10000\*168/`samples per epoch`). If the model has not converged by that 
+epoch the run is considered as non-converged.
+
 ## Evaluation thoroughness
 
 The validation dataset is composed of 42 volumes. They were pre-selected, and their IDs are stored in the `evaluation_cases.txt` file.
