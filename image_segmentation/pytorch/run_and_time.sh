@@ -9,12 +9,13 @@ SEED=${1:--1}
 
 MAX_EPOCHS=4000
 QUALITY_THRESHOLD="0.908"
-START_EVAL_AT=168000
-EVALUATE_EVERY=3360
+START_EVAL_AT=1000
+EVALUATE_EVERY=20
 LEARNING_RATE="0.8"
-LR_WARMUP_SAMPLES=33600
+LR_WARMUP_EPOCHS=200
 DATASET_DIR="/data"
 BATCH_SIZE=2
+GRADIENT_ACCUMULATION_STEPS=1
 
 
 if [ -d ${DATASET_DIR} ]
@@ -37,9 +38,10 @@ mllog_event(key=constants.CACHE_CLEAR, value=True)"
     --quality_threshold ${QUALITY_THRESHOLD} \
     --batch_size ${BATCH_SIZE} \
     --optimizer sgd \
+    --ga_steps ${GRADIENT_ACCUMULATION_STEPS} \
     --learning_rate ${LEARNING_RATE} \
     --seed ${SEED} \
-    --lr_warmup_samples ${LR_WARMUP_SAMPLES}
+    --lr_warmup_epochs ${LR_WARMUP_EPOCHS}
 
 	# end timing
 	end=$(date +%s)
