@@ -86,7 +86,7 @@ class EvaluationCallback(BaseCallback):
         self._first_epoch_above_threshold = 0
         self._threshold = threshold
         self._seed = seed
-        self._training_start_time = None
+        self._training_start_time = 0
 
     def on_fit_start(self, **kwargs):
         self._training_start_time = time.time()
@@ -104,7 +104,7 @@ class EvaluationCallback(BaseCallback):
         for key in metrics.keys():
             metrics[key] = float(metrics[key])
         self._last_epoch = epoch
-        self._logger.log(step=(metrics["samples"]), data={**metrics, **self._best_metrics})
+        self._logger.log(step=(metrics["epoch"]), data={**metrics, **self._best_metrics})
         self._logger.flush()
 
     def _register_metrics(self, metrics):

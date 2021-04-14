@@ -27,8 +27,8 @@ PARSER.add_argument('--amp', dest='amp', action='store_true', default=False)
 PARSER.add_argument('--optimizer', dest='optimizer', default="sgd", choices=["sgd", "adam", "lamb"], type=str)
 PARSER.add_argument('--learning_rate', dest='learning_rate', type=float, default=1.0)
 PARSER.add_argument('--init_learning_rate', dest='init_learning_rate', type=float, default=1e-4)
-PARSER.add_argument('--lr_warmup_samples', dest='lr_warmup_samples', type=int, default=0)
-PARSER.add_argument('--lr_decay_samples', nargs='+', type=int, default=[])
+PARSER.add_argument('--lr_warmup_epochs', dest='lr_warmup_epochs', type=int, default=0)
+PARSER.add_argument('--lr_decay_epochs', nargs='+', type=int, default=[])
 PARSER.add_argument('--lr_decay_factor', dest='lr_decay_factor', type=float, default=1.0)
 PARSER.add_argument('--lamb_betas', nargs='+', type=int, default=[0.9, 0.999])
 PARSER.add_argument('--momentum', dest='momentum', type=float, default=0.9)
@@ -37,11 +37,8 @@ PARSER.add_argument('--evaluate_every', '--eval_every', dest='evaluate_every', t
 PARSER.add_argument('--start_eval_at', dest='start_eval_at', type=int, default=168000)
 PARSER.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False)
 PARSER.add_argument('--normalization', dest='normalization', type=str,
-                    choices=['instancenorm', 'batchnorm', "syncbatchnorm"], default='instancenorm')
+                    choices=['instancenorm', 'batchnorm'], default='instancenorm')
 PARSER.add_argument('--activation', dest='activation', type=str, choices=['relu', 'leaky_relu'], default='relu')
-
-PARSER.add_argument('--pad_mode', dest='pad_mode', default="reflect", choices=['constant', 'edge', 'reflect',
-                                                                               'median', 'symmetric'], type=str)
 
 PARSER.add_argument('--oversampling', dest='oversampling', type=float, default=0.4)
 PARSER.add_argument('--overlap', dest='overlap', type=float, default=0.5)

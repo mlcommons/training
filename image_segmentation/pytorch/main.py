@@ -42,7 +42,6 @@ def main():
     callbacks = get_callbacks(flags, dllogger, local_rank, world_size)
     flags.seed = worker_seed
     model = Unet3D(1, 3, normalization=flags.normalization, activation=flags.activation)
-    mllog_event(key=constants.WEIGHTS_INITIALIZATION, sync=False, metadata=dict(tensor="model"))
 
     mllog_end(key=constants.INIT_STOP, sync=True)
     mllog_start(key=constants.RUN_START, sync=True)
