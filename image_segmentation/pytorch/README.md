@@ -139,14 +139,14 @@ Therefore, the evaluation schedule depends on the `samples per epoch` in the fol
 
 Two examples:
 1. Global batch size = 32:
-- `samples per epoch` = 160, since the last batch of 8 is dropped
-- evaluation starts at epoch = 1050
-- evaluation is run every 21 epochs
+- `samples per epoch` = 192, since the last batch of 8 is padded to 32
+- evaluation starts at epoch = 875
+- evaluation is run every 18 epochs
 
 2. Global batch size = 128:
-- `samples per epoch` = 128, since the last batch of 40 is dropped
-- evaluation starts at epoch = 1313
-- evaluation is run every 26 epochs
+- `samples per epoch` = 256, since the last batch of 40 is padded to 64
+- evaluation starts at epoch = 657
+- evaluation is run every 14 epochs
 
 The training should stop at epoch = CEILING(10000\*168/`samples per epoch`). If the model has not converged by that 
 epoch the run is considered as non-converged.
