@@ -133,7 +133,7 @@ The target `mean_dice` is 0.908.
 
 The evaluation schedule depends on the number of samples processed per epoch. Since the dataset is fairly small, and the
 global batch size respectively large, the last batch (padded or dropped) can represent a sizable fraction of the whole dataset.
-Therefore, the evaluation schedule depends on the `samples per epoch` in the following manner:
+It is assumed that the last batch is always padded. Therefore, the evaluation schedule depends on the `samples per epoch` in the following manner:
 - for epochs 1 to CEILING(1000*168/`samples per epoch`) - 1: Do not evaluate
 - for epochs >= CEILING(1000\*168/`samples per epoch`): Evaluate every CEILING(20\*168/`samples per epoch`) epochs
 
