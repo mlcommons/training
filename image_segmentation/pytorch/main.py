@@ -35,7 +35,7 @@ def main():
     seed_everything(worker_seed)
     mllog_event(key=constants.SEED, value=flags.seed if flags.seed != -1 else worker_seed, sync=False)
 
-    if is_main_process and flags.verbose:
+    if is_main_process:
         mlperf_submission_log()
         mlperf_run_param_log(flags)
 
@@ -46,7 +46,8 @@ def main():
     mllog_end(key=constants.INIT_STOP, sync=True)
     mllog_start(key=constants.RUN_START, sync=True)
     train_dataloader, val_dataloader = get_data_loaders(flags, num_shards=world_size)
-    mllog_event(key=constants.GLOBAL_BATCH_SIZE, value=flags.batch_size * world_size, sync=False)
+    mllog_event(key=constants.GLOBAL_BATCH_SIZE, value=flags.batch_size * world_size * flags.ga_steps, sync=False)
+    mllog_event(key=constants.GRADIENT_ACCUMULATION_STEPS, value=flags.ga_steps)
     loss_fn = DiceCELoss(to_onehot_y=True, use_softmax=True, layout=flags.layout,
                          include_background=flags.include_background)
     score_fn = DiceScore(to_onehot_y=True, use_argmax=True, layout=flags.layout,

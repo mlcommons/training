@@ -131,9 +131,25 @@ The target `mean_dice` is 0.908.
 
 ## Evaluation frequency
 
-The evaluation schedule is the following:
-- for epochs 1 - 999: Do not evaluate
-- for epochs >= 1000: Evaluate every 20 epochs
+The evaluation schedule depends on the number of samples processed per epoch. Since the dataset is fairly small, and the
+global batch size respectively large, the last batch (padded or dropped) can represent a sizable fraction of the whole dataset.
+It is assumed that the last batch is always padded. Therefore, the evaluation schedule depends on the `samples per epoch` in the following manner:
+- for epochs 1 to CEILING(1000*168/`samples per epoch`) - 1: Do not evaluate
+- for epochs >= CEILING(1000\*168/`samples per epoch`): Evaluate every CEILING(20\*168/`samples per epoch`) epochs
+
+Two examples:
+1. Global batch size = 32:
+- `samples per epoch` = 192, since the last batch of 8 is padded to 32
+- evaluation starts at epoch = 875
+- evaluation is run every 18 epochs
+
+2. Global batch size = 128:
+- `samples per epoch` = 256, since the last batch of 40 is padded to 64
+- evaluation starts at epoch = 657
+- evaluation is run every 14 epochs
+
+The training should stop at epoch = CEILING(10000\*168/`samples per epoch`). If the model has not converged by that 
+epoch the run is considered as non-converged.
 
 ## Evaluation thoroughness
 

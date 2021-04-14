@@ -22,12 +22,13 @@ class Unet3D(nn.Module):
         self.input_block = InputBlock(in_channels, input_dim, normalization, activation)
 
         self.downsample = nn.ModuleList(
-            [DownsampleBlock(i, o, normalization, activation) for i, o in zip(self.inp, self.out)]
+            [DownsampleBlock(i, o, normalization, activation, index=idx)
+             for idx, (i, o) in enumerate(zip(self.inp, self.out))]
         )
-        self.bottleneck = DownsampleBlock(filters[-1], filters[-1], normalization, activation)
-        upsample = [UpsampleBlock(filters[-1], filters[-1], normalization, activation)]
-        upsample.extend([UpsampleBlock(i, o, normalization, activation)
-                         for i, o in zip(reversed(self.out), reversed(self.inp))])
+        self.bottleneck = DownsampleBlock(filters[-1], filters[-1], normalization, activation, index=4)
+        upsample = [UpsampleBlock(filters[-1], filters[-1], normalization, activation, index=0)]
+        upsample.extend([UpsampleBlock(i, o, normalization, activation, index=idx+1)
+                         for idx, (i, o) in enumerate(zip(reversed(self.out), reversed(self.inp)))])
         self.upsample = nn.ModuleList(upsample)
         self.output = OutputLayer(input_dim, n_class)
 

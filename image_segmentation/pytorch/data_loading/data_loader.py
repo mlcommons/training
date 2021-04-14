@@ -3,11 +3,13 @@ import glob
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torch.utils.data.distributed import DistributedSampler
 
 from data_loading.pytorch_loader import PytVal, PytTrain
 from runtime.logging import mllog_event
+
+DATASET_SIZE = 168
 
 
 def list_files_with_pattern(path, files_pattern):
@@ -75,21 +77,24 @@ def get_data_loaders(flags, num_shards):
 
     elif flags.loader == "pytorch":
         x_train, x_val, y_train, y_val = get_data_split(flags.data_dir)
-        train_data_kwargs = {"patch_size": flags.input_shape, "oversampling": flags.oversampling,
-                             "seed": flags.seed, "pad_mode": flags.pad_mode}
+        train_data_kwargs = {"patch_size": flags.input_shape, "oversampling": flags.oversampling, "seed": flags.seed}
         train_dataset = PytTrain(x_train, y_train, **train_data_kwargs)
         val_dataset = PytVal(x_val, y_val)
-        mllog_event(key='training_samples', value=len(x_train), sync=False)
-        mllog_event(key='evaluation_samples', value=len(x_val), sync=False)
+        mllog_event(key='train_samples', value=len(x_train), sync=False)
+        mllog_event(key='eval_samples', value=len(x_val), sync=False)
     else:
         raise ValueError(f"Loader {flags.loader} unknown. Valid loaders are: synthetic, pytorch")
 
-    train_sampler = DistributedSampler(train_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
-    val_sampler = None
+    num_samples = DATASET_SIZE + (flags.batch_size * flags.ga_steps) - DATASET_SIZE % (flags.batch_size * flags.ga_steps) \
+        if DATASET_SIZE % (flags.batch_size * flags.ga_steps) > 0 else DATASET_SIZE
+    mllog_event(key='samples_per_epoch', value=num_samples, sync=False)
+    train_sampler = RandomSampler(train_dataset, replacement=True, num_samples=num_samples)
+    # train_sampler = DistributedSampler(train_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
     # val_sampler = DistributedSampler(val_dataset, seed=flags.seed, drop_last=False) if num_shards > 1 else None
+    val_sampler = None
 
     train_dataloader = DataLoader(train_dataset,
-                                  batch_size=flags.batch_size,
+                                  batch_size=flags.batch_size * flags.ga_steps,
                                   shuffle=not flags.benchmark and train_sampler is None,
                                   sampler=train_sampler,
                                   num_workers=flags.num_workers,
