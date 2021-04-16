@@ -1,0 +1,16 @@
+schema_type: mlcube_platform
+schema_version: 0.1.0
+
+platform:
+  name: "docker"
+  version: ">=18.01"
+
+container:
+  command: docker
+  run_args: >-
+    --rm  --gpus=all --net=host --uts=host --ipc=host
+    --ulimit stack=67108864 --ulimit memlock=-1
+    --privileged=true --security-opt seccomp=unconfined
+    -v /dev/shm:/dev/shm
+  image: mlcommons/train_ssd:0.0.1
+

@@ -44,8 +44,8 @@ LR=${LR:-"2.5e-3"}
 
 echo "running benchmark"
 
-export DATASET_DIR="/data/coco2017"
-export TORCH_MODEL_ZOO="/data/torchvision"
+export DATASET_DIR=${DATASET_DIR:-"/data/coco2017"}
+export TORCH_MODEL_ZOO=${TORCH_MODEL_ZOO:-"/data/torchvision"}
 
 python -m bind_launch --nsockets_per_node ${DGXNSOCKET} \
                       --ncores_per_socket ${DGXSOCKETCORES} \
@@ -57,7 +57,8 @@ python -m bind_launch --nsockets_per_node ${DGXNSOCKET} \
   --no-save \
   --threshold=0.23 \
   --data ${DATASET_DIR} \
-  ${EXTRA_PARAMS[@]} ; ret_code=$?
+  ${EXTRA_PARAMS[@]} \
+  ${ADDITIONAL_PARAMS}; ret_code=$?
 
 set +x
 
