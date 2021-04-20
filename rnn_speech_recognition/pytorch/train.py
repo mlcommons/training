@@ -83,7 +83,7 @@ def parse_args():
                        help='Number of accumulation steps')
     optim.add_argument('--log_norm', action='store_true',
                        help='If enabled, gradient norms will be logged')
-    optim.add_argument('--clip_norm', default=None, type=float,
+    optim.add_argument('--clip_norm', default=1, type=float,
                        help='If provided, gradients will be clipped above this norm')
     optim.add_argument('--beta1', default=0.9, type=float, help='Beta 1 for optimizer')
     optim.add_argument('--beta2', default=0.999, type=float, help='Beta 2 for optimizer')
@@ -372,7 +372,7 @@ def main():
     initial_lrs = [group['lr'] for group in kw['params']]
 
     print_once(f'Starting with LRs: {initial_lrs}')
-    optimizer = FusedLAMB(betas=(args.beta1, args.beta2), eps=opt_eps, **kw)
+    optimizer = FusedLAMB(betas=(args.beta1, args.beta2), eps=opt_eps, max_grad_norm=args.clip_norm, **kw)
 
     adjust_lr = lambda step, epoch: lr_policy(
         step, epoch, initial_lrs, optimizer, steps_per_epoch=steps_per_epoch,
@@ -462,12 +462,6 @@ def main():
                 accumulated_batches += 1
 
             if accumulated_batches % args.grad_accumulation_steps == 0:
-
-                if args.clip_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        getattr(model, 'module', model).parameters(),
-                        max_norm=args.clip_norm,
-                        norm_type=2)
 
                 total_norm = 0.0
 
