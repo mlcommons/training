@@ -45,6 +45,10 @@ DEFAULT_TRAIN_EPOCHS = 10
 BLEU_DIR = "bleu"
 INF = 10000
 
+# variable name for compliance logging of example numbers
+_NUM_EXAMPLES_NAME = "num_examples"
+_NUM_EXAMPLES_SCOPED_NAME = "model/" + _NUM_EXAMPLES_NAME
+
 
 def model_fn(features, labels, mode, params):
   """Defines how to train, evaluate and predict from the transformer model."""
@@ -65,17 +69,22 @@ def model_fn(features, labels, mode, params):
 
     logits = output
 
+    num_examples_metric = tf_mlperf_log.sum_metric(
+        tensor=tf.shape(logits)[0], name=_NUM_EXAMPLES_NAME)
+
     # Calculate model loss.
     xentropy, weights = metrics.padded_cross_entropy_loss(
         logits, targets, params.label_smoothing, params.vocab_size)
     loss = tf.reduce_sum(xentropy * weights) / tf.reduce_sum(weights)
 
     if mode == tf.estimator.ModeKeys.EVAL:
+      eval_metrics = metrics.get_eval_metrics(logits, labels, params)
+      eval_metrics.update({_NUM_EXAMPLES_NAME: num_examples_metric})
       return tf.estimator.EstimatorSpec(
           mode=mode, loss=loss, predictions={"predictions": logits},
-          eval_metric_ops=metrics.get_eval_metrics(logits, labels, params))
+          eval_metric_ops=eval_metrics)
     else:
-      train_op = get_train_op(loss, params)
+      train_op = tf.group(get_train_op(loss, params), num_examples_metric[1])
       return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
 
 
@@ -106,7 +115,7 @@ def get_train_op(loss, params):
     learning_rate = get_learning_rate(
         params.learning_rate, params.hidden_size,
         params.learning_rate_warmup_steps)
-    log_id = mlperf_log.resnet_print(key=mlperf_log.OPT_LR, deferred=True)
+    log_id = mlperf_log.transformer_print(key=mlperf_log.OPT_LR, deferred=True)
     learning_rate = tf_mlperf_log.log_deferred(op=learning_rate, log_id=log_id,
                                                every_n=100)
 
@@ -264,28 +273,57 @@ def train_schedule(
   # Loop training/evaluation/bleu cycles
   mlperf_log.transformer_print(key=mlperf_log.TRAIN_LOOP)
   for i in xrange(train_eval_iterations):
-    print("Starting iteration", i + 1)
-
+    print("Starting iteration", i)
+    epoch_num = i * single_iteration_train_epochs
     mlperf_log.transformer_print(key=mlperf_log.TRAIN_EPOCH,
-                                 value=i * single_iteration_train_epochs + 1)
+                                 value=epoch_num)
+
+    _log_cache = []
+    def formatter(x):
+      """Abuse side effects to get tensors out of the model_fn."""
+      if _log_cache:
+        _log_cache.pop()
+      _log_cache.append(x.copy())
+      return str(x)
+    compliance_hook = tf.train.LoggingTensorHook(
+        tensors={_NUM_EXAMPLES_SCOPED_NAME: _NUM_EXAMPLES_SCOPED_NAME},
+        every_n_iter=int(1e10),
+        at_end=True,
+        formatter=formatter)
 
     # Train the model for single_iteration_train_steps or until the input fn
     # runs out of examples (if single_iteration_train_steps is None).
-    estimator.train(dataset.train_input_fn, steps=single_iteration_train_steps)
+    estimator.train(dataset.train_input_fn,
+                    steps=single_iteration_train_steps,
+                    hooks=[compliance_hook])
+
+    train_examples = int(_log_cache.pop()[_NUM_EXAMPLES_SCOPED_NAME])
+    mlperf_log.transformer_print(
+        key=mlperf_log.INPUT_SIZE, value=train_examples)
 
     mlperf_log.transformer_print(key=mlperf_log.EVAL_START)
     eval_results = estimator.evaluate(dataset.eval_input_fn)
     print("Evaluation results (iter %d/%d):" % (i + 1, train_eval_iterations),
           eval_results)
 
+    mlperf_log.transformer_print(
+        key=mlperf_log.EVAL_SIZE, value=int(eval_results[_NUM_EXAMPLES_NAME]))
+
     if evaluate_bleu:
       uncased_score, _ = evaluate_and_log_bleu(
           estimator, bleu_writer, bleu_source, bleu_ref)
+
+      mlperf_log.transformer_print(
+          key=mlperf_log.EVAL_TARGET, value=bleu_threshold)
+      mlperf_log.transformer_print(
+          key=mlperf_log.EVAL_ACCURACY,
+          value={"epoch": epoch_num, "value": uncased_score})
+
       if bleu_threshold is not None and uncased_score > bleu_threshold:
+        mlperf_log.transformer_print(key=mlperf_log.EVAL_STOP)
         bleu_writer.close()
         break
-      mlperf_log.transformer_print(key=mlperf_log.EVAL_TARGET, value=bleu_threshold)
-      mlperf_log.transformer_print(key=mlperf_log.EVAL_ACCURACY, value=uncased_score)
+
     mlperf_log.transformer_print(key=mlperf_log.EVAL_STOP)
 
 

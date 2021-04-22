@@ -229,6 +229,8 @@ def _read_and_batch_from_files(
   dataset = dataset.filter(lambda x, y: _filter_max_length((x, y), max_length))
 
   # Batch such that each batch has examples of similar length.
+  # The logged batch size is an approximate value (max token numbers per batch),
+  # the actual size may be different in each batch.
   mlperf_log.transformer_print(key=mlperf_log.INPUT_BATCH_SIZE,
                                value=batch_size)
   mlperf_log.transformer_print(key=mlperf_log.INPUT_MAX_LENGTH,
