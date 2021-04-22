@@ -87,7 +87,7 @@ Audio samples are sorted by length.
 ### Publication/Attribution
 This is an implementation of [DeepSpeech2](https://arxiv.org/pdf/1512.02595.pdf) adapted from [deepspeech.pytorch](https://github.com/SeanNaren/deepspeech.pytorch).
 ### List of layers
-Summary: Sampled Audio Spectrograms -> 2 CNN layers -> 5 Bi-Directional GRU layers -> FC classifier layer -> output text
+Summary: Sampled Audio Spectrograms -> 2 CNN layers -> 3 Uni-Directional GRU layers -> FC classifier layer -> output text
 
 Details:
 
