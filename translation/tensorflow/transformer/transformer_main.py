@@ -166,7 +166,7 @@ def get_global_step(estimator):
 def evaluate_and_log_bleu(estimator, bleu_writer, bleu_source, bleu_ref):
   """Calculate and record the BLEU score."""
   subtokenizer = tokenizer.Subtokenizer(
-      os.path.join(FLAGS.data_dir, FLAGS.vocab_file))
+      os.path.join(FLAGS.data_dir, FLAGS.vocab_file), reserved_tokens='assumed_in_file')
 
   uncased_score, cased_score = translate_and_compute_bleu(
       estimator, subtokenizer, bleu_source, bleu_ref)

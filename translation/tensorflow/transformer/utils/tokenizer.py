@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import os
 import re
 import sys
 import unicodedata
@@ -26,14 +27,13 @@ import unicodedata
 import numpy as np
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
-import tensorflow as tf
 
 from mlperf_compliance import mlperf_log
 
 
-PAD = "<pad>"
+PAD = "<pad>_"
 PAD_ID = 0
-EOS = "<EOS>"
+EOS = "<EOS>_"
 EOS_ID = 1
 RESERVED_TOKENS = [PAD, EOS]
 
@@ -66,13 +66,15 @@ class Subtokenizer(object):
 
   def __init__(self, vocab_file, reserved_tokens=None):
     """Initializes class, creating a vocab file if data_files is provided."""
-    tf.logging.info("Initializing Subtokenizer from file %s." % vocab_file)
+    print("Initializing Subtokenizer from file %s." % vocab_file)
 
     if reserved_tokens is None:
       reserved_tokens = RESERVED_TOKENS
+    elif reserved_tokens is 'assumed_in_file':
+      reserved_tokens = []
 
     self.subtoken_list = _load_vocab_file(vocab_file, reserved_tokens)
-    self.alphabet = _generate_alphabet_dict(self.subtoken_list)
+    self.alphabet = _generate_alphabet_dict(self.subtoken_list, reserved_tokens)
     self.subtoken_to_id_dict = _list_to_index_dict(self.subtoken_list)
 
     self.max_subtoken_length = 0
@@ -109,21 +111,53 @@ class Subtokenizer(object):
     if reserved_tokens is None:
       reserved_tokens = RESERVED_TOKENS
 
-    if tf.gfile.Exists(vocab_file):
-      tf.logging.info("Vocab file already exists (%s)" % vocab_file)
+
+    if os.path.exists(vocab_file):
+      print("Vocab file already exists (%s)" % vocab_file)
     else:
-      tf.logging.info("Begin steps to create subtoken vocabulary...")
+      print("Begin steps to create subtoken vocabulary...")
       token_counts = _count_tokens(files, file_byte_limit)
       alphabet = _generate_alphabet_dict(token_counts)
       subtoken_list = _generate_subtokens_with_target_vocab_size(
           token_counts, alphabet, target_vocab_size, threshold, min_count,
           reserved_tokens)
-      tf.logging.info("Generated vocabulary with %d subtokens." %
+      print("Generated vocabulary with %d subtokens." %
                       len(subtoken_list))
       mlperf_log.transformer_print(key=mlperf_log.PREPROC_VOCAB_SIZE,
                                    value=len(subtoken_list))
       _save_vocab_file(vocab_file, subtoken_list)
     return Subtokenizer(vocab_file)
+
+  @staticmethod
+  def init_from_existing_vocab_file(
+          vocab_file, files, target_vocab_size, threshold, min_count=None,
+          file_byte_limit=1e6, reserved_tokens=None):
+    """Create subtoken vocabulary based on files, and save vocab to file.
+
+    Args:
+      vocab_file: String name of vocab file to store subtoken vocabulary.
+      files: List of file paths that will be used to generate vocabulary.
+      target_vocab_size: target vocabulary size to generate.
+      threshold: int threshold of vocabulary size to accept.
+      min_count: int minimum count to use for generating the vocabulary. The min
+        count is the minimum number of times a subtoken should appear in the
+        files before it is added to the vocabulary. If set to none, this value
+        is found using binary search.
+      file_byte_limit: (Default 1e6) Maximum number of bytes of sample text that
+        will be drawn from the files.
+      reserved_tokens: List of string tokens that are guaranteed to be at the
+        beginning of the subtoken vocabulary list.
+
+    Returns:
+      Subtokenizer object
+    """
+
+    if os.path.exists(vocab_file):
+      print("Vocab file exists (%s)" % vocab_file)
+    else:
+      print("Vocab file does not exist (%s)" % vocab_file)
+
+    return Subtokenizer(vocab_file, reserved_tokens='assumed_in_file')
 
   def encode(self, raw_string, add_eos=False):
     """Encodes a string into a list of int subtoken ids."""
@@ -184,7 +218,7 @@ class Subtokenizer(object):
 
 def _save_vocab_file(vocab_file, subtoken_list):
   """Save subtokens to file."""
-  with tf.gfile.Open(vocab_file, mode="w") as f:
+  with open(vocab_file, mode='w', newline='\n') as f:
     for subtoken in subtoken_list:
       f.write("'%s'\n" % _unicode_to_native(subtoken))
 
@@ -195,7 +229,7 @@ def _load_vocab_file(vocab_file, reserved_tokens=None):
     reserved_tokens = RESERVED_TOKENS
 
   subtoken_list = []
-  with tf.gfile.Open(vocab_file, mode="r") as f:
+  with open(vocab_file, mode='r', newline='\n') as f:
     for line in f:
       subtoken = _native_to_unicode(line.strip())
       subtoken = subtoken[1:-1]  # Remove surrounding single-quotes
@@ -344,7 +378,7 @@ def _count_tokens(files, file_byte_limit=1e6):
   token_counts = collections.defaultdict(int)
 
   for filepath in files:
-    with tf.gfile.Open(filepath, mode="r") as reader:
+    with open(filepath, mode='r', newline='\n') as reader:
       file_byte_budget = file_byte_limit
       counter = 0
       lines_to_skip = int(reader.size() / (file_byte_budget * 2))
@@ -397,9 +431,11 @@ def _generate_subtokens_with_target_vocab_size(
   """Generate subtoken vocabulary close to the target size."""
   if reserved_tokens is None:
     reserved_tokens = RESERVED_TOKENS
+  elif reserved_tokens is 'assumed_in_file':
+    reserved_tokens = []
 
   if min_count is not None:
-    tf.logging.info("Using min_count=%d to generate vocab with target size %d" %
+    print("Using min_count=%d to generate vocab with target size %d" %
                     (min_count, target_size))
     return _generate_subtokens(
         token_counts, alphabet, min_count, reserved_tokens=reserved_tokens)
@@ -407,13 +443,13 @@ def _generate_subtokens_with_target_vocab_size(
   def bisect(min_val, max_val):
     """Recursive function to binary search for subtoken vocabulary."""
     cur_count = (min_val + max_val) // 2
-    tf.logging.info("Binary search: trying min_count=%d (%d %d)" %
+    print("Binary search: trying min_count=%d (%d %d)" %
                     (cur_count, min_val, max_val))
     subtoken_list = _generate_subtokens(
         token_counts, alphabet, cur_count, reserved_tokens=reserved_tokens)
 
     val = len(subtoken_list)
-    tf.logging.info("Binary search: min_count=%d resulted in %d tokens" %
+    print("Binary search: min_count=%d resulted in %d tokens" %
                     (cur_count, val))
 
     within_threshold = abs(val - target_size) < threshold
@@ -430,7 +466,7 @@ def _generate_subtokens_with_target_vocab_size(
       return other_subtoken_list
     return subtoken_list
 
-  tf.logging.info("Finding best min_count to get target size of %d" %
+  print("Finding best min_count to get target size of %d" %
                   target_size)
   return bisect(_MIN_MIN_COUNT, _MAX_MIN_COUNT)
 
@@ -599,7 +635,7 @@ def _generate_subtokens(
   # subtoken_dict, count how often the resulting subtokens appear, and update
   # the dictionary with subtokens w/ high enough counts.
   for i in xrange(num_iterations):
-    tf.logging.info("\tGenerating subtokens: iteration %d" % i)
+    print("\tGenerating subtokens: iteration %d" % i)
     # Generate new subtoken->id dictionary using the new subtoken list.
     subtoken_dict = _list_to_index_dict(subtoken_list)
 
@@ -612,5 +648,5 @@ def _generate_subtokens(
     subtoken_list, max_subtoken_length = _gen_new_subtoken_list(
         subtoken_counts, min_count, alphabet, reserved_tokens)
 
-    tf.logging.info("\tVocab size: %d" % len(subtoken_list))
+    print("\tVocab size: %d" % len(subtoken_list))
   return subtoken_list
