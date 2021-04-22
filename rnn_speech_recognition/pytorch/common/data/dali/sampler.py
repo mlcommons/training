@@ -81,10 +81,10 @@ class BucketingSampler(SimpleSampler):
         epochs = np.reshape(shuffled_buckets, [self.num_epochs, -1])
         to_drop = epochs.shape[1] - (epochs.shape[1] // gbs * gbs)
         for epoch in epochs:
-            dropped_idxs = self.rng.choice(epochs.shape[1], to_drop)
+            dropped_idxs = self.rng.choice(epochs.shape[1], to_drop, replace=False)
             if dropped_idxs is not None:
-                epoch[dropped_idxs] = epoch[-to_drop:]
-        epochs = epochs[:, :epochs.shape[1] // gbs * gbs]
+                epoch[dropped_idxs] = -1
+        epochs = epochs[epochs != -1].reshape(self.num_epochs, -1)
         self.dataset_size = epochs.shape[1]
 
         epochs_iters_batch = np.reshape(epochs, [self.num_epochs, -1, gbs])

@@ -1,6 +1,6 @@
-# MLPerf Reference Implementations
+# MLPerf™ Training Reference Implementations
 
-This is a repository of reference implementations for the MLPerf benchmarks. These implementations are valid as starting points for benchmark implementations but are not fully optimized and are not intended to be used for "real" performance measurements of software frameworks or hardware. 
+This is a repository of reference implementations for the MLPerf training benchmarks. These implementations are valid as starting points for benchmark implementations but are not fully optimized and are not intended to be used for "real" performance measurements of software frameworks or hardware. 
 
 These reference implementations are still very much "alpha" or "beta" quality. They could be improved in many ways. Please file issues or pull requests to help us improve quality.
 
