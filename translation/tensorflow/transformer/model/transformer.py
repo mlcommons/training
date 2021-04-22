@@ -24,8 +24,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from mlperf_compliance import mlperf_log
-
 from model import attention_layer
 from model import beam_search
 from model import embedding_layer
@@ -82,8 +80,6 @@ class Transformer(object):
     """
     # Variance scaling is used here because it seems to work in many problems.
     # Other reasonable initializers may also work just as well.
-    mlperf_log.transformer_print(key=mlperf_log.MODEL_HP_INITIALIZER_GAIN,
-                                 value=self.params.initializer_gain)
     initializer = tf.variance_scaling_initializer(
         self.params.initializer_gain, mode="fan_avg", distribution="uniform")
     with tf.variable_scope("Transformer", initializer=initializer):
@@ -126,9 +122,6 @@ class Transformer(object):
         encoder_inputs = embedded_inputs + pos_encoding
 
       if self.train:
-        mlperf_log.transformer_print(
-            key=mlperf_log.MODEL_HP_LAYER_POSTPROCESS_DROPOUT,
-            value=self.params.layer_postprocess_dropout)
         encoder_inputs = tf.nn.dropout(
             encoder_inputs, 1 - self.params.layer_postprocess_dropout)
 
@@ -160,9 +153,6 @@ class Transformer(object):
         decoder_inputs += model_utils.get_position_encoding(
             length, self.params.hidden_size)
       if self.train:
-        mlperf_log.transformer_print(
-            key=mlperf_log.MODEL_HP_LAYER_POSTPROCESS_DROPOUT,
-            value=self.params.layer_postprocess_dropout)
         decoder_inputs = tf.nn.dropout(
             decoder_inputs, 1 - self.params.layer_postprocess_dropout)
 
@@ -237,13 +227,6 @@ class Transformer(object):
     cache["encoder_decoder_attention_bias"] = encoder_decoder_attention_bias
 
     # Use beam search to find the top beam_size sequences and scores.
-    mlperf_log.transformer_print(
-      key=mlperf_log.MODEL_HP_SEQ_BEAM_SEARCH,
-      value={
-        "vocab_size": self.params.vocab_size,
-        "beam_size": self.params.beam_size,
-        "alpha": self.params.alpha,
-        "extra_decode_length": self.params.extra_decode_length})
     decoded_ids, scores = beam_search.sequence_beam_search(
         symbols_to_logits_fn=symbols_to_logits_fn,
         initial_ids=initial_ids,
@@ -269,9 +252,6 @@ class LayerNormalization(tf.layers.Layer):
     self.hidden_size = hidden_size
 
   def build(self, _):
-    mlperf_log.transformer_print(
-        key=mlperf_log.MODEL_HP_NORM,
-        value={"hidden_size": self.hidden_size})
     self.scale = tf.get_variable("layer_norm_scale", [self.hidden_size],
                                  initializer=tf.ones_initializer())
     self.bias = tf.get_variable("layer_norm_bias", [self.hidden_size],
@@ -305,9 +285,6 @@ class PrePostProcessingWrapper(object):
 
     # Postprocessing: apply dropout and residual connection
     if self.train:
-      mlperf_log.transformer_print(
-            key=mlperf_log.MODEL_HP_LAYER_POSTPROCESS_DROPOUT,
-            value=self.postprocess_dropout)
       y = tf.nn.dropout(y, 1 - self.postprocess_dropout)
     return x + y
 
@@ -324,9 +301,6 @@ class EncoderStack(tf.layers.Layer):
   def __init__(self, params, train):
     super(EncoderStack, self).__init__()
     self.layers = []
-    mlperf_log.transformer_print(
-        key=mlperf_log.MODEL_HP_NUM_HIDDEN_LAYERS,
-        value=params.num_hidden_layers)
     for _ in range(params.num_hidden_layers):
       # Create sublayers for each layer.
       self_attention_layer = attention_layer.SelfAttention(
@@ -370,9 +344,6 @@ class DecoderStack(tf.layers.Layer):
   def __init__(self, params, train):
     super(DecoderStack, self).__init__()
     self.layers = []
-    mlperf_log.transformer_print(
-        key=mlperf_log.MODEL_HP_NUM_HIDDEN_LAYERS,
-        value=params.num_hidden_layers)
     for _ in range(params.num_hidden_layers):
       self_attention_layer = attention_layer.SelfAttention(
           params.hidden_size, params.num_heads, params.attention_dropout, train)

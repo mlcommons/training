@@ -20,8 +20,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from mlperf_compliance import mlperf_log
-
 from model import model_utils
 
 
@@ -37,12 +35,6 @@ class EmbeddingSharedWeights(tf.layers.Layer):
     with tf.variable_scope("embedding_and_softmax", reuse=tf.AUTO_REUSE):
       # Create and initialize weights. The random normal initializer was chosen
       # randomly, and works well.
-      mlperf_log.transformer_print(
-          key=mlperf_log.MODEL_HP_EMBEDDING_SHARED_WEIGHTS,
-          value={
-            "vocab_size": self.vocab_size,
-            "hidden_size": self.hidden_size
-          })
       self.shared_weights = tf.get_variable(
           "weights", [self.vocab_size, self.hidden_size],
           initializer=tf.random_normal_initializer(

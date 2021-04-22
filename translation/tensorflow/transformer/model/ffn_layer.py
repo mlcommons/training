@@ -20,8 +20,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from mlperf_compliance import mlperf_log
-
 
 class FeedFowardNetwork(tf.layers.Layer):
   """Fully connected feedforward network."""
@@ -38,20 +36,6 @@ class FeedFowardNetwork(tf.layers.Layer):
         filter_size, use_bias=use_bias, activation=tf.nn.relu, name="filter_layer")
     self.output_dense_layer = tf.layers.Dense(
         hidden_size, use_bias=use_bias, name="output_layer")
-
-    mlperf_log.transformer_print(
-        key=mlperf_log.MODEL_HP_FFN_FILTER_DENSE,
-        value={
-          "filter_size": filter_size,
-          "use_bias": use_bias,
-          "activation": mlperf_log.RELU
-        })
-    mlperf_log.transformer_print(
-        key=mlperf_log.MODEL_HP_FFN_OUTPUT_DENSE,
-        value={
-          "hidden_size": hidden_size,
-          "use_bias": use_bias
-        })
 
   def call(self, x, padding=None):
     # Retrieve dynamically known shapes
@@ -75,8 +59,6 @@ class FeedFowardNetwork(tf.layers.Layer):
 
     output = self.filter_dense_layer(x)
     if self.train:
-      mlperf_log.transformer_print(
-          key=mlperf_log.MODEL_HP_RELU_DROPOUT, value=self.relu_dropout)
       output = tf.nn.dropout(output, 1.0 - self.relu_dropout)
     output = self.output_dense_layer(output)
 
