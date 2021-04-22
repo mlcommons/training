@@ -485,10 +485,10 @@ minigo_cc_binary(
     ],
 )
 
-minigo_cc_binary(
-    name = "eval",
-    srcs = ["eval.cc"],
-    visibility = ["//visibility:public"],
+minigo_cc_library(
+    name = "evaluator",
+    srcs = ["evaluator.cc"],
+    hdrs = ["evaluator.h"],
     deps = [
         ":base",
         ":game",
@@ -509,6 +509,28 @@ minigo_cc_binary(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
     ],
+)
+
+minigo_cc_binary(
+    name = "eval",
+    srcs = ["eval.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":evaluator",
+    ],
+)
+
+minigo_cc_binary(
+    name = "eval_models",
+    srcs = ["eval_models.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":evaluator",
+        "//cc/file",
+        "//cc/file:directory_watcher",
+        "//cc/tensorflow",
+        "@com_google_absl//absl/strings", 
+   ],
 )
 
 minigo_cc_binary(
