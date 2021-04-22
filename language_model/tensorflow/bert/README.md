@@ -94,6 +94,8 @@ python run_pretraining.py \
   --num_warmup_steps=1562 \
   --optimizer=lamb \
   --save_checkpoints_steps=20833 \
+  --save_checkpoints_skip_steps=125000 \
+  --keep_checkpoint_max=32764 \
   --start_warmup_step=0 \
   --num_gpus=8 \
   --train_batch_size=24
