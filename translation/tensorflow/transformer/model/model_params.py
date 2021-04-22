@@ -19,6 +19,7 @@ class TransformerBaseParams(object):
   """Parameters for the base Transformer model."""
   # Input params
   batch_size = 2048  # Maximum number of tokens per batch of examples.
+                     # In a multi-GPU setting, this is per-GPU batch size.
   max_length = 256  # Maximum number of tokens per example.
 
   # Model params

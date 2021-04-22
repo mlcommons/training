@@ -38,6 +38,7 @@ from model import transformer
 from model import model_params
 import translate
 from utils import dataset
+from utils import distribution_utils
 from utils import metrics
 from utils import tokenizer
 
@@ -131,8 +132,10 @@ def get_train_op(loss, params):
     tvars = tf.trainable_variables()
     gradients = optimizer.compute_gradients(
         loss, tvars, colocate_gradients_with_ops=True)
-    train_op = optimizer.apply_gradients(
+    minimize_op = optimizer.apply_gradients(
         gradients, global_step=global_step, name="train")
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    train_op = tf.group(minimize_op, update_ops)
 
     # Save gradient norm to Tensorboard
     tf.summary.scalar("global_norm/gradient_norm",
@@ -342,8 +345,18 @@ def main(_):
   params.epochs_between_eval = FLAGS.epochs_between_eval
   params.repeat_dataset = single_iteration_train_epochs
 
+  # Settings for distributed training
+  num_gpus = distribution_utils.get_num_gpus(FLAGS.num_gpus)
+  # params.batch_size = distribution_utils.per_replica_batch_size(
+  #     params.batch_size, num_gpus)
+  distribution_strategy = distribution_utils.get_distribution_strategy(
+      distribution_strategy=FLAGS.distribution_strategy,
+      num_gpus=num_gpus,
+      all_reduce_alg=FLAGS.all_reduce_alg)
+
   estimator = tf.estimator.Estimator(
-      model_fn=model_fn, model_dir=FLAGS.model_dir, params=params)
+      model_fn=model_fn, model_dir=FLAGS.model_dir, params=params,
+      config=tf.estimator.RunConfig(train_distribute=distribution_strategy))
   train_schedule(
       estimator, train_eval_iterations, single_iteration_train_steps,
       single_iteration_train_epochs, FLAGS.bleu_source, FLAGS.bleu_ref,
@@ -430,6 +443,22 @@ if __name__ == "__main__":
            "--train_steps or --train_epochs.",
       metavar="<BT>")
 
+  # Flags for training with multiple GPUs
+  parser.add_argument(
+      "--num_gpus", type=int, default=None,
+      help="Number of GPUs to use for training. Must be an int. If not "
+           "specified then default to 1, or 0 if no GPU is available."
+  )
+  parser.add_argument(
+      "--distribution_strategy", type=str, default=None,
+      help="The distribution strategy to use for distributed training. "
+           "Accepted values: 'one_device', 'mirrored', and 'parameter_server'."
+  )
+  parser.add_argument(
+      "--all_reduce_alg", type=str, default=None,
+      help="The allreduce algorithm used with MirroredStrategy in distributed "
+           "setting. Accepted values: 'nccl' and 'hierarchical_copy'."
+  )
 
   parser.add_argument(
       "--random_seed", "-rs", type=int, default=None,
