@@ -16,16 +16,29 @@ git clone https://github.com/mlperf/training.git
 source training/install_cuda_docker.sh
 ```
 3. Build the docker image for the object detection task
+
+For Dockerfile (Ubuntu)
 ```
 cd training/object_detection/
 nvidia-docker build . -t mlperf/object_detection
 ```
 
+For Dockerfile_centos (CentOS)
+```
+cd training/object_detection/
+nvidia-docker build . -f object_detection/Dockerfile_rhel -t mlperf/object_detection
+```
+
 4. Run docker container and install code
+
+For Dockerfile (Ubuntu)
 ```
 nvidia-docker run -v .:/workspace -t -i --rm --ipc=host mlperf/object_detection \
     "cd mlperf/training/object_detection && ./install.sh"
 ```
+
+Dockerfile_centos (CentOS) runs the commands from `install.sh` during build, so there is no reason to run it separately.
+
 Now exit the docker container (Ctrl-D) to get back to your host.
 
 ### Steps to download data
@@ -35,9 +48,18 @@ source download_dataset.sh
 ```
 
 ### Steps to run benchmark.
+For Dockerfile (Ubuntu)
 ```
 nvidia-docker run -v .:/workspace -t -i --rm --ipc=host mlperf/object_detection \
     "cd mlperf/training/object_detection && ./run_and_time.sh"
+```
+
+For Dockerfile_centos (CentOS)
+```
+nvidia-docker run -t -i --rm --ipc=host object-detection \
+	"cd object_detection &&
+	source scl_source enable rh-python36 devtoolset-7 &&
+	./run_and_time.sh"
 ```
 
 # 3. Dataset/Environment
