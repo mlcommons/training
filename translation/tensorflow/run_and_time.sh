@@ -46,4 +46,4 @@ echo "ENDING TIMING RUN AT ${END_FMT}"
 result=$(( ${END} - ${START} ))
 result_name="transformer"
 
-echo "RESULT,${RESULT_NAME},${SEED},${RESULT},${USER},${START_FMT}"
+echo "RESULT,${result_name},${SEED},${result},${USER},${START_FMT}"
