@@ -52,8 +52,7 @@ sudo brctl delbr docker0
 sleep 1;
 sudo service docker start
 
-ssh-keyscan github.com >> ~/.ssh/known_hosts
-git clone git@github.com:mlperf/reference.git
+git clone https://github.com/mlperf/training.git
 
 ```
 
