@@ -1,15 +1,14 @@
 # Location of the input files 
 
-This [GCS location](https://console.cloud.google.com/storage/browser/pkanwar-bert) contains the following.
+This [MLCommons members Google Drive location](https://drive.google.com/drive/u/0/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT) contains the following.
 * TensorFlow checkpoint (bert_model.ckpt) containing the pre-trained weights (which is actually 3 files).
 * Vocab file (vocab.txt) to map WordPiece to word id.
 * Config file (bert_config.json) which specifies the hyperparameters of the model.
 
 # Download and preprocess datasets
 
-Download the [wikipedia dump](https://dumps.wikimedia.org/enwiki/20200101/enwiki-20200101-pages-articles-multistream.xml.bz2) and extract the pages
-The wikipedia dump can be downloaded from this link in this directory, and should contain the following file:
-enwiki-20200101-pages-articles-multistream.xml.bz2
+Download the [wikipedia dump](https://drive.google.com/file/d/18K1rrNJ_0lSR9bsLaoP3PkQeSFO-9LE7/view?usp=sharing) and extract the pages
+The wikipedia dump can be downloaded from [this google drive](https://drive.google.com/drive/u/0/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT), and should contain `enwiki-20200101-pages-articles-multistream.xml.bz2` as well as the md5sum.
 
 Run [WikiExtractor.py](https://github.com/attardi/wikiextractor) to extract the wiki pages from the XML
 The generated wiki pages file will be stored as <data dir>/LL/wiki_nn; for example <data dir>/AA/wiki_00. Each file is ~1MB, and each sub directory has 100 files from wiki_00 to wiki_99, except the last sub directory. For the 20200101 dump, the last file is FE/wiki_17.
