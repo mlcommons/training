@@ -1,12 +1,10 @@
 import logging
 
 import torch
-from mlperf_compliance import mlperf_log
 from torch.utils.data.sampler import Sampler
 
 from seq2seq.utils import get_rank
 from seq2seq.utils import get_world_size
-from seq2seq.utils import gnmt_print
 
 
 class DistributedSampler(Sampler):
@@ -81,7 +79,6 @@ class DistributedSampler(Sampler):
         return indices
 
     def __iter__(self):
-        gnmt_print(key=mlperf_log.INPUT_ORDER, sync=False)
         rng = self.init_rng()
         # generate permutation
         indices = torch.randperm(self.data_len, generator=rng)
@@ -127,7 +124,6 @@ class ShardingSampler(DistributedSampler):
             * self.global_batch_size
 
     def __iter__(self):
-        gnmt_print(key=mlperf_log.INPUT_ORDER, sync=False)
         rng = self.init_rng()
         # generate permutation
         indices = torch.randperm(self.data_len, generator=rng)
@@ -202,7 +198,6 @@ class BucketingSampler(DistributedSampler):
             self.num_samples += samples
 
     def __iter__(self):
-        gnmt_print(key=mlperf_log.INPUT_ORDER, sync=False)
         rng = self.init_rng()
         global_bs = self.global_batch_size
 
@@ -251,7 +246,6 @@ class StaticDistributedSampler(Sampler):
 
         global_batch_size = batch_size * world_size
 
-        gnmt_print(key=mlperf_log.INPUT_ORDER, sync=False)
         data_len = len(dataset)
         num_samples = (data_len + global_batch_size - 1) \
             // global_batch_size * global_batch_size

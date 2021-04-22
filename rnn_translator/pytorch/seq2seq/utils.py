@@ -10,10 +10,19 @@ import torch
 import torch.distributed as dist
 import torch.nn.init as init
 import torch.utils.collect_env
-from mlperf_compliance import mlperf_log
 
 
-def gnmt_print(*args, **kwargs):
+from mlperf_logging import mllog
+
+mllogger = mllog.get_mllogger()
+
+def gnmt_start(*args, **kwargs):
+    _gnmt_print(mllogger.start, *args, **kwargs)
+def gnmt_end(*args, **kwargs):
+    _gnmt_print(mllogger.end, *args, **kwargs)
+def gnmt_event(*args, **kwargs):
+    _gnmt_print(mllogger.event, *args, **kwargs)
+def _gnmt_print(logger, *args, **kwargs):
     """
     Wrapper for MLPerf compliance logging calls.
     All arguments but 'sync' are passed to mlperf_log.gnmt_print function.
@@ -21,12 +30,34 @@ def gnmt_print(*args, **kwargs):
     workers. 'sync' should be set to True for all compliance tags that require
     accurate timing (RUN_START, RUN_STOP etc.)
     """
-    if kwargs.pop('sync'):
+    if kwargs.pop('sync', False):
         barrier()
+    if 'value' not in kwargs:
+        kwargs['value'] = None
     if get_rank() == 0:
-        kwargs['stack_offset'] = 2
-        mlperf_log.gnmt_print(*args, **kwargs)
+        logger(*args, **kwargs, stack_offset=3)
 
+def mlperf_submission_log(benchmark):
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_BENCHMARK,
+        value=benchmark,
+        )
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_ORG,
+        value='your-company')
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_DIVISION,
+        value='closed')
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_STATUS,
+        value='onprem')
+
+    gnmt_event(
+        key=mllog.constants.SUBMISSION_PLATFORM,
+        value=f'your_platform')
 
 def init_lstm_(lstm, init_weight=0.1):
     """
@@ -108,9 +139,6 @@ def setup_seeds(master_seed, epochs, device):
     else:
         # master seed was specified from command line
         logging.info(f'Using master seed from command line: {master_seed}')
-
-    gnmt_print(key=mlperf_log.RUN_SET_RANDOM_SEED, value=master_seed,
-               sync=False)
 
     # initialize seeding RNG
     seeding_rng = random.Random(master_seed)
