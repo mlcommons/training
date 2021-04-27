@@ -15,7 +15,7 @@ PARSER.add_argument('--quality_threshold', dest='quality_threshold', type=float,
 PARSER.add_argument('--ga_steps', dest='ga_steps', type=int, default=1)
 PARSER.add_argument('--warmup_steps', dest='warmup_steps', type=int, default=4)
 PARSER.add_argument('--batch_size', dest='batch_size', type=int, default=2)
-PARSER.add_argument('--layout', dest='layout', type=str, choices=['NCDHW', 'NDHWC'], default='NCDHW')
+PARSER.add_argument('--layout', dest='layout', type=str, choices=['NCDHW'], default='NCDHW')
 PARSER.add_argument('--input_shape', nargs='+', type=int, default=[128, 128, 128])
 PARSER.add_argument('--val_input_shape', nargs='+', type=int, default=[128, 128, 128])
 PARSER.add_argument('--seed', dest='seed', default=-1, type=int)
@@ -37,11 +37,8 @@ PARSER.add_argument('--evaluate_every', '--eval_every', dest='evaluate_every', t
 PARSER.add_argument('--start_eval_at', dest='start_eval_at', type=int, default=1000)
 PARSER.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False)
 PARSER.add_argument('--normalization', dest='normalization', type=str,
-                    choices=['instancenorm', 'batchnorm', "syncbatchnorm"], default='instancenorm')
+                    choices=['instancenorm', 'batchnorm'], default='instancenorm')
 PARSER.add_argument('--activation', dest='activation', type=str, choices=['relu', 'leaky_relu'], default='relu')
-
-PARSER.add_argument('--pad_mode', dest='pad_mode', default="reflect", choices=['constant', 'edge', 'reflect',
-                                                                               'median', 'symmetric'], type=str)
 
 PARSER.add_argument('--oversampling', dest='oversampling', type=float, default=0.4)
 PARSER.add_argument('--overlap', dest='overlap', type=float, default=0.5)

@@ -31,16 +31,16 @@ def get_mlperf_logger(path, filename='mlperf.log'):
 
 def mllog_start(*args, **kwargs):
     _mllog_print(mllogger.start, *args, **kwargs)
-    
-    
+
+
 def mllog_end(*args, **kwargs):
     _mllog_print(mllogger.end, *args, **kwargs)
-    
-    
+
+
 def mllog_event(*args, **kwargs):
     _mllog_print(mllogger.event, *args, **kwargs)
-    
-    
+
+
 def _mllog_print(logger, *args, **kwargs):
     """
     Wrapper for MLPerf compliance logging calls.
@@ -61,7 +61,7 @@ def mlperf_submission_log():
     mllog_event(
         key=mllog.constants.SUBMISSION_BENCHMARK,
         value=constants.UNET3D,
-        )
+    )
 
     mllog_event(
         key=mllog.constants.SUBMISSION_ORG,

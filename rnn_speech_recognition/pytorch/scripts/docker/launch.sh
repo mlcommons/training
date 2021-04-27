@@ -1,4 +1,4 @@
-# Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ CHECKPOINT_DIR=$2
 RESULT_DIR=$3
 
 docker run -it --rm \
-  --gpus='"device=1"' \
+  --gpus='all' \
   --shm-size=4g \
   --ulimit memlock=-1 \
   --ulimit stack=67108864 \
@@ -28,5 +28,5 @@ docker run -it --rm \
   -v "$CHECKPOINT_DIR":/checkpoints/ \
   -v "$RESULT_DIR":/results/ \
   -v $PWD:/code \
-  -v $PWD:/workspace/jasper \
-  mlperf-rnnt-ref bash
+  -v $PWD:/workspace/rnnt \
+  mlperf/rnn_speech_recognition bash
