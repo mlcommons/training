@@ -9,6 +9,9 @@ import os
 import absl
 import modeling
 import optimization
+import mlp_logging as mllog
+from mlperf_logging.mllog import constants as mllog_constants
+
 import tensorflow.compat.v1 as tf
 # from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
 # from tensorflow.contrib import data as contrib_data
@@ -443,11 +446,38 @@ def _decode_record(record, name_to_features):
   return example
 
 
+class CheckpointHook(tf.train.CheckpointSaverHook):
+  """Add MLPerf logging to checkpoint saving."""
+
+  def __init__(self, num_train_steps, *args, **kwargs):
+    super(CheckpointHook, self).__init__(*args, **kwargs)
+    self.num_train_steps = num_train_steps
+    self.previous_step = None
+
+  def _save(self, session, step):
+    if self.previous_step:
+      mllog.mllog_end(key=mllog_constants.BLOCK_STOP,
+                      metadata={"first_step_num": self.previous_step + 1,
+                          "step_count": step - self.previous_step})
+    self.previous_step = step
+    mllog.mllog_start(key="checkpoint_start", metadata={"step_num" : step}) 
+    return_value = super(CheckpointHook, self)._save(session, step)
+    mllog.mllog_end(key="checkpoint_stop", metadata={"step_num" : step})
+    if step < self.num_train_steps:
+        mllog.mllog_start(key=mllog_constants.BLOCK_START,
+                          metadata={"first_step_num": step + 1})
+    return return_value
+
+
 def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
   if not FLAGS.do_train and not FLAGS.do_eval:
     raise ValueError("At least one of `do_train` or `do_eval` must be True.")
+
+  mlperf_logger = mllog.get_mlperf_logger('', 'bert.log')
+  if FLAGS.do_train:
+    mllog.mllog_start(key=mllog_constants.INIT_START)
 
   bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
 
@@ -546,11 +576,23 @@ def main(_):
         is_training=True,
         input_context=None,
         num_cpu_threads=8)
+
+    checkpoint_hook = CheckpointHook(
+        num_train_steps=FLAGS.num_train_steps,
+        checkpoint_dir=FLAGS.output_dir,
+        save_steps=FLAGS.save_checkpoints_steps)
+    mllog.mlperf_submission_log()
+    mllog.mlperf_run_param_log()
+    mllog.mllog_end(key=mllog_constants.INIT_STOP)
+    mllog.mllog_start(key=mllog_constants.RUN_START)
     if FLAGS.use_tpu:
-      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps)
+      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps,
+          hooks=[checkpoint_hook])
     else:
       estimator.train(input_fn=lambda input_context=None: train_input_fn(
-          params=hparams, input_context=input_context), max_steps=FLAGS.num_train_steps)
+          params=hparams, input_context=input_context), max_steps=FLAGS.num_train_steps,
+          hooks=[checkpoint_hook])
+    mllog.mllog_end(key=mllog_constants.RUN_STOP)
 
   if FLAGS.do_eval:
     tf.logging.info("***** Running evaluation *****")
@@ -571,6 +613,7 @@ def main(_):
         num_eval_steps=FLAGS.max_eval_steps)
 
     while True:
+      mllog.mllog_start(key=mllog_constants.EVAL_START)
       if FLAGS.use_tpu:
         result = estimator.evaluate(
           input_fn=eval_input_fn, steps=FLAGS.max_eval_steps)
@@ -579,6 +622,12 @@ def main(_):
             input_fn=lambda input_context=None: eval_input_fn(
                 params=hparams, input_context=input_context),
             steps=FLAGS.max_eval_steps)
+      global_step = result["global_step"]
+      mllog.mllog_end(key=mllog_constants.EVAL_STOP, value=global_step,
+                       metadata={"step_num": global_step})
+      mllog.mllog_event(key=mllog_constants.EVAL_ACCURACY,
+                        value=result["masked_lm_accuracy"],
+                        metadata={"step_num": global_step})
 
       output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
       with tf.gfile.GFile(output_eval_file, "w") as writer:
@@ -586,6 +635,9 @@ def main(_):
         for key in sorted(result.keys()):
           tf.logging.info("  %s = %s", key, str(result[key]))
           writer.write("%s = %s\n" % (key, str(result[key])))
+
+      if global_step >= FLAGS.num_train_steps:
+        break
 
 
 if __name__ == "__main__":
