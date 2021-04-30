@@ -23,7 +23,7 @@ pyasn1==0.4.2
 pyasn1-modules==0.2.1
 pytz==2018.4
 requests==2.18.4
-rsa==3.4.2
+rsa==4.7
 scikit-learn==0.19.1
 scipy==1.0.1
 six==1.11.0
