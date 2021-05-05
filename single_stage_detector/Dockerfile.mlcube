@@ -9,7 +9,7 @@ RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 
 # Install system dependencies
 RUN apt-get update && \
-    apt-get install -y python3-tk python-pip numactl git curl wget numactl
+    apt-get install -y python3-tk python-pip numactl git curl wget numactl unzip
 
 RUN pip install --upgrade pip
 
