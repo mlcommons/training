@@ -1,0 +1,12 @@
+schema_type: mlcube_platform
+schema_version: 0.1.0
+
+platform:
+  name: "podman"
+  version: ">=1.6.4"
+container:
+  command: docker
+  run_args: >-
+    --rm  --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1
+    -e NVIDIA_VISABLE_DEVICES=ALL --privileged=true --security-opt seccomp=unconfined -v /dev/shm:/dev/shm
+  image: mlcommons/train_ssd:0.0.1

@@ -1,0 +1,37 @@
+name: MLCommons SSD Training Reference Benchmark
+author: MLCommons Best Practices Working Group
+
+tasks:
+  # Download COCO 2017 dataset
+  download_data:
+    parameters:
+      # Cache directory for compressed datasets and annotations (COCO 2017). Will contain the following files:
+      # `train2017.zip`, `val2017.zip` and `annotations_trainval2017.zip`. Total size is ~ 20G. If these files are not
+      # present, they will be downloaded here.
+      - {name: cache_dir, type: directory, io: output}
+      # Directory for uncompressed datasets. Will contain the following subdirectories: `train2017`, `val2017` and
+      #      `annotations`. Total size is ~ 20G. This is basically the content of archives in **cache_dir**.
+      - {name: data_dir,  type: directory, io: output}
+    tasks:
+      download_data: {cache_dir: $WORKSPACE/cache, data_dir: $WORKSPACE/data}
+  # Download ResNet-34 weights
+  download_model:
+    parameters:
+      # Directory location where model weights will vbe downloaded to (file name - resnet34-333f7ec4.pth)
+      - {name: model_dir,  type: directory, io: output}
+    tasks:
+      download_model: {model_dir: $WORKSPACE/data}
+  # Train SSD model
+  train:
+    parameters:
+      # see Download::data_dir
+      - {name: data_dir,            type: directory, io: input}
+      # The ResNet-34 backbone is initialized with weights from PyTorch hub file
+      - {name: pretrained_backbone, type: file,      io: input}
+      # Yaml file with training parameters.
+      - {name: parameters_file,     type: file,      io: input}
+    tasks:
+      train:
+        data_dir: $WORKSPACE/data
+        pretrained_backbone: $WORKSPACE/data/resnet34-333f7ec4.pth
+        parameters_file: $WORKSPACE/parameters.yaml
