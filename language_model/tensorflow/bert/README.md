@@ -235,7 +235,25 @@ The examples in the TFRecords have the following key/values in its features dict
 # Stopping criteria
 A valid submission will evaluate a masked lm accuracy >= 0.720. 
 
-The evaluation will be on the 10,000 samples in the evaluation set. The evalution frequency is every 500,000 samples, starting from 0 examples. The evaluation can be either offline or online for v1.0. More details please refer to the training policy.
+The evaluation will be on the 10,000 samples in the evaluation set. The evalution frequency in terms of number of samples trained is determined by the following formular based on the global batch size, starting from 0 examples. The evaluation can be either offline or online for v1.0. More details please refer to the training policy.
+
+```
+eval_frequency = floor(0.05 * (230.23 * batch_size + 3,000,000) / 25,000) * 25,000
+```
+
+The purpose of this formular is to make the eval interval 1) not too large to make the results within 5% of the actual place in training that cross the target accuracy; and 2) not too small to make evaluation time significant comparing to the end-to-end training time.
+
+### Example evaluation frequency
+
+| Batch size | Eval frequency |
+| ---------: | -------------: |
+|  256 | 150,000 |
+| 1024 | 150,000 |
+| 1536 | 150,000 |
+| 2048 | 150,000 |
+| 3072 | 175,000 |
+| 4096 | 175,000 |
+| 8192 | 175,000 |
 
 The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. **_In particular the seed (12345) must be set to ensure everyone evaluates on the same data._**
 
