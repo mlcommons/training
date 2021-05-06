@@ -1,0 +1,17 @@
+version: '3.3'
+services:
+    test:
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                        - capabilities:
+                            - gpu
+        build:
+            context: .
+            dockerfile: tests/Dockerfile
+        volumes:
+            - .:/code
+            - /mnt/mwawrzos/storage/datasets/LibriSpeech/LibriSpeech:/datasets/LibriSpeech
+        stdin_open: true
+        tty: true

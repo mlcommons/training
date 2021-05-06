@@ -154,7 +154,7 @@ based on the batch size.
 Percent of correct classifications on the Image Net test dataset.
 
 ### Quality target
-We run to 0.749 accuracy (74.9% correct classifications).
+We run to 0.759 accuracy (75.9% correct classifications).
 
 ### Evaluation frequency
 We evaluate after every epoch.
