@@ -36,7 +36,7 @@ The dataset was prepared using Python 3.7.6, nltk 3.4.5 and the [tensorflow/tens
 
 Files after the download, uncompress, extract, clean up and dataset seperation steps are providedat a [Google Drive location](https://drive.google.com/corp/drive/u/0/folders/1cywmDnAsrP5-2vsr8GDc6QUc7VWe-M3v). The main reason is that, WikiExtractor.py replaces some of the tags present in XML such as {CURRENTDAY}, {CURRENTMONTHNAMEGEN} with the current values obtained from time.strftime ([code](https://github.com/attardi/wikiextractor/blob/e4abb4cbd019b0257824ee47c23dd163919b731b/WikiExtractor.py#L632)). Hence, one might see slighly different preprocessed files after the WikiExtractor.py file is invoked. This means the md5sum hashes of these files will also be different each time WikiExtractor is called.
 
-### Files in <bert>/results directory:
+### Files in ./results directory:
 
 | File                | Size (bytes) | MD5                              |
 |---------------------|  ----------: |----------------------------------|
@@ -57,7 +57,7 @@ The details of how these files were prepared around Feb. 10, 2020 can be found i
 
 ## Generate the TFRecords for Wiki dataset
 
-The [create_pretraining_data.py](./create_pretraining_data.py) script tokenizes the words in a sentence using [tokenization.py](./tokenization.py) and `vocab.txt` file. Then, random tokens are masked using the strategy where 80% of time, the selected random tokens are replaced by `[MASK]` tokens, 10% by a random word and the remaining 10% left as is. This process is repeated for `dupe_factor` number of times, where an example with `dupe_factor` number of different masks are generated and written to TFRecords.
+The [create_pretraining_data.py](./cleanup_scripts/create_pretraining_data.py) script tokenizes the words in a sentence using [tokenization.py](./creanup_scripts/tokenization.py) and `vocab.txt` file. Then, random tokens are masked using the strategy where 80% of time, the selected random tokens are replaced by `[MASK]` tokens, 10% by a random word and the remaining 10% left as is. This process is repeated for `dupe_factor` number of times, where an example with `dupe_factor` number of different masks are generated and written to TFRecords.
 
 ```shell
 # Generate one TFRecord for each part-00XXX-of-00500 file. The following command is for generating one corresponding TFRecord
@@ -133,7 +133,7 @@ The examples in the TFRecords have the following key/values in its features dict
 # Stopping criteria
 A valid submission will evaluate a masked lm accuracy >= 0.720. 
 
-The evaluation will be on the 10,000 samples in the evaluation set. The evalution frequency in terms of number of samples trained is determined by the following formular based on the global batch size, starting from 0 examples. The evaluation can be either offline or online for v1.0. More details please refer to the training policy.
+The evaluation will be on the 10,000 samples in the evaluation set. The evalution frequency in terms of number of samples trained is determined by the following formular based on the global batch size, starting from 0 samples. Evaluation with 0 samples trained could be skipped, but that's a good place to verify the initial checkpoint was loaded correctly for debugging purpose; the masked lm accuracy after loading the initial checkpint and before any training should be very close to 0.34085. The evaluation can be either offline or online for v1.0. More details please refer to the training policy.
 
 ```
 eval_frequency = floor(0.05 * (230.23 * batch_size + 3,000,000) / 25,000) * 25,000
