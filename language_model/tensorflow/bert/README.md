@@ -25,7 +25,6 @@ python3 tf2_encoder_checkpoint_converter.py \
   --bert_config_file=<path to bert_config.json> \
   --checkpoint_to_convert=<path to tf1 model.ckpt-28252> \
   --converted_checkpoint_path=<path to output tf2 model checkpoint>
-<<<<<<< HEAD
 
 ```
 Note that the checkpoint converter removes optimizer slot variables, so the resulting TF2 checkpoint is only about 1/3 size of the TF1 checkpoint.
@@ -97,7 +96,6 @@ For example :`<bert>/cleanup_scripts/text/BD/wiki_37`.
 
  Each file is ~1MB, and each sub directory has 100 files from `wiki_00` to `wiki_99`, except the last sub directory `FE`. For the 20200101 dump, the last file is `FE/wiki_17`.
 
-```
 
 ### Files in <bert>/cleanup_scripts/text/FE/:
 
@@ -227,7 +225,7 @@ The examples in the TFRecords have the following key/values in its features dict
 
 | File                |    Size (bytes) |
 |---------------------|  -------------: |
-| eval                |     843,343,183 |
+| eval_intermediate   |     843,343,183 |
 | eval_10k            |      25,382,591 |
 | part-00000-of-00500 |     514,241,279 |
 | part-00499-of-00500 |     898,392,312 |
