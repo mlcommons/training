@@ -148,7 +148,9 @@ The generation of the evaluation set shard should follow the exact command shown
 
 # Running the model
 
-To run this model, use the following command.
+## On GPU-V100-8
+
+To run this model with batch size 24 on GPUs, use the following command.
 
 ```shell
 
@@ -160,15 +162,15 @@ python run_pretraining.py \
   --nodo_eval \
   --do_train \
   --eval_batch_size=8 \
-  --learning_rate=4e-05 \
+  --learning_rate=0.0001 \
   --init_checkpoint=./checkpoint/model.ckpt-28252 \
   --iterations_per_loop=1000 \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
-  --num_train_steps=682666666 \
+  --num_train_steps=107538 \
   --num_warmup_steps=1562 \
   --optimizer=lamb \
-  --save_checkpoints_steps=20833 \
+  --save_checkpoints_steps=6250 \
   --start_warmup_step=0 \
   --num_gpus=8 \
   --train_batch_size=24
@@ -189,15 +191,15 @@ python3 run_pretraining.py \
   --eval_batch_size=8 \
   --init_checkpoint=./checkpoint/model.ckpt-28252 \
   --iterations_per_loop=1000 \
-  --learning_rate=4e-05 \
+  --learning_rate=0.0001 \
   --max_eval_steps=1250 \
   --max_predictions_per_seq=76 \
   --max_seq_length=512 \
   --num_gpus=1 \
-  --num_train_steps=682666666 \
+  --num_train_steps=107538 \
   --num_warmup_steps=1562 \
   --optimizer=lamb \
-  --save_checkpoints_steps=20833 \
+  --save_checkpoints_steps=1562 \
   --start_warmup_step=0 \
   --train_batch_size=24 \
   --nouse_tpu
@@ -209,4 +211,171 @@ The model has been tested using the following stack:
 - NVIDIA Driver 450.51.06
 - NVIDIA Docker 2.5.0-1 + Docker 19.03.13
 - docker image tensorflow/tensorflow:2.4.0-gpu
+
+## On TPU-v3-128
+
+To run the training workload for batch size 8k on [Cloud TPUs](https://cloud.google.com/tpu), follow these steps:
+
+- Create a GCP host instance
+
+```shell
+
+gcloud compute instances create <host instance name> \
+--boot-disk-auto-delete \
+--boot-disk-size 2048 \
+--boot-disk-type pd-standard \
+--format json \
+--image debian-10-tf-2-4-0-v20201215 \
+--image-project ml-images \
+--machine-type n1-highmem-96 \
+--min-cpu-platform skylake \
+--network-interface network=default,network-tier=PREMIUM,nic-type=VIRTIO_NET \
+--no-restart-on-failure \
+--project <GCP project> \
+--quiet \
+--scopes cloud-platform \
+--tags perfkitbenchmarker \
+--zone <GCP zone> \
+
+```
+
+- Create the TPU instance
+
+```shell
+
+gcloud compute tpus create <tpu instance name> \
+--accelerator-type v3-128 \
+--format json \
+--network default \
+--project <GCP project> \
+--quiet \
+--range <some IP range, e.g. 10.193.80.0/27> \
+--version 2.4.0 \
+--zone <GCP zone>
+
+```
+
+- double check software versions.
+The Python version should be 3.7.3, and the tensorflow version should be 2.4.0.
+
+- Run the training script
+
+```shell
+
+python3 ./run_pretraining.py \
+--bert_config_file=gs://<input GCS path>/bert_config.json \
+--nodo_eval \
+--do_train \
+--eval_batch_size=160 \
+--init_checkpoint=gs://<input GCS path>/model.ckpt-28252 \
+'--input_file=gs://<input GCS path>/tf_records4/part-*' \
+--iterations_per_loop=3 \
+--lamb_beta_1=0.88 \
+--lamb_beta_2=0.88 \
+--lamb_weight_decay_rate=0.0166629 \
+--learning_rate=0.00288293 \
+--log_epsilon=-6 \
+--max_eval_steps=125 \
+--max_predictions_per_seq=76 \
+--max_seq_length=512 \
+--num_tpu_cores=128 \
+--num_train_steps=600 \
+--num_warmup_steps=287 \
+--optimizer=lamb \
+--output_dir=gs://<output GCS path> \
+--save_checkpoints_steps=3 \
+--start_warmup_step=-76 \
+--steps_per_update=1 \
+--train_batch_size=8192 \
+--use_tpu \
+--tpu_name=<tpu instance name> \
+--tpu_zone=<GCP zone> \
+--gcp_project=<GCP project>
+
+```
+
+The evaluation workload can be run on different TPUs while the training workload is running:
+
+- The host instance for training can be reused for eval.
+
+- Create a TPU-v3-8 instance:
+
+```shell
+
+gcloud compute tpus create <eval tpu name> \
+--accelerator-type v3-8 \
+--format json \
+--network default \
+--project tf-benchmark-dashboard \
+--quiet \
+--range <IP range, e.g. 10.193.85.0/29> \
+--version 2.4.0 \
+--zone <some GCP zone>
+
+```
+
+- Run the eval script:
+
+```shell
+
+python3 ./run_pretraining.py \
+--bert_config_file=gs://<input path>/bert_config.json \
+--do_eval \
+--nodo_train \
+--eval_batch_size=640 \
+--init_checkpoint=gs://<input path>/model.ckpt-28252 \
+'--input_file=gs://<input path>/eval_10k' \
+--iterations_per_loop=3 \
+--lamb_beta_1=0.88 \
+--lamb_beta_2=0.88 \
+--lamb_weight_decay_rate=0.0166629 \
+--learning_rate=0.00288293 \
+--log_epsilon=-6 \
+--max_eval_steps=125 \
+--max_predictions_per_seq=76 \
+--max_seq_length=512 \
+--num_tpu_cores=8 \
+--num_train_steps=600 \
+--num_warmup_steps=287 \
+--optimizer=lamb \
+--output_dir=gs://<same output path as training> \
+--save_checkpoints_steps=3 \
+--start_warmup_step=-76 \
+--steps_per_update=1 \
+--train_batch_size=8192 \
+--use_tpu \
+--tpu_name=<eval tpu name> \
+--tpu_zone=<GCP zone> \
+--gcp_project=<GCP project>
+
+```
+
+The eval mode doesn't do distributed eval, so no matter how many cores are used, the per-core batch size is always 80. 125 steps will go over all the 10k eval samples on each core. The final accuracies will be averaged across cores, but since the data to feed each core are all the same, the averaging doesn't do anything.
+
+
+## Gradient Accumulation
+
+The GradientAggregationOptimizer can accumulate gradients across multiple steps, on each accelerators, before actually applying the gradients. To use this feature, please note the following:
+
+- Because an additional set of non-trainable weights are used to store the accumulated gradients, the memory footprint of the model doubles. It is highly recommended to use accelerators with larger memory to overcome the memory limitation, such as A100 GPUs.
+
+- The initial checkpoint needs to be converted using checkpoint_add_gradacc.py. This script adds the extra set of weights to the checkpoint to store accumulated gradients. The converted checkpoint size is roughtly doubled.
+
+```shell
+
+python3 checkpoint_add_gradacc.py --old=<path to the oritinal initial checkpoint> --new=<path to the converted checkpoint>
+
+```
+
+- Adjust the hyper-parameters, assuming the batch size is bs, and gradients are accumulated across n steps:
+    - `--train_batch_size=bs`.
+    - `--steps_per_update=n`.
+    - use the learning rate for batch size bs * n, because that's the effective batch size to the optimizer.
+    - use `num_train_steps`, `num_warmup_steps`, `save_checkpoints_steps` and `start_warmup_steps` for batch size bs * n, but scale them up n times.
+    - note that the step numbers reported by the training script is based on batch size bs.
+
+- Although Gradient Accumulation is a good technique to simulate training with large batch sizes on small hardware systems, there are places that can introduce slightly different behaviors, thus may bring small variances to the achieved accuracies:
+    - when intended to simulate n accelerators each has a sub-batch of size bs, on a single accelerator, the moving mean and variance compuation of LayerNorm layers is performed in serial order, instead of independently on each acclerator;
+    - there is a clip_by_globalnorm op just before calling the optimizer; the clipping maybe different for different per-accelerator batch size;
+    - the accumulation order of gradients is serial under gradient accumulation, which may be different from the accumulation order of cross-device gradient sumations (i.e. allReduce, or cross-replica-sum).
 
