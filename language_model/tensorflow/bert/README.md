@@ -88,7 +88,6 @@ For example :`<bert>/cleanup_scripts/text/BD/wiki_37`.
 
  Each file is ~1MB, and each sub directory has 100 files from `wiki_00` to `wiki_99`, except the last sub directory `FE`. For the 20200101 dump, the last file is `FE/wiki_17`.
 
-```
 
 ### Files in <bert>/cleanup_scripts/text/FE/:
 
@@ -219,7 +218,7 @@ The examples in the TFRecords have the following key/values in its features dict
 
 | File                |    Size (bytes) |
 |---------------------|  -------------: |
-| eval                |     843,343,183 |
+| eval_intermediate   |     843,343,183 |
 | eval_10k            |      25,382,591 |
 | part-00000-of-00500 |     514,241,279 |
 | part-00499-of-00500 |     898,392,312 |
