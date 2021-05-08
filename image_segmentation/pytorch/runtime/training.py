@@ -50,6 +50,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                                                           device_ids=[flags.local_rank],
                                                           output_device=flags.local_rank)
 
+    next_eval_at = flags.start_eval_at
     stop_training = False
     model.train()
     for callback in callbacks:
@@ -105,7 +106,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         if flags.lr_decay_epochs:
             scheduler.step()
 
-        if ((epoch % flags.evaluate_every) == 0) and epoch >= flags.start_eval_at:
+        # if ((epoch % flags.evaluate_every) == 0) and epoch >= flags.start_eval_at:
+        if epoch == next_eval_at:
+            next_eval_at += flags.evaluate_every
             del output
             mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 
