@@ -63,8 +63,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
         mllog_start(key=CONSTANTS.EPOCH_START, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 
-        if is_distributed:
-            train_loader.sampler.set_epoch(epoch)
+        # if is_distributed:
+        #     train_loader.sampler.set_epoch(epoch)
             # val_loader.sampler.set_epoch(epoch)
 
         loss_value = None
