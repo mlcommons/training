@@ -884,9 +884,10 @@ def main():
                             # zero model and optimizer grads happening in take_optimizer_step
                         else:
                             #zero model and optimizer grad
-                            if _amp_state.opt_properties.master_weights:
-                                for param in optimizer._amp_stash.all_fp32_from_fp16_params:
-                                    param.grad = None    
+                            if args.fp16:
+                                if _amp_state.opt_properties.master_weights:
+                                    for param in optimizer._amp_stash.all_fp32_from_fp16_params:
+                                        param.grad = None    
                             for param in model.parameters():
                                 param.grad = None
 
