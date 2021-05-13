@@ -114,6 +114,9 @@ flags.DEFINE_integer(
 flags.DEFINE_integer("steps_per_update", 1,
                      "The number of steps for accumulating gradients.")
 
+flags.DEFINE_integer("keep_checkpoint_max", 5,
+                     "The maximum number of checkpoints to keep.")
+
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
                      use_one_hot_embeddings, optimizer, poly_power,
@@ -514,7 +517,7 @@ def main(_):
         cluster=tpu_cluster_resolver,
         master=FLAGS.master,
         model_dir=FLAGS.output_dir,
-        keep_checkpoint_max=5,
+        keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
         tpu_config=tf.estimator.tpu.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
@@ -548,7 +551,7 @@ def main(_):
         train_distribute=distribution_strategy,
         model_dir=FLAGS.output_dir,
         session_config=session_config,
-        keep_checkpoint_max=5,
+        keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
     )
 
