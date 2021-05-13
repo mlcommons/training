@@ -62,7 +62,6 @@ The [create_pretraining_data.py](./cleanup_scripts/create_pretraining_data.py) s
 ```shell
 # Generate one TFRecord for each part-00XXX-of-00500 file. The following command is for generating one corresponding TFRecord
 
-```shell
 python3 create_pretraining_data.py \
    --input_file=<path to ./results of previous step>/part-00XXX-of-00500 \
    --output_file=<tfrecord dir>/part-00XXX-of-00500 \
@@ -154,7 +153,7 @@ The purpose of this formular is to make the eval interval 1) not too large to ma
 | 4096 | 175,000 |
 | 8192 | 175,000 |
 
-The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. In particular the seed (12345) must be set to ensure everyone evaluates on the same data.
+The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. **_In particular the seed (12345) must be set to ensure everyone evaluates on the same data._**
 
 # Running the model
 
@@ -166,7 +165,7 @@ To run this model with batch size 24 on GPUs, use the following command.
 
 TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
 python run_pretraining.py \
-  --bert_config_file=./bert_config.json \
+  --bert_config_file=<path to bert_config.json> \
   --output_dir=/tmp/output/ \
   --input_file="<tfrecord dir>/part*" \
   --nodo_eval \
@@ -193,7 +192,7 @@ The above parameters are for a machine with 8 V100 GPUs with 16GB memory each; t
 
 TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
 python3 run_pretraining.py \
-  --bert_config_file=./bert_config.json \
+  --bert_config_file=<path to bert_config.json> \
   --output_dir=/tmp/output/ \
   --input_file="<tfrecord dir>/eval_10k" \
   --do_eval \
