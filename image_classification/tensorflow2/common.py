@@ -226,8 +226,8 @@ def get_optimizer(flags_obj,
           momentum=flags_obj.momentum,
           weight_decay=flags_obj.weight_decay,
           skip_list=['batch_normalization', 'bias', 'bn'],
-          epsilon=flags_obj.lars_epsilon,
-          use_experimental_compile=use_experimental_compile)
+          epsilon=flags_obj.lars_epsilon)
+          # use_experimental_compile=use_experimental_compile)
 
     learning_rate_schedule_fn = learning_rate_schedule
 
@@ -611,8 +611,8 @@ def print_flags(flags_obj):
       if selection in module:
         hit_selections = True
         break
-    if not hit_selections:
-      continue
+    # if not hit_selections:
+    #   continue
 
     logging.info('Module %s:', module)
     flags_dict = flags_by_module[module]
