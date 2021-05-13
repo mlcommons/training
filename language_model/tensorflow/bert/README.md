@@ -275,7 +275,7 @@ python3 ./run_pretraining.py \
 --bert_config_file=gs://<input GCS path>/bert_config.json \
 --nodo_eval \
 --do_train \
---eval_batch_size=160 \
+--eval_batch_size=640 \
 --init_checkpoint=gs://<input GCS path>/model.ckpt-28252 \
 '--input_file=gs://<input GCS path>/tf_records4/part-*' \
 --iterations_per_loop=3 \
@@ -361,6 +361,7 @@ python3 ./run_pretraining.py \
 
 The eval mode doesn't do distributed eval, so no matter how many cores are used, the per-core batch size is always 80. 125 steps will go over all the 10k eval samples on each core. The final accuracies will be averaged across cores, but since the data to feed each core are all the same, the averaging doesn't do anything.
 
+If evaluating after training is needed, use "--keep_checkpoint_max=<a large number>" in the training command, modify the "checkpoint" file in the <output path> to point to a checkpoint to evaluate (there are multiple checkpoints within <output path>, each ended with a different step number), and run the eval script with "--num_train_steps=<step number of the checkpoint file to evaluate>". By doing this, the eval script will just evaluate once instead of looping for new data. DO NOT feed an outputed checkpoint to init_checkpoint for evaluation, because initial checkpint loading skips some slot variables.
 
 ## Gradient Accumulation
 
