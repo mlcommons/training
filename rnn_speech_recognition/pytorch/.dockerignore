@@ -1,0 +1,6 @@
+checkpoints/
+tb_*/
+results/
+__pycache__
+_legacy/
+lightning_logs/

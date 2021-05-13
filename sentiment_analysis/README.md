@@ -1,5 +1,8 @@
 # 1. Problem 
 Sentiment Analysis is a binary classification task. It predicts positive or negative sentiment using raw user text. The IMDB dataset is used for this benchmark.
+
+NOTE: This is not part of the MLPerf benchmarks. This directory hasn't been updated in years and probably doesn't work!
+
 # 2. Directions
 ### Steps to configure machine
 Suggested environment : Ubuntu 16.04, 8 CPUs, one P100, 20GB disk

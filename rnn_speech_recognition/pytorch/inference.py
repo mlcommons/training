@@ -1,4 +1,4 @@
-# Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,235 +13,302 @@
 # limitations under the License.
 
 import argparse
-import itertools
-from typing import List
-from tqdm import tqdm
 import math
-import toml
-from dataset import AudioToTextDataLayer
-from helpers import process_evaluation_batch, process_evaluation_epoch, Optimization, add_blank_label, AmpOptimizations, print_dict, model_multi_gpu
-from decoders import RNNTGreedyDecoder
-from model_rnnt import RNNT
-from preprocessing import AudioPreprocessing
-from parts.features import audio_from_file
-import torch
-import apex
-from apex import amp
+import os
 import random
-import numpy as np
-import pickle
 import time
+import tqdm
+from heapq import nlargest
+from itertools import chain, repeat
+from pathlib import Path
 
-import torchvision
+import dllogger
+import torch
+import numpy as np
+import torch.distributed as distrib
+from apex import amp
+from apex.parallel import DistributedDataParallel
+from dllogger import JSONStreamBackend, StdOutBackend, Verbosity
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Jasper')
-    parser.add_argument("--local_rank", default=None, type=int)
-    parser.add_argument("--batch_size", default=16, type=int, help='data batch size')
-    parser.add_argument("--steps", default=None, help='if not specified do evaluation on full dataset. otherwise only evaluates the specified number of iterations for each worker', type=int)
-    parser.add_argument("--model_toml", type=str, help='relative model configuration path given dataset folder')
-    parser.add_argument("--dataset_dir", type=str, help='absolute path to dataset folder')
-    parser.add_argument("--val_manifest", type=str, help='relative path to evaluation dataset manifest file')
-    parser.add_argument("--ckpt", default=None, type=str, required=True, help='path to model checkpoint')
-    parser.add_argument("--max_duration", default=None, type=float, help='maximum duration of sequences. if None uses attribute from model configuration file')
-    parser.add_argument("--pad_to", default=None, type=int, help="default is pad to value as specified in model configurations. if -1 pad to maximum duration. If > 0 pad batch to next multiple of value")
-    parser.add_argument("--fp16", action='store_true', help='use half precision')
-    parser.add_argument("--cudnn_benchmark", action='store_true', help="enable cudnn benchmark")
-    parser.add_argument("--save_prediction", type=str, default=None, help="if specified saves predictions in text form at this location")
-    parser.add_argument("--logits_save_to", default=None, type=str, help="if specified will save logits to path")
-    parser.add_argument("--seed", default=42, type=int, help='seed')
-    parser.add_argument("--wav", type=str, help='absolute path to .wav file (16KHz)')
-    return parser.parse_args()
-
-def eval(
-        data_layer,
-        audio_processor,
-        encoderdecoder,
-        greedy_decoder,
-        labels,
-        multi_gpu,
-        args):
-    """performs inference / evaluation
-    Args:
-        data_layer: data layer object that holds data loader
-        audio_processor: data processing module
-        encoderdecoder: acoustic model
-        greedy_decoder: greedy decoder
-        labels: list of labels as output vocabulary
-        multi_gpu: true if using multiple gpus
-        args: script input arguments
-    """
-    logits_save_to=args.logits_save_to
-    encoderdecoder.eval()
-    with torch.no_grad():
-        _global_var_dict = {
-            'predictions': [],
-            'transcripts': [],
-            'logits' : [],
-        }
+from common import helpers
+from common.data import features
+from common.data.dali import sampler as dali_sampler
+from common.data.dali.data_loader import DaliDataLoader
+from common.data.features import BaseFeatures, FilterbankFeatures
+from common.data.text import Tokenizer
+from common.helpers import print_once, process_evaluation_epoch
+from common.tb_dllogger import stdout_metric_format, unique_log_fpath
+from rnnt import config
+from rnnt.decoder import RNNTGreedyDecoder
+from rnnt.model import RNNT
 
 
-        
-        if args.wav:
-            features, p_length_e = audio_processor(audio_from_file(args.wav))
-            torch.cuda.synchronize()
-            t0 = time.perf_counter()
-            t_log_probs_e = encoderdecoder(features)
-            torch.cuda.synchronize()
-            t1 = time.perf_counter()
-            t_predictions_e = greedy_decoder(log_probs=t_log_probs_e)
-            hypotheses = __ctc_decoder_predictions_tensor(t_predictions_e, labels=labels)
-            print("INFERENCE TIME\t\t: {} ms".format((t1-t0)*1000.0))
-            print("TRANSCRIPT\t\t:", hypotheses[0])
-            return
-        
-        for it, data in enumerate(tqdm(data_layer.data_iterator)):
-            t_audio_signal_e, t_a_sig_length_e, t_transcript_e, t_transcript_len_e = audio_processor(data)
+def get_parser():
+    parser = argparse.ArgumentParser(description='RNN-T')
+    parser.add_argument('--batch_size', default=16, type=int,
+                        help='Data batch size')
+    parser.add_argument('--steps', default=0, type=int,
+                        help='Eval this many steps for every worker')
+    parser.add_argument('--model_config', type=str,
+                        help='Relative model config path given dataset folder')
+    parser.add_argument('--dataset_dir', type=str,
+                        help='Absolute path to dataset folder')
+    parser.add_argument('--val_manifest', type=str,
+                        help='Relative path to evaluation dataset manifest file')
+    parser.add_argument('--ckpt', default=None, type=str,
+                        help='Path to model checkpoint')
+    parser.add_argument('--max_duration', default=None, type=float,
+                        help='Filter out longer inputs (in seconds)')
+    parser.add_argument('--pad_to_max_duration', action='store_true',
+                        help='Pads every batch to max_duration')
+    parser.add_argument('--amp', '--fp16', action='store_true',
+                        help='Use FP16 precision')
+    parser.add_argument('--cudnn_benchmark', action='store_true',
+                        help='Enable cudnn benchmark')
+    parser.add_argument('--save_predictions', type=str, default=None,
+                        help='Save predictions in text form at this location')
+    parser.add_argument('--transcribe_wav', type=str,
+                        help='Path to a single .wav file (16KHz)')
+    parser.add_argument('--transcribe_filelist', type=str,
+                        help='Path to a filelist with one .wav path per line')
+    parser.add_argument('--dali_device', type=str, choices=['none', 'cpu', 'gpu'],
+                        default='gpu', help='')  # XXX
+    parser.add_argument('--repeats', default=1, type=int,
+                        help='Repeat the inference for benchmarking')
 
-            t_log_probs_e, (x_len, y_len) = encoderdecoder(
-                    ((t_audio_signal_e, t_transcript_e), (t_a_sig_length_e, t_transcript_len_e)),
-            )
-            t_predictions_e = greedy_decoder.decode(t_audio_signal_e, t_a_sig_length_e)
+    parser.add_argument('-o', '--output_dir', default='results/',
+                        help='Output folder to save audio (file per phrase)')
+    parser.add_argument('--log_file', type=str, default=None,
+                        help='Path to a DLLogger log file')
+    parser.add_argument('--local_rank', default=os.getenv('LOCAL_RANK', 0),
+                        type=int, help='GPU id used for distributed training')
 
-            values_dict = dict(
-                predictions=[t_predictions_e],
-                transcript=[t_transcript_e],
-                transcript_length=[t_transcript_len_e],
-                output=[t_log_probs_e]
-            )
-            process_evaluation_batch(values_dict, _global_var_dict, labels=labels)
+    parser.add_argument('--cpu', action='store_true',
+                        help='Run inference on CPU')
+    parser.add_argument('--ema', action='store_true',
+                        help='Load EMA model weights')
 
-            if args.steps is not None and it + 1 >= args.steps:
-                break
-        wer, _ = process_evaluation_epoch(_global_var_dict)
-        if (not multi_gpu or (multi_gpu and torch.distributed.get_rank() == 0)):
-            print("==========>>>>>>Evaluation WER: {0}\n".format(wer))
-            if args.save_prediction is not None:
-                with open(args.save_prediction, 'w') as fp:
-                    fp.write('\n'.join(_global_var_dict['predictions']))
-            if logits_save_to is not None:
-                logits = []
-                for batch in _global_var_dict["logits"]:
-                    for i in range(batch.shape[0]):
-                        logits.append(batch[i].cpu().numpy())
-                with open(logits_save_to, 'wb') as f:
-                    pickle.dump(logits, f, protocol=pickle.HIGHEST_PROTOCOL)
+    parser.add_argument("--seed", default=None, type=int, help='seed')
 
-def main(args):
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.backends.cudnn.benchmark = args.cudnn_benchmark
-    print("CUDNN BENCHMARK ", args.cudnn_benchmark)
-    assert(torch.cuda.is_available())
+    return parser
 
-    if args.local_rank is not None:
-        torch.cuda.set_device(args.local_rank)
-        torch.distributed.init_process_group(backend='nccl', init_method='env://')
-    multi_gpu = args.local_rank is not None
-    if multi_gpu:
-        print("DISTRIBUTED with ", torch.distributed.get_world_size())
 
-    if args.fp16:
-        optim_level = Optimization.mxprO3
+def durs_to_percentiles(durations, ratios):
+    durations = np.asarray(durations) * 1000  # in ms
+    latency = durations
+
+    latency = latency[5:]
+    mean_latency = np.mean(latency)
+
+    latency_worst = nlargest(math.ceil((1 - min(ratios))* len(latency)), latency)
+    latency_ranges = get_percentile(ratios, latency_worst, len(latency))
+    latency_ranges[0.5] = mean_latency
+    return latency_ranges
+
+
+def get_percentile(ratios, arr, nsamples):
+    res = {}
+    for a in ratios:
+        idx = max(int(nsamples * (1 - a)), 0)
+        res[a] = arr[idx]
+    return res
+
+
+def main():
+    parser = get_parser()
+    args = parser.parse_args()
+
+    log_fpath = args.log_file or str(Path(args.output_dir, 'nvlog_infer.json'))
+    log_fpath = unique_log_fpath(log_fpath)
+    dllogger.init(backends=[JSONStreamBackend(Verbosity.DEFAULT, log_fpath),
+                            StdOutBackend(Verbosity.VERBOSE,
+                                          metric_format=stdout_metric_format)])
+
+    [dllogger.log("PARAMETER", {k:v}) for k,v in vars(args).items()]
+
+    for step in ['DNN', 'data+DNN', 'data']:
+        for c in [0.99, 0.95, 0.9, 0.5]:
+            cs = 'avg' if c == 0.5 else f'{int(100*c)}%'
+            dllogger.metadata(f'{step.lower()}_latency_{c}',
+                              {'name': f'{step} latency {cs}',
+                               'format': ':>7.2f', 'unit': 'ms'})
+    dllogger.metadata(
+        'eval_wer', {'name': 'WER', 'format': ':>3.3f', 'unit': '%'})
+
+    if args.cpu:
+        device = torch.device('cpu')
     else:
-        optim_level = Optimization.mxprO0
+        assert torch.cuda.is_available()
+        device = torch.device('cuda')
+        torch.backends.cudnn.benchmark = args.cudnn_benchmark
 
-    model_definition = toml.load(args.model_toml)
-    dataset_vocab = model_definition['labels']['labels']
-    ctc_vocab = add_blank_label(dataset_vocab)
+    if args.seed is not None:
+        torch.manual_seed(args.seed + args.local_rank)
+        np.random.seed(args.seed + args.local_rank)
+        random.seed(args.seed + args.local_rank)
 
-    val_manifest = args.val_manifest
-    featurizer_config = model_definition['input_eval']
-    featurizer_config["optimization_level"] = optim_level
+    # set up distributed training
+    multi_gpu = not args.cpu and int(os.environ.get('WORLD_SIZE', 1)) > 1
+    if multi_gpu:
+        torch.cuda.set_device(args.local_rank)
+        distrib.init_process_group(backend='nccl', init_method='env://')
+        print_once(f'Inference with {distrib.get_world_size()} GPUs')
+
+    cfg = config.load(args.model_config)
 
     if args.max_duration is not None:
-        featurizer_config['max_duration'] = args.max_duration
-    if args.pad_to is not None:
-        featurizer_config['pad_to'] = args.pad_to if args.pad_to >= 0 else "max"
+        cfg['input_val']['audio_dataset']['max_duration'] = args.max_duration
+        cfg['input_val']['filterbank_features']['max_duration'] = args.max_duration
 
-    print('model_config')
-    print_dict(model_definition)
-    print('feature_config')
-    print_dict(featurizer_config)
-    data_layer = None
-    
-    if args.wav is None:
-        data_layer = AudioToTextDataLayer(
-            dataset_dir=args.dataset_dir, 
-            featurizer_config=featurizer_config,
-            manifest_filepath=val_manifest,
-            labels=dataset_vocab,
-            batch_size=args.batch_size,
-            pad_to_max=featurizer_config['pad_to'] == "max",
-            shuffle=False,
-            multi_gpu=multi_gpu)
-    audio_preprocessor = AudioPreprocessing(**featurizer_config)
+    if args.pad_to_max_duration:
+        assert cfg['input_val']['audio_dataset']['max_duration'] > 0
+        cfg['input_val']['audio_dataset']['pad_to_max_duration'] = True
+        cfg['input_val']['filterbank_features']['pad_to_max_duration'] = True
 
-    #encoderdecoder = JasperEncoderDecoder(jasper_model_definition=jasper_model_definition, feat_in=1024, num_classes=len(ctc_vocab))
-    model = RNNT(
-        feature_config=featurizer_config,
-        rnnt=model_definition['rnnt'],
-        num_classes=len(ctc_vocab)
+    use_dali = args.dali_device in ('cpu', 'gpu')
+
+    (
+        dataset_kw,
+        features_kw,
+        splicing_kw,
+        _, _
+    ) = config.input(cfg, 'val')
+
+    tokenizer_kw = config.tokenizer(cfg)
+    tokenizer = Tokenizer(**tokenizer_kw)
+
+    optim_level = 3 if args.amp else 0
+
+    feature_proc  = torch.nn.Sequential(
+        torch.nn.Identity(),
+        torch.nn.Identity(),
+        features.FrameSplicing(optim_level=optim_level, **splicing_kw),
+        features.FillPadding(optim_level=optim_level, ),
     )
 
+    # dataset
+
+    data_loader = DaliDataLoader(
+        gpu_id=args.local_rank or 0,
+        dataset_path=args.dataset_dir,
+        config_data=dataset_kw,
+        config_features=features_kw,
+        json_names=[args.val_manifest],
+        batch_size=args.batch_size,
+        sampler=dali_sampler.SimpleSampler(),
+        pipeline_type="val",
+        device_type=args.dali_device,
+        tokenizer=tokenizer)
+
+    model = RNNT(n_classes=tokenizer.num_labels + 1, **config.rnnt(cfg))
+
     if args.ckpt is not None:
-        print("loading model from ", args.ckpt)
+        print(f'Loading the model from {args.ckpt} ...')
         checkpoint = torch.load(args.ckpt, map_location="cpu")
-        model.load_state_dict(checkpoint['state_dict'], strict=False)
+        key = 'ema_state_dict' if args.ema else 'state_dict'
+        state_dict = checkpoint[key]
+        model.load_state_dict(state_dict, strict=True)
 
-    #greedy_decoder = GreedyCTCDecoder()
+    model.to(device)
+    model.eval()
 
-    # print("Number of parameters in encoder: {0}".format(model.jasper_encoder.num_weights()))
-    if args.wav is None:
-        N = len(data_layer)
-        step_per_epoch = math.ceil(N / (args.batch_size * (1 if not torch.distributed.is_initialized() else torch.distributed.get_world_size())))
+    if feature_proc is not None:
+        feature_proc.to(device)
+        feature_proc.eval()
 
-        if args.steps is not None:
-            print('-----------------')
-            print('Have {0} examples to eval on.'.format(args.steps * args.batch_size * (1 if not torch.distributed.is_initialized() else torch.distributed.get_world_size())))
-            print('Have {0} steps / (gpu * epoch).'.format(args.steps))
-            print('-----------------')
+    if args.amp:
+        model = amp.initialize(model, opt_level='O3')
+
+    if multi_gpu:
+        model = DistributedDataParallel(model)
+
+    agg = {'txts': [], 'preds': [], 'logits': []}
+    dur = {'data': [], 'dnn': [], 'data+dnn': []}
+
+    rep_loader = chain(*repeat(data_loader, args.repeats))
+    rep_len = args.repeats * len(data_loader)
+
+    blank_idx = tokenizer.num_labels
+    greedy_decoder = RNNTGreedyDecoder(blank_idx=blank_idx)
+
+    def sync_time():
+        torch.cuda.synchronize() if device.type == 'cuda' else None
+        return time.perf_counter()
+
+    sz = []
+    with torch.no_grad():
+
+        for it, batch in enumerate(tqdm.tqdm(rep_loader, total=rep_len)):
+
+            if use_dali:
+                feats, feat_lens, txt, txt_lens = batch
+                if feature_proc is not None:
+                    feats, feat_lens = feature_proc([feats, feat_lens])
+            else:
+                batch = [t.cuda(non_blocking=True) for t in batch]
+                audio, audio_lens, txt, txt_lens = batch
+                feats, feat_lens = feature_proc([audio, audio_lens])
+            feats = feats.permute(2, 0, 1)
+            if args.amp:
+                feats = feats.half()
+
+            sz.append(feats.size(0))
+
+            t1 = sync_time()
+            log_probs, log_prob_lens = model(feats, feat_lens, txt, txt_lens)
+            t2 = sync_time()
+
+            # burn-in period; wait for a new loader due to num_workers
+            if it >= 1 and (args.repeats == 1 or it >= len(data_loader)):
+                dur['data'].append(t1 - t0)
+                dur['dnn'].append(t2 - t1)
+                dur['data+dnn'].append(t2 - t0)
+
+            if txt is not None:
+                agg['txts'] += helpers.gather_transcripts([txt], [txt_lens],
+                                                          tokenizer.detokenize)
+
+            preds = greedy_decoder.decode(model, feats, feat_lens)
+
+            agg['preds'] += helpers.gather_predictions([preds], tokenizer.detokenize)
+
+            if 0 < args.steps < it:
+                break
+
+            t0 = sync_time()
+
+        # communicate the results
+        if args.transcribe_wav:
+            for idx,p in enumerate(agg['preds']):
+                print_once(f'Prediction {idx+1: >3}: {p}')
+
+        elif args.transcribe_filelist:
+            pass
+
         else:
-            print('-----------------')
-            print('Have {0} examples to eval on.'.format(N))
-            print('Have {0} steps / (gpu * epoch).'.format(step_per_epoch))
-            print('-----------------')
+            wer, loss = process_evaluation_epoch(agg)
+
+            if not multi_gpu or distrib.get_rank() == 0:
+                dllogger.log(step=(), data={'eval_wer': 100 * wer})
+
+        if args.save_predictions:
+            with open(args.save_predictions, 'w') as f:
+                f.write('\n'.join(agg['preds']))
+
+    # report timings
+    if len(dur['data']) >= 20:
+        ratios = [0.9, 0.95, 0.99]
+
+        for stage in dur:
+            lat = durs_to_percentiles(dur[stage], ratios)
+            for k in [0.99, 0.95, 0.9, 0.5]:
+                kk = str(k).replace('.', '_')
+                dllogger.log(step=(), data={f'{stage.lower()}_latency_{kk}': lat[k]})
+
     else:
-            audio_preprocessor.featurizer.normalize = "per_feature"
+        # TODO measure at least avg latency
+        print_once('Not enough samples to measure latencies.')
 
-    print ("audio_preprocessor.normalize: ", audio_preprocessor.featurizer.normalize)
-    audio_preprocessor.cuda()
-    audio_preprocessor.eval()
-
-    eval_transforms = torchvision.transforms.Compose([
-        lambda xs: [x.cuda() for x in xs],
-        lambda xs: [*audio_preprocessor(xs[0:2]), *xs[2:]],
-        lambda xs: [xs[0].permute(2, 0, 1), *xs[1:]],
-    ])
-
-    model.cuda()
-    if args.fp16:
-        model = amp.initialize(
-            models=model,
-            opt_level=AmpOptimizations[optim_level])
-
-    model = model_multi_gpu(model, multi_gpu)
-
-    greedy_decoder = RNNTGreedyDecoder(len(ctc_vocab) - 1, model.module if multi_gpu else model)
-
-    eval(
-        data_layer=data_layer,
-        audio_processor=eval_transforms,
-        encoderdecoder=model,
-        greedy_decoder=greedy_decoder,
-        labels=ctc_vocab,
-        args=args,
-        multi_gpu=multi_gpu)
 
 if __name__=="__main__":
-    args = parse_args()
-
-    print_dict(vars(args))
-
-    main(args)
+    main()
