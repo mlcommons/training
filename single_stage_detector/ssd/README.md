@@ -52,8 +52,17 @@ cd reference/single_stage_detector/
 
 Then use the downloaded file with `--pretrained-backbone <PATH TO WEIGHTS>` .
 
+To read the weights without installing PyTorch, use the provided `pth_to_pickle.py` script to convert them to a pickled dictionary of numpy arrays:
+```
+cd reference/single_stage_detector/
+python pth_to_pickle.py resnet34-333f7ec4.pth resnet34-333f7ec4.pickle
+```
+
+The pickled file can later be read with `pickle.load("resnet34-333f7ec4.pickle")`.
+
 ## Steps to run benchmark
 tbd
+
 ## Steps to launch training
 ### NVIDIA DGX-1 (single GPU)
 Launch configuration and system-specific hyperparameters for the NVIDIA DGX-1

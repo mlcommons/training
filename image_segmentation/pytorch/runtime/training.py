@@ -51,6 +51,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                                                           output_device=flags.local_rank)
 
     stop_training = False
+    next_eval_at = flags.start_eval_at
     model.train()
     for callback in callbacks:
         callback.on_fit_start()
@@ -62,8 +63,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
         mllog_start(key=CONSTANTS.EPOCH_START, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 
-        if is_distributed:
-            train_loader.sampler.set_epoch(epoch)
+        # if is_distributed:
+        #     train_loader.sampler.set_epoch(epoch)
             # val_loader.sampler.set_epoch(epoch)
 
         loss_value = None
@@ -105,7 +106,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         if flags.lr_decay_epochs:
             scheduler.step()
 
-        if ((epoch % flags.evaluate_every) == 0) and epoch >= flags.start_eval_at:
+        if epoch == next_eval_at:
+            next_eval_at += flags.evaluate_every
             del output
             mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 
