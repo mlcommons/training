@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from tf2_common.training import optimizer_v2modified
+# from tf2_common.training import optimizer_v2modified
 from tensorflow.python.framework import ops
 from tensorflow.python.keras import backend_config
 from tensorflow.python.keras.optimizer_v2 import optimizer_v2
@@ -30,7 +30,8 @@ from tensorflow.python.training import training_ops
 from tensorflow.python.ops import state_ops
 
 
-class LARSOptimizer(optimizer_v2modified.OptimizerV2Modified):
+# class LARSOptimizer(optimizer_v2modified.OptimizerV2Modified):
+class LARSOptimizer(optimizer_v2.OptimizerV2):
   """Layer-wise Adaptive Rate Scaling for large batch training.
 
   Introduced by "Large Batch Training of Convolutional Networks" by Y. You,
