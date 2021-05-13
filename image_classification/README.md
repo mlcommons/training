@@ -136,7 +136,7 @@ python3 ./resnet_ctl_imagenet_main.py \
 --weight_decay=0.0002
 
 ```
-Note: Because there is no recommended hyperparameter set for batch size 2048, the above command uses a hyperparameter set for batch size 2048 and num_accumulation_steps=2; this reduces the chance of convergence. To avoid this, use 1) V100-16, 2) V100s with 32GB memory, 3) A100-8, or 4) dtype=fp16.
+Note: Because there is no recommended hyperparameter set for batch size 1024, the above command uses a hyperparameter set for batch size 2048 and num_accumulation_steps=2; this reduces the chance of convergence. To avoid this, use 1) V100-16, 2) V100s with 32GB memory, 3) A100-8, or 4) dtype=fp16.
 
 The model has been tested using the following stack:
 - Debian GNU/Linux 10 GNU/Linux 4.19.0-12-amd64 x86_64
