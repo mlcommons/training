@@ -363,6 +363,31 @@ The eval mode doesn't do distributed eval, so no matter how many cores are used,
 
 If evaluating after training is needed, use "--keep_checkpoint_max=\<a large number\>" in the training command, modify the "checkpoint" file in the \<output path\> to point to a checkpoint to evaluate (there are multiple checkpoints within \<output path\>, each ended with a different step number), and run the eval script with "--num_train_steps=\<step number of the checkpoint file to evaluate\>". By doing this, the eval script will just evaluate once instead of looping for new data. DO NOT feed an outputed checkpoint to init_checkpoint for evaluation, because initial checkpint loading skips some slot variables.
 
+Below is an example for evaluation after training; DO NOT use this method while the training process is still active, because it will overwrite the "checkpoint" file in the output directory.
+
+```shell
+output_path="gs://<same output path as training>"
+log_dir="./bert_log"
+
+for step_num in 0 $(seq 600 -3 3); do
+
+  local_ckpt="${log_dir}/checkpoint"
+  echo "model_checkpoint_path: \"model.ckpt-${step_num}\"" > $local_ckpt
+  echo "all_model_checkpoint_paths: \"model.ckpt-${step_num}\"" >> $local_ckpt
+  gsutil cp $ckpt $output_path
+
+  python3 ./run_pretraining.py \
+--do_eval \
+--nodo_train \
+--init_checkpoint=gs://<input_path>/model.ckpt-28252 \
+--output_dir=${output_path} \
+--num_train_steps=${step_num} \
+... other flags follow the above eval command
+> ${log_dir}/step${step_num}_eval.txt 2>&1
+
+done
+```
+
 ## Gradient Accumulation
 
 The GradientAggregationOptimizer can accumulate gradients across multiple steps, on each accelerators, before actually applying the gradients. To use this feature, please note the following:
