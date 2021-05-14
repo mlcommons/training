@@ -41,13 +41,9 @@ The files at the time of v0.7 were available at https://dumps.wikimedia.org/enwi
 The files have since been removed from this link. Instead, they are now available at this [Google Drive location](https://drive.google.com/drive/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT). The file `enwiki-20200101-pages-articles-multistream.xml.bz2` containing wikipedia dump should be downloaded and uncompressed.
 
 ```shell
-# TODO: Change this to correct commit when patch is merged
 # Clone the training repo
 
-git clone https://github.com/sgpyc/training
-git checkout bert_fix
-
-# TODO: Add HEAD Commit SHA
+git clone https://github.com/mlcommons/training
 
 cd language_model/tensorflow/bert/cleanup_scripts
 

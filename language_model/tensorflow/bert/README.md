@@ -2,11 +2,21 @@
 
 # Location of the input files 
 
-This [GCS location](https://console.cloud.google.com/storage/browser/pkanwar-bert) contains the following.
-* TensorFlow1 checkpoint (bert_model.ckpt) containing the pre-trained weights (which is actually 3 files).
-* Vocab file (vocab.txt) to map WordPiece to word id.
-* Config file (bert_config.json) which specifies the hyperparameters of the model.
-* TensorFlow2 checkpoint should be convertable from the Tensorflow1 checkpoint using the checkpoint_converter:
+This [Google Drive location](https://drive.google.com/drive/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT) contains the following.
+* tf1_ckpt folder: contains checkpoint files 
+  - model.ckpt-28252.data-00000-of-00001
+  - model.ckpt-28252.index
+  - model.ckpt-28252.meta
+
+* tf2_ckpt folder: contains TF2 checkpoint files
+  - model.ckpt-28252.data-00000-of-00001
+  - model.ckpt-28252.index
+
+* bert_config.json: Config file which specifies the hyperparameters of the model
+* enwiki-20200101-pages-articles-multistream.xml.bz2 : Compressed file containing wiki data
+* enwiki-20200101-pages-articles-multistream.xml.bz2.md5sum: md5sum hash for the `enwiki-20200101-pages-articles-multistream.xml.bz2` file
+* License.txt
+* vocab.txt: Contains WordPiece to id mapping
 
 Alternatively, TF2 checkpoint can also be generated using [tf2_encoder_checkpoint_converter.py](https://github.com/tensorflow/models/blob/master/official/nlp/bert/tf2_encoder_checkpoint_converter.py) and TF1 checkpoint
 
@@ -17,8 +27,8 @@ python3 tf2_encoder_checkpoint_converter.py \
   --converted_checkpoint_path=<path to output tf2 model checkpoint>
 
 ```
+Note that the checkpoint converter removes optimizer slot variables, so the resulting TF2 checkpoint is only about 1/3 size of the TF1 checkpoint.
 
-Alternatively, the tf2 checkpint is also available [here](https://pantheon.corp.google.com/storage/browser/nnigania_perf_profiles/bert_mlperf_data). Note that the checkpoint converter removes optimizer slot variables, so the resulted tf2 checkpoint is only about 1/3 size as the tf1 checkpoint.
 
 # Download and preprocess datasets
 
@@ -52,7 +62,6 @@ The [create_pretraining_data.py](./cleanup_scripts/create_pretraining_data.py) s
 ```shell
 # Generate one TFRecord for each part-00XXX-of-00500 file. The following command is for generating one corresponding TFRecord
 
-```shell
 python3 create_pretraining_data.py \
    --input_file=<path to ./results of previous step>/part-00XXX-of-00500 \
    --output_file=<tfrecord dir>/part-00XXX-of-00500 \
@@ -144,7 +153,7 @@ The purpose of this formular is to make the eval interval 1) not too large to ma
 | 4096 | 175,000 |
 | 8192 | 175,000 |
 
-The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. In particular the seed (12345) must be set to ensure everyone evaluates on the same data.
+The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. **_In particular the seed (12345) must be set to ensure everyone evaluates on the same data._**
 
 # Running the model
 
@@ -156,7 +165,7 @@ To run this model with batch size 24 on GPUs, use the following command.
 
 TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
 python run_pretraining.py \
-  --bert_config_file=./bert_config.json \
+  --bert_config_file=<path to bert_config.json> \
   --output_dir=/tmp/output/ \
   --input_file="<tfrecord dir>/part*" \
   --nodo_eval \
@@ -183,7 +192,7 @@ The above parameters are for a machine with 8 V100 GPUs with 16GB memory each; t
 
 TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
 python3 run_pretraining.py \
-  --bert_config_file=./bert_config.json \
+  --bert_config_file=<path to bert_config.json> \
   --output_dir=/tmp/output/ \
   --input_file="<tfrecord dir>/eval_10k" \
   --do_eval \
