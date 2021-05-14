@@ -20,6 +20,11 @@ flags.DEFINE_float("lamb_weight_decay_rate", 0.01, "Lamb weight decay")
 flags.DEFINE_float("lamb_beta_1", 0.9, "Lamb beta1")
 flags.DEFINE_float("lamb_beta_2", 0.999, "Lamb beta2")
 flags.DEFINE_float("log_epsilon", -6, "Lamb beta2")
+flags.DEFINE_bool(
+    "clip_by_global_norm_after_gradient_allreduce",
+    False,
+    "Whether to apply clip_by_global_norm to gradients after gradient "
+    "reductions across multiple replicas.")
 
 
 def create_optimizer(loss,
@@ -90,7 +95,9 @@ def create_optimizer(loss,
         beta_1=FLAGS.lamb_beta_1,
         beta_2=FLAGS.lamb_beta_2,
         epsilon=10**FLAGS.log_epsilon,
-        exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
+        exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"],
+        clip_by_global_norm_after_gradient_allreduce=FLAGS
+        .clip_by_global_norm_after_gradient_allreduce)
   else:
     raise ValueError("Not supported optimizer: ", optimizer_name)
 
@@ -105,8 +112,9 @@ def create_optimizer(loss,
   tvars = tf.trainable_variables()
   grads = tf.gradients(loss, tvars)
 
-  # This is how the model was pre-trained.
-  (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+  if not FLAGS.clip_by_global_norm_after_gradient_allreduce:
+    # This is how the model was pre-trained.
+    (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
 
   train_op = optimizer.apply_gradients(
       zip(grads, tvars), global_step=global_step)

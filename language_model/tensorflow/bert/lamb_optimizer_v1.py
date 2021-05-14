@@ -9,6 +9,7 @@ from __future__ import division
 from __future__ import print_function
 
 import re
+import tensorflow.compat.v1 as tf
 
 # pylint: disable=g-direct-tensorflow-import
 from tensorflow.python.eager import context
@@ -35,7 +36,8 @@ class LAMBOptimizer(optimizer.Optimizer):
                exclude_from_weight_decay=None,
                exclude_from_layer_adaptation=None,
                use_locking=False,
-               name="LAMB"):
+               name="LAMB",
+               clip_by_global_norm_after_gradient_allreduce=False):
     super(LAMBOptimizer, self).__init__(use_locking, name)
     self._lr = learning_rate
     self._beta1 = beta_1
@@ -43,6 +45,7 @@ class LAMBOptimizer(optimizer.Optimizer):
     self._epsilon = epsilon
     self._weight_decay_rate = weight_decay_rate
     self.exclude_from_weight_decay = exclude_from_weight_decay
+    self.clip_by_global_norm_after_gradient_allreduce = clip_by_global_norm_after_gradient_allreduce
     # exclude_from_layer_adaptation is set to exclude_from_weight_decay if the
     # arg is None.
     if exclude_from_layer_adaptation:
@@ -95,6 +98,25 @@ class LAMBOptimizer(optimizer.Optimizer):
     self._epsilon_t = ops.convert_to_tensor(epsilon, name="epsilon")
     self._weight_decay_rate_t = ops.convert_to_tensor(
         weight_decay_rate, name="weight_decay_rate")
+
+  def apply_gradients(self, grads_and_vars, global_step=None, name=None):
+    """Apply gradients to variables."""
+    if not self.clip_by_global_norm_after_gradient_allreduce:
+      return super(LAMBOptimizer, self).apply_gradients(
+          grads_and_vars, global_step, name)
+
+    tf.logging.info("clip_by_global_norm within LAMB optimizer.")
+
+    grads = []
+    vars_ = []
+    for g, v in grads_and_vars:
+      grads.append(g)
+      vars_.append(v)
+
+    (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+
+    return super(LAMBOptimizer, self).apply_gradients(
+        list(zip(grads, vars_)), global_step, name)
 
   def _apply_dense(self, grad, var):
     return self._resource_apply_dense(grad, var)
