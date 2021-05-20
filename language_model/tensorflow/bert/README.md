@@ -151,7 +151,7 @@ The purpose of this formular is to make the eval interval 1) not too large to ma
 | 2048 | 150,000 |
 | 3072 | 175,000 |
 | 4096 | 175,000 |
-| 8192 | 175,000 |
+| 8192 | 225,000 |
 
 The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. **_In particular the seed (12345) must be set to ensure everyone evaluates on the same data._**
 
@@ -374,7 +374,7 @@ for step_num in 0 $(seq 600 -3 3); do
   local_ckpt="${log_dir}/checkpoint"
   echo "model_checkpoint_path: \"model.ckpt-${step_num}\"" > $local_ckpt
   echo "all_model_checkpoint_paths: \"model.ckpt-${step_num}\"" >> $local_ckpt
-  gsutil cp $ckpt $output_path
+  gsutil cp $local_ckpt $output_path
 
   python3 ./run_pretraining.py \
 --do_eval \
