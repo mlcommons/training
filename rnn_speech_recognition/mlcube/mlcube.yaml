@@ -1,0 +1,33 @@
+name: MLCommons RNN Speech Recognition Training Reference Benchmark
+author: MLCommons Best Practices Working Group
+
+tasks:
+  # Download LibriSpeech dataset
+  download_data:
+    parameters:
+      # Directory for uncompressed datasets. Will contain the following subdirectories: `train2017`, `val2017` and
+      #      `annotations`. Total size is ~ 20G. This is basically the content of archives in **cache_dir**.
+      - {name: data_dir,  type: directory, io: output}
+    tasks:
+      download_data: {data_dir: $WORKSPACE/data}
+  # Download ResNet-34 weights
+  preprocess_data:
+    parameters:
+      # Directory location where model weights will vbe downloaded to (file name - resnet34-333f7ec4.pth)
+      - {name: data_dir,  type: directory, io: output}
+    tasks:
+      preprocess_data: {data_dir: $WORKSPACE/data}
+  # Train SSD model
+  train:
+    parameters:
+      # see Download::data_dir
+      - {name: data_dir,            type: directory, io: input}
+      # see Download::data_dir
+      - {name: output_dir,            type: directory, io: output}
+      # Yaml file with training parameters.
+      - {name: parameters_file,     type: file,      io: input}
+    tasks:
+      train:
+        data_dir: $WORKSPACE/data/LibriSpeech
+        output_dir: $WORKSPACE/output
+        parameters_file: $WORKSPACE/parameters.yaml
