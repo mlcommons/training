@@ -59,4 +59,4 @@ RUN chmod +x ./run_and_time.sh
 ENV LC_ALL C.UTF-8
 ENV LANG C.UTF-8
 
-ENTRYPOINT ["python", "/workspace/mlcube.py"]
+ENTRYPOINT ["python", "/workspace/rnnt/mlcube.py"]
