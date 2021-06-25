@@ -22,7 +22,7 @@ cd ./rnn_speech_recognition/pytorch
 docker build --build-arg http_proxy="${http_proxy}" --build-arg https_proxy="${https_proxy}" . -t mlcommons/train_rnn_speech_recognition:0.0.1 -f Dockerfile.mlcube
 
 # Show tasks implemented in this MLCube.
-cd ../mlcube && mlcube describe
+cd ../mlcube && python3 -m pip install tornado && mlcube describe
 
 # Download SSD dataset (~20 GB, ~40 GB space required). Default paths = ./workspace/cache and ./workspace/data
 # To override them, use --cache_dir=CACHE_DIR and --data_dir=DATA_DIR
