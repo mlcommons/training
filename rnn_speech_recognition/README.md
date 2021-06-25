@@ -10,8 +10,9 @@ virtualenv -p python3 ./env && source ./env/bin/activate
 git clone https://github.com/mlcommons/mlcube && cd ./mlcube
 cd ./mlcube && python setup.py bdist_wheel  && pip install --force-reinstall ./dist/mlcube-* && cd ..
 cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --force-reinstall --no-deps ./dist/mlcube_docker-* && cd ../../..
+python3 -m pip install tornado
 
-# Fetch the SSD workload
+# Fetch the RNN speech recognition workload
 git clone https://github.com/mlcommons/training && cd ./training
 git fetch origin pull/491/head:feature/rnnt_mlcube && git checkout feature/rnnt_mlcube
 cd ./rnn_speech_recognition/pytorch
@@ -22,17 +23,17 @@ cd ./rnn_speech_recognition/pytorch
 docker build --build-arg http_proxy="${http_proxy}" --build-arg https_proxy="${https_proxy}" . -t mlcommons/train_rnn_speech_recognition:0.0.1 -f Dockerfile.mlcube
 
 # Show tasks implemented in this MLCube.
-cd ../mlcube && python3 -m pip install tornado && mlcube describe
+cd ../mlcube && mlcube describe
 
-# Download SSD dataset (~20 GB, ~40 GB space required). Default paths = ./workspace/cache and ./workspace/data
-# To override them, use --cache_dir=CACHE_DIR and --data_dir=DATA_DIR
+# Download Librispeech dataset (~60 GB, ~100 GB space required). Default path = /workspace/data
+# To override it, use --data_dir=DATA_DIR
 mlcube run --task download_data --platform docker
 
-# Download ResNet34 feature extractor. Default path = ./workspace/data
-# To override, use: --data_dir=DATA_DIR
-mlcube run --task download_model --platform docker
+# Preprocess Librispeech dataset, this will convert .flac audios to .wav format
+# It will use the DATA_DIR path defined in the previous step
+mlcube run --task preprocess_data --platform docker
 
 # Run benchmark. Default paths = ./workspace/data
-# Parameters to override: --data_dir=DATA_DIR, --pretrained_backbone=PATH_TO_RESNET3_WEIGHTS, --parameters_file=PATH_TO_TRAINING_PARAMS
+# Parameters to override: --data_dir=DATA_DIR, --output_dir=OUTPUT_DIR, --parameters_file=PATH_TO_TRAINING_PARAMS
 mlcube run --task train --platform docker
 ```
