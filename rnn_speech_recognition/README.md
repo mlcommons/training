@@ -25,7 +25,7 @@ docker build --build-arg http_proxy="${http_proxy}" --build-arg https_proxy="${h
 # Show tasks implemented in this MLCube.
 cd ../mlcube && mlcube describe
 
-# Download Librispeech dataset (~60 GB, ~100 GB space required). Default path = /workspace/data
+# Download Librispeech dataset (~60 GB download, ~120 GB preprocess, space required). Default path = /workspace/data
 # To override it, use --data_dir=DATA_DIR
 mlcube run --task download_data --platform docker
 

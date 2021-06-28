@@ -5,24 +5,24 @@ tasks:
   # Download LibriSpeech dataset
   download_data:
     parameters:
-      # Directory for uncompressed datasets. Will contain the following subdirectories: `train2017`, `val2017` and
-      #      `annotations`. Total size is ~ 20G. This is basically the content of archives in **cache_dir**.
+      # Directory for uncompressed datasets. Total size is ~ 65G.
       - {name: data_dir,  type: directory, io: output}
     tasks:
       download_data: {data_dir: $WORKSPACE/data}
-  # Download ResNet-34 weights
+  # Preprocess dataset
   preprocess_data:
     parameters:
-      # Directory location where model weights will vbe downloaded to (file name - resnet34-333f7ec4.pth)
+      # Same directory location where dataset was downloaded
+      # When finished total size is ~ 112G
       - {name: data_dir,  type: directory, io: output}
     tasks:
       preprocess_data: {data_dir: $WORKSPACE/data}
-  # Train SSD model
+  # Train RNN speech recognition model
   train:
     parameters:
       # see Download::data_dir
       - {name: data_dir,            type: directory, io: input}
-      # see Download::data_dir
+      # Model output folder
       - {name: output_dir,            type: directory, io: output}
       # Yaml file with training parameters.
       - {name: parameters_file,     type: file,      io: input}
