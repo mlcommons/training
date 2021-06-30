@@ -1,7 +1,8 @@
-Implementation
+## Current implementation
 
 We'll be updating this section as we merge MLCube PRs and make new MLCube releases.
 
+### Project setup
 ```Python
 # Create Python environment 
 virtualenv -p python3 ./env && source ./env/bin/activate
@@ -24,8 +25,22 @@ docker build --build-arg http_proxy="${http_proxy}" --build-arg https_proxy="${h
 
 # Show tasks implemented in this MLCube.
 cd ../mlcube && mlcube describe
+```
 
-# Download Librispeech dataset (~60 GB download, ~120 GB preprocess, space required). Default path = /workspace/data
+### Dataset
+
+The [Librispeech](https://www.openslr.org/12) dataset will be downloaded, extracted, and processed. Sizes of the dataset in each step:
+
+| Dataset Step                   | MLCube Task       | Format     | Size    |
+|--------------------------------|-------------------|------------|---------|
+| Downlaod (Compressed dataset)  | download_data     | Tar files  | ~62 GB  |
+| Extract (Uncompressed dataset) | download_data     | Flac files | ~64 GB  |
+| Preprocess (Processed dataset)    | preprocess_data   | Wav files  | ~114 GB |
+| Total                          | (After all tasks) | All        | ~240 GB |
+
+### Tasks execution
+```
+# Download Librispeech dataset. Default path = /workspace/data
 # To override it, use --data_dir=DATA_DIR
 mlcube run --task download_data --platform docker
 
