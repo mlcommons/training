@@ -7,6 +7,7 @@ if [ -z "$(ls -A "$PROCESSED_DIR")" ]
 then
     ARGS="--data_dir=$DATA_DIR"
     ARGS+=" --results_dir $PROCESSED_DIR"
+    echo "Starting dataset preprocessing - This may take a while..."
     python3 preprocess_dataset.py ${ARGS}
 else
     echo "Directory $PROCESSED_DIR is not empty."
