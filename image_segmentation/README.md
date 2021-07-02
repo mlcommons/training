@@ -15,7 +15,7 @@ python3 -m pip install tornado
 
 # Fetch the image segmentation workload
 git clone https://github.com/mlcommons/training && cd ./training
-git fetch origin pull/492/head:feature/mlcube_image_segmentation && git checkout feature/mlcube_image_segmentation
+git fetch origin pull/494/head:feature/mlcube_image_segmentation && git checkout feature/mlcube_image_segmentation
 cd ./image_segmentation/pytorch
 
 # Build MLCube docker image. We'll find a better way of integrating existing workloads
