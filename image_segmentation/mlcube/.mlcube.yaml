@@ -1,0 +1,36 @@
+name: MLCommons Image Segmentation Training Reference Benchmark
+author: MLCommons Best Practices Working Group
+
+tasks:
+  # Download KiTS19 dataset
+  download_data:
+    parameters:
+      # Directory for uncompressed datasets. Total size is ~ 29G.
+      - {name: data_dir,  type: directory, io: output}
+    tasks:
+      download_data: {data_dir: $WORKSPACE/data}
+  # Preprocess dataset
+  preprocess_data:
+    parameters:
+      # Same directory location where dataset was downloaded
+      # When finished total size of the processed data is ~ 31G
+      - {name: data_dir,  type: directory, io: input}
+      - {name: processed_dir,  type: directory, io: output}
+    tasks:
+      preprocess_data:
+        data_dir: $WORKSPACE/data/kits19/data
+        processed_dir: $WORKSPACE/processed_data
+  # Train image segmentation model
+  train:
+    parameters:
+      # Same path from task preprocess_data::processed_dir
+      - {name: input_dir,            type: directory, io: input}
+      # Output folder: logs
+      - {name: output_dir,            type: directory, io: output}
+      # Yaml file with training parameters.
+      - {name: parameters_file,     type: file,      io: input}
+    tasks:
+      train:
+        input_dir: $WORKSPACE/processed_data
+        output_dir: $WORKSPACE/output
+        parameters_file: $WORKSPACE/parameters.yaml

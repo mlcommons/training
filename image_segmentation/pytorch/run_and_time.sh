@@ -7,15 +7,16 @@ set -e
 
 SEED=${1:--1}
 
-MAX_EPOCHS=4000
-QUALITY_THRESHOLD="0.908"
-START_EVAL_AT=1000
-EVALUATE_EVERY=20
-LEARNING_RATE="0.8"
-LR_WARMUP_EPOCHS=200
-DATASET_DIR="/data"
-BATCH_SIZE=2
-GRADIENT_ACCUMULATION_STEPS=1
+: ${DATASET_DIR:="/raw-data-dir/processed_data"}
+: ${RESULT_DIR:="/results"}
+: ${MAX_EPOCHS:=4000}
+: ${QUALITY_THRESHOLD:="0.908"}
+: ${START_EVAL_AT:=1000}
+: ${EVALUATE_EVERY:=20}
+: ${LEARNING_RATE:="0.8"}
+: ${LR_WARMUP_EPOCHS:=200}
+: ${BATCH_SIZE:=2}
+: ${GRADIENT_ACCUMULATION_STEPS:=1}
 
 
 if [ -d ${DATASET_DIR} ]
@@ -32,6 +33,7 @@ from runtime.logging import mllog_event
 mllog_event(key=constants.CACHE_CLEAR, value=True)"
 
   python main.py --data_dir ${DATASET_DIR} \
+    --result_dir ${RESULT_DIR} \
     --epochs ${MAX_EPOCHS} \
     --evaluate_every ${EVALUATE_EVERY} \
     --start_eval_at ${START_EVAL_AT} \
