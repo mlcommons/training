@@ -8,23 +8,14 @@ We'll be updating this section as we merge MLCube PRs and make new MLCube releas
 virtualenv -p python3 ./env && source ./env/bin/activate
 
 # Install MLCube and MLCube docker runner from GitHub repository (normally, users will just run `pip install mlcube mlcube_docker`)
-git clone https://github.com/mlcommons/mlcube && cd ./mlcube
-cd ./mlcube && python setup.py bdist_wheel  && pip install --force-reinstall ./dist/mlcube-* && cd ..
-cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --force-reinstall --no-deps ./dist/mlcube_docker-* && cd ../../..
-python3 -m pip install tornado
+git clone https://github.com/sergey-serebryakov/mlbox.git && cd mlbox && git checkout feature/configV2
+cd ./runners/mlcube_docker && export PYTHONPATH=$(pwd)
+cd ../../ && pip install -r mlcube/requirements.txt && pip install omegaconf && cd ../
 
 # Fetch the RNN speech recognition workload
 git clone https://github.com/mlcommons/training && cd ./training
 git fetch origin pull/491/head:feature/rnnt_mlcube && git checkout feature/rnnt_mlcube
-cd ./rnn_speech_recognition/pytorch
-
-# Build MLCube docker image. We'll find a better way of integrating existing workloads
-# with MLCube, so that MLCube runs this by itself (it can actually do it now, but in order
-# to enable this, we would have to introduce more changes to the SSD repo).
-docker build --build-arg http_proxy="${http_proxy}" --build-arg https_proxy="${https_proxy}" . -t mlcommons/train_rnn_speech_recognition:0.0.1 -f Dockerfile.mlcube
-
-# Show tasks implemented in this MLCube.
-cd ../mlcube && mlcube describe
+cd ./rnn_speech_recognition/mlcube
 ```
 
 ### Dataset
@@ -33,22 +24,22 @@ The [Librispeech](https://www.openslr.org/12) dataset will be downloaded, extrac
 
 | Dataset Step                   | MLCube Task       | Format     | Size    |
 |--------------------------------|-------------------|------------|---------|
-| Downlaod (Compressed dataset)  | download_data     | Tar files  | ~62 GB  |
+| Download (Compressed dataset)  | download_data     | Tar files  | ~62 GB  |
 | Extract (Uncompressed dataset) | download_data     | Flac files | ~64 GB  |
-| Preprocess (Processed dataset)    | preprocess_data   | Wav files  | ~114 GB |
+| Preprocess (Processed dataset) | preprocess_data   | Wav files  | ~114 GB |
 | Total                          | (After all tasks) | All        | ~240 GB |
 
 ### Tasks execution
 ```
 # Download Librispeech dataset. Default path = /workspace/data
 # To override it, use --data_dir=DATA_DIR
-mlcube run --task download_data --platform docker
+python mlcube_cli.py run --task download_data --platform docker
 
 # Preprocess Librispeech dataset, this will convert .flac audios to .wav format
 # It will use the DATA_DIR path defined in the previous step
-mlcube run --task preprocess_data --platform docker
+python mlcube_cli.py run --task preprocess_data --platform docker
 
 # Run benchmark. Default paths = ./workspace/data
 # Parameters to override: --data_dir=DATA_DIR, --output_dir=OUTPUT_DIR, --parameters_file=PATH_TO_TRAINING_PARAMS
-mlcube run --task train --platform docker
+python mlcube_cli.py run --task train --platform docker
 ```
