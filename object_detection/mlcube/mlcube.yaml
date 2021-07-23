@@ -1,0 +1,32 @@
+name: Object Detection
+description: MLCommons Object Detection Training Reference Benchmark
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  # Edit this according to your system specs
+  accelerator_count: 1
+
+container:
+  # Image name.
+  image: mlcommons/object_detection:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile.mlcube"
+
+tasks:
+  # Download LibriSpeech dataset
+  download_data:
+    io:
+      # Directory for uncompressed datasets. Total size is ~ 65G.
+      - {name: data_dir, type: directory, io: output, default: $WORKSPACE/data}
+  train:
+  # Train Object Detection model
+    io:
+      # see Download::data_dir, it takes the processes subfolder
+      - {name: data_dir, type: directory, io: input, default: $WORKSPACE/data/LibriSpeech}
+      # Model output folder
+      - {name: output_dir, type: directory, io: output, default: $WORKSPACE/output}
+      # Yaml file with training parameters.
+      - {name: parameters_file, type: file, io: input, default: $WORKSPACE/parameters.yaml}
