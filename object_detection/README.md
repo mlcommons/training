@@ -12,9 +12,9 @@ git clone https://github.com/sergey-serebryakov/mlbox.git && cd mlbox && git che
 cd ./runners/mlcube_docker && export PYTHONPATH=$(pwd)
 cd ../../ && pip install -r mlcube/requirements.txt && pip install omegaconf && cd ../
 
-# Fetch the RNN speech recognition workload
+# Fetch the Object Detection workload
 git clone https://github.com/mlcommons/training && cd ./training
-git fetch origin pull/491/head:feature/object_detection && git checkout feature/object_detection
+git fetch origin pull/501/head:feature/object_detection && git checkout feature/object_detection
 cd ./object_detection/mlcube
 ```
 
