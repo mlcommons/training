@@ -34,6 +34,10 @@ class TrainTask(object):
     Then executes the benchmark script"""
     @staticmethod
     def run(data_dir: str, output_dir: str, parameters_file: str) -> None:
+
+        process = subprocess.Popen("./install.sh", cwd=".")
+        process.wait()
+
         with open(parameters_file, 'r') as stream:
             parameters = yaml.safe_load(stream)
 
@@ -43,7 +47,8 @@ class TrainTask(object):
             'OUTPUT_DIR': output_dir,
         })
 
-        env.update(parameters)
+        if parameters is not None:
+            env.update(parameters)
 
         process = subprocess.Popen("./run_and_time.sh", cwd=".", env=env)
         process.wait()

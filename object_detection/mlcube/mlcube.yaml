@@ -25,7 +25,7 @@ tasks:
   # Train Object Detection model
     io:
       # see Download::data_dir, it takes the processes subfolder
-      - {name: data_dir, type: directory, io: input, default: $WORKSPACE/data/LibriSpeech}
+      - {name: data_dir, type: directory, io: input, default: $WORKSPACE/data}
       # Model output folder
       - {name: output_dir, type: directory, io: output, default: $WORKSPACE/output}
       # Yaml file with training parameters.

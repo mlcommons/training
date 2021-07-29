@@ -1,0 +1,2 @@
+SAVE_CHECKPOINTS: "True" # Instead of False use empty value
+SOLVER_MAX_ITER: "100"

@@ -73,6 +73,7 @@ def do_train(
     model.train()
     start_training_time = time.time()
     end = time.time()
+    early_exit = False
 
     for iteration, (images, targets, _) in enumerate(data_loader, start_iter):
 

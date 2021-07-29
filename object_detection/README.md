@@ -32,10 +32,8 @@ The COCO dataset will be downloaded and extracted. Sizes of the dataset in each 
 ### Tasks execution
 ```
 # Download COCO dataset. Default path = /workspace/data
-# To override it, use --data_dir=DATA_DIR
 python mlcube_cli.py run --task download_data --platform docker
 
 # Run benchmark. Default paths = ./workspace/data
-# Parameters to override: --data_dir=DATA_DIR, --output_dir=OUTPUT_DIR, --parameters_file=PATH_TO_TRAINING_PARAMS
 python mlcube_cli.py run --task train --platform docker
 ```
