@@ -30,7 +30,15 @@ The COCO dataset will be downloaded and extracted. Sizes of the dataset in each 
 | Total                          | (After all tasks) | All            | ~41.7 GB |
 
 ### Tasks execution
+
+Parameters are defined at these files:
+
+* MLCube user parameters: mlcube/workspace/parameters.yaml
+* Project user parameters: pytorch/configs/e2e_mask_rcnn_R_50_FPN_1x.yaml
+* Project default parameters: pytorch/maskrcnn_benchmark/config/defaults.py
+
 ```
+
 # Download COCO dataset. Default path = /workspace/data
 python mlcube_cli.py run --task download_data --platform docker
 
