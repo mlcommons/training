@@ -33,6 +33,21 @@ def load_config(mlcube_config_path: str, user_config_path: str) -> typing.Dict:
     return mlcube_config_data
 
 
+def override_extra_parameters(ctx, mlcube_config_data, task):
+    """Get extra paramters from context and override them on mlcube config data dict"""
+    for input_param in ctx.args:
+        input_key, input_value = input_param.split("=")
+        input_key = input_key.replace("--", "")
+        # Replace main container parameters
+        for key in mlcube_config_data["container"]:
+            if key==input_key:
+                mlcube_config_data["container"][key]=input_value
+        # Replace io paths in current task
+        for io in mlcube_config_data["tasks"][task]["io"]:
+            if io["name"]==input_key:
+                io["default"]=input_value
+
+
 @click.group(name='mlcube')
 def cli():
     pass
@@ -45,7 +60,8 @@ def cli():
 @click.option('--task', required=False, type=str, help='MLCube task name to run, default is `main`.')
 @click.option('--workspace', required=False, type=str, help='Workspace path, default is `workspace` within '
                                                             'MLCube folder')
-def run(mlcube: str, platform: str, task: str, workspace: str):
+@click.pass_context
+def run(ctx, mlcube: str, platform: str, task: str, workspace: str):
     mlcube_root = os.path.abspath(mlcube or os.getcwd())
     if os.path.isfile(mlcube_root):
         mlcube_root = os.path.dirname(mlcube_root)
@@ -61,7 +77,7 @@ def run(mlcube: str, platform: str, task: str, workspace: str):
         os.path.join(str(mlcube_root), 'mlcube.yaml'),
         os.path.join(os.path.expanduser("~"), '.mlcube.yaml')
     )
-
+    override_extra_parameters(ctx, mlcube_config_data, task)
     docker_runner = DockerRun(mlcube_config_data, root=mlcube_root, workspace=workspace, task=task)
     docker_runner.run()
 
