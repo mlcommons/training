@@ -98,7 +98,7 @@ BERT_CMD="\
     --eval_batch_size=16 --eval_dir=/workspace/evaldata \
     --cache_eval_data \
     --output_dir=/results \
-    --fp16 --allreduce_post_accumulation --allreduce_post_accumulation_fp16 --accumulate_fp16 --fused_gelu_bias --dense_seq_output --fused_mha ${EXTRA_PARAMS} \
+    --fp16 --allreduce_post_accumulation --allreduce_post_accumulation_fp16 --fused_gelu_bias --dense_seq_output --fused_mha ${EXTRA_PARAMS} \
     --gradient_accumulation_steps=${GRADIENT_STEPS} --clip_and_accumulate \
     --log_freq=1 \
     --local_rank=\${SLURM_LOCALID} \
