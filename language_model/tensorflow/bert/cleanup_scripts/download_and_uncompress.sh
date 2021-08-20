@@ -2,9 +2,11 @@
 
 pip install --user gdown
 
-mkdir -p wiki
+data_dir="${DATA_DIR:-./wiki}"
 
-cd wiki
+mkdir -p $data_dir
+
+cd $data_dir
 
 # Downloading files from Google Drive location: https://drive.google.com/drive/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT
 
