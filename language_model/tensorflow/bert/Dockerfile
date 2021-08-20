@@ -5,6 +5,7 @@ RUN apt-get update
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     build-essential \
+    bzip2 \
     python3 \
     python3-pip \
     python3-setuptools

@@ -2,11 +2,10 @@
 
 pip install --user gdown
 
-data_dir="${DATA_DIR:-./wiki}"
+data_dir=${DATA_DIR:-./}
+mkdir -p $data_dir/wiki
 
-mkdir -p $data_dir
-
-cd $data_dir
+cd $data_dir/wiki
 
 # Downloading files from Google Drive location: https://drive.google.com/drive/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT
 
@@ -53,6 +52,3 @@ gdown https://drive.google.com/uc?id=1oVBgtSxkXC9rH2SXJv85RXR9-WrMPy-Q
 
 # Back to bert/cleanup_scripts
 cd ../..
-
-
-
