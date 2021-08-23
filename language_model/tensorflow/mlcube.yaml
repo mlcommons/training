@@ -7,7 +7,7 @@ platform:
 
 docker:
   # Image name.
-  image: mlcommons/bert_tensorflow:0.0.1
+  image: mlcommons/bert:0.0.1
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
   build_context: "bert"
   # Docker file name within docker build context, default is `Dockerfile`.
@@ -18,6 +18,10 @@ tasks:
   # Download mnist dataset
     parameters:
       outputs: {data_dir: data/}
+  extract:
+  # Download mnist dataset
+    parameters:
+      inputs: {data_dir: data/wiki/}
   train:
   # Train model
     parameters:
