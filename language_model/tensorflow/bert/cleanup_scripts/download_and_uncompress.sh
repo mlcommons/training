@@ -24,6 +24,8 @@ gdown https://drive.google.com/uc?id=14_A6gQ0NJ7Pay1X0xFq9rCKUuFJcKLF-
 # enwiki-20200101-pages-articles-multistream.xml.bz2
 gdown https://drive.google.com/uc?id=18K1rrNJ_0lSR9bsLaoP3PkQeSFO-9LE7
 
+echo uncompressing enwiki-20200101-pages-articles-multistream.xml.bz2
+echo this may take a while...
 bzip2 -d enwiki-20200101-pages-articles-multistream.xml.bz2
 
 # Download TF-1 checkpoints
