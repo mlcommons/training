@@ -1,22 +1,14 @@
 #FROM nvidia/cuda:9.0-cudnn7-runtime-ubuntu16.04
-FROM ubuntu:18.04
+FROM tensorflow/tensorflow:1.15.2-gpu
 
 RUN apt-get update
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     build-essential \
     git \
-    bzip2 \
-    python3 \
-    python3-pip \
-    python3-setuptools
-
-ENV LC_ALL=C.UTF-8
-ENV LANG=C.UTF-8
+    bzip2 
 
 COPY requirements.txt /requirements.txt
-RUN ln -s /usr/bin/python3 /usr/bin/python & \
-    ln -s /usr/bin/pip3 /usr/bin/pip
 RUN pip install --no-cache-dir -r /requirements.txt
 
 COPY . /workspace

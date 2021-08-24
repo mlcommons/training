@@ -58,9 +58,25 @@ class PreprocessTask(object):
         env.update({
             'DATA_DIR': data_dir,
         })
-        print("PREPROCESSING")
         process = subprocess.Popen(
             "./process_wiki.sh", cwd="./cleanup_scripts", env=env)
+        process.wait()
+
+
+class GenerateTfrecordsTask(object):
+    """Preprocess task Class
+    It defines the environment variables:
+        DATA_ROOT_DIR: Directory path to download the dataset
+    Then executes the download script"""
+    @staticmethod
+    def run(data_dir: str) -> None:
+
+        env = os.environ.copy()
+        env.update({
+            'DATA_DIR': data_dir,
+        })
+        process = subprocess.Popen(
+            "./generate_tfrecords.sh", cwd="./cleanup_scripts", env=env)
         process.wait()
 
 
@@ -93,9 +109,9 @@ def preprocess(data_dir: str = typer.Option(..., '--data_dir')):
     PreprocessTask.run(data_dir)
 
 
-@app.command("preprocess_data")
-def preprocess(data_dir: str = typer.Option(..., '--data_dir')):
-    PreprocessTask.run(data_dir)
+@app.command("generate_tfrecords")
+def generate_tfrecords(data_dir: str = typer.Option(..., '--data_dir')):
+    GenerateTfrecordsTask.run(data_dir)
 
 
 @app.command("train")

@@ -26,6 +26,10 @@ tasks:
   # Download mnist dataset
     parameters:
       inputs: {data_dir: data/}
+  generate_tfrecords:
+  # Download mnist dataset
+    parameters:
+      inputs: {data_dir: data/}
   train:
   # Train model
     parameters:
