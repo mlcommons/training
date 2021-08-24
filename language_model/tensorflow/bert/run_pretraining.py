@@ -537,7 +537,7 @@ def main(_):
 
     # Creates session config. allow_soft_placement = True, is required for
     # multi-GPU and is not harmful for other modes.
-    session_config = tf.compat.v1.ConfigProto(
+    session_config = tf.ConfigProto(
         inter_op_parallelism_threads=8,
         allow_soft_placement=True)
 

@@ -15,28 +15,23 @@ docker:
 
 tasks:
   download:
-  # Download mnist dataset
+  # Download dataset
     parameters:
       outputs: {data_dir: data/}
   extract:
-  # Download mnist dataset
+  # Extract dataset
     parameters:
       inputs: {data_dir: data/}
   preprocess:
-  # Download mnist dataset
+  # Preprocess dataset
     parameters:
       inputs: {data_dir: data/}
   generate_tfrecords:
-  # Download mnist dataset
+  # Convert training data in tfrecords format
     parameters:
       inputs: {data_dir: data/}
   train:
   # Train model
     parameters:
-      inputs: {data_dir: data/, parameters_file: parameters/default.parameters.yaml, model_in: model/}
-      outputs: {log_dir: train_logs/, metrics: {type: file, default: metrics/train_metrics.json}, model_dir: model/}
-  evaluate:
-  # evaluate model
-    parameters:
-      inputs: {data_dir: data/, parameters_file: parameters/default.parameters.yaml, model_in: model/}
-      outputs: {log_dir: evaluate_logs/, metrics: {type: file, default: metrics/evaluate_metrics.json}}
+      inputs: {data_dir: data/}
+      outputs: {output_dir: output/}

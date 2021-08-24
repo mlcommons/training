@@ -2,3 +2,4 @@ PyYAML==5.4.1
 typer==0.3.2
 gdown==3.3.1
 wheel==0.37.0
+git+https://github.com/mlperf/logging.git@9aa718d525d1e8e64d32b12fe1b22133973d7063

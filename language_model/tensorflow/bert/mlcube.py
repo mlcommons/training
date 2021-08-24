@@ -87,11 +87,15 @@ class TrainTask(object):
         All other parameters are defined in the parameters_file
     Then executes the benchmark script"""
     @staticmethod
-    def run(dataset_file_path: str, parameters_file: str) -> None:
-        with open(parameters_file, 'r') as stream:
-            parameters = yaml.safe_load(stream)
-
-        pass
+    def run(data_dir: str, output_dir: str) -> None:
+        env = os.environ.copy()
+        env.update({
+            'DATA_DIR': data_dir,
+            'OUTPUT_DIR': output_dir
+        })
+        process = subprocess.Popen(
+            "./run_and_time.sh", cwd=".", env=env)
+        process.wait()
 
 
 @app.command("download")
@@ -115,9 +119,9 @@ def generate_tfrecords(data_dir: str = typer.Option(..., '--data_dir')):
 
 
 @app.command("train")
-def train(dataset_file_path: str = typer.Option(..., '--dataset_file_path'),
-          parameters_file: str = typer.Option(..., '--parameters_file')):
-    TrainTask.run(dataset_file_path, parameters_file)
+def train(data_dir: str = typer.Option(..., '--data_dir'),
+          output_dir: str = typer.Option(..., '--output_dir')):
+    TrainTask.run(data_dir, output_dir)
 
 
 if __name__ == '__main__':

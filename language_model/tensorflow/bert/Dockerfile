@@ -2,7 +2,7 @@
 FROM tensorflow/tensorflow:1.15.2-gpu
 
 RUN apt-get update
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends time \
     ca-certificates \
     build-essential \
     git \
