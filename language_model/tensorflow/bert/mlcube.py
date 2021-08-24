@@ -47,14 +47,21 @@ class ExtractTask(object):
 
 
 class PreprocessTask(object):
-    """Preprocess dataset task Class
+    """Preprocess task Class
     It defines the environment variables:
-        DATA_ROOT_DIR: Dataset directory path
-    Then executes the preprocess script"""
+        DATA_ROOT_DIR: Directory path to download the dataset
+    Then executes the download script"""
     @staticmethod
     def run(data_dir: str) -> None:
 
-        pass
+        env = os.environ.copy()
+        env.update({
+            'DATA_DIR': data_dir,
+        })
+        print("PREPROCESSING")
+        process = subprocess.Popen(
+            "./process_wiki.sh", cwd="./cleanup_scripts", env=env)
+        process.wait()
 
 
 class TrainTask(object):
@@ -75,9 +82,15 @@ class TrainTask(object):
 def download(data_dir: str = typer.Option(..., '--data_dir')):
     DownloadTask.run(data_dir)
 
+
 @app.command("extract")
 def extract(data_dir: str = typer.Option(..., '--data_dir')):
     ExtractTask.run(data_dir)
+
+
+@app.command("preprocess")
+def preprocess(data_dir: str = typer.Option(..., '--data_dir')):
+    PreprocessTask.run(data_dir)
 
 
 @app.command("preprocess_data")

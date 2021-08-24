@@ -15,8 +15,10 @@ ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
 COPY requirements.txt /requirements.txt
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN ln -s /usr/bin/python3 /usr/bin/python & \
+    ln -s /usr/bin/pip3 /usr/bin/pip
+RUN pip install --no-cache-dir -r /requirements.txt
 
 COPY . /workspace
 WORKDIR /workspace
-ENTRYPOINT ["python3", "mlcube.py"]
+ENTRYPOINT ["python", "mlcube.py"]

@@ -21,7 +21,11 @@ tasks:
   extract:
   # Download mnist dataset
     parameters:
-      inputs: {data_dir: data/wiki/}
+      inputs: {data_dir: data/}
+  preprocess:
+  # Download mnist dataset
+    parameters:
+      inputs: {data_dir: data/}
   train:
   # Train model
     parameters:

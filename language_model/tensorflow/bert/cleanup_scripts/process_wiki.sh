@@ -5,29 +5,39 @@
 # example: ./process_wiki.sh 'sample_data/wiki_??'
 # The resulted files will be placed in ./results
 
-inputs=$1
+data_dir=${DATA_DIR:-./}
+text_dir=$data_dir/text/
+inputs="${text_dir}*/wiki_??"
+
+ls $inputs
 
 pip install nltk==3.4.5
 
 # Remove doc tag and title
+echo "RUNNING SCRIPT #1: cleanup_file.py"
 python ./cleanup_file.py --data=$inputs --output_suffix='.1'
 
 # Further clean up files
+echo "RUNNING SCRIPT #2: clean.sh"
 for f in ${inputs}; do
   ./clean.sh ${f}.1 ${f}.2
 done
 
 # Sentence segmentation
+echo "RUNNING SCRIPT #3: do_sentence_segmentation.py"
 python ./do_sentence_segmentation.py --data=$inputs --input_suffix='.2' --output_suffix='.3'
 
-mkdir -p ./results
+result_dir=$data_dir/results
+mkdir -p $result_dir
 
 # Train/Eval seperation
-python ./seperate_test_set.py --data=$inputs --input_suffix='.3' --output_suffix='.4' --num_test_articles=10000 --test_output='./results/eval'
+echo "RUNNING SCRIPT #4: seperate_test_set.py"
+python ./seperate_test_set.py --data=$inputs --input_suffix='.3' --output_suffix='.4' --num_test_articles=10000 --test_output="${result_dir}/eval"
 
 ## Choose file size method or number of packages by uncommenting only one of the following do_gather options
 # Gather into fixed size packages
-python ./do_gather.py --data=$inputs --input_suffix='.4' --block_size=26.92 --out_dir='./results'
+echo "RUNNING SCRIPT #5: do_gather.py"
+python ./do_gather.py --data=$inputs --input_suffix='.4' --block_size=26.92 --out_dir=$result_dir
 
 # Gather into fixed number of packages
 #NUM_PACKAGES=512
