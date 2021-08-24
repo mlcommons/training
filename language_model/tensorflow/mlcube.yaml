@@ -3,7 +3,7 @@ authors:
  - {name: "MLCommons Best Practices Working Group"}
 
 platform:
-  accelerator_count: 0
+  accelerator_count: 1
 
 docker:
   # Image name.
