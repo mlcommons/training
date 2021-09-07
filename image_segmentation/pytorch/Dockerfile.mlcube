@@ -5,14 +5,13 @@ WORKDIR /workspace/unet3d
 
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y git
-RUN apt-get install -y vim
+    apt-get install -y git vim
 
 RUN pip install --upgrade pip
 RUN pip install --disable-pip-version-check -r requirements.txt
 
 COPY . .
-RUN chmod +x ./run_and_time.sh
+RUN chmod +x ./download_dataset.sh ./preprocess_dataset.sh ./run_and_time.sh 
 
 ENV LC_ALL C.UTF-8
 ENV LANG C.UTF-8

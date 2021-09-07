@@ -1,9 +1,8 @@
-## Current implementation
+# Benchmark execution with MLCube
 
-We'll be updating this section as we merge MLCube PRs and make new MLCube releases.
+## Project setup
 
-### Project setup
-```Python
+```Bash
 # Create Python environment 
 virtualenv -p python3 ./env && source ./env/bin/activate
 
@@ -28,17 +27,18 @@ The [KiTS19](https://kits19.grand-challenge.org/data/) dataset will be downloade
 | Preprocess (Processed dataset) | preprocess_data   | npy        | ~31 GB |
 | Total                          | (After all tasks) | All        | ~60 GB |
 
-### Tasks execution
-```
+## Tasks execution
+
+```bash
 # Download KiTS19 dataset. Default path = mlcube/workspace/data
-# To override it, use --data_dir=DATA_DIR
-python mlcube_cli.py run --task download_data --platform docker
+# To override it, use data_dir=DATA_DIR
+mlcube run --task download_data
 
 # Preprocess KiTS19 dataset
 # It will use a subdirectory from the DATA_DIR path defined in the previous step
-python mlcube_cli.py run --task preprocess_data --platform docker
+mlcube run --task preprocess_data
 
 # Run benchmark. Default paths input_dir = mlcube/workspace/processed_data
-# Parameters to override: --input_dir=DATA_DIR, --output_dir=OUTPUT_DIR, --parameters_file=PATH_TO_TRAINING_PARAMS
-python mlcube_cli.py run --task train --platform docker
+# Parameters to override: input_dir=DATA_DIR, output_dir=OUTPUT_DIR, parameters_file=PATH_TO_TRAINING_PARAMS
+mlcube run --task train
 ```

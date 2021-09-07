@@ -7,7 +7,7 @@ platform:
   # Edit this according to your system specs
   accelerator_count: 1
 
-container:
+docker:
   # Image name.
   image: mlcommons/train_image_segmentation:0.0.1
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
@@ -18,22 +18,21 @@ container:
 tasks:
   # Download KiTS19 dataset
   download_data:
-    io:
+    parameters:
       # Directory for uncompressed datasets. Total size is ~ 29G.
-      - {name: data_dir, type: directory, io: output, default: $WORKSPACE/data}
+      outputs: {data_dir: data/}
   preprocess_data:
   # Preprocess dataset
-    io:
+    parameters:
       # Same directory location where dataset was downloaded
+      inputs: {data_dir: data/kits19/data/}
       # When finished total size of the processed data is ~ 31G
-      - {name: data_dir, type: directory, io: input, default: $WORKSPACE/data/kits19/data}
-      - {name: processed_dir, type: directory, io: output, default: $WORKSPACE/processed_data}
+      outputs: {processed_dir: processed_data/}
   train:
   # Train image segmentation model
-    io:
-      # Same path from task preprocess_data::processed_dir
-      - {name: data_dir, type: directory, io: input, default: $WORKSPACE/processed_data}
+    parameters:
+      # processed_data: Same path from task preprocess_data::processed_dir
+      # parameters_file: Yaml file with training parameters.
+      inputs: {data_dir: processed_data/, parameters_file: {type: file, default: parameters.yaml}}
       # Output folder
-      - {name: output_dir, type: directory, io: output, default: $WORKSPACE/output}
-      # Yaml file with training parameters.
-      - {name: parameters_file, type: file, io: input, default: $WORKSPACE/parameters.yaml}
+      outpus: {output_dir: output/}
