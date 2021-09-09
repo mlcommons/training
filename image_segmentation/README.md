@@ -7,9 +7,9 @@
 virtualenv -p python3 ./env && source ./env/bin/activate
 
 # Install MLCube and MLCube docker runner from GitHub repository (normally, users will just run `pip install mlcube mlcube_docker`)
-git clone https://github.com/sergey-serebryakov/mlbox.git && cd mlbox && git checkout feature/configV2
-cd ./runners/mlcube_docker && export PYTHONPATH=$(pwd)
-cd ../../ && pip install -r mlcube/requirements.txt && pip install omegaconf && cd ../
+git clone https://github.com/mlcommons/mlcube && cd mlcube/mlcube
+python setup.py bdist_wheel  && pip install --force-reinstall ./dist/mlcube-* && cd ..
+cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --force-reinstall --no-deps ./dist/mlcube_docker-* && cd ../../..
 
 # Fetch the image segmentation workload
 git clone https://github.com/mlcommons/training && cd ./training
