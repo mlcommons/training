@@ -7,7 +7,7 @@ platform:
   # Edit this according to your system specs
   accelerator_count: 1
 
-container:
+docker:
   # Image name.
   image: mlcommons/train_rnn_speech_recognition:0.0.1
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
@@ -18,21 +18,20 @@ container:
 tasks:
   # Download LibriSpeech dataset
   download_data:
-    io:
+    parameters:
       # Directory for uncompressed datasets. Total size is ~ 65G.
-      - {name: data_dir, type: directory, io: output, default: $WORKSPACE/data}
+      outputs: {data_dir: data/}
   preprocess_data:
   # Preprocess dataset
-    io:
+    parameters:
       # Same directory location where dataset was downloaded
       # When finished total size is ~ 112G
-      - {name: data_dir, type: directory, io: output, default: $WORKSPACE/data}
+      outputs: {data_dir: data/}
   train:
   # Train RNN Speech Recognition model
-    io:
-      # see Download::data_dir, it takes the processes subfolder
-      - {name: data_dir, type: directory, io: input, default: $WORKSPACE/data/LibriSpeech}
+    parameters:
+      # data_dir: see Download::data_dir, it takes the processes subfolder
+      # parameters_file: Yaml file with training parameters.
+      inputs: {data_dir: data/, parameters_file: {type: file, default: parameters.yaml}}
       # Model output folder
-      - {name: output_dir, type: directory, io: output, default: $WORKSPACE/output}
-      # Yaml file with training parameters.
-      - {name: parameters_file, type: file, io: input, default: $WORKSPACE/parameters.yaml}
+      outpus: {output_dir: output/}
