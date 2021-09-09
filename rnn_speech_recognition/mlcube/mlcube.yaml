@@ -9,7 +9,7 @@ platform:
 
 docker:
   # Image name.
-  image: mlcommons/train_rnn_speech_recognition:0.0.1
+  image: mlcommons/rnn_speech_recognition:0.0.1
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
   build_context: "../pytorch"
   # Docker file name within docker build context, default is `Dockerfile`.
