@@ -1,0 +1,20 @@
+name: MLCommons Image Classification Benchmark
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/image_classification:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../tensorflow2"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile"
+
+tasks:
+  download:
+    # Download dataset
+    parameters:
+      outputs: {data_dir: data/}
