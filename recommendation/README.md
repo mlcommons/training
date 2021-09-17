@@ -13,7 +13,7 @@ cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --forc
 
 # Fetch the image segmentation workload
 git clone https://github.com/mlcommons/training && cd ./training
-git fetch origin pull/xxx/head:feature/mlcube_recommendation && git checkout feature/mlcube_recommendation
+git fetch origin pull/510/head:feature/mlcube_recommendation && git checkout feature/mlcube_recommendation
 cd ./recommendation/mlcube
 ```
 
