@@ -32,13 +32,14 @@ function verify_20m {
     else
         echo "FAILED"
     fi
-
 }
 
-
+DATA_DIR="${DATA_DIR:-./}"
+pushd $DATA_DIR
 if [[ $1 == "ml-1m" ]]
 then
     verify_1m
 else
     verify_20m
 fi
+popd

@@ -67,7 +67,7 @@ def process_raw_data(args):
     train_ratings = [np.array([], dtype=np.int64)] * args.user_scaling
     test_ratings_chunk = [np.array([], dtype=np.int64)] * args.user_scaling
     test_chunk_size = [0] * args.user_scaling
-    for chunk in range(args.user_scaling):
+    for chunk in range(1):
         print(datetime.now(), "Loading data chunk {} of {}".format(chunk+1, args.user_scaling))
         train_ratings[chunk] = np.load(args.data + '/trainx'
                 + str(args.user_scaling) + 'x' + str(args.item_scaling)

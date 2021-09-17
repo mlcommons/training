@@ -5,3 +5,4 @@ numpy
 numpy_indexed
 pandas
 mlperf_compliance==0.0.10
+typer==0.3.2

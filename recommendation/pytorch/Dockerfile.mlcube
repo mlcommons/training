@@ -1,0 +1,26 @@
+ARG FROM_IMAGE_NAME=pytorch/pytorch:1.0.1-cuda10.0-cudnn7-runtime
+FROM ${FROM_IMAGE_NAME}
+
+RUN apt-get update -y \
+ && apt-get install -y unzip
+
+# Install Python dependencies
+WORKDIR /workspace/recommendation
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY negative_sampling_cpp ./negative_sampling_cpp
+WORKDIR /workspace/recommendation/negative_sampling_cpp
+RUN python setup.py install
+
+# Copy NCF code and build
+WORKDIR /workspace/recommendation
+COPY . .
+
+RUN chmod +x ./download_dataset.sh ./verify_dataset.sh ./run_and_time.sh ./run_convert_script.sh
+
+ENV LC_ALL C.UTF-8
+ENV LANG C.UTF-8
+
+ENTRYPOINT ["python", "/workspace/recommendation/mlcube.py"]

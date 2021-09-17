@@ -1,0 +1,36 @@
+name: Recommendation
+description: MLCommons Recommendation Training Reference Benchmark
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  # Edit this according to your system specs
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/recommendation:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../pytorch"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile.mlcube"
+
+tasks:
+  # Download ML-20M dataset
+  download_data:
+    parameters:
+      # Directory for uncompressed datasets. Total size is ~ 29G.
+      outputs: {data_dir: data/}
+  preprocess_data:
+  # Preprocess dataset
+    parameters:
+      # Same directory location where dataset was downloaded
+      inputs: {data_dir: data/}
+  train:
+  # Train Neural Collaborative Filtering model
+    parameters:
+      # processed_data: Same path from task preprocess_data::processed_dir
+      # parameters_file: Yaml file with training parameters.
+      inputs: {data_dir: data/, parameters_file: {type: file, default: parameters.yaml}}
+      # Output folder
+      outputs: {output_dir: output/}
