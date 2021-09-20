@@ -42,9 +42,8 @@ class StackTime(nn.Module):
         s = r.shape
         rs = [s[0], s[1] // self.factor, s[2] * self.factor]
         r = torch.reshape(r, rs)
-        numer = x_lens + (self.factor * 2 - 1)
-        x_lens = torch.div(numer, self.factor, rounding_mode="trunc") - 1
         rt = torch.transpose(r, 0, 1)
+        x_lens = (x_lens.int() + self.factor - 1) // self.factor
         return rt, x_lens
 
 
