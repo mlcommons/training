@@ -1,6 +1,10 @@
-# 1. Problem
+# 1. Summary
 
-This problem uses recurrent neural network to do language translation.
+The purpose of this benchmark model is to test the performance of RNN-based model on translation. Google’s Neural Machine Translation (GNMT, [paper](https://arxiv.org/abs/1609.08144)) is an end-to-end learning for automated language translation. It was used in 'Google Translate' to increase fluency and accuracy, outperforming conventional phase-based methods. It consists of a deep long short-term memory (LSTM) network with 8 encoder and 8 decoder layers, using residual connections as well as attention connections from the decoder network to the encoder. To improve parallelism and therefore decrease training time, the attention mechanism
+connects the bottom layer of the decoder to the top layer of the encoder
+
+This reposiotory implements `GNMT_v2`, which is similar to GNMT. The most important difference is in the attention mechanism: output from first LSTM layer of decoder goes
+into attention, then re-weighted context is concatenated with inputs to all subsequent LSTM layers in decoder at current timestep. The same attention mechanism is also implemented in default GNMT-like models from [tensorflow/nmt](https://github.com/tensorflow/nmt) and [NVIDIA/OpenSeq2Seq](https://github.com/NVIDIA/OpenSeq2Seq).
 
 ## Requirements
 * [Python 3.6](https://www.python.org)
@@ -198,21 +202,8 @@ Bucketing is implemented in `pytorch/seq2seq/data/sampler.py`, class
 `BucketingSampler`.
 
 # 4. Model
-### Publication/Attribution
-
-Implemented model is similar to the one from [Google's Neural Machine
-Translation System: Bridging the Gap between Human and Machine
-Translation](https://arxiv.org/abs/1609.08144) paper.
-
-Most important difference is in the attention mechanism. This repository
-implements `gnmt_v2` attention: output from first LSTM layer of decoder goes
-into attention, then re-weighted context is concatenated with inputs to all
-subsequent LSTM layers in decoder at current timestep.
-
-The same attention mechanism is also implemented in default
-GNMT-like models from [tensorflow/nmt](https://github.com/tensorflow/nmt) and
-[NVIDIA/OpenSeq2Seq](https://github.com/NVIDIA/OpenSeq2Seq).
-
+Model architecture:
+![](https://raw.githubusercontent.com/NVIDIA/DeepLearningExamples/master/TensorFlow/Translation/GNMT/img/diagram.png)
 ### Structure
 
 * general:
