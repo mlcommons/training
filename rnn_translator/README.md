@@ -1,10 +1,10 @@
+# Note: This benchmark is now retired.
 # 1. Summary
+The purpose of this benchmark model is to test the performance of RNN-based model on translation. The selected model is `GNMT_v2`, which is based on 'Google’s Neural Machine Translation' model (`GNMT`, [paper](https://arxiv.org/abs/1609.08144)). 
 
-The purpose of this benchmark model is to test the performance of RNN-based model on translation. Google’s Neural Machine Translation (GNMT, [paper](https://arxiv.org/abs/1609.08144)) is an end-to-end learning for automated language translation. It was used in 'Google Translate' to increase fluency and accuracy, outperforming conventional phase-based methods. It consists of a deep long short-term memory (LSTM) network with 8 encoder and 8 decoder layers, using residual connections as well as attention connections from the decoder network to the encoder. To improve parallelism and therefore decrease training time, the attention mechanism
-connects the bottom layer of the decoder to the top layer of the encoder
+`GNMT` was used in 'Google Translate' to increase fluency and accuracy, outperforming conventional phase-based methods. It consists of a deep long short-term memory (LSTM) network with 8 encoder and 8 decoder layers. The encoder and decoder are connected with residual connections as well as attention connections. The attention mechanism helps improve parallelism and therefore decrease training time. 
 
-This reposiotory implements `GNMT_v2`, which is similar to GNMT. The most important difference is in the attention mechanism: output from first LSTM layer of decoder goes
-into attention, then re-weighted context is concatenated with inputs to all subsequent LSTM layers in decoder at current timestep. The same attention mechanism is also implemented in default GNMT-like models from [tensorflow/nmt](https://github.com/tensorflow/nmt) and [NVIDIA/OpenSeq2Seq](https://github.com/NVIDIA/OpenSeq2Seq).
+The major improvement of `GNMT_v2` over `GNMT` is on the attention mechanism: output from first LSTM layer of decoder goes into attention, then re-weighted context is concatenated with inputs to all subsequent LSTM layers in decoder at current timestep. The same attention mechanism is also implemented in default GNMT-like models from [tensorflow/nmt](https://github.com/tensorflow/nmt) and [NVIDIA/OpenSeq2Seq](https://github.com/NVIDIA/OpenSeq2Seq).
 
 ## Requirements
 * [Python 3.6](https://www.python.org)
