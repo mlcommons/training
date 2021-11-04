@@ -694,7 +694,7 @@ def retinanet_resnext50_32x4d_fpn(pretrained=False, progress=True,
 
 
 def retinanet_resnet101_fpn(pretrained=False, progress=True,
-                           num_classes=91, pretrained_backbone=True, trainable_backbone_layers=None, **kwargs):
+                            num_classes=91, pretrained_backbone=True, trainable_backbone_layers=None, **kwargs):
     """
     Constructs a RetinaNet model with a ResNet-101-FPN backbone.
 
@@ -824,17 +824,17 @@ def retinanet_resnext101_32x8d_fpn(pretrained=False, progress=True,
 def retinanet_from_backbone(backbone, pretrained=False, progress=True,
                             num_classes=91, pretrained_backbone=True, trainable_backbone_layers=None, **kwargs):
 
-    if backbone=="resnet50_fpn":
+    if backbone=="resnet50":
         return retinanet_resnet50_fpn(num_classes=num_classes, pretrained=pretrained,
                                       **kwargs)
-    elif backbone=="resnext50_32x4d_fpn":
+    elif backbone=="resnext50_32x4d":
         return retinanet_resnext50_32x4d_fpn(num_classes=num_classes, pretrained=pretrained,
                                              **kwargs)
-    elif backbone=="resnext50_32x4d_fpn":
-        return retinanet_resnext50_32x4d_fpn(num_classes=num_classes, pretrained=pretrained,
+    elif backbone=="resnet101":
+        return retinanet_resnet101_fpn(num_classes=num_classes, pretrained=pretrained,
                                              **kwargs)
-    elif backbone=="resnext50_32x4d_fpn":
-        return retinanet_resnext50_32x4d_fpn(num_classes=num_classes, pretrained=pretrained,
+    elif backbone=="resnext101_32x8d":
+        return retinanet_resnext101_32x8d_fpn(num_classes=num_classes, pretrained=pretrained,
                                              **kwargs)
     else:
         raise ValueError(f"Unknown backbone {backbone}")

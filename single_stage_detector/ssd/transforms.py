@@ -29,10 +29,6 @@ try:
 except ImportError:
     accimage = None
 
-def get_image_size_tensor(img: Tensor) -> List[int]:
-    # Returns (w, h) of tensor image
-    _assert_image_tensor(img)
-    return [img.shape[-1], img.shape[-2]]
 
 @torch.jit.unused
 def _is_pil_image(img: Any) -> bool:
@@ -40,6 +36,11 @@ def _is_pil_image(img: Any) -> bool:
         return isinstance(img, (Image.Image, accimage.Image))
     else:
         return isinstance(img, Image.Image)
+
+def get_image_size_tensor(img: Tensor) -> List[int]:
+    # Returns (w, h) of tensor image
+    _assert_image_tensor(img)
+    return [img.shape[-1], img.shape[-2]]
 
 @torch.jit.unused
 def get_image_size_pil(img: Any) -> List[int]:
@@ -58,6 +59,27 @@ def get_image_size(img: Tensor) -> List[int]:
         return get_image_size_tensor(img)
 
     return get_image_size_pil(img)
+
+def get_image_num_channels_tensor(img: Tensor) -> int:
+    _assert_image_tensor(img)
+    if img.ndim == 2:
+        return 1
+    elif img.ndim > 2:
+        return img.shape[-3]
+
+    raise TypeError(f"Input ndim should be 2 or more. Got {img.ndim}")
+
+@torch.jit.unused
+def get_image_num_channels_pil(img: Any) -> int:
+    if _is_pil_image(img):
+        return len(img.getbands())
+    raise TypeError("Unexpected type {}".format(type(img)))
+
+def get_image_num_channels(img: Tensor) -> int:
+    if isinstance(img, torch.Tensor):
+        return get_image_num_channels_tensor(img)
+
+    return get_image_num_channels_pil(img)
 ################################################################################
 
 class Compose(object):
@@ -215,7 +237,7 @@ class RandomZoomOut(nn.Module):
         if torch.jit.is_scripting():
             fill = 0
         else:
-            fill = self._get_fill_value(F._is_pil_image(image))
+            fill = self._get_fill_value(_is_pil_image(image))
 
         image = F.pad(image, [left, top, right, bottom], fill=fill)
         if isinstance(image, torch.Tensor):
@@ -269,10 +291,10 @@ class RandomPhotometricDistort(nn.Module):
                 image = self._contrast(image)
 
         if r[6] < self.p:
-            channels = F.get_image_num_channels(image)
+            channels = get_image_num_channels(image)
             permutation = torch.randperm(channels)
 
-            is_pil = F._is_pil_image(image)
+            is_pil = _is_pil_image(image)
             if is_pil:
                 image = F.to_tensor(image)
             image = image[..., permutation, :, :]

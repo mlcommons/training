@@ -42,9 +42,9 @@ def parse_args(add_help=True):
     parser = argparse.ArgumentParser(description='PyTorch Detection Training', add_help=add_help)
 
     # Model
-    parser.add_argument('--backbone', default='resnext50_32x4d_fpn', choices=['resnet50_fpn', 'resnext50_32x4d_fpn', 'retinanet_resnet101_fpn', 'retinanet_resnext101_32x8d_fpn'],
+    parser.add_argument('--backbone', default='resnext50_32x4d', choices=['resnet50', 'resnext50_32x4d', 'resnet101', 'resnext101_32x8d'],
                         help='The model backbone')
-    parser.add_argument('--trainable-backbone-layers', default=None, type=int,
+    parser.add_argument('--trainable-backbone-layers', default=3, type=int,
                         help='number of trainable layers of backbone')
     parser.add_argument("--sync-bn", dest="sync_bn", action="store_true", help="Use sync batch norm")
     parser.add_argument("--amp", action="store_true",
@@ -55,7 +55,7 @@ def parse_args(add_help=True):
     parser.add_argument('--data-path', default='/datasets/coco2017', help='dataset')
     parser.add_argument('--image-size', default=[800, 800], nargs=2, type=int,
                         help='Image size for training')
-    parser.add_argument('--data-augmentation', default="hflip", help='data augmentation policy (default: hflip)')
+    parser.add_argument('--data-augmentation', default="hflip", help='data augmentation policy')
 
     # Train parameters
     parser.add_argument('--epochs', default=26, type=int, metavar='N',
