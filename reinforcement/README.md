@@ -1,5 +1,5 @@
 # 1. Summary 
-The purpose of this benchmark is to evaluate the performance on the 9x9 version of the board game Go.  The Go engine to be evaluated is based on a fork of Minigo, which uses self-play reinforcement learning to play against itself and improve its performance.  Unlike some of its predecessors, this type of Go engine does not require any supervisory knowledge from human experts.
+The purpose of this benchmark is to evaluate the performance on the 19x19 version of the board game Go.  While inspired by DeepMind's AlphaGo algorithm, this project is not a DeepMind project nor is it affiliated with the official AlphaGo project.  The Go engine to be evaluated here is based on a fork of Minigo, which uses self-play reinforcement learning to play against itself and improve its performance.  Unlike some of its predecessors, this type of Go engine does not require any supervisory knowledge from human experts.
 
 
 # 2. Directions
@@ -65,7 +65,36 @@ To run, this assumes you checked out the repo into $HOME, adjust paths as necess
     NOW=`date "+%F-%T"`
     sudo docker run --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
     
-To change the quality target, modify `params/final.json` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.josn`.
+To change the quality target, modify 'params/final.json' and set the field 'TERMINATION_ACCURACY' to be '0.10' for about a 10 hour runtime, or '0.03' for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying 'params/final.json'.
+
+### Tunable hyperparameters
+
+The following flags are allowed to be modified by entrants:
+Flags that do not directly affect convergence:
+ - _all flags related to file paths & device IDs_
+ - `bool_features`
+ - `input_layout`
+ - `summary_steps`
+ - `cache_size_mb`
+ - `num_read_threads`
+ - `num_write_threads`
+ - `output_threads`
+ - `selfplay_threads`
+ - `parallel_search`
+ - `parallel_inference`
+ - `concurrent_games_per_thread`
+ - `validate`
+ - `holdout_pct`
+
+Flags that directly affect convergence:
+ - `train_batch_size`
+ - `lr_rates`
+ - `lr_boundaries`
+
+Entrants are also free to replace the code responsible for writing, shuffling
+and sampling training examples with equivalent functionality (e.g. replacing the
+use of `sample_records` and a file system with a different storage solution).
+
 
 # 3. Model
 The seminal work on AlphaGo [1] showed that the combination supervised learning (guided by human expert games) with self-play based reinforcement learning could result in a system capable of defeating professional players. In follow-up work, AlphaGo Zero was introduced [2], which abandoned the requirement for supervised learning and relied purely on self-play reinforcement learning to achieve superhuman performance. 
@@ -80,7 +109,7 @@ This benchmark does not use AlphaGo Zero directly, but rather is based on a fork
 
 ### Reinforcement Setup
 
-This benchmark includes both the environment and training for 9x9 Go. There are four primary phases in this benchmark, these phases are repeated in order:
+This benchmark includes both the environment and training for 19x19 Go. There are four primary phases in this benchmark, these phases are repeated in order:
 
  - Selfplay: the *current best* model plays games against itself to produce board positions for training.
  - Training: train the neural networks selfplay data from several recent models. 
