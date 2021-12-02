@@ -80,6 +80,8 @@ The overall network architecture for ResNet50 is shown in the center of the foll
 
 ![image info](./ResNet_Architecture.PNG)
 
+One final subtle note of distinction is that this benchmark uses a slight variant of the original ResNet bottleneck building block [1]. This modified version changes where striding is performed when downsampling.  In the original ResNet implementation, a stride = 2 was used during the first 1x1 convolution within the bottleneck building blocks; however, the v1.5 variant uses stride = 2 during the 3x3 convolution.  As such, this benchmark actually uses ResNet50 v1.5 rather than the original ResNet50 v1 from [1].  The rationale for using ResNet50 v1.5 is that it offers slightly higher accuracies at the expense of marginally slower speed. 
+
 ## Loss function
 Details of the loss function can be found here:
 [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf).
