@@ -93,7 +93,8 @@ Weight initialization is done as described here in
 
 
 ## Optimizer
-Either SGD Momentum based optimizer, or the [LARS optimizer](https://arxiv.org/abs/1708.03888) can be used.
+Either SGD Momentum based optimizer, or the [LARS optimizer](https://arxiv.org/abs/1708.03888) can be used.  
+MLCommons RCP Hyperparemeters can be found [here](https://github.com/mlcommons/logging/tree/master/mlperf_logging/rcp_checker) 
 
 
 # 4. Quality
