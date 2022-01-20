@@ -47,8 +47,13 @@ def parse_args(add_help=True):
     parser.add_argument('--trainable-backbone-layers', default=3, type=int,
                         help='number of trainable layers of backbone')
     parser.add_argument('--sync-bn', dest='sync_bn', action="store_true", help='Use sync batch norm')
-    parser.add_argument("--amp", action="store_true",
+    parser.add_argument('--data-layout', default="channels_last", choices=['channels_first', 'channels_last'],
+                        help="Model data layout")
+    parser.add_argument("--amp", dest='amp', action="store_true",
                         help="Whether to enable Automatic Mixed Precision (AMP). When false, uses TF32 on A100 and FP32 on V100 GPUS.")
+    parser.add_argument("--no-amp", dest='amp', action="store_false",
+                        help="Whether to enable Automatic Mixed Precision (AMP). When false, uses TF32 on A100 and FP32 on V100 GPUS.")
+    parser.set_defaults(amp=True)
 
     # Dataset
     parser.add_argument('--dataset', default='coco', help='dataset')
@@ -93,6 +98,7 @@ def parse_args(add_help=True):
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--print-freq', default=20, type=int, help='print frequency')
+    parser.add_argument('--eval-print-freq', default=None, type=int, help='eval print frequency')
     parser.add_argument("--test-only", dest="test_only", action="store_true", help="Only test the model")
     parser.add_argument('--seed', '-s', type=int, default=random.SystemRandom().randint(0, 2**32 - 1),
                         help='manually set random seed')
@@ -106,6 +112,7 @@ def parse_args(add_help=True):
     args = parser.parse_args()
 
     args.eval_batch_size = args.eval_batch_size or args.batch_size
+    args.eval_print_freq = args.eval_print_freq or args.print_freq
 
     return args
 
@@ -145,9 +152,14 @@ def main(args):
 
     # Data loading code
     print("Loading data")
-    dataset, num_classes = get_dataset(args.dataset, "train", get_transform(True, args.data_augmentation),
-                                       args.data_path)
-    dataset_test, _ = get_dataset(args.dataset, "val", get_transform(False, args.data_augmentation), args.data_path)
+    dataset, num_classes = get_dataset(name=args.dataset,
+                                       image_set="train",
+                                       transform=get_transform(True, args.data_augmentation),
+                                       data_path=args.data_path)
+    dataset_test, _ = get_dataset(name=args.dataset,
+                                  image_set="val",
+                                  transform=get_transform(False, args.data_augmentation),
+                                  data_path=args.data_path)
 
     print("Creating data loaders")
     if args.distributed:
@@ -171,12 +183,17 @@ def main(args):
     print("Creating model")
     model = None
     kwargs = {
-        "trainable_backbone_layers": args.trainable_backbone_layers
+        "trainable_backbone_layers": args.trainable_backbone_layers,
+        "data_layout": args.data_layout
     }
     model = retinanet_from_backbone(args.backbone, num_classes=num_classes, pretrained=args.pretrained,
                                     image_size=args.image_size,
                                     **kwargs)
     model.to(device)
+
+    if args.data_layout == 'channels_last':
+        model = model.to(memory_format=torch.channels_last)
+
     if args.distributed and args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 

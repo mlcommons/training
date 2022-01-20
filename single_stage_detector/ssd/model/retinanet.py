@@ -324,7 +324,7 @@ class RetinaNet(nn.Module):
                  nms_thresh=0.5,
                  detections_per_img=300,
                  fg_iou_thresh=0.5, bg_iou_thresh=0.4,
-                 topk_candidates=1000):
+                 topk_candidates=1000, **kwargs):
         super().__init__()
 
         if not hasattr(backbone, "out_channels"):
@@ -371,6 +371,8 @@ class RetinaNet(nn.Module):
 
         # used only on torchscript mode
         self._has_warned = False
+
+        self.data_layout = kwargs['data_layout']
 
     @torch.jit.unused
     def eager_outputs(self, losses, detections):
@@ -507,6 +509,9 @@ class RetinaNet(nn.Module):
                     raise ValueError("All bounding boxes should have positive height and width."
                                      " Found invalid box {} for target at index {}."
                                      .format(degen_bb, target_idx))
+
+        if self.data_layout == 'channels_last':
+            images.tensors = images.tensors.to(memory_format=torch.channels_last)
 
         # get the features from the backbone
         features = self.backbone(images.tensors)

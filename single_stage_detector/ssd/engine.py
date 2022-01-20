@@ -70,7 +70,7 @@ def evaluate(model, data_loader, device, args):
     iou_types = ["bbox"]
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
-    for images, targets in metric_logger.log_every(data_loader, 100, header):
+    for images, targets in metric_logger.log_every(data_loader, args.eval_print_freq, header):
         images = list(img.to(device) for img in images)
 
         if torch.cuda.is_available():

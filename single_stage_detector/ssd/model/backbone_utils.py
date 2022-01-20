@@ -129,3 +129,4 @@ def _validate_trainable_layers(pretrained, trainable_backbone_layers, max_value,
         trainable_backbone_layers = default_value
     assert 0 <= trainable_backbone_layers <= max_value
     return trainable_backbone_layers
+
