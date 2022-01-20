@@ -237,8 +237,9 @@ def main(args):
     mllogger.end(key=INIT_STOP)
 
     print("Start training")
-    start_time = time.time()
     accuracy = 0
+    status = ABORTED
+    start_time = time.time()
     mllogger.start(key=RUN_START)
     for epoch in range(args.start_epoch, args.epochs):
         mllogger.start(key=EPOCH_START, value=epoch)
@@ -266,18 +267,16 @@ def main(args):
         mllogger.start(key=EVAL_START, value=epoch)
         coco_evaluator = evaluate(model, data_loader_test, device=device, args=args)
         accuracy = coco_evaluator.get_stats()['bbox'][0]
-        mllogger.event(key=EVAL_ACCURACY, value=accuracy, clear_line=True)
+        mllogger.event(key=EVAL_ACCURACY, value=accuracy, metadata={"epoch_num": epoch}, clear_line=True)
         mllogger.end(key=EVAL_STOP, value=epoch)
         if args.target_map and accuracy >= args.target_map:
+            status = SUCCESS
             break
-    mllogger.end(key=RUN_STOP)
-
+    mllogger.end(key=RUN_STOP, metadata={"status": status})
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
-
-    if args.target_map:
-        mllogger.event(key=STATUS, value=SUCCESS if accuracy >= args.target_map else ABORTED)
+    mllogger.event(key=STATUS, value=status)
 
 if __name__ == "__main__":
     args = parse_args()
