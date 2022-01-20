@@ -19,7 +19,7 @@ from mlperf_logging.mllog.constants import (SUBMISSION_BENCHMARK, SUBMISSION_DIV
 
 import utils
 import presets
-from coco_utils import get_coco
+from coco_utils import get_coco, get_openimages
 from engine import train_one_epoch, evaluate
 from model.retinanet import retinanet_from_backbone
 
@@ -27,6 +27,8 @@ from model.retinanet import retinanet_from_backbone
 def get_dataset(name, image_set, transform, data_path):
     paths = {
         "coco": (data_path, get_coco, 91),
+        "openimages": (data_path, get_openimages, 601), # Full openimages dataset
+        "openimages-mlperf": (data_path, get_openimages, 346), # L0 classes only
     }
     p, ds_fn, num_classes = paths[name]
 
@@ -56,8 +58,10 @@ def parse_args(add_help=True):
     parser.set_defaults(amp=True)
 
     # Dataset
-    parser.add_argument('--dataset', default='coco', help='dataset')
-    parser.add_argument('--data-path', default='/datasets/coco2017', help='dataset')
+    parser.add_argument('--dataset', default='openimages-mlperf',
+                        choices=['coco', 'openimages', 'openimages-mlperf'],
+                        help='dataset')
+    parser.add_argument('--data-path', default='/datasets/open-images-v6', help='dataset')
     parser.add_argument('--image-size', default=[800, 800], nargs=2, type=int,
                         help='Image size for training')
     parser.add_argument('--data-augmentation', default="hflip", help='data augmentation policy')
@@ -67,7 +71,7 @@ def parse_args(add_help=True):
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, help='start epoch')
     parser.add_argument('--output-dir', default=None, help='path where to save checkpoints.')
-    parser.add_argument('--target-map', default=None, type=float, help='Stop training when target mAP is reached')
+    parser.add_argument('--target-map', default=None, type=float, help='Stop training when target mAP is reached') # TODO
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument("--pretrained", dest="pretrained", action="store_true",
                         help="Use pre-trained models from the modelzoo")

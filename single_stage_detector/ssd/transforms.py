@@ -22,6 +22,7 @@ def _flip_coco_person_keypoints(kps, width):
 #                once https://github.com/pytorch/vision/pull/4321 is public
 
 from PIL import Image, ImageOps, ImageEnhance
+Image.MAX_IMAGE_PIXELS = None
 from typing import Any
 
 try:
