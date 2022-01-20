@@ -18,8 +18,6 @@ parser.add_argument('--output-labels', default='labels.json', type=str,
 args = parser.parse_args()
 
 
-print(args)
-
 print("Downloading open-images dataset ...")
 dataset = foz.load_zoo_dataset(
     name="open-images-v6",

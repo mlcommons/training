@@ -27,8 +27,8 @@ from model.retinanet import retinanet_from_backbone
 def get_dataset(name, image_set, transform, data_path):
     paths = {
         "coco": (data_path, get_coco, 91),
-        "openimages": (data_path, get_openimages, 601), # Full openimages dataset
-        "openimages-mlperf": (data_path, get_openimages, 346), # L0 classes only
+        "openimages": (data_path, get_openimages, 601),        # Full openimages dataset
+        "openimages-mlperf": (data_path, get_openimages, 345), # L0 classes only
     }
     p, ds_fn, num_classes = paths[name]
 
