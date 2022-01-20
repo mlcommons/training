@@ -46,7 +46,7 @@ def parse_args(add_help=True):
                         help='The model backbone')
     parser.add_argument('--trainable-backbone-layers', default=3, type=int,
                         help='number of trainable layers of backbone')
-    parser.add_argument("--sync-bn", dest="sync_bn", action="store_true", help="Use sync batch norm")
+    parser.add_argument('--sync-bn', dest='sync_bn', action="store_true", help='Use sync batch norm')
     parser.add_argument("--amp", action="store_true",
                         help="Whether to enable Automatic Mixed Precision (AMP). When false, uses TF32 on A100 and FP32 on V100 GPUS.")
 

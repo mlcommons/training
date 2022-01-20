@@ -30,16 +30,31 @@ start=$(date +%s)
 start_fmt=$(date +%Y-%m-%d\ %r)
 echo "STARTING TIMING RUN AT $start_fmt"
 
+# Set variables
+BATCHSIZE=${BATCHSIZE:-2}
+EVALBATCHSIZE=${EVALBATCHSIZE:-${BATCHSIZE}}
+NUMEPOCHS=${NUMEPOCHS:-60}
+LOG_INTERVAL=${LOG_INTERVAL:-20}
+DATASET_DIR=${DATASET_DIR:-"/data/coco2017"}
+TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
+
 # run benchmark
 echo "running benchmark"
 
-export TORCH_HOME="$(pwd)/torch-model-cache"
+
 
 declare -a CMD
 if [ -n "${SLURM_LOCALID-}" ]; then
-  # Mode 1: Slurm launched a task for each GPU and set some envvars; no need for parallel launch
+    # Mode 1: Slurm launched a task for each GPU and set some envvars; no need for parallel launch
+    cluster=''
+    if [[ "${DGXSYSTEM}" == DGX2* ]]; then
+        cluster='circe'
+    fi
+    if [[ "${DGXSYSTEM}" == DGXA100* ]]; then
+        cluster='selene'
+    fi
   if [ "${SLURM_NTASKS}" -gt "${SLURM_JOB_NUM_NODES}" ]; then
-    CMD=( './bind.sh' '--' 'python' '-u' )
+    CMD=( './bind.sh' "--cluster=${cluster}" '--ib=single' '--' ${NSYSCMD} 'python' '-u' )
   else
     CMD=( 'python' '-u' )
   fi
@@ -54,10 +69,18 @@ fi
 
 
 
-"${CMD[@]}" $TRAIN_CMD
+PARAMS=(
+      --batch-size              "${BATCHSIZE}"
+      --eval-batch-size         "${EVALBATCHSIZE}"
+      --epochs                  "${NUMEPOCHS}"
+      --print-freq              "${LOG_INTERVAL}"
+      --data-path               "${DATASET_DIR}"
+)
 
-ret_code=$?
+# run training
+"${CMD[@]}" train.py "${PARAMS[@]}" ${EXTRA_PARAMS} ; ret_code=$?
 
+set +x
 
 sleep 3
 if [[ $ret_code != 0 ]]; then exit $ret_code; fi
@@ -69,6 +92,6 @@ echo "ENDING TIMING RUN AT $end_fmt"
 
 # report result
 result=$(( $end - $start ))
-result_name="RetinaNet_Object_Detection"
+result_name="SINGLE_STAGE_DETECTOR"
 
 echo "RESULT,$result_name,,$result,nvidia,$start_fmt"

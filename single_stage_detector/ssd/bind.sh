@@ -1,4 +1,18 @@
 #! /bin/bash
+# Copyright (c) 2018-2021, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 set -euo pipefail
 
 print_usage() {
@@ -82,13 +96,14 @@ num_sockets=$(get_lscpu_value 'Socket(s)' <<< "${lscpu_out}")
 num_nodes=$(get_lscpu_value 'NUMA node(s)' <<< "${lscpu_out}")
 cores_per_socket=$(get_lscpu_value 'Core(s) per socket' <<< "${lscpu_out}")
 
-echo "num_sockets = ${num_sockets} num_nodes=${num_nodes} cores_per_socket=${cores_per_socket}"
+echo "num_gpus=${num_gpus} num_sockets = ${num_sockets} num_nodes=${num_nodes} cores_per_socket=${cores_per_socket}"
 
 readonly cores_per_node=$(( (num_sockets * cores_per_socket) / num_nodes ))
-if [ ${num_gpus} -gt 1 ]; then
+if [ ${num_gpus} -gt 1 ] && [ ${num_gpus} -ge ${num_nodes} ]; then
     readonly gpus_per_node=$(( num_gpus / num_nodes ))
 else
     readonly gpus_per_node=1
+    num_nodes=$num_gpus
 fi
 readonly cores_per_gpu=$(( cores_per_node / gpus_per_node ))
 readonly local_node=$(( local_rank / gpus_per_node ))
@@ -100,7 +115,7 @@ case "${cluster}" in
         # Need to specialize for circe because IB detection is hard
         ibdevs=(mlx5_1 mlx5_2 mlx5_3 mlx5_4 mlx5_7 mlx5_8 mlx5_9 mlx5_10)
         ;;
-   selene)
+    selene)
         # Need to specialize for selene because IB detection is hard
         ibdevs=(mlx5_0 mlx5_1 mlx5_2 mlx5_3 mlx5_6 mlx5_7 mlx5_8 mlx5_9)
         ;;
@@ -165,13 +180,13 @@ case "${mem_mode}" in
         numactl_args+=( "--membind=${local_node}" )
         ;;
     *.sh)
-    source "${mem_mode}"
-    if [ -z "${bind_mem:-}" ]; then
-        echo "ERROR: invalid memory affinity file ${mem_mode}." >&2
-        exit 1
-    fi
-    numactl_args+=( "--membind=${bind_mem[${local_rank}]}" )
-    ;;
+        source "${mem_mode}"
+        if [ -z "${bind_mem:-}" ]; then
+            echo "ERROR: invalid memory affinity file ${mem_mode}." >&2
+            exit 1
+        fi
+        numactl_args+=( "--membind=${bind_mem[${local_rank}]}" )
+        ;;
     off|'')
         ;;
     *)
