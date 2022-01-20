@@ -185,7 +185,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         return img, target
 
 
-def get_coco(root, image_set, transforms, mode='instances'):
+def get_coco(name, root, image_set, transforms, mode='instances'):
     anno_file_template = "{}_{}2017.json"
     PATHS = {
         "train": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
@@ -210,7 +210,7 @@ def get_coco(root, image_set, transforms, mode='instances'):
     return dataset
 
 
-def get_openimages(root, image_set, transforms, name):
+def get_openimages(name, root, image_set, transforms):
     PATHS = {
         "train": os.path.join(root, "train"),
         "val":   os.path.join(root, "validation"),

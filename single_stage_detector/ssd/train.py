@@ -32,7 +32,7 @@ def get_dataset(name, image_set, transform, data_path):
     }
     p, ds_fn, num_classes = paths[name]
 
-    ds = ds_fn(p, image_set=image_set, transforms=transform)
+    ds = ds_fn(name=name, root=p, image_set=image_set, transforms=transform)
     return ds, num_classes
 
 
