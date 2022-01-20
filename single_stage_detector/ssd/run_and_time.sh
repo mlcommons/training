@@ -31,11 +31,12 @@ start_fmt=$(date +%Y-%m-%d\ %r)
 echo "STARTING TIMING RUN AT $start_fmt"
 
 # Set variables
+[ "${DEBUG}" = "1" ] && set -x
 BATCHSIZE=${BATCHSIZE:-2}
 EVALBATCHSIZE=${EVALBATCHSIZE:-${BATCHSIZE}}
 NUMEPOCHS=${NUMEPOCHS:-60}
 LOG_INTERVAL=${LOG_INTERVAL:-20}
-DATASET_DIR=${DATASET_DIR:-"/data/coco2017"}
+DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6"}
 TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
 
 # run benchmark
