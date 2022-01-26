@@ -91,6 +91,7 @@ Summary: Sampled Audio Spectrograms -> 2 CNN layers -> 5 Bi-Directional GRU laye
 
 Details:
 
+```
   (module): DeepSpeech (
 
     (conv): Sequential (
@@ -111,7 +112,6 @@ Details:
     (rnns): Sequential (
 
       (0): BatchRNN (
-
 
         (rnn): GRU(672, 2560)
       )
@@ -151,7 +151,7 @@ Details:
   )
 
 )
-
+```
 # 5. Quality
 ### Quality metric
 Word Error Rate (WER) across all words in the output text of all samples in the validation set.
