@@ -12,14 +12,14 @@
 - [Dataset/Environment](#datasetenvironment)
   - [Publication/Attribution](#publicationattribution)
   - [The MLPerf Subset](#the-mlperf-subset)
-- [4. Model](#4-model)
+- [Model](#model)
   - [Backbone](#backbone)
   - [Head network](#head-network)
   - [Detection heads and anchors](#detection-heads-and-anchors)
   - [Ground truth and loss function](#ground-truth-and-loss-function)
   - [Input augmentations](#input-augmentations)
   - [Publication/Attribution](#publicationattribution-1)
-- [5. Quality](#5-quality)
+- [Quality](#quality)
   - [Quality metric](#quality-metric)
   - [Quality target](#quality-target)
   - [Evaluation frequency](#evaluation-frequency)
@@ -177,12 +177,11 @@ full dataset:
 |-------------------|-----------|----------------|---------------------|-------|
 | OpenImages Full   | 601       | 1,743,042      | 41,620              | 534GB |
 | OpenImages MLperf | 264       | 1,17,0301      | 24,781              | 352GB |
-|                   |           |                |                     |       |
 
 The list of used classes can be viewed
 [here](https://github.com/mlcommons/training/blob/master/single_stage_detector/scripts/download_openimages_mlperf.sh).
 
-# 4. Model
+# Model
 This network takes an input 800x800 image from [OpenImages-v6](https://storage.googleapis.com/openimages/web/index.html)
 and 265 categories, and computes a set of bounding boxes and categories.
 Other detector models use multiple stages, first proposing regions of interest
@@ -279,7 +278,7 @@ Saining Xie, Ross Girshick, Piotr Dollár, Zhuowen Tu, Kaiming He.
 Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, Piotr Dollár.
 [Focal Loss for Dense Object Detection](https://arxiv.org/abs/1708.02002)
 
-# 5. Quality
+# Quality
 ## Quality metric
 Metric is COCO box mAP (averaged over IoU of 0.5:0.95), computed over the
 OpenImages-MLPerf validation subset.

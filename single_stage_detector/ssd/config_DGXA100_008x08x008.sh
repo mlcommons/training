@@ -10,9 +10,6 @@ export EXTRA_PARAMS='--lr 0.0001 --output-dir=/results'
 export DGXNNODES=8
 export DGXSYSTEM=$(basename $(readlink -f ${BASH_SOURCE[0]}) | sed 's/^config_//' | sed 's/\.sh$//' )
 export WALLTIME=04:00:00
-# TODO(ahmadki):
-# WALLTIME_MINUTES=30
-# export WALLTIME=$((${NEXP} * ${WALLTIME_MINUTES}))
 
 ## System config params
 export DGXNGPU=8
