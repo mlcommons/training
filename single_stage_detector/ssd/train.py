@@ -14,8 +14,7 @@ from mlperf_logging.mllog.constants import (SUBMISSION_BENCHMARK, SUBMISSION_DIV
     SSD, OPEN, ONPREM, EVAL_ACCURACY, STATUS, SUCCESS, ABORTED,
     INIT_START, INIT_STOP, RUN_START, RUN_STOP, EPOCH_START, EPOCH_STOP, EVAL_START, EVAL_STOP,
     SEED, GLOBAL_BATCH_SIZE, TRAIN_SAMPLES, EVAL_SAMPLES, EPOCH_COUNT, FIRST_EPOCH_NUM,
-    OPT_NAME, SGD, OPT_BASE_LR, OPT_WEIGHT_DECAY, OPT_LR_DECAY_FACTOR, OPT_LR_DECAY_STEPS,
-    OPT_LR_WARMUP_EPOCHS, OPT_LR_WARMUP_FACTOR)
+    OPT_NAME, ADAM, OPT_BASE_LR, OPT_WEIGHT_DECAY, OPT_LR_WARMUP_EPOCHS, OPT_LR_WARMUP_FACTOR)
 
 import utils
 import presets
@@ -27,8 +26,8 @@ from model.retinanet import retinanet_from_backbone
 def get_dataset(name, image_set, transform, data_path):
     paths = {
         "coco": (data_path, get_coco, 91),
-        "openimages": (data_path, get_openimages, 601),        # Full openimages dataset
-        "openimages-mlperf": (data_path, get_openimages, 345), # L0 classes only
+        "openimages": (data_path, get_openimages, 601),            # Full openimages dataset
+        "openimages-mlperf": (data_path, get_openimages, 264),     # L0 classes with more than 1000 samples
     }
     p, ds_fn, num_classes = paths[name]
 
@@ -44,7 +43,8 @@ def parse_args(add_help=True):
     parser = argparse.ArgumentParser(description='PyTorch Detection Training', add_help=add_help)
 
     # Model
-    parser.add_argument('--backbone', default='resnext50_32x4d', choices=['resnet50', 'resnext50_32x4d', 'resnet101', 'resnext101_32x8d'],
+    parser.add_argument('--backbone', default='resnext50_32x4d',
+                        choices=['resnet50', 'resnext50_32x4d', 'resnet101', 'resnext101_32x8d'],
                         help='The model backbone')
     parser.add_argument('--trainable-backbone-layers', default=3, type=int,
                         help='number of trainable layers of backbone')
@@ -52,9 +52,11 @@ def parse_args(add_help=True):
     parser.add_argument('--data-layout', default="channels_last", choices=['channels_first', 'channels_last'],
                         help="Model data layout")
     parser.add_argument("--amp", dest='amp', action="store_true",
-                        help="Whether to enable Automatic Mixed Precision (AMP). When false, uses TF32 on A100 and FP32 on V100 GPUS.")
+                        help="Whether to enable Automatic Mixed Precision (AMP). "
+                             "When false, uses TF32 on A100 and FP32 on V100 GPUS.")
     parser.add_argument("--no-amp", dest='amp', action="store_false",
-                        help="Whether to enable Automatic Mixed Precision (AMP). When false, uses TF32 on A100 and FP32 on V100 GPUS.")
+                        help="Whether to enable Automatic Mixed Precision (AMP). "
+                             "When false, uses TF32 on A100 and FP32 on V100 GPUS.")
     parser.set_defaults(amp=True)
 
     # Dataset
@@ -71,7 +73,7 @@ def parse_args(add_help=True):
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, help='start epoch')
     parser.add_argument('--output-dir', default=None, help='path where to save checkpoints.')
-    parser.add_argument('--target-map', default=None, type=float, help='Stop training when target mAP is reached') # TODO
+    parser.add_argument('--target-map', default=0.34, type=float, help='Stop training when target mAP is reached')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument("--pretrained", dest="pretrained", action="store_true",
                         help="Use pre-trained models from the modelzoo")
@@ -84,19 +86,10 @@ def parse_args(add_help=True):
     parser.add_argument('--lr', default=0.02, type=float,
                         help='initial learning rate, 0.02 is the default value for training '
                              'on 8 gpus and 2 images_per_gpu')
-    parser.add_argument('--lr-steps', default=[16, 22], nargs='+', type=int,
-                        help='decrease lr every step-size epochs')
-    parser.add_argument('--lr-gamma', default=0.1, type=float,
-                        help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--warmup-epochs', default=1, type=int,
                         help='how long the learning rate will be warmed up in fraction of epochs')
     parser.add_argument('--warmup-factor', default=1e-3, type=float,
                         help='factor for controlling warmup curve')
-    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                        help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
-                        metavar='W', help='weight decay (default: 1e-4)',
-                        dest='weight_decay')
 
     # Other
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
@@ -131,7 +124,6 @@ def main(args):
     mllogger.event(key=SUBMISSION_STATUS, value=ONPREM)
     mllogger.start(key=INIT_START)
 
-    print(args)
     if args.output_dir:
         utils.mkdir(args.output_dir)
 
@@ -176,23 +168,21 @@ def main(args):
 
     data_loader = torch.utils.data.DataLoader(
         dataset, batch_sampler=train_batch_sampler, num_workers=args.workers,
-        collate_fn=utils.collate_fn)
+        pin_memory=True, collate_fn=utils.collate_fn)
     data_loader_test = torch.utils.data.DataLoader(
         dataset_test, batch_size=args.eval_batch_size or args.batch_size,
         sampler=test_sampler, num_workers=args.workers,
-        collate_fn=utils.collate_fn)
+        pin_memory=True, collate_fn=utils.collate_fn)
     mllogger.event(key=TRAIN_SAMPLES, value=len(data_loader))
     mllogger.event(key=EVAL_SAMPLES, value=len(data_loader_test))
 
     print("Creating model")
-    model = None
-    kwargs = {
-        "trainable_backbone_layers": args.trainable_backbone_layers,
-        "data_layout": args.data_layout
-    }
-    model = retinanet_from_backbone(args.backbone, num_classes=num_classes, pretrained=args.pretrained,
+    model = retinanet_from_backbone(backbone=args.backbone,
+                                    num_classes=num_classes,
                                     image_size=args.image_size,
-                                    **kwargs)
+                                    data_layout=args.data_layout,
+                                    pretrained=args.pretrained,
+                                    trainable_backbone_layers=args.trainable_backbone_layers)
     model.to(device)
 
     if args.data_layout == 'channels_last':
@@ -207,15 +197,11 @@ def main(args):
         model_without_ddp = model.module
 
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(
-        params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    mllogger.event(key=OPT_NAME, value=SGD)
-    mllogger.event(key=OPT_BASE_LR, value=args.lr)
-    mllogger.event(key=OPT_WEIGHT_DECAY, value=args.weight_decay)
+    optimizer = torch.optim.Adam(params, lr=args.lr)
 
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.lr_steps, gamma=args.lr_gamma)
-    mllogger.event(key=OPT_LR_DECAY_FACTOR, value=args.lr_gamma)
-    mllogger.event(key=OPT_LR_DECAY_STEPS, value=args.lr_steps)
+    mllogger.event(key=OPT_NAME, value=ADAM)
+    mllogger.event(key=OPT_BASE_LR, value=args.lr)
+    mllogger.event(key=OPT_WEIGHT_DECAY, value=0)
     mllogger.event(key=OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs)
     mllogger.event(key=OPT_LR_WARMUP_FACTOR, value=args.warmup_factor)
 
@@ -223,7 +209,6 @@ def main(args):
         checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         args.start_epoch = checkpoint['epoch'] + 1
 
     if args.test_only:
@@ -246,14 +231,12 @@ def main(args):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         train_one_epoch(model, optimizer, scaler, data_loader, device, epoch, args)
-        lr_scheduler.step()
         if args.output_dir:
             checkpoint = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'lr_scheduler': lr_scheduler.state_dict(),
+                'epoch': epoch,
                 'args': args,
-                'epoch': epoch
             }
             utils.save_on_master(
                 checkpoint,

@@ -34,9 +34,9 @@ echo "STARTING TIMING RUN AT $start_fmt"
 [ "${DEBUG}" = "1" ] && set -x
 BATCHSIZE=${BATCHSIZE:-2}
 EVALBATCHSIZE=${EVALBATCHSIZE:-${BATCHSIZE}}
-NUMEPOCHS=${NUMEPOCHS:-60}
+NUMEPOCHS=${NUMEPOCHS:-30}
 LOG_INTERVAL=${LOG_INTERVAL:-20}
-DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6"}
+DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6-mlperf"}
 TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
 
 # run benchmark
