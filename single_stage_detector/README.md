@@ -176,7 +176,7 @@ full dataset:
 | Dataset           | # classes | # train images | # validation images | Size  |
 |-------------------|-----------|----------------|---------------------|-------|
 | OpenImages Full   | 601       | 1,743,042      | 41,620              | 534GB |
-| OpenImages MLperf | 264       | 1,17,0301      | 24,781              | 352GB |
+| OpenImages MLperf | 264       | 1,170,301      | 24,781              | 352GB |
 
 The list of used classes can be viewed
 [here](https://github.com/mlcommons/training/blob/master/single_stage_detector/scripts/download_openimages_mlperf.sh).
