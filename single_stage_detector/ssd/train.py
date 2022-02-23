@@ -24,16 +24,14 @@ from engine import train_one_epoch, evaluate
 from model.retinanet import retinanet_from_backbone
 
 
-def get_dataset(name, image_set, transform, data_path):
-    paths = {
-        "coco": (data_path, get_coco, 91),
-        "openimages": (data_path, get_openimages, 601),            # Full openimages dataset
-        "openimages-mlperf": (data_path, get_openimages, 264),     # L0 classes with more than 1000 samples
-    }
-    p, ds_fn, num_classes = paths[name]
 
-    ds = ds_fn(name=name, root=p, image_set=image_set, transforms=transform)
-    return ds, num_classes
+def get_dataset_fn(name):
+    paths = {
+        "coco": (get_coco, 91),
+        "openimages": (get_openimages, 601),            # Full openimages dataset
+        "openimages-mlperf": (get_openimages, 264),     # L0 classes with more than 1000 samples
+    }
+    return paths[name]
 
 
 def get_transform(train, data_augmentation):
@@ -149,15 +147,9 @@ def main(args):
     print(args)
 
     # Data loading code
-    print("Loading data")
-    dataset, num_classes = get_dataset(name=args.dataset,
-                                       image_set="train",
-                                       transform=get_transform(True, args.data_augmentation),
-                                       data_path=args.data_path)
-    dataset_test, _ = get_dataset(name=args.dataset,
-                                  image_set="val",
-                                  transform=get_transform(False, args.data_augmentation),
-                                  data_path=args.data_path)
+    print("Getting dataset information")
+    dataset_fn, num_classes = get_dataset_fn(name=args.dataset)
+    args.num_classes = num_classes
 
     print("Creating model")
     model = retinanet_from_backbone(backbone=args.backbone,
@@ -206,6 +198,15 @@ def main(args):
 
     # We can't touch data before RUN_START
     print("Creating data loaders")
+    dataset = dataset_fn(name=args.dataset,
+                         root=args.data_path,
+                         image_set="train",
+                         transforms=get_transform(True, args.data_augmentation))
+    dataset_test = dataset_fn(name=args.dataset,
+                              root=args.data_path,
+                              image_set="val",
+                              transforms=get_transform(False, args.data_augmentation))
+
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
         test_sampler = torch.utils.data.distributed.DistributedSampler(dataset_test)
@@ -269,6 +270,7 @@ def main(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
     mllogger.event(key=STATUS, value=status)
+
 
 if __name__ == "__main__":
     args = parse_args()
