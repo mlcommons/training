@@ -6,8 +6,9 @@
   - [Building the docker image](#building-the-docker-image)
   - [Download dataset](#download-dataset)
   - [Download the pretrained backbone](#download-the-pretrained-backbone)
-  - [Training on NVIDIA DGX-A100 (single node)](#training-on-nvidia-dgx-a100-single-node)
-  - [Training on NVIDIA DGX-A100 (multi node)](#training-on-nvidia-dgx-a100-multi-node)
+  - [Training on NVIDIA DGX-A100 (single node) with docker](#training-on-nvidia-dgx-a100-single-node-with-docker)
+  - [Training on NVIDIA DGX-A100 (single node) with SLURM](#training-on-nvidia-dgx-a100-single-node-with-slurm)
+  - [Training on NVIDIA DGX-A100 (multi node) with SLURM](#training-on-nvidia-dgx-a100-multi-node-with-slurm)
   - [Hyperparameter settings](#hyperparameter-settings)
 - [Dataset/Environment](#datasetenvironment)
   - [Publication/Attribution](#publicationattribution)
@@ -16,6 +17,7 @@
   - [Backbone](#backbone)
   - [Head network](#head-network)
   - [Detection heads and anchors](#detection-heads-and-anchors)
+  - [Weight and bias initialization](#weight-and-bias-initialization)
   - [Ground truth and loss function](#ground-truth-and-loss-function)
   - [Input augmentations](#input-augmentations)
   - [Publication/Attribution](#publicationattribution-1)
@@ -131,31 +133,61 @@ Then use the downloaded file with `--pretrained <PATH TO WEIGHTS>` .
 If you wish to use the backbone in frameworks other than PyTorch, the repository
 provides scripts to convert the weights to ONNX format and a pickled dictionary
 of numpy arrays:
-```
+```bash
 ./single_stage_detector/scripts/pth_to_onnx.py --help
 ./single_stage_detector/scripts/pth_to_pickle.py --help
 ```
 
-## Training on NVIDIA DGX-A100 (single node)
+## Training on NVIDIA DGX-A100 (single node) with docker
+Launch configuration and system-specific hyperparameters for the NVIDIA DGX-A100
+single node reference are in the `config_DGXA100_001x08x032.sh` script.
+
+To launch single node training on NVIDIA DGX-A100 with docker, start
+an interactive container:
+
+```bash
+docker run --rm -it \
+  --gpus=all \
+  --ipc=host \
+  -v <HOST_DATA_DIR>:/datasets/open-images-v6-mlperf \
+  mlperf/single_stage_detector bash
+```
+
+Then start training with:
+
+```bash
+source config_DGXA100_001x08x032.sh
+./run_and_time.sh
+```
+
+Alternatively, you can use torchrun to call the training script directly:
+
+```bash
+torchrun <torchrun arguments> train.py <training arguments>
+```
+
+You can read more about torchrun [here](https://pytorch.org/docs/stable/elastic/run.html).
+
+## Training on NVIDIA DGX-A100 (single node) with SLURM
 Launch configuration and system-specific hyperparameters for the NVIDIA DGX-A100
 single node reference are in the `config_DGXA100_001x08x032.sh` script.
 
 Steps required to launch single node training on NVIDIA DGX-A100:
 
-```
+```bash
 cd ./single_stage_detector/ssd
 source config_DGXA100_001x08x032.sh
 DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> ./run.sub
 ```
 
-## Training on NVIDIA DGX-A100 (multi node)
+## Training on NVIDIA DGX-A100 (multi node) with SLURM
 Launch configuration and system-specific hyperparameters for the NVIDIA DGX-A100
 multi node reference are in the `config_DGXA100_008x08x008.sh` and
 `config_DGXA100_032x08x032.sh` scripts.
 
 Steps required to launch multi node training on NVIDIA DGX-A100:
 
-```
+```bash
 cd ./single_stage_detector/ssd
 source config_DGXA100_008x08x008.sh # or config_DGXA100_032x08x032.sh
 DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> sbatch -N $DGXNNODES -t $WALLTIME run.sub
@@ -178,12 +210,17 @@ full dataset:
 | OpenImages Full   | 601       | 1,743,042      | 41,620              | 534GB |
 | OpenImages MLperf | 264       | 1,170,301      | 24,781              | 352GB |
 
+These are the lowest level classes (no child classes) in the dataset
+[semantic hierarchy tree](https://storage.googleapis.com/openimages/2018_04/bbox_labels_600_hierarchy_visualizer/circle.html)
+with at least 1000 samples.
+
 The list of used classes can be viewed
 [here](https://github.com/mlcommons/training/blob/master/single_stage_detector/scripts/download_openimages_mlperf.sh).
 
 # Model
-This network takes an input 800x800 image from [OpenImages-v6](https://storage.googleapis.com/openimages/web/index.html)
-and 265 categories, and computes a set of bounding boxes and categories.
+This network takes an input 800x800 image from
+[OpenImages-v6](https://storage.googleapis.com/openimages/web/index.html)
+and 264 categories, and computes a set of bounding boxes and categories.
 Other detector models use multiple stages, first proposing regions of interest
 that might contain objects, then iterating over the regions of interest to try
 to categorize each object. SSD does both of these in one stage, leading to
@@ -226,14 +263,40 @@ detail [here](https://pytorch.org/hub/pytorch_vision_resnext/).  It is
 a ResNeXt50_32x4d network trained on 224x224 ImageNet to achieve a Top-1
 error rate of 22.38  and a Top-5 error rate of 6.30.
 
+Of the five convolution stages, only the last three are trained.
+The weights of the first two stages are frozen
+([code](https://github.com/mlcommons/training/blob/master/single_stage_detector/ssd/model/backbone_utils.py#L94-L101)).
+In addition, all batch norm layers in the backbone are frozen
+([code](https://github.com/mlcommons/training/blob/master/single_stage_detector/ssd/model/backbone_utils.py#L52)).
+
 ## Head network
 TODO
 
 ## Detection heads and anchors
 TODO
 
+## Weight and bias initialization
+1. The ResNeXt50_32x4d backbone is initialized with the pretrained weights
+   from [Torchvision model zoo](https://download.pytorch.org/models/-7cdf4587.pth).
+
+2. The classification head weights are initialized using normal distribution
+   with `mean=0` and `std=0.01`. The biases are initialized with zeros, except
+   for the classification convolution which is initalized with
+   `constant=-4.59511985013459`
+   ([code](https://github.com/mlcommons/training/blob/master/single_stage_detector/ssd/model/retinanet.py#L85-L90)).
+
+3. The regression head weights are initialized using normal distribution
+   with `mean=0` and `std=0.01`. The biases are initialized with zeros
+   ([code](https://github.com/mlcommons/training/blob/master/single_stage_detector/ssd/model/retinanet.py#L171-L177)).
+
+4. The FPN network weights are initialized with uniform Kaiming (also known as
+   He initialization) using `negative slope=1`. The biases are initialized
+   with zeros
+   ([code](https://github.com/mlcommons/training/blob/master/single_stage_detector/ssd/model/feature_pyramid_network.py#L90-L91)).
+
 ## Ground truth and loss function
-TODO
+TODO: add more details
+Focall Loss
 
 ## Input augmentations
 The input images are assumed to be sRGB with values in range 0.0 through 1.0.

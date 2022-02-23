@@ -60,15 +60,10 @@ if [ -n "${SLURM_LOCALID-}" ]; then
     CMD=( 'python' '-u' )
   fi
 else
-  # Mode 2: Single-node Docker; need to launch tasks with Pytorch's distributed launch
-  # TODO: use bind.sh instead of bind_launch.py
-  #       torch.distributed.launch only accepts Python programs (not bash scripts) to exec
-  CMD=( "python" "-u" "-m" "bind_launch" "--nsockets_per_node=${DGXNSOCKET}" \
-        "--ncores_per_socket=${DGXSOCKETCORES}" "--nproc_per_node=${DGXNGPU}" )
+  # Mode 2: Single-node Docker; need to launch tasks with torchrun
+  CMD=( "torchrun" "--standalone" "--nnodes=1" "--nproc_per_node=${DGXNGPU}" )
   [ "$MEMBIND" = false ] &&  CMD+=( "--no_membind" )
 fi
-
-
 
 PARAMS=(
       --batch-size              "${BATCHSIZE}"

@@ -48,8 +48,7 @@ mkdir -p $(dirname "${LOGFILE_BASE}")
 
 ## Docker params
 CONTVOLS="-v $DATADIR:/data -v $LOGDIR:/results"
-NV_GPU="${NVIDIA_VISIBLE_DEVICES:-$(seq 0 $((${SLURM_NTASKS_PER_NODE:-${DGXNGPU}}-1)) | tr '\n' ',' | sed 's/,$//')}"
-DOCKEREXEC="env NV_GPU=${NV_GPU} nvidia-docker run --rm --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1 --name=cont_${SLURM_JOB_ID} --security-opt seccomp=unconfined $IBDEVICES"
+DOCKEREXEC="docker run --rm --gpus=all --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1 --name=cont_${SLURM_JOB_ID} --security-opt seccomp=unconfined $IBDEVICES"
 
 ## Prep run and launch
 MASTER_IP=`getent hosts \`hostname\` | cut -d ' ' -f1`

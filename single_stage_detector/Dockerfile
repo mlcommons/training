@@ -16,8 +16,16 @@ ARG FROM_IMAGE_NAME=pytorch/pytorch:1.10.0-cuda11.3-cudnn8-devel
 # ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:22.01-py3
 FROM ${FROM_IMAGE_NAME}
 
+# Make sure git is installed (needed by pip)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        git \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install python dependencies
 COPY requirements.txt /
+# Cython needs to be present before attempting to install pycocotools
+RUN pip install --no-cache-dir Cython
 RUN pip install --no-cache-dir -r /requirements.txt
 
 # Copy code
