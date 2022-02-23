@@ -9,12 +9,13 @@ import torch
 import torch.utils.data
 import torchvision
 
-from mlperf_logging import mllog
+from ssd_logger import SSDLogger
 from mlperf_logging.mllog.constants import (SUBMISSION_BENCHMARK, SUBMISSION_DIVISION, SUBMISSION_STATUS,
-    SSD, OPEN, ONPREM, EVAL_ACCURACY, STATUS, SUCCESS, ABORTED,
+    SSD, CLOSED, ONPREM, EVAL_ACCURACY, STATUS, SUCCESS, ABORTED,
     INIT_START, INIT_STOP, RUN_START, RUN_STOP, EPOCH_START, EPOCH_STOP, EVAL_START, EVAL_STOP,
     SEED, GLOBAL_BATCH_SIZE, TRAIN_SAMPLES, EVAL_SAMPLES, EPOCH_COUNT, FIRST_EPOCH_NUM,
-    OPT_NAME, ADAM, OPT_BASE_LR, OPT_WEIGHT_DECAY, OPT_LR_WARMUP_EPOCHS, OPT_LR_WARMUP_FACTOR)
+    OPT_NAME, ADAM, OPT_BASE_LR, OPT_WEIGHT_DECAY, OPT_LR_WARMUP_EPOCHS, OPT_LR_WARMUP_FACTOR,
+    GRADIENT_ACCUMULATION_STEPS)
 
 import utils
 import presets
@@ -115,19 +116,20 @@ def parse_args(add_help=True):
 
 
 def main(args):
+    # Init distributed mode
+    utils.init_distributed_mode(args)
+
     # Setup MLPerf logger
-    mllogger = mllog.get_mllogger()
+    mllogger = SSDLogger(rank=utils.get_rank())
 
     # Start MLPerf benchmark
-    mllogger.event(key=SUBMISSION_BENCHMARK, value=SSD)
-    mllogger.event(key=SUBMISSION_DIVISION, value=OPEN)
-    mllogger.event(key=SUBMISSION_STATUS, value=ONPREM)
-    mllogger.start(key=INIT_START)
+    mllogger.event(key=SUBMISSION_BENCHMARK, value=SSD, ranks=0)
+    mllogger.event(key=SUBMISSION_DIVISION, value=CLOSED, ranks=0)
+    mllogger.event(key=SUBMISSION_STATUS, value=ONPREM, ranks=0)
+    mllogger.start(key=INIT_START, sync=True, ranks=0)
 
     if args.output_dir:
         utils.mkdir(args.output_dir)
-
-    utils.init_distributed_mode(args)
 
     device = torch.device(args.device)
 
@@ -140,8 +142,8 @@ def main(args):
     mllogger.event(key=SEED, value=args.seed)
 
     # Print args
-    mllogger.event(key='local_batch_size', value=args.batch_size)
-    mllogger.event(key=GLOBAL_BATCH_SIZE, value=args.batch_size*utils.get_world_size())
+    mllogger.event(key='local_batch_size', value=args.batch_size, ranks=0)
+    mllogger.event(key=GLOBAL_BATCH_SIZE, value=args.batch_size*utils.get_world_size(), ranks=0)
     mllogger.event(key=EPOCH_COUNT, value=args.epochs)
     mllogger.event(key=FIRST_EPOCH_NUM, value=args.start_epoch)
     print(args)
@@ -156,25 +158,6 @@ def main(args):
                                   image_set="val",
                                   transform=get_transform(False, args.data_augmentation),
                                   data_path=args.data_path)
-
-    print("Creating data loaders")
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
-        test_sampler = torch.utils.data.distributed.DistributedSampler(dataset_test)
-    else:
-        train_sampler = torch.utils.data.RandomSampler(dataset)
-        test_sampler = torch.utils.data.SequentialSampler(dataset_test)
-    train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, args.batch_size, drop_last=True)
-
-    data_loader = torch.utils.data.DataLoader(
-        dataset, batch_sampler=train_batch_sampler, num_workers=args.workers,
-        pin_memory=True, collate_fn=utils.collate_fn)
-    data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=args.eval_batch_size or args.batch_size,
-        sampler=test_sampler, num_workers=args.workers,
-        pin_memory=True, collate_fn=utils.collate_fn)
-    mllogger.event(key=TRAIN_SAMPLES, value=len(data_loader))
-    mllogger.event(key=EVAL_SAMPLES, value=len(data_loader_test))
 
     print("Creating model")
     model = retinanet_from_backbone(backbone=args.backbone,
@@ -199,11 +182,12 @@ def main(args):
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=args.lr)
 
-    mllogger.event(key=OPT_NAME, value=ADAM)
-    mllogger.event(key=OPT_BASE_LR, value=args.lr)
-    mllogger.event(key=OPT_WEIGHT_DECAY, value=0)
-    mllogger.event(key=OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs)
-    mllogger.event(key=OPT_LR_WARMUP_FACTOR, value=args.warmup_factor)
+    mllogger.event(key=OPT_NAME, value=ADAM, ranks=0)
+    mllogger.event(key=OPT_BASE_LR, value=args.lr, ranks=0)
+    mllogger.event(key=OPT_WEIGHT_DECAY, value=0, ranks=0)
+    mllogger.event(key=OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs, ranks=0)
+    mllogger.event(key=OPT_LR_WARMUP_FACTOR, value=args.warmup_factor, ranks=0)
+    mllogger.event(key=GRADIENT_ACCUMULATION_STEPS, value=1, ranks=0)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -211,51 +195,76 @@ def main(args):
         optimizer.load_state_dict(checkpoint['optimizer'])
         args.start_epoch = checkpoint['epoch'] + 1
 
-    if args.test_only:
-        mllogger.start(key=EVAL_START, value=None)
-        evaluate(model, data_loader_test, device=device, args=args)
-        mllogger.end(key=EVAL_STOP, value=None)
-        return
-
     # GradScaler for AMP
     scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
-    mllogger.end(key=INIT_STOP)
+    mllogger.end(key=INIT_STOP, sync=True, ranks=0)
 
-    print("Start training")
     accuracy = 0
     status = ABORTED
     start_time = time.time()
-    mllogger.start(key=RUN_START)
-    for epoch in range(args.start_epoch, args.epochs):
-        mllogger.start(key=EPOCH_START, value=epoch)
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-        train_one_epoch(model, optimizer, scaler, data_loader, device, epoch, args)
-        if args.output_dir:
-            checkpoint = {
-                'model': model_without_ddp.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch,
-                'args': args,
-            }
-            utils.save_on_master(
-                checkpoint,
-                os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
-            utils.save_on_master(
-                checkpoint,
-                os.path.join(args.output_dir, 'checkpoint.pth'))
-        mllogger.end(key=EPOCH_STOP, value=epoch)
+    mllogger.start(key=RUN_START, sync=True, ranks=0)
 
-        # evaluate after every epoch
-        mllogger.start(key=EVAL_START, value=epoch)
+    # We can't touch data before RUN_START
+    print("Creating data loaders")
+    if args.distributed:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        test_sampler = torch.utils.data.distributed.DistributedSampler(dataset_test)
+    else:
+        train_sampler = torch.utils.data.RandomSampler(dataset)
+        test_sampler = torch.utils.data.SequentialSampler(dataset_test)
+    train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, args.batch_size, drop_last=True)
+
+    data_loader = torch.utils.data.DataLoader(
+        dataset, batch_sampler=train_batch_sampler, num_workers=args.workers,
+        pin_memory=True, collate_fn=utils.collate_fn)
+    data_loader_test = torch.utils.data.DataLoader(
+        dataset_test, batch_size=args.eval_batch_size or args.batch_size,
+        sampler=test_sampler, num_workers=args.workers,
+        pin_memory=True, collate_fn=utils.collate_fn)
+    mllogger.event(key=TRAIN_SAMPLES, value=len(data_loader), ranks=0)
+    mllogger.event(key=EVAL_SAMPLES, value=len(data_loader_test), ranks=0)
+
+    def eval_with_logs(model, data_loader, epoch_num, mllogger, device, args):
+        mllogger.start(key=EVAL_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
         coco_evaluator = evaluate(model, data_loader_test, device=device, args=args)
         accuracy = coco_evaluator.get_stats()['bbox'][0]
         mllogger.event(key=EVAL_ACCURACY, value=accuracy, metadata={"epoch_num": epoch}, clear_line=True)
-        mllogger.end(key=EVAL_STOP, value=epoch)
+        mllogger.end(key=EVAL_STOP, value=epoch, metadata={"epoch_num": epoch}, sync=True)
         if args.target_map and accuracy >= args.target_map:
-            status = SUCCESS
-            break
-    mllogger.end(key=RUN_STOP, metadata={"status": status})
+            return SUCCESS
+        return ABORTED
+
+    if args.test_only:
+        status = eval_with_logs(model, data_loader_test, epoch_num=0, mllogger=mllogger, device=device, args=args)
+
+    else:
+        for epoch in range(args.start_epoch, args.epochs):
+            mllogger.start(key=EPOCH_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
+            if args.distributed:
+                train_sampler.set_epoch(epoch)
+            train_one_epoch(model, optimizer, scaler, data_loader, device, epoch, args)
+            if args.output_dir:
+                checkpoint = {
+                    'model': model_without_ddp.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'epoch': epoch,
+                    'args': args,
+                }
+                utils.save_on_master(
+                    checkpoint,
+                    os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
+                utils.save_on_master(
+                    checkpoint,
+                    os.path.join(args.output_dir, 'checkpoint.pth'))
+            mllogger.end(key=EPOCH_STOP, value=epoch, metadata={"epoch_num": epoch}, sync=True)
+
+            # evaluate after every epoch
+            status = eval_with_logs(model, data_loader_test, epoch_num=0, mllogger=mllogger, device=device, args=args)
+
+            if status == SUCCESS:
+                break
+
+    mllogger.end(key=RUN_STOP, metadata={"status": status}, sync=True, ranks=0)
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))

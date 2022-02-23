@@ -288,6 +288,12 @@ def save_on_master(*args, **kwargs):
         torch.save(*args, **kwargs)
 
 
+def barrier():
+    if not is_dist_avail_and_initialized():
+        return
+    torch.distributed.barrier()
+
+
 def init_distributed_mode(args):
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])

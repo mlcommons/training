@@ -227,8 +227,4 @@ def get_openimages(name, root, image_set, transforms):
 
     dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
 
-    if image_set == "train":
-        dataset = _coco_remove_images_without_annotations(dataset)
-
     return dataset
-
