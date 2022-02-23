@@ -121,10 +121,10 @@ def main(args):
     mllogger = SSDLogger(rank=utils.get_rank())
 
     # Start MLPerf benchmark
-    mllogger.event(key=SUBMISSION_BENCHMARK, value=SSD, ranks=0)
-    mllogger.event(key=SUBMISSION_DIVISION, value=CLOSED, ranks=0)
-    mllogger.event(key=SUBMISSION_STATUS, value=ONPREM, ranks=0)
-    mllogger.start(key=INIT_START, sync=True, ranks=0)
+    mllogger.event(key=SUBMISSION_BENCHMARK, value=SSD)
+    mllogger.event(key=SUBMISSION_DIVISION, value=CLOSED)
+    mllogger.event(key=SUBMISSION_STATUS, value=ONPREM)
+    mllogger.start(key=INIT_START, sync=True)
 
     if args.output_dir:
         utils.mkdir(args.output_dir)
@@ -137,11 +137,11 @@ def main(args):
         args.seed = (args.seed + utils.get_rank()) % 2**32
     torch.manual_seed(args.seed)
     np.random.seed(seed=args.seed)
-    mllogger.event(key=SEED, value=args.seed)
+    mllogger.event(key=SEED, value=args.seed, log_rank=True)
 
     # Print args
-    mllogger.event(key='local_batch_size', value=args.batch_size, ranks=0)
-    mllogger.event(key=GLOBAL_BATCH_SIZE, value=args.batch_size*utils.get_world_size(), ranks=0)
+    mllogger.event(key='local_batch_size', value=args.batch_size)
+    mllogger.event(key=GLOBAL_BATCH_SIZE, value=args.batch_size*utils.get_world_size())
     mllogger.event(key=EPOCH_COUNT, value=args.epochs)
     mllogger.event(key=FIRST_EPOCH_NUM, value=args.start_epoch)
     print(args)
@@ -174,12 +174,12 @@ def main(args):
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(params, lr=args.lr)
 
-    mllogger.event(key=OPT_NAME, value=ADAM, ranks=0)
-    mllogger.event(key=OPT_BASE_LR, value=args.lr, ranks=0)
-    mllogger.event(key=OPT_WEIGHT_DECAY, value=0, ranks=0)
-    mllogger.event(key=OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs, ranks=0)
-    mllogger.event(key=OPT_LR_WARMUP_FACTOR, value=args.warmup_factor, ranks=0)
-    mllogger.event(key=GRADIENT_ACCUMULATION_STEPS, value=1, ranks=0)
+    mllogger.event(key=OPT_NAME, value=ADAM)
+    mllogger.event(key=OPT_BASE_LR, value=args.lr)
+    mllogger.event(key=OPT_WEIGHT_DECAY, value=0)
+    mllogger.event(key=OPT_LR_WARMUP_EPOCHS, value=args.warmup_epochs)
+    mllogger.event(key=OPT_LR_WARMUP_FACTOR, value=args.warmup_factor)
+    mllogger.event(key=GRADIENT_ACCUMULATION_STEPS, value=1)
 
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -189,12 +189,11 @@ def main(args):
 
     # GradScaler for AMP
     scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
-    mllogger.end(key=INIT_STOP, sync=True, ranks=0)
+    mllogger.end(key=INIT_STOP, sync=True)
 
-    accuracy = 0
     status = ABORTED
     start_time = time.time()
-    mllogger.start(key=RUN_START, sync=True, ranks=0)
+    mllogger.start(key=RUN_START, sync=True)
 
     # We can't touch data before RUN_START
     print("Creating data loaders")
@@ -222,8 +221,8 @@ def main(args):
         dataset_test, batch_size=args.eval_batch_size or args.batch_size,
         sampler=test_sampler, num_workers=args.workers,
         pin_memory=True, collate_fn=utils.collate_fn)
-    mllogger.event(key=TRAIN_SAMPLES, value=len(data_loader), ranks=0)
-    mllogger.event(key=EVAL_SAMPLES, value=len(data_loader_test), ranks=0)
+    mllogger.event(key=TRAIN_SAMPLES, value=len(data_loader))
+    mllogger.event(key=EVAL_SAMPLES, value=len(data_loader_test))
 
     def eval_with_logs(model, data_loader, epoch_num, mllogger, device, args):
         mllogger.start(key=EVAL_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
@@ -235,6 +234,7 @@ def main(args):
             return SUCCESS
         return ABORTED
 
+    print("Running ...")
     if args.test_only:
         status = eval_with_logs(model, data_loader_test, epoch_num=0, mllogger=mllogger, device=device, args=args)
 
@@ -265,11 +265,11 @@ def main(args):
             if status == SUCCESS:
                 break
 
-    mllogger.end(key=RUN_STOP, metadata={"status": status}, sync=True, ranks=0)
+    mllogger.end(key=RUN_STOP, metadata={"status": status}, sync=True)
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
-    mllogger.event(key=STATUS, value=status)
+    mllogger.event(key=STATUS, value=status, log_rank=True)
 
 
 if __name__ == "__main__":

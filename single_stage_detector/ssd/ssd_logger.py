@@ -13,26 +13,23 @@ class SSDLogger():
                      filename=(filename or os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
                      root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
 
-    def event(self, sync=False, ranks=None, *args, **kwargs):
-        ranks = self.rank if ranks is None else ranks
-        ranks = [ranks] if not isinstance(ranks, list) else ranks
+    def event(self, sync=False, log_rank=None, *args, **kwargs):
+        log_rank = self.rank==0 if log_rank is None else log_rank
         if sync:
             utils.barrier()
-        if self.rank in ranks:
-            self.mllogger.event(kwargs)
+        if log_rank:
+            self.mllogger.event(*args, **kwargs)
 
-    def start(self, sync=False, ranks=None, *args, **kwargs):
-        ranks = self.rank if ranks is None else ranks
-        ranks = [ranks] if not isinstance(ranks, list) else ranks
+    def start(self, sync=False, log_rank=None, *args, **kwargs):
+        log_rank = self.rank==0 if log_rank is None else log_rank
         if sync:
             utils.barrier()
-        if self.rank in ranks:
-            self.mllogger.start(kwargs)
+        if log_rank:
+            self.mllogger.start(*args, **kwargs)
 
-    def end(self, sync=False, ranks=None, *args, **kwargs):
-        ranks = self.rank if ranks is None else ranks
-        ranks = [ranks] if not isinstance(ranks, list) else ranks
+    def end(self, sync=False, log_rank=None, *args, **kwargs):
+        log_rank = self.rank==0 if log_rank is None else log_rank
         if sync:
             utils.barrier()
-        if self.rank in ranks:
-            self.mllogger.end(kwargs)
+        if log_rank:
+            self.mllogger.end(*args, **kwargs)
