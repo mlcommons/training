@@ -9,7 +9,7 @@ import torch
 import torch.utils.data
 import torchvision
 
-from ssd_logger import SSDLogger
+from ssd_logger import mllogger
 from mlperf_logging.mllog.constants import (SUBMISSION_BENCHMARK, SUBMISSION_DIVISION, SUBMISSION_STATUS,
     SSD, CLOSED, ONPREM, EVAL_ACCURACY, STATUS, SUCCESS, ABORTED,
     INIT_START, INIT_STOP, RUN_START, RUN_STOP, EPOCH_START, EPOCH_STOP, EVAL_START, EVAL_STOP,
@@ -116,9 +116,6 @@ def parse_args(add_help=True):
 def main(args):
     # Init distributed mode
     utils.init_distributed_mode(args)
-
-    # Setup MLPerf logger
-    mllogger = SSDLogger(rank=utils.get_rank())
 
     # Start MLPerf benchmark
     mllogger.event(key=SUBMISSION_BENCHMARK, value=SSD)

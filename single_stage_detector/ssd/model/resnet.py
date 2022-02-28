@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.hub import load_state_dict_from_url
 from typing import Type, Any, Callable, Union, List, Optional
 
+from ssd_logger import mllogger
+from mlperf_logging.mllog.constants import WEIGHTS_INITIALIZATION
 
 __all__ = ['resnet50', 'resnet101',
            'resnext50_32x4d', 'resnext101_32x8d']
@@ -147,6 +149,7 @@ class ResNet(nn.Module):
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None
+        module_name: Optional[str] = ""
     ) -> None:
         super(ResNet, self).__init__()
         if norm_layer is None:
@@ -179,21 +182,26 @@ class ResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
-        for m in self.modules():
+        for name, m in self.named_modules(prefix=module_name):
             if isinstance(m, nn.Conv2d):
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.weight"})
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.weight"})
                 nn.init.constant_(m.weight, 1)
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.bias"})
                 nn.init.constant_(m.bias, 0)
 
         # Zero-initialize the last BN in each residual branch,
         # so that the residual branch starts with zeros, and each residual block behaves like an identity.
         # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
         if zero_init_residual:
-            for m in self.modules():
+            for name, m in self.named_modules(prefix=module_name):
                 if isinstance(m, Bottleneck):
+                    mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.weight"})
                     nn.init.constant_(m.bn3.weight, 0)  # type: ignore[arg-type]
                 elif isinstance(m, BasicBlock):
+                    mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.weight"})
                     nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
 
     def _make_layer(self, block: Type[Union[BasicBlock, Bottleneck]], planes: int, blocks: int,
@@ -251,7 +259,7 @@ def _resnet(
     progress: bool,
     **kwargs: Any
 ) -> ResNet:
-    model = ResNet(block, layers, **kwargs)
+    model = ResNet(block, layers, module_name="module.backbone.body", **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)

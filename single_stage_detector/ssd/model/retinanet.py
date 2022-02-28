@@ -15,6 +15,9 @@ from model.focal_loss import sigmoid_focal_loss
 from model.boxes import box_iou, clip_boxes_to_image, batched_nms
 from model.utils import Matcher, overwrite_eps, BoxCoder
 
+from ssd_logger import mllogger
+from mlperf_logging.mllog.constants import WEIGHTS_INITIALIZATION
+
 __all__ = [
     "retinanet_from_backbone",
     "retinanet_resnet50_fpn",
@@ -43,8 +46,10 @@ class RetinaNetHead(nn.Module):
 
     def __init__(self, in_channels, num_anchors, num_classes):
         super().__init__()
-        self.classification_head = RetinaNetClassificationHead(in_channels, num_anchors, num_classes)
-        self.regression_head = RetinaNetRegressionHead(in_channels, num_anchors)
+        self.classification_head = RetinaNetClassificationHead(in_channels, num_anchors, num_classes,
+            module_name="module.head.classification_head")
+        self.regression_head = RetinaNetRegressionHead(in_channels, num_anchors,
+            module_name="module.head.regression_head")
 
     def compute_loss(self, targets, head_outputs, anchors, matched_idxs):
         # type: (List[Dict[str, Tensor]], Dict[str, Tensor], List[Tensor], List[Tensor]) -> Dict[str, Tensor]
@@ -71,7 +76,7 @@ class RetinaNetClassificationHead(nn.Module):
         num_classes (int): number of classes to be predicted
     """
 
-    def __init__(self, in_channels, num_anchors, num_classes, prior_probability=0.01):
+    def __init__(self, in_channels, num_anchors, num_classes, prior_probability=0.01, module_name=""):
         super().__init__()
 
         conv = []
@@ -80,13 +85,17 @@ class RetinaNetClassificationHead(nn.Module):
             conv.append(nn.ReLU())
         self.conv = nn.Sequential(*conv)
 
-        for layer in self.conv.children():
+        for name, layer in self.conv.named_children():
             if isinstance(layer, nn.Conv2d):
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.conv.{name}.weight"})
                 torch.nn.init.normal_(layer.weight, std=0.01)
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.conv.{name}.bias"})
                 torch.nn.init.constant_(layer.bias, 0)
 
         self.cls_logits = nn.Conv2d(in_channels, num_anchors * num_classes, kernel_size=3, stride=1, padding=1)
+        mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.cls_logits.weight"})
         torch.nn.init.normal_(self.cls_logits.weight, std=0.01)
+        mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.cls_logits.bias"})
         torch.nn.init.constant_(self.cls_logits.bias, -math.log((1 - prior_probability) / prior_probability))
 
         self.num_classes = num_classes
@@ -158,7 +167,7 @@ class RetinaNetRegressionHead(nn.Module):
         'box_coder': BoxCoder,
     }
 
-    def __init__(self, in_channels, num_anchors):
+    def __init__(self, in_channels, num_anchors, module_name=""):
         super().__init__()
 
         conv = []
@@ -168,12 +177,16 @@ class RetinaNetRegressionHead(nn.Module):
         self.conv = nn.Sequential(*conv)
 
         self.bbox_reg = nn.Conv2d(in_channels, num_anchors * 4, kernel_size=3, stride=1, padding=1)
+        mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.bbox_reg.weight"})
         torch.nn.init.normal_(self.bbox_reg.weight, std=0.01)
+        mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.bbox_reg.bias"})
         torch.nn.init.zeros_(self.bbox_reg.bias)
 
-        for layer in self.conv.children():
+        for name, layer in self.conv.named_children():
             if isinstance(layer, nn.Conv2d):
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.conv.{name}.weight"})
                 torch.nn.init.normal_(layer.weight, std=0.01)
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{module_name}.conv.{name}.bias"})
                 torch.nn.init.zeros_(layer.bias)
 
         self.box_coder = BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))
@@ -630,7 +643,8 @@ def retinanet_resnet50_fpn(num_classes, image_size, data_layout='channels_first'
         pretrained_backbone = False
     # skip P2 because it generates too many anchors (according to their paper)
     backbone = resnet_fpn_backbone('resnet50', pretrained_backbone, returned_layers=[2, 3, 4],
-                                   extra_blocks=LastLevelP6P7(256, 256), trainable_layers=trainable_backbone_layers)
+                                   extra_blocks=LastLevelP6P7(256, 256, module_name="module.backbone.fpn.extra_blocks"),
+                                   trainable_layers=trainable_backbone_layers)
     model = RetinaNet(backbone=backbone, num_classes=num_classes, data_layout=data_layout, image_size=image_size)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls['retinanet_resnet50_fpn_coco'],
@@ -699,7 +713,8 @@ def retinanet_resnext50_32x4d_fpn(num_classes, image_size, data_layout='channels
         pretrained_backbone = False
     # skip P2 because it generates too many anchors (according to their paper)
     backbone = resnet_fpn_backbone('resnext50_32x4d', pretrained_backbone, returned_layers=[2, 3, 4],
-                                   extra_blocks=LastLevelP6P7(256, 256), trainable_layers=trainable_backbone_layers)
+                                   extra_blocks=LastLevelP6P7(256, 256, module_name="module.backbone.fpn.extra_blocks"),
+                                   trainable_layers=trainable_backbone_layers)
     model = RetinaNet(backbone=backbone, num_classes=num_classes, data_layout=data_layout, image_size=image_size)
     if pretrained:
         raise ValueError("Torchvision doesn't have a pretrained retinanet_resnext50_32x4d_fpn model")
@@ -766,7 +781,8 @@ def retinanet_resnet101_fpn(num_classes, image_size, data_layout='channels_first
         pretrained_backbone = False
     # skip P2 because it generates too many anchors (according to their paper)
     backbone = resnet_fpn_backbone('resnet101', pretrained_backbone, returned_layers=[2, 3, 4],
-                                   extra_blocks=LastLevelP6P7(256, 256), trainable_layers=trainable_backbone_layers)
+                                   extra_blocks=LastLevelP6P7(256, 256, module_name="module.backbone.fpn.extra_blocks"),
+                                   trainable_layers=trainable_backbone_layers)
     model = RetinaNet(backbone=backbone, num_classes=num_classes, data_layout=data_layout, image_size=image_size)
     if pretrained:
         raise ValueError("Torchvision doesn't have a pretrained retinanet_resnet101_fpn model")
@@ -833,7 +849,8 @@ def retinanet_resnext101_32x8d_fpn(num_classes, image_size, data_layout='channel
         pretrained_backbone = False
     # skip P2 because it generates too many anchors (according to their paper)
     backbone = resnet_fpn_backbone('resnext101_32x8d', pretrained_backbone, returned_layers=[2, 3, 4],
-                                   extra_blocks=LastLevelP6P7(256, 256), trainable_layers=trainable_backbone_layers)
+                                   extra_blocks=LastLevelP6P7(256, 256, module_name="module.backbone.fpn.extra_blocks"),
+                                   trainable_layers=trainable_backbone_layers)
     model = RetinaNet(backbone=backbone, num_classes=num_classes, data_layout=data_layout, image_size=image_size)
     if pretrained:
         raise ValueError("Torchvision doesn't have a pretrained retinanet_resnext101_32x8d_fpn model")

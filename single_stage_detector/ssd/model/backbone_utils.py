@@ -26,7 +26,7 @@ class BackboneWithFPN(nn.Module):
     Attributes:
         out_channels (int): the number of channels in the FPN
     """
-    def __init__(self, backbone, return_layers, in_channels_list, out_channels, extra_blocks=None):
+    def __init__(self, backbone, return_layers, in_channels_list, out_channels, extra_blocks=None, module_name=""):
         super(BackboneWithFPN, self).__init__()
 
         if extra_blocks is None:
@@ -37,6 +37,7 @@ class BackboneWithFPN(nn.Module):
             in_channels_list=in_channels_list,
             out_channels=out_channels,
             extra_blocks=extra_blocks,
+            module_name="module.backbone.fpn",
         )
         self.out_channels = out_channels
 

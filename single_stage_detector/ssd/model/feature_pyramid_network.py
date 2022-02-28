@@ -5,6 +5,9 @@ from torch import nn, Tensor
 
 from typing import Tuple, List, Dict, Optional
 
+from ssd_logger import mllogger
+from mlperf_logging.mllog.constants import WEIGHTS_INITIALIZATION
+
 
 class ExtraFPNBlock(nn.Module):
     """
@@ -72,6 +75,7 @@ class FeaturePyramidNetwork(nn.Module):
         in_channels_list: List[int],
         out_channels: int,
         extra_blocks: Optional[ExtraFPNBlock] = None,
+        module_name: Optional[str] = "",
     ):
         super(FeaturePyramidNetwork, self).__init__()
         self.inner_blocks = nn.ModuleList()
@@ -85,9 +89,11 @@ class FeaturePyramidNetwork(nn.Module):
             self.layer_blocks.append(layer_block_module)
 
         # initialize parameters now to avoid modifying the initialization of top_blocks
-        for m in self.modules():
+        for name, m in self.named_modules(prefix=module_name):
             if isinstance(m, nn.Conv2d):
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.weight"})
                 nn.init.kaiming_uniform_(m.weight, a=1)
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.bias"})
                 nn.init.constant_(m.bias, 0)
 
         if extra_blocks is not None:
@@ -180,13 +186,16 @@ class LastLevelP6P7(ExtraFPNBlock):
     """
     This module is used in RetinaNet to generate extra layers, P6 and P7.
     """
-    def __init__(self, in_channels: int, out_channels: int):
+    def __init__(self, in_channels: int, out_channels: int, module_name: Optional[str]=""):
         super(LastLevelP6P7, self).__init__()
         self.p6 = nn.Conv2d(in_channels, out_channels, 3, 2, 1)
         self.p7 = nn.Conv2d(out_channels, out_channels, 3, 2, 1)
-        for module in [self.p6, self.p7]:
-            nn.init.kaiming_uniform_(module.weight, a=1)
-            nn.init.constant_(module.bias, 0)
+        for name, module in self.named_modules(prefix=module_name):
+            if module in [self.p6, self.p7]:
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.weight"})
+                nn.init.kaiming_uniform_(module.weight, a=1)
+                mllogger.event(key=WEIGHTS_INITIALIZATION, metadata={"tensor": f"{name}.bias"})
+                nn.init.constant_(module.bias, 0)
         self.use_P5 = in_channels == out_channels
 
     def forward(
