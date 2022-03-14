@@ -3,12 +3,16 @@ import sys
 import time
 import torch
 
+from ssd_logger import mllogger
+from mlperf_logging.mllog.constants import (EPOCH_START, EPOCH_STOP, EVAL_START, EVAL_STOP, EVAL_ACCURACY)
+
 from coco_utils import get_coco_api_from_dataset
 from coco_eval import CocoEvaluator
 import utils
 
 
 def train_one_epoch(model, optimizer, scaler, data_loader, device, epoch, args):
+    mllogger.start(key=EPOCH_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -53,11 +57,14 @@ def train_one_epoch(model, optimizer, scaler, data_loader, device, epoch, args):
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
+    mllogger.end(key=EPOCH_STOP, value=epoch, metadata={"epoch_num": epoch}, sync=True)
     return metric_logger
 
 
 @torch.no_grad()
-def evaluate(model, data_loader, device, args):
+def evaluate(model, data_loader, device, epoch, args):
+    mllogger.start(key=EVAL_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
+
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -96,5 +103,8 @@ def evaluate(model, data_loader, device, args):
     # accumulate predictions from all images
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
+    accuracy = coco_evaluator.get_stats()['bbox'][0]
     torch.set_num_threads(n_threads)
+    mllogger.event(key=EVAL_ACCURACY, value=accuracy, metadata={"epoch_num": epoch}, clear_line=True)
+    mllogger.end(key=EVAL_STOP, value=epoch, metadata={"epoch_num": epoch}, sync=True)
     return coco_evaluator

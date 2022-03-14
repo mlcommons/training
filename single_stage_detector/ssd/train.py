@@ -12,10 +12,9 @@ import torchvision
 from ssd_logger import mllogger
 from mlperf_logging.mllog.constants import (SUBMISSION_BENCHMARK, SUBMISSION_DIVISION, SUBMISSION_STATUS,
     SSD, CLOSED, ONPREM, EVAL_ACCURACY, STATUS, SUCCESS, ABORTED,
-    INIT_START, INIT_STOP, RUN_START, RUN_STOP, EPOCH_START, EPOCH_STOP, EVAL_START, EVAL_STOP,
-    SEED, GLOBAL_BATCH_SIZE, TRAIN_SAMPLES, EVAL_SAMPLES, EPOCH_COUNT, FIRST_EPOCH_NUM,
-    OPT_NAME, ADAM, OPT_BASE_LR, OPT_WEIGHT_DECAY, OPT_LR_WARMUP_EPOCHS, OPT_LR_WARMUP_FACTOR,
-    GRADIENT_ACCUMULATION_STEPS)
+    INIT_START, INIT_STOP, RUN_START, RUN_STOP, SEED, GLOBAL_BATCH_SIZE, TRAIN_SAMPLES,
+    EVAL_SAMPLES, EPOCH_COUNT, FIRST_EPOCH_NUM, OPT_NAME, ADAM, OPT_BASE_LR, OPT_WEIGHT_DECAY,
+    OPT_LR_WARMUP_EPOCHS, OPT_LR_WARMUP_FACTOR, GRADIENT_ACCUMULATION_STEPS)
 
 import utils
 import presets
@@ -221,23 +220,16 @@ def main(args):
     mllogger.event(key=TRAIN_SAMPLES, value=len(data_loader))
     mllogger.event(key=EVAL_SAMPLES, value=len(data_loader_test))
 
-    def eval_with_logs(model, data_loader, epoch_num, mllogger, device, args):
-        mllogger.start(key=EVAL_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
-        coco_evaluator = evaluate(model, data_loader_test, device=device, args=args)
-        accuracy = coco_evaluator.get_stats()['bbox'][0]
-        mllogger.event(key=EVAL_ACCURACY, value=accuracy, metadata={"epoch_num": epoch}, clear_line=True)
-        mllogger.end(key=EVAL_STOP, value=epoch, metadata={"epoch_num": epoch}, sync=True)
-        if args.target_map and accuracy >= args.target_map:
-            return SUCCESS
-        return ABORTED
-
     print("Running ...")
+    status = ABORTED
     if args.test_only:
-        status = eval_with_logs(model, data_loader_test, epoch_num=0, mllogger=mllogger, device=device, args=args)
-
+        coco_evaluator = evaluate(model, data_loader_test, device=device, epoch=None, args=args)
+        accuracy = coco_evaluator.get_stats()['bbox'][0]
+        print(f'Model mAP = {accuracy}')
+        if args.target_map and accuracy >= args.target_map:
+            status = SUCCESS
     else:
         for epoch in range(args.start_epoch, args.epochs):
-            mllogger.start(key=EPOCH_START, value=epoch, metadata={"epoch_num": epoch}, sync=True)
             if args.distributed:
                 train_sampler.set_epoch(epoch)
             train_one_epoch(model, optimizer, scaler, data_loader, device, epoch, args)
@@ -254,12 +246,12 @@ def main(args):
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
-            mllogger.end(key=EPOCH_STOP, value=epoch, metadata={"epoch_num": epoch}, sync=True)
 
             # evaluate after every epoch
-            status = eval_with_logs(model, data_loader_test, epoch_num=0, mllogger=mllogger, device=device, args=args)
-
-            if status == SUCCESS:
+            coco_evaluator = evaluate(model, data_loader_test, device=device, epoch=epoch, args=args)
+            accuracy = coco_evaluator.get_stats()['bbox'][0]
+            if args.target_map and accuracy >= args.target_map:
+                status = SUCCESS
                 break
 
     mllogger.end(key=RUN_STOP, metadata={"status": status}, sync=True)
