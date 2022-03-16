@@ -224,6 +224,7 @@ def main():
         type=str,
     )
     parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--disable_allreduce_for_logging", type=str, default=False)
     parser.add_argument(
         "opts",
         help="Modify config options using the command-line",

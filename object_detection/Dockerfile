@@ -4,7 +4,7 @@ RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selectio
 
 # install basics
 RUN apt-get update -y \
- && apt-get install -y apt-utils=1.6.12ubuntu0.2 \
+ && apt-get install -y apt-utils \
                        libglib2.0-0=2.56.1-2ubuntu1 \
                        libsm6=2:1.2.2-1 \
                        libxext6=2:1.3.3-1 \
@@ -67,3 +67,5 @@ RUN pip install --no-cache-dir https://github.com/mlperf/logging/archive/9ea0afa
 # wcwidth              0.1.7
 # wheel                0.32.3
 # yacs                 0.1.5
+
+ADD . /workspace/mlcommons_training

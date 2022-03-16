@@ -66,7 +66,7 @@ def train(cfg, local_rank, distributed):
     extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
     arguments.update(extra_checkpoint_data)
 
-    data_loader = make_data_loader(
+    data_loader, _ = make_data_loader(
         cfg,
         is_train=True,
         is_distributed=distributed,
@@ -74,6 +74,7 @@ def train(cfg, local_rank, distributed):
     )
 
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
+    arguments["save_checkpoints"] = cfg.SAVE_CHECKPOINTS
 
     do_train(
         model,
