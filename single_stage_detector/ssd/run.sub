@@ -1,14 +1,19 @@
 #!/bin/bash
-#SBATCH -p mlperf		# partition
-#SBATCH -N 1       		# number of nodes
-#SBATCH -t 12:00:00		# wall time
-#SBATCH -J single_stage_detector	# job name
-#SBATCH --exclusive   		# exclusive node access
-#SBATCH --mem=0   		# all mem avail
-#SBATCH --mail-type=FAIL        # only send email on failure
-#SBATCH --ntasks-per-node=8	# n tasks per machine (one task per gpu)
-#SBATCH --threads-per-core=2	# HT is on
-#SBATCH --cores-per-socket=20	# 20 cores on each socket 
+#SBATCH --job-name single_stage_detector
+
+# Copyright (c) 2021-2021, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 DATESTAMP=${DATESTAMP:-`date +'%y%m%d%H%M%S%N'`}
 
@@ -16,22 +21,12 @@ DATESTAMP=${DATESTAMP:-`date +'%y%m%d%H%M%S%N'`}
 BENCHMARK=${BENCHMARK:-"single_stage_detector"}
 BENCHMARK_NAME="ssd"
 CONT=${CONT:-"mlperf-nvidia:$BENCHMARK"}
-DATADIR=${DATADIR:-"/raid/data/coco-2017"} # there should be ./coco2017 and ./torchvision dirs in here
+DATADIR=${DATADIR:-"/raid/datasets"} # there should be an ./open-images-v6-mlperf dir in here
 LOGDIR=${LOGDIR:-"/raid/results/$BENCHMARK"}
 NEXP=${NEXP:-5} # Default number of times to run the benchmark
 
 ## DO NOT CHANGE ANYTHING BELOW -- DL params are in run_and_time.sh and config_<system>.sh files 
 
-## Load system-specific parameters for benchmark
-DGXSYSTEM=${DGXSYSTEM:-"DGX1"}
-if [[ ! -f "config_${DGXSYSTEM}.sh" ]]; then
-  echo "Unknown system, assuming DGX1"
-  DGXSYSTEM="DGX1"
-fi
-source config_${DGXSYSTEM}.sh
-echo  "config_${DGXSYSTEM}.sh"
-echo ${EXTRA_PARAMS[@]}
-cat config_${DGXSYSTEM}.sh
 
 IBDEVICES=${IBDEVICES:-$DGXIBDEVICES}
 
@@ -53,8 +48,7 @@ mkdir -p $(dirname "${LOGFILE_BASE}")
 
 ## Docker params
 CONTVOLS="-v $DATADIR:/data -v $LOGDIR:/results"
-NV_GPU="${NVIDIA_VISIBLE_DEVICES:-$(seq 0 $((${SLURM_NTASKS_PER_NODE:-${DGXNGPU}}-1)) | tr '\n' ',' | sed 's/,$//')}"
-DOCKEREXEC="env NV_GPU=${NV_GPU} nvidia-docker run --rm --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1 --name=cont_${SLURM_JOB_ID} --security-opt seccomp=unconfined $IBDEVICES"
+DOCKEREXEC="docker run --rm --gpus=all --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1 --name=cont_${SLURM_JOB_ID} --security-opt seccomp=unconfined $IBDEVICES"
 
 ## Prep run and launch
 MASTER_IP=`getent hosts \`hostname\` | cut -d ' ' -f1`
