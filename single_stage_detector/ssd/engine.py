@@ -7,7 +7,7 @@ from ssd_logger import mllogger
 from mlperf_logging.mllog.constants import (EPOCH_START, EPOCH_STOP, EVAL_START, EVAL_STOP, EVAL_ACCURACY)
 
 from coco_utils import get_coco_api_from_dataset
-from coco_eval import CocoEvaluator
+from coco_eval import DefaultCocoEvaluator
 import utils
 
 
@@ -75,7 +75,7 @@ def evaluate(model, data_loader, device, epoch, args):
 
     coco = get_coco_api_from_dataset(data_loader.dataset)
     iou_types = ["bbox"]
-    coco_evaluator = CocoEvaluator(coco, iou_types)
+    coco_evaluator = DefaultCocoEvaluator(coco, iou_types)
 
     for images, targets in metric_logger.log_every(data_loader, args.eval_print_freq, header):
         images = list(img.to(device) for img in images)
