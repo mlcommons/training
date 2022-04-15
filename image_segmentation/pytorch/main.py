@@ -1,4 +1,6 @@
 import os
+import torch
+
 from math import ceil
 from mlperf_logging import mllog
 from mlperf_logging.mllog import constants
@@ -19,21 +21,28 @@ from runtime.callbacks import get_callbacks
 DATASET_SIZE = 168
 
 
-def main():
+def main(rank, world_size):
     mllog.config(filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unet3d.log'))
     mllog.config(filename=os.path.join("/results", 'unet3d.log'))
     mllogger = mllog.get_mllogger()
     mllogger.logger.propagate = False
     mllog_start(key=constants.INIT_START)
 
+    local_rank = rank
     flags = PARSER.parse_args()
     dllogger = get_dllogger(flags)
-    local_rank = flags.local_rank
-    device = get_device(local_rank)
-    is_distributed = init_distributed()
-    world_size = get_world_size()
-    local_rank = get_rank()
-    worker_seeds, shuffling_seeds = setup_seeds(flags.seed, flags.epochs, device)
+    # local_rank = flags.local_rank
+    # device = get_device(local_rank)
+    device = rank
+    torch.cuda.set_device(rank)
+
+    # is_distributed = init_distributed()
+    # world_size = get_world_size()
+    # local_rank = get_rank()
+    # local_rank = rank
+    is_distributed = init_distributed(rank=local_rank, world_size=world_size)
+
+    worker_seeds, shuffling_seeds = setup_seeds(flags.seed, rank, world_size, flags.epochs, device)
     worker_seed = worker_seeds[local_rank]
     seed_everything(worker_seed)
     mllog_event(key=constants.SEED, value=flags.seed if flags.seed != -1 else worker_seed, sync=False)
@@ -62,8 +71,8 @@ def main():
                          include_background=flags.include_background)
 
     if flags.exec_mode == 'train':
-        train(flags, model, train_dataloader, val_dataloader, loss_fn, score_fn,
-              device=device, callbacks=callbacks, is_distributed=is_distributed)
+        train(flags, model, rank, world_size, train_dataloader, val_dataloader, loss_fn,
+              score_fn, device=device, callbacks=callbacks, is_distributed=is_distributed)
 
     elif flags.exec_mode == 'evaluate':
         eval_metrics = evaluate(flags, model, val_dataloader, loss_fn, score_fn,
@@ -75,6 +84,11 @@ def main():
         print("Invalid exec_mode.")
         pass
 
+    torch.distributed.destroy_process_group()
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+    import torch.multiprocessing as mp
+
+    world_size = get_world_size()
+    mp.spawn(main, args=[world_size], nprocs=world_size)

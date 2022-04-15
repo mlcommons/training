@@ -17,7 +17,8 @@ def get_optimizer(params, flags):
                     weight_decay=flags.weight_decay)
     elif flags.optimizer == "lamb":
         import apex
-        optim = apex.optimizers.FusedLAMB(params, lr=flags.learning_rate, betas=flags.lamb_betas,
+
+        optim = apex.optimizers.FusedLAMB(params, lr=flags.learning_rate, betas=flags.lamb_betas, 
                                           weight_decay=flags.weight_decay)
     else:
         raise ValueError("Optimizer {} unknown.".format(flags.optimizer))
@@ -27,12 +28,10 @@ def get_optimizer(params, flags):
 def lr_warmup(optimizer, init_lr, lr, current_epoch, warmup_epochs):
     scale = current_epoch / warmup_epochs
     for param_group in optimizer.param_groups:
-        param_group['lr'] = init_lr + (lr - init_lr) * scale
+        param_group["lr"] = init_lr + (lr - init_lr) * scale
 
 
-def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
-    rank = get_rank()
-    world_size = get_world_size()
+def train(flags, model, rank, world_size, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
     torch.backends.cudnn.benchmark = flags.cudnn_benchmark
     torch.backends.cudnn.deterministic = flags.cudnn_deterministic
 
@@ -47,8 +46,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
     loss_fn.to(device)
     if is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(model,
-                                                          device_ids=[flags.local_rank],
-                                                          output_device=flags.local_rank)
+                                                          device_ids=[rank],
+                                                          output_device=rank)
 
     is_successful = False
     diverged = False
@@ -58,6 +57,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         callback.on_fit_start()
     for epoch in range(1, flags.epochs + 1):
         cumulative_loss = []
+        train_loader.sampler.set_epoch(epoch)
         if epoch <= flags.lr_warmup_epochs and flags.lr_warmup_epochs > 0:
             lr_warmup(optimizer, flags.init_learning_rate, flags.learning_rate, epoch, flags.lr_warmup_epochs)
         mllog_start(key=CONSTANTS.BLOCK_START, sync=False,
@@ -97,8 +97,10 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             loss_value = reduce_tensor(loss_value, world_size).detach().cpu().numpy()
             cumulative_loss.append(loss_value)
 
-        mllog_end(key=CONSTANTS.EPOCH_STOP, sync=False,
-                  metadata={CONSTANTS.EPOCH_NUM: epoch, 'current_lr': optimizer.param_groups[0]['lr']})
+        mllog_end(key=CONSTANTS.EPOCH_STOP, 
+                  sync=False, 
+                  metadata={CONSTANTS.EPOCH_NUM: epoch, "current_lr": optimizer.param_groups[0]["lr"]},
+        )
 
         if flags.lr_decay_epochs:
             scheduler.step()
@@ -111,9 +113,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, epoch)
             eval_metrics["train_loss"] = sum(cumulative_loss) / len(cumulative_loss)
 
-            mllog_event(key=CONSTANTS.EVAL_ACCURACY,
-                        value=eval_metrics["mean_dice"],
-                        metadata={CONSTANTS.EPOCH_NUM: epoch},
+            mllog_event(key=CONSTANTS.EVAL_ACCURACY, 
+                        value=eval_metrics["mean_dice"], 
+                        metadata={CONSTANTS.EPOCH_NUM: epoch}, 
                         sync=False)
             mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 
