@@ -5,6 +5,8 @@ set -e
 # to use the script:
 #   run_and_time.sh <random seed 1-5>
 
+export WORLD_SIZE=8
+
 SEED=${1:--1}
 
 MAX_EPOCHS=4000
