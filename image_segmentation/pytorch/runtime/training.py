@@ -31,7 +31,9 @@ def lr_warmup(optimizer, init_lr, lr, current_epoch, warmup_epochs):
         param_group["lr"] = init_lr + (lr - init_lr) * scale
 
 
-def train(flags, model, rank, world_size, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
+def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
+    rank = get_rank()
+    world_size = get_world_size()
     torch.backends.cudnn.benchmark = flags.cudnn_benchmark
     torch.backends.cudnn.deterministic = flags.cudnn_deterministic
 

@@ -22,7 +22,7 @@ from runtime.callbacks import get_callbacks
 DATASET_SIZE = 168
 
 
-def main(rank, world_size):
+def main(local_rank, world_size):
     mllog.config(filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unet3d.log'))
     mllog.config(filename=os.path.join("/results", 'unet3d.log'))
     mllogger = mllog.get_mllogger()
@@ -31,22 +31,16 @@ def main(rank, world_size):
 
     flags = PARSER.parse_args()
     dllogger = get_dllogger(flags)
-    local_rank = rank
-    # local_rank = flags.local_rank
-    device = get_device(local_rank)
-    print(device)
-    # device = rank
-    torch.cuda.set_device(rank)
-
-    # is_distributed = init_distributed()
-    # world_size = get_world_size()
-    # local_rank = get_rank()
-    # local_rank = rank
 
     if flags.singlenode_multigpu:
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "12355"
         flags.num_workers = 0
+    else:
+        local_rank = flags.local_rank
+
+    device = get_device(local_rank)
+    torch.cuda.set_device(local_rank)
 
     is_distributed = init_distributed(rank=local_rank, world_size=world_size)
 
@@ -79,8 +73,8 @@ def main(rank, world_size):
                          include_background=flags.include_background)
 
     if flags.exec_mode == 'train':
-        train(flags, model, rank, world_size, train_dataloader, val_dataloader, loss_fn,
-              score_fn, device=device, callbacks=callbacks, is_distributed=is_distributed)
+        train(flags, model, train_dataloader, val_dataloader, loss_fn, score_fn, 
+              device=device, callbacks=callbacks, is_distributed=is_distributed)
 
     elif flags.exec_mode == 'evaluate':
         eval_metrics = evaluate(flags, model, val_dataloader, loss_fn, score_fn,
