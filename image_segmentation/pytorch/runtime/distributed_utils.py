@@ -9,7 +9,7 @@ import numpy as np
 def get_device(local_rank):
     if torch.cuda.is_available():
         # torch.cuda.set_device(local_rank)
-        print(torch.cuda.device_count())
+        print(f"Device count: {torch.cuda.device_count()}")
         torch.cuda.set_device(local_rank % torch.cuda.device_count())
         device = torch.device("cuda")
     else:

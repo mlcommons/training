@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.multiprocessing as mp
 
 from math import ceil
 from mlperf_logging import mllog
@@ -28,18 +29,24 @@ def main(rank, world_size):
     mllogger.logger.propagate = False
     mllog_start(key=constants.INIT_START)
 
-    local_rank = rank
     flags = PARSER.parse_args()
     dllogger = get_dllogger(flags)
+    local_rank = rank
     # local_rank = flags.local_rank
-    # device = get_device(local_rank)
-    device = rank
+    device = get_device(local_rank)
+    # device = rank
     torch.cuda.set_device(rank)
 
     # is_distributed = init_distributed()
     # world_size = get_world_size()
     # local_rank = get_rank()
     # local_rank = rank
+
+    if flags.singlenode_multigpu:
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12355"
+        flags.num_workers = 0
+        
     is_distributed = init_distributed(rank=local_rank, world_size=world_size)
 
     worker_seeds, shuffling_seeds = setup_seeds(flags.seed, rank, world_size, flags.epochs, device)
@@ -88,7 +95,7 @@ def main(rank, world_size):
 
 
 if __name__ == "__main__":
-    import torch.multiprocessing as mp
+    
 
     world_size = get_world_size()
     mp.spawn(main, args=[world_size], nprocs=world_size)

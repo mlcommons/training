@@ -16,7 +16,7 @@ LR_WARMUP_EPOCHS=200
 DATASET_DIR="/data"
 BATCH_SIZE=2
 GRADIENT_ACCUMULATION_STEPS=1
-
+SAVE_CKPT_PATH="/ckpts"
 
 if [ -d ${DATASET_DIR} ]
 then
@@ -41,7 +41,9 @@ mllog_event(key=constants.CACHE_CLEAR, value=True)"
     --ga_steps ${GRADIENT_ACCUMULATION_STEPS} \
     --learning_rate ${LEARNING_RATE} \
     --seed ${SEED} \
-    --lr_warmup_epochs ${LR_WARMUP_EPOCHS}
+    --lr_warmup_epochs ${LR_WARMUP_EPOCHS} \
+    --save_ckpt_path ${SAVE_CKPT_PATH} \
+    --singlenode_multigpu "True"
 
 	# end timing
 	end=$(date +%s)

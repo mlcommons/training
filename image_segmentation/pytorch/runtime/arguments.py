@@ -9,6 +9,7 @@ PARSER.add_argument('--save_ckpt_path', dest='save_ckpt_path', type=str, default
 PARSER.add_argument('--load_ckpt_path', dest='load_ckpt_path', type=str, default="")
 PARSER.add_argument('--loader', dest='loader', default="pytorch", type=str)
 PARSER.add_argument("--local_rank", default=os.environ.get("LOCAL_RANK", 0), type=int)
+PARSER.add_argument("--singlenode_multigpu", default=False, type=bool)
 
 PARSER.add_argument('--epochs', dest='epochs', type=int, default=1)
 PARSER.add_argument('--quality_threshold', dest='quality_threshold', type=float, default=0.908)
