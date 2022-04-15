@@ -34,6 +34,7 @@ def main(rank, world_size):
     local_rank = rank
     # local_rank = flags.local_rank
     device = get_device(local_rank)
+    print(device)
     # device = rank
     torch.cuda.set_device(rank)
 
@@ -46,10 +47,10 @@ def main(rank, world_size):
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "12355"
         flags.num_workers = 0
-        
+
     is_distributed = init_distributed(rank=local_rank, world_size=world_size)
 
-    worker_seeds, shuffling_seeds = setup_seeds(flags.seed, rank, world_size, flags.epochs, device)
+    worker_seeds, shuffling_seeds = setup_seeds(flags.seed, world_size, flags.epochs, device)
     worker_seed = worker_seeds[local_rank]
     seed_everything(worker_seed)
     mllog_event(key=constants.SEED, value=flags.seed if flags.seed != -1 else worker_seed, sync=False)
@@ -95,7 +96,5 @@ def main(rank, world_size):
 
 
 if __name__ == "__main__":
-    
-
     world_size = get_world_size()
     mp.spawn(main, args=[world_size], nprocs=world_size)

@@ -8,8 +8,6 @@ import numpy as np
 
 def get_device(local_rank):
     if torch.cuda.is_available():
-        # torch.cuda.set_device(local_rank)
-        print(f"Device count: {torch.cuda.device_count()}")
         torch.cuda.set_device(local_rank % torch.cuda.device_count())
         device = torch.device("cuda")
     else:
@@ -109,13 +107,8 @@ def reduce_tensor(tensor, num_gpus):
 
 
 def init_distributed(rank, world_size):
-
-    # world_size = int(os.environ.get('WORLD_SIZE', 1))
-
     distributed = world_size > 1
     if distributed:
-        os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = "12355"
         backend = 'nccl' if torch.cuda.is_available() else 'gloo'
 
         dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
