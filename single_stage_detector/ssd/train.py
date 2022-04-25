@@ -81,7 +81,7 @@ def parse_args(add_help=True):
                         help='images per gpu, the total batch size is $NGPU x batch_size')
     parser.add_argument('-e', '--eval-batch-size', default=None, type=int,
                         help='evaluation images per gpu, the total batch size is $NGPU x batch_size')
-    parser.add_argument('--lr', default=0.02, type=float,
+    parser.add_argument('--lr', default=0.0001, type=float,
                         help='initial learning rate, 0.02 is the default value for training '
                              'on 8 gpus and 2 images_per_gpu')
     parser.add_argument('--warmup-epochs', default=1, type=int,
