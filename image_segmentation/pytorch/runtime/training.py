@@ -17,7 +17,6 @@ def get_optimizer(params, flags):
                     weight_decay=flags.weight_decay)
     elif flags.optimizer == "lamb":
         import apex
-
         optim = apex.optimizers.FusedLAMB(params, lr=flags.learning_rate, betas=flags.lamb_betas, 
                                           weight_decay=flags.weight_decay)
     else:
@@ -28,7 +27,7 @@ def get_optimizer(params, flags):
 def lr_warmup(optimizer, init_lr, lr, current_epoch, warmup_epochs):
     scale = current_epoch / warmup_epochs
     for param_group in optimizer.param_groups:
-        param_group["lr"] = init_lr + (lr - init_lr) * scale
+        param_group['lr'] = init_lr + (lr - init_lr) * scale
 
 
 def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
@@ -99,8 +98,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             loss_value = reduce_tensor(loss_value, world_size).detach().cpu().numpy()
             cumulative_loss.append(loss_value)
 
-        mllog_end(key=CONSTANTS.EPOCH_STOP, 
-                  sync=False, 
+        mllog_end(key=CONSTANTS.EPOCH_STOP, sync=False, 
                   metadata={CONSTANTS.EPOCH_NUM: epoch, "current_lr": optimizer.param_groups[0]["lr"]},
         )
 
@@ -115,9 +113,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, epoch)
             eval_metrics["train_loss"] = sum(cumulative_loss) / len(cumulative_loss)
 
-            mllog_event(key=CONSTANTS.EVAL_ACCURACY, 
-                        value=eval_metrics["mean_dice"], 
-                        metadata={CONSTANTS.EPOCH_NUM: epoch}, 
+            mllog_event(key=CONSTANTS.EVAL_ACCURACY,
+                        value=eval_metrics["mean_dice"],
+                        metadata={CONSTANTS.EPOCH_NUM: epoch},
                         sync=False)
             mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 

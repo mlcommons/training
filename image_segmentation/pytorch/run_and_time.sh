@@ -5,9 +5,9 @@ set -e
 # to use the script:
 #   run_and_time.sh <random seed 1-5>
 
-export WORLD_SIZE=8
 
 SEED=${1:--1}
+export WORLD_SIZE=${2:-1}
 
 MAX_EPOCHS=4000
 QUALITY_THRESHOLD="0.908"
@@ -18,7 +18,6 @@ LR_WARMUP_EPOCHS=200
 DATASET_DIR="/data"
 BATCH_SIZE=2
 GRADIENT_ACCUMULATION_STEPS=1
-SAVE_CKPT_PATH="/ckpts"
 
 if [ -d ${DATASET_DIR} ]
 then
@@ -44,7 +43,6 @@ mllog_event(key=constants.CACHE_CLEAR, value=True)"
     --learning_rate ${LEARNING_RATE} \
     --seed ${SEED} \
     --lr_warmup_epochs ${LR_WARMUP_EPOCHS} \
-    --save_ckpt_path ${SAVE_CKPT_PATH} \
     --singlenode_multigpu "True"
 
 	# end timing

@@ -40,10 +40,7 @@ def main(local_rank, world_size):
         local_rank = flags.local_rank
 
     device = get_device(local_rank)
-    torch.cuda.set_device(local_rank)
-
-    is_distributed = init_distributed(rank=local_rank, world_size=world_size)
-
+    is_distributed = init_distributed(local_rank, world_size, flags)
     worker_seeds, shuffling_seeds = setup_seeds(flags.seed, world_size, flags.epochs, device)
     worker_seed = worker_seeds[local_rank]
     seed_everything(worker_seed)
