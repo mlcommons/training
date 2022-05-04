@@ -97,7 +97,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             loss_value = reduce_tensor(loss_value, world_size).detach().cpu().numpy()
             cumulative_loss.append(loss_value)
 
-        mllog_end(key=CONSTANTS.EPOCH_STOP, sync=False, 
+        mllog_end(key=CONSTANTS.EPOCH_STOP, sync=False,
                   metadata={CONSTANTS.EPOCH_NUM: epoch, 'current_lr': optimizer.param_groups[0]['lr']})
 
         if flags.lr_decay_epochs:
