@@ -70,7 +70,7 @@ def main(local_rank, world_size):
                          include_background=flags.include_background)
 
     if flags.exec_mode == 'train':
-        train(flags, model, train_dataloader, val_dataloader, loss_fn, score_fn, 
+        train(flags, model, train_dataloader, val_dataloader, loss_fn, score_fn,
               device=device, callbacks=callbacks, is_distributed=is_distributed)
 
     elif flags.exec_mode == 'evaluate':
@@ -82,8 +82,9 @@ def main(local_rank, world_size):
     else:
         print("Invalid exec_mode.")
         pass
-
-    torch.distributed.destroy_process_group()
+    
+    if flags.singlenode_multigpu:
+        torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":

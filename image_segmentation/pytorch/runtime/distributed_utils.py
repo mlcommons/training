@@ -109,17 +109,17 @@ def reduce_tensor(tensor, num_gpus):
 def init_distributed(rank, world_size, flags):
     distributed = world_size > 1
     if distributed:
-        backend = 'nccl' if torch.cuda.is_available() else 'gloo'
         if flags.singlenode_multigpu:
-            dist.init_process_group(backend=backend, rank=rank, 
+            dist.init_process_group(backend='nccl', rank=rank,
                                     world_size=world_size)
         else:
+            backend = 'nccl' if torch.cuda.is_available() else 'gloo'
             dist.init_process_group(backend=backend,
-                                    init_method='env://')   
+                                    init_method='env://')
         assert dist.is_initialized()
 
     if rank == 0:
-        print("Distributed initialized. World size: ", world_size)
+        print("Distributed initialized. World size:", world_size)
     return distributed
 
 

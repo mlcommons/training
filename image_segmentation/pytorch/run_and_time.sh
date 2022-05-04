@@ -5,7 +5,6 @@ set -e
 # to use the script:
 #   run_and_time.sh <random seed 1-5>
 
-
 SEED=${1:--1}
 export WORLD_SIZE=${2:-1}
 
@@ -18,6 +17,7 @@ LR_WARMUP_EPOCHS=200
 DATASET_DIR="/data"
 BATCH_SIZE=2
 GRADIENT_ACCUMULATION_STEPS=1
+
 
 if [ -d ${DATASET_DIR} ]
 then
@@ -42,8 +42,8 @@ mllog_event(key=constants.CACHE_CLEAR, value=True)"
     --ga_steps ${GRADIENT_ACCUMULATION_STEPS} \
     --learning_rate ${LEARNING_RATE} \
     --seed ${SEED} \
-    --lr_warmup_epochs ${LR_WARMUP_EPOCHS} \
-    --singlenode_multigpu "True"
+    --singlenode_multigpu "True" \
+    --lr_warmup_epochs ${LR_WARMUP_EPOCHS}
 
 	# end timing
 	end=$(date +%s)
