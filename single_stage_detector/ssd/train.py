@@ -69,7 +69,7 @@ def parse_args(add_help=True):
     # Train parameters
     parser.add_argument('--epochs', default=26, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('--start-epoch', default=0, type=int, help='start epoch')
+    parser.add_argument('--start-epoch', default=1, type=int, help='start epoch')
     parser.add_argument('--output-dir', default=None, help='path where to save checkpoints.')
     parser.add_argument('--target-map', default=0.34, type=float, help='Stop training when target mAP is reached')
     parser.add_argument('--resume', default='', help='resume from checkpoint')
