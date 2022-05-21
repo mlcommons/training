@@ -4,10 +4,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import collections
 import os
 import absl
 import modeling
 import optimization
+import mlp_logging as mllog
+from mlperf_logging.mllog import constants as mllog_constants
+
 import tensorflow.compat.v1 as tf
 # from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
 # from tensorflow.contrib import data as contrib_data
@@ -104,9 +108,14 @@ flags.DEFINE_integer(
     "Only used if `use_tpu` is True. Total number of TPU cores to use.")
 
 flags.DEFINE_integer(
-            "num_gpus", 0,
-                "Use the GPU backend if this value is set to more than zero.")
+    "num_gpus", 0,
+    "Use the GPU backend if this value is set to more than zero.")
 
+flags.DEFINE_integer("steps_per_update", 1,
+                     "The number of steps for accumulating gradients.")
+
+flags.DEFINE_integer("keep_checkpoint_max", 5,
+                     "The maximum number of checkpoints to keep.")
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
@@ -157,6 +166,13 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     if init_checkpoint:
       (assignment_map, initialized_variable_names
       ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+
+      tvar_index = {var.name.replace(":0", ""): var for var in tvars}
+      assignment_map = collections.OrderedDict([
+          (name, tvar_index.get(name, value))
+          for name, value in assignment_map.items()
+      ])
+
       if use_tpu:
 
         def tpu_scaffold():
@@ -179,10 +195,10 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     if mode == tf.estimator.ModeKeys.TRAIN:
       train_op = optimization.create_optimizer(
           total_loss, learning_rate, num_train_steps, num_warmup_steps,
-          use_tpu, optimizer, poly_power, start_warmup_step)
+          use_tpu, optimizer, poly_power, start_warmup_step, FLAGS.steps_per_update)
 
       if use_tpu:
-        output_spec = contrib_tpu.TPUEstimatorSpec(
+        output_spec = tf.estimator.tpu.TPUEstimatorSpec(
             mode=mode,
             loss=total_loss,
             train_op=train_op,
@@ -235,19 +251,19 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           next_sentence_log_probs, next_sentence_labels
       ])
       if use_tpu:
-          output_spec = contrib_tpu.TPUEstimatorSpec(
-              mode=mode,
-              loss=total_loss,
-              eval_metrics=eval_metrics,
-              scaffold_fn=scaffold_fn)
+        output_spec = tf.estimator.tpu.TPUEstimatorSpec(
+            mode=mode,
+            loss=total_loss,
+            eval_metrics=eval_metrics,
+            scaffold_fn=scaffold_fn)
       else:
-          output_spec = tf.estimator.EstimatorSpec(
-              mode=mode,
-              loss=total_loss,
-              eval_metric_ops=metric_fn(
-                masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
-                masked_lm_weights, next_sentence_example_loss,
-                next_sentence_log_probs, next_sentence_labels))
+        output_spec = tf.estimator.EstimatorSpec(
+            mode=mode,
+            loss=total_loss,
+            eval_metric_ops=metric_fn(
+              masked_lm_example_loss, masked_lm_log_probs, masked_lm_ids,
+              masked_lm_weights, next_sentence_example_loss,
+              next_sentence_log_probs, next_sentence_labels))
 
     else:
       raise ValueError("Only TRAIN and EVAL modes are supported: %s" % (mode))
@@ -382,7 +398,6 @@ def input_fn_builder(input_files,
             input_context.input_pipeline_id, input_context.num_input_pipelines))
         d = d.shard(input_context.num_input_pipelines,
                     input_context.input_pipeline_id)
-      d = d.repeat()
       d = d.shuffle(buffer_size=len(input_files))
 
       # `cycle_length` is the number of parallel files that get read.
@@ -395,7 +410,8 @@ def input_fn_builder(input_files,
               tf.data.TFRecordDataset,
               sloppy=is_training,
               cycle_length=cycle_length))
-      d = d.shuffle(buffer_size=100)
+      d = d.shuffle(buffer_size=1000)
+      d = d.repeat()
     else:
       d = tf.data.TFRecordDataset(input_files)
       d = d.take(batch_size * num_eval_steps)
@@ -433,11 +449,38 @@ def _decode_record(record, name_to_features):
   return example
 
 
+class CheckpointHook(tf.train.CheckpointSaverHook):
+  """Add MLPerf logging to checkpoint saving."""
+
+  def __init__(self, num_train_steps, *args, **kwargs):
+    super(CheckpointHook, self).__init__(*args, **kwargs)
+    self.num_train_steps = num_train_steps
+    self.previous_step = None
+
+  def _save(self, session, step):
+    if self.previous_step:
+      mllog.mllog_end(key=mllog_constants.BLOCK_STOP,
+                      metadata={"first_step_num": self.previous_step + 1,
+                          "step_count": step - self.previous_step})
+    self.previous_step = step
+    mllog.mllog_start(key="checkpoint_start", metadata={"step_num" : step}) 
+    return_value = super(CheckpointHook, self)._save(session, step)
+    mllog.mllog_end(key="checkpoint_stop", metadata={"step_num" : step})
+    if step < self.num_train_steps:
+        mllog.mllog_start(key=mllog_constants.BLOCK_START,
+                          metadata={"first_step_num": step + 1})
+    return return_value
+
+
 def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
   if not FLAGS.do_train and not FLAGS.do_eval:
     raise ValueError("At least one of `do_train` or `do_eval` must be True.")
+
+  mlperf_logger = mllog.get_mlperf_logger('', 'bert.log')
+  if FLAGS.do_train:
+    mllog.mllog_start(key=mllog_constants.INIT_START)
 
   bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
 
@@ -453,7 +496,7 @@ def main(_):
 
   tpu_cluster_resolver = None
   if FLAGS.use_tpu and FLAGS.tpu_name:
-    tpu_cluster_resolver = contrib_cluster_resolver.TPUClusterResolver(
+    tpu_cluster_resolver = tf.distribute.cluster_resolver.TPUClusterResolver(
         FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
 
   model_fn = model_fn_builder(
@@ -469,21 +512,21 @@ def main(_):
       start_warmup_step=FLAGS.start_warmup_step)
 
   if FLAGS.use_tpu:
-    is_per_host = contrib_tpu.InputPipelineConfig.PER_HOST_V2
-    run_config = contrib_tpu.RunConfig(
+    is_per_host = tf.estimator.tpu.InputPipelineConfig.PER_HOST_V2
+    run_config = tf.estimator.tpu.RunConfig(
         cluster=tpu_cluster_resolver,
         master=FLAGS.master,
         model_dir=FLAGS.output_dir,
-        keep_checkpoint_max=5,
+        keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
-        tpu_config=contrib_tpu.TPUConfig(
+        tpu_config=tf.estimator.tpu.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
             num_shards=FLAGS.num_tpu_cores,
             per_host_input_for_training=is_per_host))
 
     # If TPU is not available, this will fall back to normal Estimator on CPU
     # or GPU.
-    estimator = contrib_tpu.TPUEstimator(
+    estimator = tf.estimator.tpu.TPUEstimator(
         use_tpu=FLAGS.use_tpu,
         model_fn=model_fn,
         config=run_config,
@@ -499,16 +542,16 @@ def main(_):
         allow_soft_placement=True)
 
     distribution_strategy = distribution_utils.get_distribution_strategy(
-        distribution_strategy='mirrored',
+        distribution_strategy="mirrored",
         num_gpus=FLAGS.num_gpus,
-        all_reduce_alg='nccl',
+        all_reduce_alg="nccl",
         num_packs=0)
 
     dist_gpu_config = tf.estimator.RunConfig(
         train_distribute=distribution_strategy,
         model_dir=FLAGS.output_dir,
         session_config=session_config,
-        keep_checkpoint_max=5,
+        keep_checkpoint_max=FLAGS.keep_checkpoint_max,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
     )
 
@@ -536,11 +579,23 @@ def main(_):
         is_training=True,
         input_context=None,
         num_cpu_threads=8)
+
+    checkpoint_hook = CheckpointHook(
+        num_train_steps=FLAGS.num_train_steps,
+        checkpoint_dir=FLAGS.output_dir,
+        save_steps=FLAGS.save_checkpoints_steps)
+    mllog.mlperf_submission_log()
+    mllog.mlperf_run_param_log()
+    mllog.mllog_end(key=mllog_constants.INIT_STOP)
+    mllog.mllog_start(key=mllog_constants.RUN_START)
     if FLAGS.use_tpu:
-      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps)
+      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps,
+          hooks=[checkpoint_hook])
     else:
       estimator.train(input_fn=lambda input_context=None: train_input_fn(
-          params=hparams, input_context=input_context), max_steps=FLAGS.num_train_steps)
+          params=hparams, input_context=input_context), max_steps=FLAGS.num_train_steps,
+          hooks=[checkpoint_hook])
+    mllog.mllog_end(key=mllog_constants.RUN_STOP)
 
   if FLAGS.do_eval:
     tf.logging.info("***** Running evaluation *****")
@@ -561,6 +616,7 @@ def main(_):
         num_eval_steps=FLAGS.max_eval_steps)
 
     while True:
+      mllog.mllog_start(key=mllog_constants.EVAL_START)
       if FLAGS.use_tpu:
         result = estimator.evaluate(
           input_fn=eval_input_fn, steps=FLAGS.max_eval_steps)
@@ -569,6 +625,12 @@ def main(_):
             input_fn=lambda input_context=None: eval_input_fn(
                 params=hparams, input_context=input_context),
             steps=FLAGS.max_eval_steps)
+      global_step = result["global_step"]
+      mllog.mllog_end(key=mllog_constants.EVAL_STOP, value=global_step,
+                       metadata={"step_num": global_step})
+      mllog.mllog_event(key=mllog_constants.EVAL_ACCURACY,
+                        value=result["masked_lm_accuracy"],
+                        metadata={"step_num": global_step})
 
       output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
       with tf.gfile.GFile(output_eval_file, "w") as writer:
@@ -576,6 +638,9 @@ def main(_):
         for key in sorted(result.keys()):
           tf.logging.info("  %s = %s", key, str(result[key]))
           writer.write("%s = %s\n" % (key, str(result[key])))
+
+      if global_step >= FLAGS.num_train_steps:
+        break
 
 
 if __name__ == "__main__":

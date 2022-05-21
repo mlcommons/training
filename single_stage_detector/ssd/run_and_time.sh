@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2018-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,50 +14,67 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DGXSYSTEM=${DGXSYSTEM:-"DGX1_32"}
-if [[ -f config_${DGXSYSTEM}.sh ]]; then
-  source config_${DGXSYSTEM}.sh
-else
-  source config_DGX1_32.sh
-  echo "Unknown system, assuming DGX1_32"
-fi
-
-SLURM_NTASKS_PER_NODE=${SLURM_NTASKS_PER_NODE:-$DGXNGPU}
-SLURM_JOB_ID=${SLURM_JOB_ID:-$RANDOM}
-echo "Run vars: id $SLURM_JOB_ID gpus $SLURM_NTASKS_PER_NODE mparams $MULTI_NODE"
-
 # runs benchmark and reports time to convergence
 # to use the script:
 #   run_and_time.sh
 
+set +x
 set -e
+
+# Only rank print
+[ "${SLURM_LOCALID-}" -ne 0 ] && set +x
+
 
 # start timing
 start=$(date +%s)
 start_fmt=$(date +%Y-%m-%d\ %r)
 echo "STARTING TIMING RUN AT $start_fmt"
 
-# run benchmark
-set -x
-NUMEPOCHS=${NUMEPOCHS:-70}
-LR=${LR:-"2.5e-3"}
+# Set variables
+[ "${DEBUG}" = "1" ] && set -x
+BATCHSIZE=${BATCHSIZE:-2}
+EVALBATCHSIZE=${EVALBATCHSIZE:-${BATCHSIZE}}
+NUMEPOCHS=${NUMEPOCHS:-30}
+LOG_INTERVAL=${LOG_INTERVAL:-20}
+DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6-mlperf"}
+TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
 
+# run benchmark
 echo "running benchmark"
 
-export DATASET_DIR="/data/coco2017"
-export TORCH_MODEL_ZOO="/data/torchvision"
 
-python -m bind_launch --nsockets_per_node ${DGXNSOCKET} \
-                      --ncores_per_socket ${DGXSOCKETCORES} \
-                      --nproc_per_node $SLURM_NTASKS_PER_NODE $MULTI_NODE \
- train.py \
-  --epochs "${NUMEPOCHS}" \
-  --warmup-factor 0 \
-  --lr "${LR}" \
-  --no-save \
-  --threshold=0.23 \
-  --data ${DATASET_DIR} \
-  ${EXTRA_PARAMS[@]} ; ret_code=$?
+
+declare -a CMD
+if [ -n "${SLURM_LOCALID-}" ]; then
+    # Mode 1: Slurm launched a task for each GPU and set some envvars; no need for parallel launch
+    cluster=''
+    if [[ "${DGXSYSTEM}" == DGX2* ]]; then
+        cluster='circe'
+    fi
+    if [[ "${DGXSYSTEM}" == DGXA100* ]]; then
+        cluster='selene'
+    fi
+  if [ "${SLURM_NTASKS}" -gt "${SLURM_JOB_NUM_NODES}" ]; then
+    CMD=( './bind.sh' "--cluster=${cluster}" '--ib=single' '--' ${NSYSCMD} 'python' '-u' )
+  else
+    CMD=( 'python' '-u' )
+  fi
+else
+  # Mode 2: Single-node Docker; need to launch tasks with torchrun
+  CMD=( "torchrun" "--standalone" "--nnodes=1" "--nproc_per_node=${DGXNGPU}" )
+  [ "$MEMBIND" = false ] &&  CMD+=( "--no_membind" )
+fi
+
+PARAMS=(
+      --batch-size              "${BATCHSIZE}"
+      --eval-batch-size         "${EVALBATCHSIZE}"
+      --epochs                  "${NUMEPOCHS}"
+      --print-freq              "${LOG_INTERVAL}"
+      --data-path               "${DATASET_DIR}"
+)
+
+# run training
+"${CMD[@]}" train.py "${PARAMS[@]}" ${EXTRA_PARAMS} ; ret_code=$?
 
 set +x
 
@@ -71,6 +88,6 @@ echo "ENDING TIMING RUN AT $end_fmt"
 
 # report result
 result=$(( $end - $start ))
-result_name="OBJECT_DETECTION"
+result_name="SINGLE_STAGE_DETECTOR"
 
 echo "RESULT,$result_name,,$result,nvidia,$start_fmt"

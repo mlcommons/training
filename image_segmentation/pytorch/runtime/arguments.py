@@ -33,8 +33,8 @@ PARSER.add_argument('--lr_decay_factor', dest='lr_decay_factor', type=float, def
 PARSER.add_argument('--lamb_betas', nargs='+', type=int, default=[0.9, 0.999])
 PARSER.add_argument('--momentum', dest='momentum', type=float, default=0.9)
 PARSER.add_argument('--weight_decay', dest='weight_decay', type=float, default=0.0)
-PARSER.add_argument('--evaluate_every', '--eval_every', dest='evaluate_every', type=int, default=20)
-PARSER.add_argument('--start_eval_at', dest='start_eval_at', type=int, default=1000)
+PARSER.add_argument('--evaluate_every', '--eval_every', dest='evaluate_every', type=int, default=None)
+PARSER.add_argument('--start_eval_at', dest='start_eval_at', type=int, default=None)
 PARSER.add_argument('--verbose', '-v', dest='verbose', action='store_true', default=False)
 PARSER.add_argument('--normalization', dest='normalization', type=str,
                     choices=['instancenorm', 'batchnorm'], default='instancenorm')

@@ -85,7 +85,7 @@ class SpecAugment(BaseFeatures):
 
             for _ in range(self.freq_masks):
                 w = torch.randint(self.min_freq, self.max_freq + 1, size=(1,)).item()
-                f0 = torch.randint(0, max(1, sh[1] - w), size=(1,))
+                f0 = torch.randint(0, max(1, sh[1] - w + 1), size=(1,))
                 mask[idx, f0:f0+w] = 1
 
             # Adaptive time masking
@@ -99,7 +99,7 @@ class SpecAugment(BaseFeatures):
 
             for _ in range(time_masks):
                 w = torch.randint(self.min_time, max_time + 1, size=(1,)).item()
-                t0 = torch.randint(0, max(1, sh[2] - w), size=(1,))
+                t0 = torch.randint(0, max(1, sh[2] - w + 1), size=(1,))
                 mask[idx, :, t0:t0+w] = 1
 
         if self.noise_magnitude > 0:

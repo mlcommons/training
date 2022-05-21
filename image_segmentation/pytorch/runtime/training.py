@@ -50,7 +50,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                                                           device_ids=[flags.local_rank],
                                                           output_device=flags.local_rank)
 
-    stop_training = False
+    is_successful = False
+    diverged = False
+    next_eval_at = flags.start_eval_at
     model.train()
     for callback in callbacks:
         callback.on_fit_start()
@@ -64,37 +66,33 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
 
         if is_distributed:
             train_loader.sampler.set_epoch(epoch)
-            # val_loader.sampler.set_epoch(epoch)
 
         loss_value = None
         optimizer.zero_grad()
         for iteration, batch in enumerate(tqdm(train_loader, disable=(rank != 0) or not flags.verbose)):
             image, label = batch
-            image = image.view(flags.ga_steps, flags.batch_size, 1, *flags.input_shape)
-            label = label.view(flags.ga_steps, flags.batch_size, 1, *flags.input_shape)
+            image, label = image.to(device), label.to(device)
             for callback in callbacks:
                 callback.on_batch_start()
 
-            for curr_image, curr_label in zip(image, label):
-                curr_image, curr_label = curr_image.to(device), curr_label.to(device)
-
-                with autocast(enabled=flags.amp):
-                    output = model(curr_image)
-                    loss_value = loss_fn(output, curr_label)
-                    loss_value /= flags.ga_steps
-
-                if flags.amp:
-                    scaler.scale(loss_value).backward()
-                else:
-                    loss_value.backward()
+            with autocast(enabled=flags.amp):
+                output = model(image)
+                loss_value = loss_fn(output, label)
+                loss_value /= flags.ga_steps
 
             if flags.amp:
-                scaler.step(optimizer)
-                scaler.update()
+                scaler.scale(loss_value).backward()
             else:
-                optimizer.step()
+                loss_value.backward()
 
-            optimizer.zero_grad()
+            if (iteration + 1) % flags.ga_steps == 0:
+                if flags.amp:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+
+                optimizer.zero_grad()
 
             loss_value = reduce_tensor(loss_value, world_size).detach().cpu().numpy()
             cumulative_loss.append(loss_value)
@@ -105,7 +103,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         if flags.lr_decay_epochs:
             scheduler.step()
 
-        if ((epoch % flags.evaluate_every) == 0) and epoch >= flags.start_eval_at:
+        if epoch == next_eval_at:
+            next_eval_at += flags.evaluate_every
             del output
             mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
 
@@ -122,15 +121,18 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                 callback.on_epoch_end(epoch=epoch, metrics=eval_metrics, model=model, optimizer=optimizer)
             model.train()
             if eval_metrics["mean_dice"] >= flags.quality_threshold:
-                stop_training = True
+                is_successful = True
+            elif eval_metrics["mean_dice"] < 1e-6:
+                print("MODEL DIVERGED. ABORTING.")
+                diverged = True
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=False,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
 
-        if stop_training:
+        if is_successful or diverged:
             break
 
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,
-              metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if stop_training else CONSTANTS.ABORTED})
+              metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if is_successful else CONSTANTS.ABORTED})
     for callback in callbacks:
         callback.on_fit_end()
