@@ -26,6 +26,8 @@
   - [Quality target](#quality-target)
   - [Evaluation frequency](#evaluation-frequency)
   - [Evaluation thoroughness](#evaluation-thoroughness)
+- [MLCommons Inference](#mlcommons-inference)
+  - [Running validation](#running-validation)
 
 # Summary
 Single Shot MultiBox Detector (SSD) is an object detection network. For an
@@ -354,3 +356,50 @@ Every epoch, starting with the first one.
 
 ## Evaluation thoroughness
 All the images in the OpenImages-MLPerf validation subset
+
+# MLCommons Inference
+This repo along with the [openimages-mlperf](#the-mlperf-subset) dataset are used to
+train the detection model for the [MLCommons inference benchmark](https://github.com/mlcommons/inference/tree/master/vision/classification_and_detection) (starting with v2.1).
+
+The inference benchmark weights were obtained by running:
+
+```bash
+cd ./single_stage_detector/ssd
+source config_DGXA100_008x08x004_inference_benchmark.sh
+DATADIR=<path/to/data/dir> LOGDIR=<path/to/output/dir> sbatch -N $DGXNNODES -t $WALLTIME run.sub
+```
+
+See [Running the reference](#running-the-reference) section for more information on how to
+train the model.
+
+Unlike the training benchmark scripts, `config_DGXA100_008x08x004_inference_benchmark.sh` doesn't set a
+target accuracy and trains the model for 15 epochs instead.
+The script is expected to have the following convergence profile:
+
+| epoch      | 1st run [mAP]   | 2nd run [mAP]   | 3rd run [mAP]   |
+| :--------: | :-------------: | :-------------: | :-------------: |
+| 1          | 0.2008          | 0.19317         | 0.1963          |
+| 2          | 0.2874          | 0.28394         | 0.2804          |
+| 3          | 0.3261          | 0.32972         | 0.3279          |
+| 4          | 0.3493          | 0.34439         | 0.3428          |
+| 5          | 0.3612          | 0.35828         | 0.3582          |
+| 6          | 0.3608          | 0.35687         | 0.3570          |
+| 7          | 0.3733          | 0.37061         | 0.3695          |
+| 8          | 0.3728          | 0.37178         | 0.3704          |
+| 9          | 0.3749          | 0.37357         | 0.3732          |
+| 10         | 0.3755          | 0.37732         | 0.3781          |
+| 11         | 0.3758          | 0.37968         | 0.3746          |
+| 12         | 0.3769          | 0.37812         | 0.3748          |
+| 13         | 0.3749          | 0.37620         | 0.3773          |
+| 14         | 0.3774          | 0.37696         | 0.3796          |
+| 15         | 0.3821          | 0.38294         | 0.3767          |
+
+## Running validation
+Given a model checkpoint, you can test the model accuracy by running
+
+```bash
+python train.py \
+    --eval-batch-size 16 \
+    --test-only \
+    --resume <CHECKPOINT.pth>
+```
