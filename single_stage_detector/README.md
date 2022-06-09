@@ -208,7 +208,7 @@ full dataset:
 | Dataset           | # classes | # train images | # validation images | Size  |
 |-------------------|-----------|----------------|---------------------|-------|
 | OpenImages Full   | 601       | 1,743,042      | 41,620              | 534GB |
-| OpenImages MLperf | 264       | 1,170,301      | 24,781              | 352GB |
+| OpenImages MLPerf | 264       | 1,170,301      | 24,781              | 352GB |
 
 These are the lowest level classes (no child classes) in the dataset
 [semantic hierarchy tree](https://storage.googleapis.com/openimages/2018_04/bbox_labels_600_hierarchy_visualizer/circle.html)
