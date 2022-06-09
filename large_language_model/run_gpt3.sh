@@ -41,7 +41,9 @@ options=" \
 --max-position-embeddings 2048 \
 --micro-batch-size 1 \
 --global-batch-size 1536 \
---train-samples 364868901 \
+--train-samples 25347072 \
+--lr-decay-samples 166400000 \
+--lr-warmup-samples 406902 \
 --lr 6.0e-5 \
 --min-lr 6.0e-6 \
 --lr-decay-style cosine \
@@ -63,6 +65,7 @@ options=" \
 --log-params-norm \
 --log-num-zeros-in-grad \
 --log-validation-ppl-to-tensorboard \
+--bf16 \
 --DDP-impl local \
 --tensorboard-dir ${TENSORBOARD_DIR} \
 --checkpoint-activations \
