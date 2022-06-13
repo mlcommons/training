@@ -1,5 +1,5 @@
 # 1. Problem 
-This task benchmarks on policy reinforcement learning for the 9x9 version of the boardgame go. The model plays games against itself and uses these games to improve play.
+This task benchmarks on policy reinforcement learning for the 19x19 version of the boardgame go. The model plays games against itself and uses these games to improve play.
 
 # 2. Directions
 ### Steps to configure machine
@@ -78,7 +78,7 @@ independent effort from AlphaGo, and that this fork is minigo is independent fro
 
 ### Reinforcement Setup
 
-This benchmark includes both the environment and training for 9x9 go. There are four primary phases in this benchmark, these phases are repeated in order:
+This benchmark includes both the environment and training for 19x19 go. There are four primary phases in this benchmark, these phases are repeated in order:
 
  - Selfplay: the *current best* model plays games against itself to produce board positions for training.
  - Training: train the neural networks selfplay data from several recent models. 
