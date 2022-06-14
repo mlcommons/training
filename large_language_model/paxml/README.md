@@ -104,7 +104,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_NAME --worker=all --command="docker st
 ```
 
 Note: The working copy of the model is in the
-[PaxML library](https://github.com/google/paxml/paxml/tasks/lm/params). The
+[PaxML library](https://github.com/google/paxml/tree/main/paxml/tasks/lm/params). The
 files in this repo are a copy of that as of 14-Jun-2022. The PaxML team is
 working to allow an easier way to define customer model configs. When such task
 is done, the files & repo steps in this repo will be updated accordingly.
