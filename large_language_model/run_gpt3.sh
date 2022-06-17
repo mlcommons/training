@@ -50,6 +50,8 @@ options=" \
 --log-interval 1 \
 --eval-iters 50 \
 --eval-interval 50 \
+--attention-dropout 0.0 \
+--hidden-dropout 0.0 \
 --data-path ${DATA_BLEND} \
 --vocab-file $2/vocab.json \
 --merge-file $2/merges.txt \
