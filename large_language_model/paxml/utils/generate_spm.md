@@ -3,7 +3,7 @@ model.
 
 # Select examples
 
-5,000,000 examples from the validation split of the C4/en/3.0.1 dataset,
+5,000,000 examples from the train split of the C4/en/3.0.1 dataset,
 using select_text.py with the following command. The tfrecord files are
 placed in `/data/c4/en/3.0.1` to get the TensorFLow Dataset loader working.
 
