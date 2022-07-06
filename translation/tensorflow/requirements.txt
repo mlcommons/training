@@ -12,7 +12,7 @@ google-cloud-core==0.28.1
 google-resumable-media==0.3.1
 googleapis-common-protos==1.5.3
 grpcio==1.11.0
-html5lib==0.9999999
+html5lib==0.999999999
 idna==2.6
 Markdown==2.6.11
 numpy==1.14.2
