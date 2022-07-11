@@ -15,9 +15,8 @@ sbatch run_gpt3.sh <path to log directory> <path to BPE processed directory>
 Use script `run_gpt3.sh` as shown above to run GPT-3 175B on clusters using slurm. You can adjust number of nodes (tested only with nodes>=8) and job run time in the sbatch command in line #3 of the `run_gpt3.sh` script.
 
 Some things to note regarding the above script -
-1. Currently the model computes validation on a subset of the training dataset and the data has been split as `98,2,0` right now.
-2. The model trains for 15 mins lesser than that actual run time because the last 15 mins are set aside for storing a checkpoint of the last iteration.
-3. The tokenization scheme used is currently BPE (which requires a `merge table` and a `json` vocabulary file). Scripts for data preprocessing using SenetencePiece tokenizer will be added in the future.
+1. The model trains for 15 mins lesser than that actual run time because the last 15 mins are set aside for storing a checkpoint of the last iteration.
+2. Currently, the last batch is dropped during evaluation if it is not divisible by the global batch size.
 
 Command line arguments are described in detail in this source file [`arguments.py`](./megatron/arguments.py).
 
@@ -51,17 +50,8 @@ done
 cat en/c4-validation.0000* > en_merge/c4-validation.json.gz
 ```
 
-After preparing the data folder, download tokenizers in the same folder.
-Currently, SPM trained on 32K vocab size for T5 is used.
-```bash
-cd <path to c4>
-
-mkdir -p tokenizers
-mkdir -p tokenizers/c4_spm
-
-wget https://storage.googleapis.com/t5-data/vocabs/cc_all.32000/sentencepiece.model -O tokenizers/c4_spm/sentencepiece.model
-wget https://storage.googleapis.com/t5-data/vocabs/cc_all.32000/sentencepiece.vocab -O tokenizers/c4_spm/sentencepiece.vocab
-```
+After preparing the data folder, download tokenizer model.
+Currently, SPM trained by google using [these](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions is used.
 
 Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
 the correct input/output paths and run preprocessing as follows

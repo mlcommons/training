@@ -48,7 +48,8 @@ options=" \
 --min-lr 6.0e-6 \
 --lr-decay-style cosine \
 --log-interval 1 \
---eval-iters 50 \
+--valid-data-path ${VALID_DATA_BLEND} \
+--eval-iters -1 \
 --eval-interval 50 \
 --attention-dropout 0.0 \
 --hidden-dropout 0.0 \
@@ -58,7 +59,7 @@ options=" \
 --save-interval 100 \
 --save ${CHECKPOINT_DIR} \
 --load ${CHECKPOINT_DIR} \
---split 98,2,0 \
+--split 100,0,0 \
 --clip-grad 1.0 \
 --weight-decay 0.1 \
 --adam-beta1 0.9 \

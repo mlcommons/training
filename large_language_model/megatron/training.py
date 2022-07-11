@@ -757,11 +757,20 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
 
     with torch.no_grad():
         iteration = 0
-        while iteration < args.eval_iters:
+        total_iterations = args.eval_iters
+        if args.eval_iters == -1:
+            samples_per_iteration = mpu.get_data_parallel_world_size() \
+                                        * args.micro_batch_size \
+                                        * get_num_microbatches()
+            print_rank_0(F"Evaluation on the entire validation set as eval-iters is equal to {args.eval_iters} and samples per iteration: {samples_per_iteration}")
+            #total_iterations = math.ceil(args.eval_total_samples / samples_per_iteration)
+            total_iterations = args.eval_total_samples // samples_per_iteration
+            print_rank_0(F"Total Evaluation Iterations: {total_iterations}, total eval samples: {args.eval_total_samples}")
+        while iteration < total_iterations:
             iteration += 1
             if verbose and iteration % args.log_interval == 0:
                 print_rank_0('Evaluating iter {}/{}'.format(iteration,
-                                                            args.eval_iters))
+                                                            total_iterations))
 
             forward_backward_func = get_forward_backward_func()
             loss_dicts = forward_backward_func(
@@ -787,7 +796,8 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
         model_module.train()
 
     for key in total_loss_dict:
-        total_loss_dict[key] /= args.eval_iters * get_num_microbatches()
+        #TODO: eval_iters is per gpu? so just changing it total iteration would work??
+        total_loss_dict[key] /= total_iterations * get_num_microbatches()
 
     return total_loss_dict
 
@@ -869,7 +879,10 @@ def build_train_valid_test_data_iterators(
         # Build the datasets.
         train_ds, valid_ds, test_ds = build_train_valid_test_datasets_provider(
             train_val_test_num_samples)
-
+        if args.eval_iters == -1:
+            eval_total_samples = len(valid_ds)
+        else:
+            eval_total_samples = 0
         # Build dataloders.
         train_dataloader = build_pretraining_data_loader(
             train_ds, args.consumed_train_samples)
@@ -879,13 +892,13 @@ def build_train_valid_test_data_iterators(
 
         # Flags to know if we need to do training/validation/testing.
         do_train = train_dataloader is not None and args.train_iters > 0
-        do_valid = valid_dataloader is not None and args.eval_iters > 0
+        do_valid = valid_dataloader is not None and (args.eval_iters > 0 or args.eval_iters == -1)
         do_test = test_dataloader is not None and args.eval_iters > 0
         # Need to broadcast num_tokens and num_type_tokens.
         flags = torch.cuda.LongTensor(
-            [int(do_train), int(do_valid), int(do_test)])
+            [int(do_train), int(do_valid), int(do_test), int(eval_total_samples)])
     else:
-        flags = torch.cuda.LongTensor([0, 0, 0])
+        flags = torch.cuda.LongTensor([0, 0, 0, 0])
 
     # Broadcast num tokens.
     torch.distributed.broadcast(flags,
@@ -894,6 +907,7 @@ def build_train_valid_test_data_iterators(
     args.do_train = flags[0].item()
     args.do_valid = flags[1].item()
     args.do_test = flags[2].item()
+    args.eval_total_samples = flags[3].item()
 
 
     # Build iterators.
@@ -907,7 +921,7 @@ def build_train_valid_test_data_iterators(
         train_data_iterator = None
 
     if valid_dataloader is not None:
-        valid_data_iterator = iter(valid_dataloader) if dl_type == 'single' \
+        valid_data_iterator = iter(valid_dataloader) if (dl_type == 'single' and args.eval_iters != -1) \
                               else iter(cyclic_iter(valid_dataloader))
     else:
         valid_data_iterator = None
