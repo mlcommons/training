@@ -237,18 +237,18 @@ def main(args):
                 checkpoint = {
                     'model': model_without_ddp.state_dict(),
                     'optimizer': optimizer.state_dict(),
-                    'epoch': epoch,
+                    'epoch': epoch+1,
                     'args': args,
                 }
                 utils.save_on_master(
                     checkpoint,
-                    os.path.join(args.output_dir, 'model_{}.pth'.format(epoch)))
+                    os.path.join(args.output_dir, 'model_{}.pth'.format(epoch+1)))
                 utils.save_on_master(
                     checkpoint,
                     os.path.join(args.output_dir, 'checkpoint.pth'))
 
             # evaluate after every epoch
-            coco_evaluator = evaluate(model, data_loader_test, device=device, epoch=epoch, args=args)
+            coco_evaluator = evaluate(model, data_loader_test, device=device, epoch=epoch+1, args=args)
             accuracy = coco_evaluator.get_stats()['bbox'][0]
             if args.target_map and accuracy >= args.target_map:
                 status = SUCCESS
