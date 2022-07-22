@@ -3,13 +3,8 @@
 ## Project setup
 
 ```Bash
-# Create Python environment 
-virtualenv -p python3 ./env && source ./env/bin/activate
-
-# Install MLCube and MLCube docker runner from GitHub repository (normally, users will just run `pip install mlcube mlcube_docker`)
-git clone https://github.com/mlcommons/mlcube && cd mlcube/mlcube
-python setup.py bdist_wheel  && pip install --force-reinstall ./dist/mlcube-* && cd ..
-cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --force-reinstall --no-deps ./dist/mlcube_docker-* && cd ../../..
+# Create Python environment and install MLCube Docker runner 
+virtualenv -p python3 ./env && source ./env/bin/activate && pip install mlcube-docker
 
 # Fetch the image segmentation workload
 git clone https://github.com/mlcommons/training && cd ./training
@@ -41,4 +36,10 @@ mlcube run --task preprocess_data
 # Run benchmark. Default paths input_dir = mlcube/workspace/processed_data
 # Parameters to override: input_dir=DATA_DIR, output_dir=OUTPUT_DIR, parameters_file=PATH_TO_TRAINING_PARAMS
 mlcube run --task train
+```
+
+We are targeting pull-type installation, so MLCube images should be available on docker hub. If not, try this:
+
+```bash
+mlcube run ... -Pdocker.build_strategy=always
 ```
