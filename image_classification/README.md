@@ -5,13 +5,8 @@ This is the README for executing the benchmark on MLCube (using Tensorflow2). Th
 ## Project setup
 
 ```bash
-# Create Python environment 
-virtualenv -p python3 ./env && source ./env/bin/activate
-
-# Install MLCube and MLCube docker runner from GitHub repository (normally, users will just run `pip install mlcube mlcube_docker`)
-git clone https://github.com/mlcommons/mlcube && cd mlcube/mlcube
-python setup.py bdist_wheel  && pip install --force-reinstall ./dist/mlcube-* && cd ..
-cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --force-reinstall --no-deps ./dist/mlcube_docker-* && cd ../../..
+# Create Python environment and install MLCube Docker runner 
+virtualenv -p python3 ./env && source ./env/bin/activate && pip install mlcube-docker
 
 # Fetch the RNN speech recognition workload
 git clone https://github.com/mlcommons/training && cd ./training
@@ -35,4 +30,10 @@ By default MLCube images use pull-type installation, so they should be available
 
 ```bash
 mlcube run ... -Pdocker.build_strategy=auto
+```
+
+We are targeting pull-type installation, so MLCube images should be available on docker hub. If not, try this:
+
+```bash
+mlcube run ... -Pdocker.build_strategy=always
 ```
