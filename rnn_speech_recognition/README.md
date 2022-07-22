@@ -2,16 +2,14 @@
 
 We'll be updating this section as we merge MLCube PRs and make new MLCube releases.
 
-## Project setup
+## Current implementation
 
-```bash
-# Create Python environment 
-virtualenv -p python3 ./env && source ./env/bin/activate
+We'll be updating this section as we merge MLCube PRs and make new MLCube releases.
 
-# Install MLCube and MLCube docker runner from GitHub repository (normally, users will just run `pip install mlcube mlcube_docker`)
-git clone https://github.com/mlcommons/mlcube && cd mlcube/mlcube
-python setup.py bdist_wheel  && pip install --force-reinstall ./dist/mlcube-* && cd ..
-cd ./runners/mlcube_docker && python setup.py bdist_wheel  && pip install --force-reinstall --no-deps ./dist/mlcube_docker-* && cd ../../..
+### Project setup
+```Python
+# Create Python environment and install MLCube Docker runner 
+virtualenv -p python3 ./env && source ./env/bin/activate && pip install mlcube-docker
 
 # Fetch the RNN speech recognition workload
 git clone https://github.com/mlcommons/training && cd ./training
@@ -19,7 +17,7 @@ git fetch origin pull/491/head:feature/rnnt_mlcube && git checkout feature/rnnt_
 cd ./rnn_speech_recognition/mlcube
 ```
 
-## Dataset
+### Dataset
 
 The [Librispeech](https://www.openslr.org/12) dataset will be downloaded, extracted, and processed. Sizes of the dataset in each step:
 
@@ -31,8 +29,7 @@ The [Librispeech](https://www.openslr.org/12) dataset will be downloaded, extrac
 | Total                          | (After all tasks) | All        | ~240 GB |
 
 ### Tasks execution
-
-```bash
+```
 # Download Librispeech dataset. Default path = /workspace/data
 # To override it, use data_dir=DATA_DIR
 mlcube run --task download_data
@@ -46,8 +43,8 @@ mlcube run --task preprocess_data
 mlcube run --task train
 ```
 
-By default MLCube images use pull-type installation, so they should be available on docker hub. If not, try this:
+We are targeting pull-type installation, so MLCube images should be available on docker hub. If not, try this:
 
-```bash
-mlcube run ... -Pdocker.build_strategy=auto
+```
+mlcube run ... -Pdocker.build_strategy=always
 ```
