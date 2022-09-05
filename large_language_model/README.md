@@ -60,6 +60,12 @@ sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4>
 ```
 
+Currently, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the above step:
+
+1. To find out the eod entry index (value is 5025)
+2. To find out the vocab size (value is 50257)
+
+
 # 4. Model
 ### Publication/Attribution
 Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf) and [2](https://arxiv.org/pdf/2104.04473.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.
