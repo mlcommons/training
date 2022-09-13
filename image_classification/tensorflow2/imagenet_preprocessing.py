@@ -45,8 +45,12 @@ DEFAULT_IMAGE_SIZE = 224
 NUM_CHANNELS = 3
 
 NUM_IMAGES = {
-    'train': 1281167,
-    'validation': 50000,
+    #'train': 1281167,
+    #'validation': 50000,
+
+    # balajis-tiny-imagenet
+    'train': 100000,
+    'validation': 10000,
 }
 
 _NUM_TRAIN_FILES = 1024
