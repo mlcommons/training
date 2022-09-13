@@ -40,14 +40,15 @@ python ./scripts/resnet_ctl_imagenet_main.py \
   --weight_decay=0.0002
 
 
-# --notrace_warmup \
-# --warmup_epochs=5 \
-# --train_epochs=41 \
-# --noreport_accuracy_metrics \
-
 # Modifications from vanilla script:
 # * num_gpus->1
 # * distribution_strategy=one_device
 # batch size was 1024
 # --log_steps=125 \
 # --training_prefetch_batchs=128 \
+
+# Removed / modified:
+# --notrace_warmup \
+# --warmup_epochs=5 \
+# --train_epochs=41 \
+# --noreport_accuracy_metrics \
