@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+python ./scripts/resnet_ctl_imagenet_main.py \
+  --distribution_strategy=one_device \
+  --num_gpus=1 \
+  --base_learning_rate=8.5 \
+  --batch_size=128 \
+  --clean \
+  --data_dir=/home/dev/data/balajis-tiny-imagenet/tfrecords/train \
+  --datasets_num_private_threads=32 \
+  --dtype=fp32 \
+  --device_warmup_steps=1 \
+  --noenable_device_warmup \
+  --enable_eager \
+  --noenable_xla \
+  --epochs_between_evals=4 \
+  --noeval_dataset_cache \
+  --eval_offset_epochs=2 \
+  --eval_prefetch_batchs=192 \
+  --label_smoothing=0.1 \
+  --lars_epsilon=0 \
+  --log_steps=12 \
+  --lr_schedule=polynomial \
+  --model_dir=/home/dev/data/scratch \
+  --momentum=0.9 \
+  --num_accumulation_steps=2 \
+  --num_classes=1000 \
+  --optimizer=LARS \
+  --single_l2_loss_op \
+  --noskip_eval \
+  --steps_per_loop=1252 \
+  --target_accuracy=0.759 \
+  --notf_data_experimental_slack \
+  --tf_gpu_thread_mode=gpu_private \
+  --train_epochs=2 \
+  --notraining_dataset_cache \
+  --training_prefetch_batchs=128 \
+  --nouse_synthetic_data \
+  --warmup_epochs=1 \
+  --weight_decay=0.0002
+
+
+# --notrace_warmup \
+# --warmup_epochs=5 \
+# --train_epochs=41 \
+# --noreport_accuracy_metrics \
+
+# Modifications from vanilla script:
+# * num_gpus->1
+# * distribution_strategy=one_device
+# batch size was 1024
+# --log_steps=125 \
+# --training_prefetch_batchs=128 \

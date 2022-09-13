@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+nvidia-docker \
+    run \
+    -it \
+    -u $(id -u):$(id -g) \
+    -v /home/ubuntu/dev:/home/dev \
+    tensorflow/tensorflow:2.4.0-gpu \
+    bash
