@@ -895,7 +895,7 @@ def build_train_valid_test_data_iterators(
         train_dataloader = build_pretraining_data_loader(
             train_ds, args.consumed_train_samples)
         valid_dataloader = build_pretraining_data_loader(
-            valid_ds, args.consumed_valid_samples, use_all_samples=True)
+            valid_ds, args.consumed_valid_samples, use_all_samples=args.eval_iters == -1)
         test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
         # Flags to know if we need to do training/validation/testing.
