@@ -763,8 +763,8 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
                                         * args.micro_batch_size \
                                         * get_num_microbatches()
             print_rank_0(F"Evaluation on the entire validation set as eval-iters is equal to {args.eval_iters} and samples per iteration: {samples_per_iteration}")
-            #total_iterations = math.ceil(args.eval_total_samples / samples_per_iteration)
-            total_iterations = args.eval_total_samples // samples_per_iteration
+            total_iterations = math.ceil(args.eval_total_samples / samples_per_iteration)
+            # total_iterations = args.eval_total_samples // samples_per_iteration
             print_rank_0(F"Total Evaluation Iterations: {total_iterations}, total eval samples: {args.eval_total_samples}")
         while iteration < total_iterations:
             iteration += 1
@@ -786,8 +786,9 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
                 for loss_dict in loss_dicts:
                     for key in loss_dict:
                         total_loss_dict[key] = total_loss_dict.get(
-                            key, torch.cuda.FloatTensor([0.0])) + loss_dict[key]
+                            key, torch.cuda.DoubleTensor([0.0])) + loss_dict[key]
 
+            # TODO: might require accounting for padded batches
             args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
                                            * args.micro_batch_size \
                                            * get_num_microbatches()
@@ -796,8 +797,15 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
         model_module.train()
 
     for key in total_loss_dict:
-        #TODO: eval_iters is per gpu? so just changing it total iteration would work??
-        total_loss_dict[key] /= total_iterations * get_num_microbatches()
+        if not key.endswith('sum'):
+            total_loss_dict[key] /= total_iterations * get_num_microbatches()
+
+    if 'lm loss sum' in total_loss_dict and 'lm mask sum' in total_loss_dict:
+        if args.eval_iters == -1:
+            assert total_loss_dict['lm mask sum'] / args.seq_length == args.eval_total_samples, \
+                f'{total_loss_dict["lm mask sum"]} / {args.seq_length} != {args.eval_total_samples}'
+        total_loss_dict['lm loss'] = (total_loss_dict.pop('lm loss sum')
+                                      / total_loss_dict.pop('lm mask sum'))
 
     return total_loss_dict
 
@@ -887,7 +895,7 @@ def build_train_valid_test_data_iterators(
         train_dataloader = build_pretraining_data_loader(
             train_ds, args.consumed_train_samples)
         valid_dataloader = build_pretraining_data_loader(
-            valid_ds, args.consumed_valid_samples)
+            valid_ds, args.consumed_valid_samples, use_all_samples=True)
         test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
         # Flags to know if we need to do training/validation/testing.

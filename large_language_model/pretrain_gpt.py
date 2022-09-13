@@ -47,7 +47,7 @@ def get_batch(data_iterator):
     tokenizer = get_tokenizer()
 
     # Items and their type.
-    keys = ['text']
+    keys = ['text', 'dummy_sample']
     datatype = torch.int64
 
     # Broadcast data.
@@ -68,19 +68,25 @@ def get_batch(data_iterator):
         tokenizer.eod,
         args.reset_position_ids,
         args.reset_attention_mask,
-        args.eod_mask_loss)
+        args.eod_mask_loss,
+        data_b['dummy_sample'])
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
 def loss_func(loss_mask, output_tensor):
     losses = output_tensor.float()
     loss_mask = loss_mask.view(-1).float()
-    loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
+    loss_sum = torch.sum(losses.view(-1) * loss_mask)
+    mask_sum = loss_mask.sum()
+    loss = loss_sum / mask_sum
 
     # Reduce loss for logging.
-    averaged_loss = average_losses_across_data_parallel_group([loss])
+    averaged_loss, avg_loss_sum, avg_mask_sum = average_losses_across_data_parallel_group([loss, loss_sum, mask_sum])
+    # Counteract averaging by DP size
+    avg_loss_sum *= mpu.get_data_parallel_world_size()
+    avg_mask_sum *= mpu.get_data_parallel_world_size()
 
-    return loss, {'lm loss': averaged_loss[0]}
+    return loss, {'lm loss': averaged_loss, 'lm loss sum': avg_loss_sum, 'lm mask sum': avg_mask_sum}
 
 
 def forward_step(data_iterator, model):

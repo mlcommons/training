@@ -16,7 +16,6 @@ Use script `run_gpt3.sh` as shown above to run GPT-3 175B on clusters using slur
 
 Some things to note regarding the above script -
 1. The model trains for 15 mins lesser than that actual run time because the last 15 mins are set aside for storing a checkpoint of the last iteration.
-2. Currently, the last batch is dropped during evaluation if it is not divisible by the global batch size.
 
 Command line arguments are described in detail in this source file [`arguments.py`](./megatron/arguments.py).
 

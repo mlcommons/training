@@ -72,6 +72,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             valid = build_valid_datasets(valid_data_prefix, data_impl,
                                             train_valid_test_num_samples,
                                             seq_length, seed, skip_warmup)
+        
+        return (train, valid, test)
  
     else:
         # Blending dataset.
@@ -198,6 +200,10 @@ class GPTDataset(torch.utils.data.Dataset):
         return self.sample_idx.shape[0] - 1
 
     def __getitem__(self, idx):
+        # Handle dummy samples
+        dummy_sample = idx < 0
+        idx = np.abs(idx)
+
         # Get the shuffled index.
         idx = self.shuffle_idx[idx]
         # Start and end documents and offsets.
@@ -223,7 +229,8 @@ class GPTDataset(torch.utils.data.Dataset):
                 length=offset_l + 1))
             sample = np.concatenate(sample_list)
 
-        return {'text': np.array(sample, dtype=np.int64)}
+        return {'text': np.array(sample, dtype=np.int64),
+                'dummy_sample': np.array(int(dummy_sample), dtype=np.int64)}
 
 
 def _build_index_mappings(name, data_prefix, documents, sizes,

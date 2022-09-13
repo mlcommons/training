@@ -88,3 +88,14 @@ class MixedFusedLayerNorm(torch.nn.Module):
     return FusedLayerNormAffineFunction.apply(
       input, self.weight, self.bias, self.normalized_shape,self.eps)
 
+
+
+class MixedFusedLayerNorm1P(MixedFusedLayerNorm):
+  def reset_parameters(self):
+    init.zeros_(self.weight)
+    init.zeros_(self.bias)
+
+  def forward(self, input):
+
+    return FusedLayerNormAffineFunction.apply(
+      input, self.weight + 1, self.bias, self.normalized_shape, self.eps)
