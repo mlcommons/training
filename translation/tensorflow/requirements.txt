@@ -16,7 +16,7 @@ html5lib==0.9999999
 idna==2.6
 Markdown==2.6.11
 numpy==1.14.2
-protobuf==3.6.0
+protobuf==3.18.3
 psutil==5.4.5
 py-cpuinfo==4.0.0
 pyasn1==0.4.2
