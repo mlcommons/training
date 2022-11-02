@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,9 +28,13 @@ from megatron import get_adlr_autoresume
 from megatron import get_args
 from megatron import get_tensorboard_writer
 from megatron import mpu
+from megatron.arguments import (parse_args, validate_args)
+from megatron.checkpointing import load_args_from_checkpoint
 from megatron.global_vars import set_global_variables
 from megatron.mpu import (set_tensor_model_parallel_rank,
                           set_tensor_model_parallel_world_size)
+from megatron.model.transformer import bias_dropout_add_fused_train
+from megatron.model.fused_bias_gelu import bias_gelu
 
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
@@ -47,11 +51,18 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
         # Make sure cuda is available.
         assert torch.cuda.is_available(), 'Megatron requires CUDA.'
 
-    # Parse args, build tokenizer, and set adlr-autoresume,
+    # Parse arguments
+    args = parse_args(extra_args_provider, ignore_unknown_args)
+
+    if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
+        assert args.load is not None, '--use-checkpoints-args requires --load argument'
+        load_args_from_checkpoint(args)
+
+    validate_args(args, args_defaults)
+        
+    # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
-    set_global_variables(extra_args_provider=extra_args_provider,
-                         args_defaults=args_defaults,
-                         ignore_unknown_args=ignore_unknown_args)
+    set_global_variables(args)
 
     # torch.distributed initialization
     def finish_mpu_init():
@@ -62,10 +73,7 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
         # Random seeds for reproducibility.
         if args.rank == 0:
             print('> setting random seeds to {} ...'.format(args.seed))
-        _set_random_seed(args.seed)
-
-    # Set pytorch JIT layer fusion options.
-    _set_jit_fusion_options()
+        _set_random_seed(args.seed, args.data_parallel_random_init)
 
     args = get_args()
     if  args.lazy_mpu_init:
@@ -118,7 +126,7 @@ def _compile_dependencies():
         args.micro_batch_size
     # Constraints on sequence length and attn_batch_size to enable warp based
     # optimization and upper triangular optimization (for causal mask)
-    custom_kernel_constraint = seq_len > 16 and seq_len <=2048 and \
+    custom_kernel_constraint = seq_len > 16 and seq_len <=4096 and \
         seq_len % 4 == 0 and attn_batch_size % 4 == 0
     # Print a warning.
     if not ((args.fp16 or args.bf16) and
@@ -180,7 +188,7 @@ def _initialize_distributed():
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
         world_size=args.world_size, rank=args.rank,
-        timeout=timedelta(days=7))
+        timeout=timedelta(minutes=10))
 
     # Set the tensor model-parallel, pipeline model-parallel, and
     # data-parallel communicators.
@@ -203,11 +211,14 @@ def _init_autoresume():
         torch.distributed.barrier()
 
 
-def _set_random_seed(seed_):
+def _set_random_seed(seed_, data_parallel_random_init=False):
     """Set random seed for reproducability."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
         seed = seed_ + (100 * mpu.get_pipeline_model_parallel_rank())
+        # Ensure different data parallel ranks get different seeds
+        if data_parallel_random_init:
+            seed = seed + (10 * mpu.get_data_parallel_rank())
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -227,7 +238,7 @@ def write_args_to_tensorboard():
                             global_step=args.iteration)
 
 
-def _set_jit_fusion_options():
+def set_jit_fusion_options():
     """Set PyTorch JIT layer fusion options."""
     # flags required to enable jit fusion kernels
     TORCH_MAJOR = int(torch.__version__.split('.')[0])
@@ -248,3 +259,51 @@ def _set_jit_fusion_options():
         torch._C._jit_override_can_fuse_on_cpu(True)
         torch._C._jit_override_can_fuse_on_gpu(True)
 
+    _warmup_jit_function()
+
+
+def _warmup_jit_function():
+    """ Compilie JIT functions before the main training steps """
+    args = get_args()
+    if args.bf16:
+        dtype = torch.bfloat16
+    elif args.fp16:
+        dtype = torch.float16
+    else:
+        dtype = torch.float32
+
+    # Warmup fused bias+gelu
+    bias = torch.rand(args.ffn_hidden_size // args.tensor_model_parallel_size,
+                      dtype=dtype, device='cuda')
+    input = torch.rand((args.seq_length, args.micro_batch_size,
+                        args.ffn_hidden_size // args.tensor_model_parallel_size),
+                       dtype=dtype, device='cuda')
+    # Warmup JIT fusions with the input grad_enable state of both forward
+    # prop and recomputation
+    for bias_grad, input_grad in zip([True, True], [False, True]):
+        bias.requires_grad, input.requires_grad = bias_grad, input_grad
+        for _ in range(5):
+            output = bias_gelu(bias, input)
+    del bias, input, output
+
+    # Warmup fused bias+dropout+add
+    if args.sequence_parallel:
+        seq_length = args.seq_length // mpu.get_tensor_model_parallel_world_size()
+    else:
+        seq_length = args.seq_length
+    input = torch.rand((seq_length, args.micro_batch_size, args.hidden_size),
+                       dtype=dtype, device='cuda')
+    residual = torch.rand((seq_length, args.micro_batch_size, args.hidden_size),
+                          dtype=dtype, device='cuda')
+    bias = torch.rand((args.hidden_size), dtype=dtype, device='cuda').expand_as(residual)
+    dropout_rate = 0.1
+    # Warmup JIT fusions with the input grad_enable state of both forward
+    # prop and recomputation
+    for input_grad, bias_grad, residual_grad in zip([False, True], [True, True], [True, True]):
+        input.requires_grad = input_grad
+        bias.requires_grad = bias_grad
+        residual.requires_grad = residual_grad
+        for _ in range(5):
+            output = bias_dropout_add_fused_train(input, bias, residual, dropout_rate)
+    del bias, input, residual, output
+    torch.cuda.empty_cache()

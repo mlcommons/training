@@ -1,5 +1,5 @@
 /* coding=utf-8
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,32 @@
     case at::ScalarType::BFloat16:					\
       {									\
 	using scalar_t = at::BFloat16;					\
+	__VA_ARGS__;							\
+	break;								\
+      }									\
+    default:								\
+      AT_ERROR(#NAME, " not implemented for '", toString(TYPE), "'");	\
+      }
+
+
+#define DISPATCH_HALF_BFLOAT_AND_FLOAT(TYPE, NAME, ...)			\
+  switch(TYPE)								\
+    {									\
+    case at::ScalarType::Half:						\
+      {									\
+	using scalar_t = at::Half;					\
+	__VA_ARGS__;							\
+	break;								\
+      }									\
+    case at::ScalarType::BFloat16:					\
+      {									\
+	using scalar_t = at::BFloat16;					\
+	__VA_ARGS__;							\
+	break;								\
+      }									\
+    case at::ScalarType::Float:						\
+      {									\
+	using scalar_t = float;					\
 	__VA_ARGS__;							\
 	break;								\
       }									\

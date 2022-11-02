@@ -36,8 +36,9 @@ from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
 
 DSET_TYPE_BERT = 'standard_bert'
 DSET_TYPE_ICT = 'ict'
+DSET_TYPE_T5  = 't5'
 
-DSET_TYPES = [DSET_TYPE_BERT, DSET_TYPE_ICT]
+DSET_TYPES = [DSET_TYPE_BERT, DSET_TYPE_ICT, DSET_TYPE_T5]
 
 
 def get_datasets_weights_and_num_samples(data_prefix,
@@ -62,12 +63,16 @@ def get_datasets_weights_and_num_samples(data_prefix,
     # Add 0.5% (the 1.005 factor) so in case the bleding dataset does
     # not uniformly distribute the number of samples, we still have
     # samples left to feed to the network.
-    datasets_train_valid_test_num_samples = []
-    for weight in weights:
-        datasets_train_valid_test_num_samples.append(
-            [int(math.ceil(val * weight * 1.005))
-             for val in train_valid_test_num_samples])
-
+    if isinstance(train_valid_test_num_samples, list):
+        datasets_train_valid_test_num_samples = []
+        for weight in weights:
+            datasets_train_valid_test_num_samples.append(
+                [int(math.ceil(val * weight * 1.005))
+                for val in train_valid_test_num_samples])
+    else:
+        datasets_train_valid_test_num_samples = [
+            int(math.ceil(train_valid_test_num_samples * weight * 1.005))
+            for weight in weights]
 
     return prefixes, weights, datasets_train_valid_test_num_samples
 
@@ -305,6 +310,8 @@ def create_masked_lm_predictions(tokens,
                     # 10% of the time, replace with random word
                     else:
                         masked_token = vocab_id_list[np_rng.randint(0, len(vocab_id_list))]
+            elif masking_style == "t5":
+                masked_token = mask_id
             else:
                 raise ValueError("invalid value of masking style")
 
@@ -514,6 +521,7 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
     def build_dataset(index, name):
         from megatron.data.bert_dataset import BertDataset
         from megatron.data.ict_dataset import ICTDataset
+        from megatron.data.t5_dataset import T5Dataset
         dataset = None
         if splits[index + 1] > splits[index]:
             # Get the pointer to the original doc-idx so we can set it later.
@@ -542,6 +550,14 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                     query_in_block_prob=args.query_in_block_prob,
                     use_one_sent_docs=args.use_one_sent_docs,
                     binary_head=binary_head,
+                    **kwargs
+                )
+            elif dataset_type == DSET_TYPE_T5:
+                dataset = T5Dataset(
+                    indexed_dataset=indexed_dataset,
+                    masked_lm_prob=masked_lm_prob,
+                    max_seq_length_dec=max_seq_length_dec,
+                    short_seq_prob=short_seq_prob,
                     **kwargs
                 )
             elif dataset_type == DSET_TYPE_BERT:

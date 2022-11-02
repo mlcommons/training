@@ -6,6 +6,7 @@ DIR=$PWD
 MEGATRON_DIR="${DIR}"
 
 LOG_DIR=$1
+BPE_DIR=$2
 CHECKPOINT_DIR="${LOG_DIR}/GPT3-175B-checkpoints"
 TENSORBOARD_DIR="${LOG_DIR}/GPT3-175B-tensorboard"
 
@@ -34,6 +35,8 @@ options=" \
 --exit-duration-in-mins ${EXIT_DURATION} \
 --tensor-model-parallel-size 8 \
 --pipeline-model-parallel-size 8 \
+--sequence-parallel \
+--recompute-activations \
 --num-layers 96 \
 --hidden-size 12288 \
 --num-attention-heads 96 \
@@ -41,24 +44,27 @@ options=" \
 --max-position-embeddings 2048 \
 --micro-batch-size 1 \
 --global-batch-size 1536 \
---train-samples 25347072 \
---lr-decay-samples 166400000 \
---lr-warmup-samples 406902 \
+--train-samples 84500000 \
+--lr-warmup-samples 407040 \
+--lr-decay-samples 166809600 \
 --lr 6.0e-5 \
 --min-lr 6.0e-6 \
 --lr-decay-style cosine \
 --log-interval 1 \
---valid-data-path ${VALID_DATA_BLEND} \
 --eval-iters -1 \
 --eval-interval 50 \
 --attention-dropout 0.0 \
 --hidden-dropout 0.0 \
---data-path ${DATA_BLEND} \
---vocab-file $2/vocab.json \
---merge-file $2/merges.txt \
---save-interval 100 \
+--train-data-path ${DATA_BLEND} \
+--valid-data-path ${VALID_DATA_BLEND} \
+--vocab-file ${BPE_DIR}/vocab.json \
+--merge-file ${BPE_DIR}/merges.txt \
+--save-interval 500 \
 --save ${CHECKPOINT_DIR} \
 --load ${CHECKPOINT_DIR} \
+--do-layernorm-bias-weight-decay \
+--no-scaled-init \
+--loss-scale 1.0 \
 --split 100,0,0 \
 --clip-grad 1.0 \
 --weight-decay 0.1 \
@@ -68,18 +74,19 @@ options=" \
 --log-params-norm \
 --log-num-zeros-in-grad \
 --log-validation-ppl-to-tensorboard \
---bf16 \
 --DDP-impl local \
 --tensorboard-dir ${TENSORBOARD_DIR} \
---checkpoint-activations \
+--no-query-key-layer-scaling \
+--no-seq-len-plus-one-tokens \
+--bf16 \
 --seed ${RANDOM} "
 
 run_cmd="python -u ${MEGATRON_DIR}/pretrain_gpt.py ${options}"
 DATETIME=`date +'date_%y-%m-%d_time_%H-%M-%S'`
 
 srun -l \
-     --container-image "nvcr.io/nvidia/pytorch:21.12-py3" \
-     --container-mounts "$PWD:$PWD,${COM_DIR}:${COM_DIR},${LOG_DIR}:${LOG_DIR},$2:$2" \
+     --container-image "nvcr.io/nvidia/pytorch:22.04-py3" \
+     --container-mounts "$PWD:$PWD,${COM_DIR}:${COM_DIR},${LOG_DIR}:${LOG_DIR},${BPE_DIR}:${BPE_DIR}" \
      --output=$LOG_DIR/GPT3-175B-runlog-$DATETIME.log sh -c "${run_cmd}"
 
 set +x

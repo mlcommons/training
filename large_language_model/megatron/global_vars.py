@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@
 
 import os
 import sys
-import time
-
+from functools import reduce
+import operator
 import torch
 
+from megatron import dist_signal_handler
 from megatron.tokenizer import build_tokenizer
-from .arguments import parse_args
 from .microbatches import build_num_microbatches_calculator
+from .timers import Timers
 
 _GLOBAL_ARGS = None
 _GLOBAL_NUM_MICROBATCHES_CALCULATOR = None
@@ -31,7 +32,8 @@ _GLOBAL_TOKENIZER = None
 _GLOBAL_TENSORBOARD_WRITER = None
 _GLOBAL_ADLR_AUTORESUME = None
 _GLOBAL_TIMERS = None
-
+_GLOBAL_SIGNAL_HANDLER = None
+_GLOBAL_MEMORY_BUFFER = None
 
 def get_args():
     """Return arguments."""
@@ -76,29 +78,46 @@ def get_timers():
     return _GLOBAL_TIMERS
 
 
-def set_global_variables(extra_args_provider=None, args_defaults={},
-                         ignore_unknown_args=False):
+def get_signal_handler():
+    _ensure_var_is_initialized(_GLOBAL_SIGNAL_HANDLER, 'signal handler')
+    return _GLOBAL_SIGNAL_HANDLER
+
+
+def get_global_memory_buffer():
+    _ensure_var_is_initialized(_GLOBAL_MEMORY_BUFFER, 'global memory buffer')
+    return _GLOBAL_MEMORY_BUFFER
+
+
+def _set_signal_handler():
+    global _GLOBAL_SIGNAL_HANDLER
+    _ensure_var_is_not_initialized(_GLOBAL_SIGNAL_HANDLER, 'signal handler')
+    _GLOBAL_SIGNAL_HANDLER = dist_signal_handler.DistributedSignalHandler().__enter__()
+
+
+
+def set_global_variables(args):
     """Set args, tokenizer, tensorboard-writer, adlr-autoresume, and timers."""
-    args = _parse_args(extra_args_provider=extra_args_provider,
-                       defaults=args_defaults,
-                       ignore_unknown_args=ignore_unknown_args)
+
+    assert args is not None
+
+    _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
+    set_args(args)
+
     _build_num_microbatches_calculator(args)
     if args.vocab_file:
         _ = _build_tokenizer(args)
     _set_tensorboard_writer(args)
     _set_adlr_autoresume(args)
-    _set_timers()
+    _set_timers(args)
+    _set_global_memory_buffer()
 
+    if args.exit_signal_handler:
+        _set_signal_handler()
+    
 
-def _parse_args(extra_args_provider=None, defaults={},
-                ignore_unknown_args=False):
-    """Parse entire arguments."""
+def set_args(args):
     global _GLOBAL_ARGS
-    _ensure_var_is_not_initialized(_GLOBAL_ARGS, 'args')
-    _GLOBAL_ARGS = parse_args(extra_args_provider=extra_args_provider,
-                              defaults=defaults,
-                              ignore_unknown_args=ignore_unknown_args)
-    return _GLOBAL_ARGS
+    _GLOBAL_ARGS = args
 
 
 def _build_num_microbatches_calculator(args):
@@ -163,11 +182,18 @@ def _set_adlr_autoresume(args):
         _GLOBAL_ADLR_AUTORESUME = AutoResume
 
 
-def _set_timers():
+def _set_timers(args):
     """Initialize timers."""
     global _GLOBAL_TIMERS
     _ensure_var_is_not_initialized(_GLOBAL_TIMERS, 'timers')
-    _GLOBAL_TIMERS = Timers()
+    _GLOBAL_TIMERS = Timers(args.timing_log_level, args.timing_log_option)
+
+
+def _set_global_memory_buffer():
+    """Initialize global buffer"""
+    global _GLOBAL_MEMORY_BUFFER
+    _ensure_var_is_not_initialized(_GLOBAL_MEMORY_BUFFER, 'global memory buffer')
+    _GLOBAL_MEMORY_BUFFER = GlobalMemoryBuffer()
 
 
 def _ensure_var_is_initialized(var, name):
@@ -180,83 +206,23 @@ def _ensure_var_is_not_initialized(var, name):
     assert var is None, '{} is already initialized.'.format(name)
 
 
-class _Timer:
-    """Timer."""
 
-    def __init__(self, name):
-        self.name_ = name
-        self.elapsed_ = 0.0
-        self.started_ = False
-        self.start_time = time.time()
-
-    def start(self):
-        """Start the timer."""
-        assert not self.started_, 'timer has already been started'
-        torch.cuda.synchronize()
-        self.start_time = time.time()
-        self.started_ = True
-
-    def stop(self):
-        """Stop the timer."""
-        assert self.started_, 'timer is not started'
-        torch.cuda.synchronize()
-        self.elapsed_ += (time.time() - self.start_time)
-        self.started_ = False
-
-    def reset(self):
-        """Reset timer."""
-        self.elapsed_ = 0.0
-        self.started_ = False
-
-    def elapsed(self, reset=True):
-        """Calculate the elapsed time."""
-        started_ = self.started_
-        # If the timing in progress, end it first.
-        if self.started_:
-            self.stop()
-        # Get the elapsed time.
-        elapsed_ = self.elapsed_
-        # Reset the elapsed time
-        if reset:
-            self.reset()
-        # If timing was in progress, set it back.
-        if started_:
-            self.start()
-        return elapsed_
-
-
-class Timers:
-    """Group of timers."""
+class GlobalMemoryBuffer:
+    """Global buffer to avoid dynamic memory allocations.
+    Caller should ensure that buffers of the same name 
+    are not used concurrently."""
 
     def __init__(self):
-        self.timers = {}
+        self.buffer = {}
 
-    def __call__(self, name):
-        if name not in self.timers:
-            self.timers[name] = _Timer(name)
-        return self.timers[name]
+    def get_tensor(self, tensor_shape, dtype, name):
+        required_len = reduce(operator.mul, tensor_shape, 1)
+        if self.buffer.get((name, dtype), None) is None or \
+                self.buffer[(name, dtype)].numel() < required_len:
+            self.buffer[(name, dtype)] = \
+                torch.empty(required_len,
+                            dtype=dtype,
+                            device=torch.cuda.current_device(),
+                            requires_grad=False)
 
-    def write(self, names, writer, iteration, normalizer=1.0, reset=False):
-        """Write timers to a tensorboard writer"""
-        # currently when using add_scalars,
-        # torch.utils.add_scalars makes each timer its own run, which
-        # polutes the runs list, so we just add each as a scalar
-        assert normalizer > 0.0
-        for name in names:
-            value = self.timers[name].elapsed(reset=reset) / normalizer
-            writer.add_scalar(name + '-time', value, iteration)
-
-    def log(self, names, normalizer=1.0, reset=True):
-        """Log a group of timers."""
-        assert normalizer > 0.0
-        string = 'time (ms)'
-        for name in names:
-            elapsed_time = self.timers[name].elapsed(
-                reset=reset) * 1000.0 / normalizer
-            string += ' | {}: {:.2f}'.format(name, elapsed_time)
-        if torch.distributed.is_initialized():
-            if torch.distributed.get_rank() == (
-                    torch.distributed.get_world_size() - 1):
-                print(string, flush=True)
-        else:
-            print(string, flush=True)
+        return self.buffer[(name, dtype)][0:required_len].view(*tensor_shape)

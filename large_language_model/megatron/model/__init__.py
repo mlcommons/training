@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 from .fused_layer_norm import MixedFusedLayerNorm1P as LayerNorm
 
 from .distributed import DistributedDataParallel
+from .bert_model import BertModel
 from .gpt_model import GPTModel
+from .t5_model import T5Model
 from .language_model import get_language_model
 from .module import Float16Module
 from .enums import ModelType

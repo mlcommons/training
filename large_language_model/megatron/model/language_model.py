@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,17 +26,29 @@ from megatron.model.transformer import ParallelTransformer
 from megatron.model.utils import get_linear_layer
 from megatron.model.utils import init_method_normal, scaled_init_method_normal
 
+
 def parallel_lm_logits(input_, word_embeddings_weight, parallel_output,
                        bias=None):
     """LM logits using word embedding weights."""
+    args = get_args()
     # Parallel logits.
-    input_parallel = mpu.copy_to_tensor_model_parallel_region(input_)
-    # Matrix multiply.
-    if bias is None:
-        logits_parallel = F.linear(input_parallel, word_embeddings_weight)
+    if args.async_tensor_model_parallel_allreduce or\
+            args.sequence_parallel:
+        input_parallel = input_
+        model_parallel = mpu.get_tensor_model_parallel_world_size() > 1
+        async_grad_allreduce = args.async_tensor_model_parallel_allreduce and \
+            model_parallel and not args.sequence_parallel
     else:
-        logits_parallel = F.linear(input_parallel, word_embeddings_weight, bias)
+        input_parallel = mpu.copy_to_tensor_model_parallel_region(input_)
+        async_grad_allreduce = False
+
+    # Matrix multiply.
+    logits_parallel = mpu.LinearWithGradAccumulationAndAsyncCommunication.apply(
+        input_parallel, word_embeddings_weight, bias,
+        args.gradient_accumulation_fusion,
+        async_grad_allreduce, args.sequence_parallel)
     # Gather if needed.
+
     if parallel_output:
         return logits_parallel
 
@@ -92,12 +104,23 @@ class Pooler(MegatronModule):
 
     def __init__(self, hidden_size, init_method):
         super(Pooler, self).__init__()
+        args = get_args()
         self.dense = get_linear_layer(hidden_size, hidden_size, init_method)
+        self.sequence_parallel = args.sequence_parallel
+
 
     def forward(self, hidden_states, sequence_index=0):
-        # hidden_states: [b, s, h]
+        # hidden_states: [s, b, h]
         # sequence_index: index of the token to pool.
-        pooled = hidden_states[:, sequence_index, :]
+
+        # gather data along sequence dimensions
+        # same pooler is run on all tensor parallel nodes
+        if self.sequence_parallel:
+            hidden_states = mpu.gather_from_sequence_parallel_region(
+                hidden_states,
+                tensor_parallel_output_grad=False)
+
+        pooled = hidden_states[sequence_index, :, :]
         pooled = self.dense(pooled)
         pooled = torch.tanh(pooled)
         return pooled
@@ -143,7 +166,8 @@ class Embedding(MegatronModule):
             max_sequence_length, self.hidden_size)
         self._position_embeddings_key = 'position_embeddings'
         # Initialize the position embeddings.
-        self.init_method(self.position_embeddings.weight)
+        if args.perform_initialization:
+            self.init_method(self.position_embeddings.weight)
 
         # Token type embedding.
         # Add this as an optional field that can be added through
@@ -154,10 +178,13 @@ class Embedding(MegatronModule):
             self.tokentype_embeddings = torch.nn.Embedding(self.num_tokentypes,
                                                            self.hidden_size)
             # Initialize the token-type embeddings.
-            self.init_method(self.tokentype_embeddings.weight)
+            if args.perform_initialization:
+                self.init_method(self.tokentype_embeddings.weight)
         else:
             self.tokentype_embeddings = None
 
+        self.fp32_residual_connection = args.fp32_residual_connection 
+        self.sequence_parallel = args.sequence_parallel
         # Embeddings dropout
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
 
@@ -199,8 +226,20 @@ class Embedding(MegatronModule):
         else:
             assert self.tokentype_embeddings is None
 
+        # Data format change to avoid explicit tranposes : [b s h] --> [s b h].
+        embeddings = embeddings.transpose(0, 1).contiguous()
+
+        # If the input flag for fp32 residual connection is set, convert for float.
+        if self.fp32_residual_connection:
+            embeddings = embeddings.float()
+
         # Dropout.
-        embeddings = self.embedding_dropout(embeddings)
+        if self.sequence_parallel:
+            embeddings = mpu.scatter_to_sequence_parallel_region(embeddings)
+            with mpu.get_cuda_rng_tracker().fork():
+                embeddings = self.embedding_dropout(embeddings)
+        else:
+            embeddings = self.embedding_dropout(embeddings)
 
         return embeddings
 
@@ -334,10 +373,6 @@ class TransformerLanguageModel(MegatronModule):
         # Decoder (usually set to False, True if part of an encoder-decoder
         # architecture and in decoder-only stage).
         if self.add_decoder:
-            # Temporary assertion until we verify correctness of pipeline parallelism
-            # implementation of T5.
-            assert args.pipeline_model_parallel_size == 1, \
-                'pipeline parallelism is not supported in the presence of decoder'
             self.decoder = ParallelTransformer(
                 self.init_method,
                 output_layer_init_method,

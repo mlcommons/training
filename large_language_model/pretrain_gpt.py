@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,7 +45,6 @@ def get_batch(data_iterator):
     """Generate a batch"""
     args = get_args()
     tokenizer = get_tokenizer()
-
     # Items and their type.
     keys = ['text', 'dummy_sample']
     datatype = torch.int64
@@ -59,8 +58,13 @@ def get_batch(data_iterator):
 
     # Unpack.
     tokens_ = data_b['text'].long()
-    labels = tokens_[:, 1:].contiguous()
-    tokens = tokens_[:, :-1].contiguous()
+    if not args.use_seq_len_plus_one_tokens:
+        labels = torch.roll(tokens_, shifts=-1, dims=1)
+        labels[:, -1] = -1
+        tokens = tokens_
+    else:
+        labels = tokens_[:, 1:].contiguous()
+        tokens = tokens_[:, :-1].contiguous()
 
     # Get the masks and postition ids.
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
@@ -69,7 +73,11 @@ def get_batch(data_iterator):
         args.reset_position_ids,
         args.reset_attention_mask,
         args.eod_mask_loss,
-        data_b['dummy_sample'])
+        data_b['dummy_sample'],
+        labels,)
+
+    tokens[tokens == -1] = 0
+    labels[labels == -1] = 0
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
@@ -95,7 +103,7 @@ def forward_step(data_iterator, model):
     timers = get_timers()
 
     # Get the batch.
-    timers('batch-generator').start()
+    timers('batch-generator', log_level=2).start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
         data_iterator)
     timers('batch-generator').stop()
@@ -114,13 +122,16 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
                  'for GPT ...')
     train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
         data_prefix=args.data_path,
+        train_data_prefix=args.train_data_path,
+        valid_data_prefix=args.valid_data_path,
+        test_data_prefix=args.test_data_path,
         data_impl=args.data_impl,
         splits_string=args.split,
         train_valid_test_num_samples=train_val_test_num_samples,
         seq_length=args.seq_length,
         seed=args.seed,
         skip_warmup=(not args.mmap_warmup),
-        valid_data_prefix=args.valid_data_path)
+        use_seq_len_plus_one_tokens=args.use_seq_len_plus_one_tokens)
     print_rank_0("> finished creating GPT datasets ...")
 
     return train_ds, valid_ds, test_ds

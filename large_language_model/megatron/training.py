@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,11 +21,11 @@ import sys
 import time
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
-
 import torch
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
 from megatron import get_args
+from megatron import get_signal_handler
 from megatron import get_timers
 from megatron import get_tensorboard_writer
 from megatron import get_current_global_batch_size
@@ -42,7 +42,8 @@ from megatron.model import ModelType
 from megatron.optimizer import get_megatron_optimizer
 from megatron.initialize import initialize_megatron
 from megatron.initialize import write_args_to_tensorboard
-from megatron.learning_rates import AnnealingLR
+from megatron.initialize import set_jit_fusion_options
+from megatron.optimizer_param_scheduler import OptimizerParamScheduler
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.utils import check_adlr_autoresume_termination
 from megatron.utils import unwrap_model
@@ -50,7 +51,7 @@ from megatron.data.data_samplers import build_pretraining_data_loader
 from megatron.utils import calc_params_l2_norm
 from megatron.schedules import get_forward_backward_func
 from megatron.utils import report_memory
-
+from megatron.model.vision.knn_monitor import compute_feature_bank
 
 
 def print_datetime(string):
@@ -64,6 +65,7 @@ def pretrain(train_valid_test_dataset_provider,
              model_provider,
              model_type,
              forward_step_func,
+             process_non_loss_data_func=None,
              extra_args_provider=None,
              args_defaults={}):
     """Main training program.
@@ -85,6 +87,10 @@ def pretrain(train_valid_test_dataset_provider,
             the info we would like to monitor during training, for example
             `lm-loss: value`. We also require that this function add
             `batch generator` to the timers class.
+        process_non_loss_data_func: a function to post process outputs of the
+            network. It can be used for dumping output tensors (e.g images) to
+            tensorboard. It takes `collected data`(list of tensors),
+            `current iteration index` and `tensorboard writer` as arguments.
         extra_args_provider: a function that takes a parser and adds arguments
             to it. It is used for programs to add their own arguments.
         args_defaults: a dictionary from argument-name to argument-value. It
@@ -94,6 +100,8 @@ def pretrain(train_valid_test_dataset_provider,
     # Initalize and get arguments, timers, and Tensorboard writer.
     initialize_megatron(extra_args_provider=extra_args_provider,
                         args_defaults=args_defaults)
+    # Set pytorch JIT layer fusion options and warmup JIT functions.
+    set_jit_fusion_options()
 
     # Adjust the startup time so it reflects the largest value.
     # This will be closer to what scheduler will see (outside of
@@ -111,23 +119,28 @@ def pretrain(train_valid_test_dataset_provider,
     timers = get_timers()
 
     # Model, optimizer, and learning rate.
-    timers('model-and-optimizer-setup').start()
-    model, optimizer, lr_scheduler = setup_model_and_optimizer(model_provider,
-                                                               model_type)
+    timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
+    model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
+        model_provider, model_type)
     timers('model-and-optimizer-setup').stop()
     print_datetime('after model, optimizer, and learning rate '
                    'scheduler are built')
 
     # Data stuff.
-    timers('train/valid/test-data-iterators-setup').start()
+    timers('train/valid/test-data-iterators-setup', log_level=0).start(
+        barrier=True)
     if args.virtual_pipeline_model_parallel_size is not None:
         all_data_iterators = [
-            build_train_valid_test_data_iterators(train_valid_test_dataset_provider)
+            build_train_valid_test_data_iterators(
+                train_valid_test_dataset_provider)
             for _ in range(len(model))
         ]
-        train_data_iterator = [data_iterators[0] for data_iterators in all_data_iterators]
-        valid_data_iterator = [data_iterators[1] for data_iterators in all_data_iterators]
-        test_data_iterator = [data_iterators[2] for data_iterators in all_data_iterators]
+        train_data_iterator = [data_iterators[0]
+                               for data_iterators in all_data_iterators]
+        valid_data_iterator = [data_iterators[1]
+                               for data_iterators in all_data_iterators]
+        test_data_iterator = [data_iterators[2]
+                              for data_iterators in all_data_iterators]
     else:
         train_data_iterator, valid_data_iterator, test_data_iterator \
             = build_train_valid_test_data_iterators(
@@ -137,44 +150,42 @@ def pretrain(train_valid_test_dataset_provider,
 
     # Print setup timing.
     print_rank_0('done with setup ...')
-    timers.log(['model-and-optimizer-setup', 'train/valid/test-data-iterators-setup'])
+    timers.log(['model-and-optimizer-setup',
+                'train/valid/test-data-iterators-setup'], barrier=True)
     print_rank_0('training ...')
 
+    if args.do_valid:
+        prefix = 'iteration {}'.format(args.iteration)
+        evaluate_and_print_results(prefix, forward_step_func,
+                                   valid_data_iterator, model,
+                                   args.iteration, process_non_loss_data_func,
+                                   False)
+
     iteration = 0
+    if args.do_train and args.train_iters > 0:
+        iteration = train(forward_step_func,
+                          model, optimizer, opt_param_scheduler,
+                          train_data_iterator, valid_data_iterator,
+                          process_non_loss_data_func)
+    print_datetime('after training is done')
+
     if args.do_valid:
         prefix = 'the end of training for val data'
         evaluate_and_print_results(prefix, forward_step_func,
                                    valid_data_iterator, model,
-                                   iteration, False)
+                                   iteration, process_non_loss_data_func,
+                                   False)
+
+    if args.save and iteration != 0:
+        save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
+
     if args.do_test:
         # Run on test data.
         prefix = 'the end of training for test data'
         evaluate_and_print_results(prefix, forward_step_func,
                                    test_data_iterator, model,
-                                   0, True)
-
-
-    if args.do_train and args.train_iters > 0:
-        iteration = train(forward_step_func,
-                          model, optimizer, lr_scheduler,
-                          train_data_iterator, valid_data_iterator)
-    print_datetime('after training is done')
-
-#    if args.do_valid:
-#        prefix = 'the end of training for val data'
-#        evaluate_and_print_results(prefix, forward_step_func,
-#                                   valid_data_iterator, model,
-#                                   iteration, False)
-
-    if args.save and iteration != 0:
-        save_checkpoint(iteration, model, optimizer, lr_scheduler)
-
-#    if args.do_test:
-#        # Run on test data.
-#        prefix = 'the end of training for test data'
-#        evaluate_and_print_results(prefix, forward_step_func,
-#                                   test_data_iterator, model,
-#                                   0, True)
+                                   0, process_non_loss_data_func,
+                                   True)
 
 def update_train_iters(args):
 
@@ -297,7 +308,10 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
                               args.accumulate_allreduce_grads_in_fp32,
                               args.use_contiguous_buffers_in_local_ddp)
                      for model_module in model]
-
+            # broad cast params from data parallel src rank to other data parallel ranks
+            if args.data_parallel_random_init:
+                for model_module in model:
+                    model_module.broadcast_params()
         else:
             raise NotImplementedError('Unknown DDP implementation specified: '
                                       '{}. Exiting.'.format(args.DDP_impl))
@@ -305,7 +319,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
     return model
 
 
-def get_learning_rate_scheduler(optimizer):
+def get_optimizer_param_scheduler(optimizer):
     """Build the learning rate scheduler."""
     args = get_args()
 
@@ -313,11 +327,12 @@ def get_learning_rate_scheduler(optimizer):
     if args.train_iters:
         if args.lr_decay_iters is None:
             args.lr_decay_iters = args.train_iters
-        decay_steps = args.lr_decay_iters * args.global_batch_size
+        lr_decay_steps = args.lr_decay_iters * args.global_batch_size
+        wd_incr_steps = args.train_iters * args.global_batch_size
         if args.lr_warmup_fraction is not None:
-            warmup_steps = args.lr_warmup_fraction * decay_steps
+            lr_warmup_steps = args.lr_warmup_fraction * lr_decay_steps
         else:
-            warmup_steps = args.lr_warmup_iters * args.global_batch_size
+            lr_warmup_steps = args.lr_warmup_iters * args.global_batch_size
     # Sample-based training.
     elif args.train_samples:
         # We need to set training iters for later use. Technically
@@ -326,49 +341,54 @@ def get_learning_rate_scheduler(optimizer):
         update_train_iters(args)
         if args.lr_decay_samples is None:
             args.lr_decay_samples = args.train_samples
-        decay_steps = args.lr_decay_samples
+        lr_decay_steps = args.lr_decay_samples
+        wd_incr_steps = args.train_samples
         if args.lr_warmup_fraction is not None:
-            warmup_steps = args.lr_warmup_fraction * decay_steps
+            lr_warmup_steps = args.lr_warmup_fraction * lr_decay_steps
         else:
-            warmup_steps = args.lr_warmup_samples
+            lr_warmup_steps = args.lr_warmup_samples
     else:
         raise Exception(
             'either train-iters or train-samples should be provided.')
 
-    lr_scheduler = AnnealingLR(
+    opt_param_scheduler = OptimizerParamScheduler(
         optimizer,
         max_lr=args.lr,
         min_lr=args.min_lr,
-        warmup_steps=warmup_steps,
-        decay_steps=decay_steps,
-        decay_style=args.lr_decay_style,
-        use_checkpoint_lr_scheduler=args.use_checkpoint_lr_scheduler,
-        override_lr_scheduler=args.override_lr_scheduler)
+        lr_warmup_steps=lr_warmup_steps,
+        lr_decay_steps=lr_decay_steps,
+        lr_decay_style=args.lr_decay_style,
+        start_wd=args.start_weight_decay,
+        end_wd=args.end_weight_decay,
+        wd_incr_steps=wd_incr_steps,
+        wd_incr_style=args.weight_decay_incr_style,
+        use_checkpoint_opt_param_scheduler=args.use_checkpoint_opt_param_scheduler,
+        override_opt_param_scheduler=args.override_opt_param_scheduler)
 
-    return lr_scheduler
+    return opt_param_scheduler
 
 
-def setup_model_and_optimizer(model_provider_func, model_type):
+def setup_model_and_optimizer(model_provider_func,
+                              model_type,
+                              no_wd_decay_cond=None,
+                              scale_lr_cond=None,
+                              lr_mult=1.0):
     """Setup model and optimizer."""
     args = get_args()
 
     model = get_model(model_provider_func, model_type)
-
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
-    optimizer = get_megatron_optimizer(unwrapped_model)
 
-    lr_scheduler = get_learning_rate_scheduler(optimizer)
+    optimizer = get_megatron_optimizer(model, no_wd_decay_cond,
+                                       scale_lr_cond, lr_mult)
+    opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
 
     if args.load is not None:
         timers = get_timers()
-        # Extra barrier is added to make sure all ranks report the
-        # max time.
-        torch.distributed.barrier()
-        timers('load-checkpoint').start()
-        args.iteration = load_checkpoint(model, optimizer, lr_scheduler)
-        torch.distributed.barrier()
-        timers('load-checkpoint').stop()
+        timers('load-checkpoint', log_level=0).start(barrier=True)
+        args.iteration = load_checkpoint(model, optimizer, opt_param_scheduler)
+        timers('load-checkpoint').stop(barrier=True)
         timers.log(['load-checkpoint'])
     else:
         args.iteration = 0
@@ -385,11 +405,11 @@ def setup_model_and_optimizer(model_provider_func, model_type):
         if args.fp16:
             optimizer.reload_model_params()
 
-    return model, optimizer, lr_scheduler
+    return model, optimizer, opt_param_scheduler
 
 
 def train_step(forward_step_func, data_iterator,
-               model, optimizer, lr_scheduler):
+               model, optimizer, opt_param_scheduler):
     """Single training step."""
     args = get_args()
     timers = get_timers()
@@ -400,63 +420,55 @@ def train_step(forward_step_func, data_iterator,
             partition.zero_grad_buffer()
     optimizer.zero_grad()
 
+    # Forward pass.
+    timers('forward-backward', log_level=1).start(
+        barrier=args.barrier_with_L1_time)
     forward_backward_func = get_forward_backward_func()
+    fwd_bwd_timers = timers if args.timing_log_level > 1 else None
     losses_reduced = forward_backward_func(
         forward_step_func, data_iterator, model,
-        optimizer, timers, forward_only=False)
+        optimizer, fwd_bwd_timers, forward_only=False)
+    timers('forward-backward').stop()
 
-    # Empty unused memory
+    # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
         torch.cuda.empty_cache()
 
-    # All-reduce if needed.
-    if args.DDP_impl == 'local':
-        timers('backward-params-all-reduce').start()
-        for model_module in model:
-            model_module.allreduce_gradients()
-        timers('backward-params-all-reduce').stop()
+    # Reduce gradients.
+    optimizer.reduce_model_grads(args, timers)
 
-    # All-reduce word_embeddings' grad across first and last stages to ensure
-    # that word_embeddings parameters stay in sync.
-    # This should only run for models that support pipelined model parallelism
-    # (BERT and GPT-2).
-    timers('backward-embedding-all-reduce').start()
-    if mpu.is_rank_in_embedding_group(ignore_virtual=True) and \
-            mpu.get_pipeline_model_parallel_world_size() > 1:
-        if mpu.is_pipeline_first_stage(ignore_virtual=True):
-            unwrapped_model = model[0]
-        elif mpu.is_pipeline_last_stage(ignore_virtual=True):
-            unwrapped_model = model[-1]
-        else:  # We do not support the interleaved schedule for T5 yet.
-            unwrapped_model = model[0]
-        unwrapped_model = unwrap_model(
-            unwrapped_model, (torchDDP, LocalDDP, Float16Module))
-
-        if unwrapped_model.share_word_embeddings:
-            word_embeddings_weight = unwrapped_model.word_embeddings_weight()
-            if args.DDP_impl == 'local':
-                grad = word_embeddings_weight.main_grad
-            else:
-                grad = word_embeddings_weight.grad
-            torch.distributed.all_reduce(grad, group=mpu.get_embedding_group())
-    timers('backward-embedding-all-reduce').stop()
+    # Vision gradients.
+    if args.vision_pretraining and args.vision_pretraining_type == "dino":
+        unwrapped_model = unwrap_model(model[0],
+                                       (torchDDP, LocalDDP, Float16Module))
+        unwrapped_model.cancel_gradients_last_layer(args.curr_iteration)
 
     # Update parameters.
-    timers('optimizer').start()
-    update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
+    timers('optimizer', log_level=1).start(barrier=args.barrier_with_L1_time)
+    update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
     timers('optimizer').stop()
+
+    # Gather params.
+    if update_successful:
+        optimizer.gather_model_params(args, timers)
+
+    # Vision momentum.
+    if args.vision_pretraining and args.vision_pretraining_type == "dino":
+        unwrapped_model = unwrap_model(model[0],
+                                       (torchDDP, LocalDDP, Float16Module))
+        unwrapped_model.update_momentum(args.curr_iteration)
 
     # Update learning rate.
     if update_successful:
         increment = get_num_microbatches() * \
                     args.micro_batch_size * \
                     args.data_parallel_size
-        lr_scheduler.step(increment=increment)
+        opt_param_scheduler.step(increment=increment)
         skipped_iter = 0
     else:
         skipped_iter = 1
 
-    # Empty unused memory
+    # Empty unused memory.
     if args.empty_unused_memory_level >= 2:
         torch.cuda.empty_cache()
 
@@ -508,28 +520,32 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         nan_iters_key, 0) + int(got_nan)
 
     # Logging.
-    timers_to_log = []
-
-    def add_to_logging(name):
-        if name in timers.timers:
-            timers_to_log.append(name)
-    add_to_logging('forward-compute')
-    add_to_logging('forward-recv')
-    add_to_logging('forward-send')
-    add_to_logging('forward-backward-send-forward-backward-recv')
-    add_to_logging('backward-compute')
-    add_to_logging('backward-recv')
-    add_to_logging('backward-send')
-    add_to_logging('backward-send-forward-recv')
-    add_to_logging('backward-send-backward-recv')
-    add_to_logging('backward-params-all-reduce')
-    add_to_logging('backward-embedding-all-reduce')
-    add_to_logging('optimizer-copy-to-main-grad')
-    add_to_logging('optimizer-unscale-and-check-inf')
-    add_to_logging('optimizer-clip-main-grad')
-    add_to_logging('optimizer-copy-main-to-model-params')
-    add_to_logging('optimizer')
-    add_to_logging('batch-generator')
+    timers_to_log = [
+        'forward-backward',
+        'forward-compute',
+        'backward-compute',
+        'batch-generator',
+        'forward-recv',
+        'forward-send',
+        'backward-recv',
+        'backward-send',
+        'forward-send-forward-recv',
+        'forward-send-backward-recv',
+        'backward-send-forward-recv',
+        'backward-send-backward-recv',
+        'forward-backward-send-forward-backward-recv',
+        'layernorm-grads-all-reduce',
+        'embedding-grads-all-reduce',
+        'grads-all-reduce',
+        'grads-reduce-scatter',
+        'params-all-gather',
+        'optimizer-copy-to-main-grad',
+        'optimizer-unscale-and-check-inf',
+        'optimizer-clip-main-grad',
+        'optimizer-count-zeros',
+        'optimizer-inner-step',
+        'optimizer-copy-main-to-model-params',
+        'optimizer']
 
     # Calculate batch size.
     batch_size = args.micro_batch_size * args.data_parallel_size * \
@@ -539,8 +555,12 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                        total_loss_dict[skipped_iters_key]
 
     # Tensorboard values.
-    if writer and (iteration % args.tensorboard_log_interval == 0 ) and \
-       is_last_rank():
+    # Timer requires all the ranks to call.
+    if args.log_timers_to_tensorboard and \
+       (iteration % args.tensorboard_log_interval == 0):
+        timers.write(timers_to_log, writer, iteration,
+                     normalizer=total_iterations)
+    if writer and (iteration % args.tensorboard_log_interval == 0):
         if args.log_learning_rate_to_tensorboard:
             writer.add_scalar('learning-rate', learning_rate, iteration)
             writer.add_scalar('learning-rate vs samples', learning_rate,
@@ -557,6 +577,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             writer.add_scalar('loss-scale', loss_scale, iteration)
             writer.add_scalar('loss-scale vs samples', loss_scale,
                               args.consumed_train_samples)
+        if args.log_world_size_to_tensorboard:
+            writer.add_scalar('world-size', args.world_size, iteration)
+            writer.add_scalar('world-size vs samples', args.world_size,
+                              args.consumed_train_samples)
         if grad_norm is not None:
             writer.add_scalar('grad-norm', grad_norm, iteration)
             writer.add_scalar('grad-norm vs samples', grad_norm,
@@ -569,9 +593,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             writer.add_scalar('params-norm', params_norm, iteration)
             writer.add_scalar('params-norm vs samples', params_norm,
                               args.consumed_train_samples)
-        if args.log_timers_to_tensorboard:
-            timers.write(timers_to_log, writer, iteration,
-                         normalizer=total_iterations)
         if args.log_memory_to_tensorboard:
             mem_stats = torch.cuda.memory_stats()
             writer.add_scalar(
@@ -591,7 +612,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             )
 
     if iteration % args.log_interval == 0:
-        elapsed_time = timers('interval-time').elapsed()
+        elapsed_time = timers('interval-time').elapsed(barrier=True)
         elapsed_time_per_iteration = elapsed_time / total_iterations
         if writer:
             if args.log_timers_to_tensorboard:
@@ -637,20 +658,19 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     return report_memory_flag
 
 
-def save_checkpoint_and_time(iteration, model, optimizer, lr_scheduler):
+def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     timers = get_timers()
     # Extra barrier is added to make sure
     # all ranks report the max time.
-    torch.distributed.barrier()
-    timers('save-checkpoint').start()
-    save_checkpoint(iteration, model, optimizer, lr_scheduler)
-    torch.distributed.barrier()
-    timers('save-checkpoint').stop()
+    timers('save-checkpoint', log_level=0).start(barrier=True)
+    save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
+    timers('save-checkpoint').stop(barrier=True)
     timers.log(['save-checkpoint'])
 
 
-def train(forward_step_func, model, optimizer, lr_scheduler,
-          train_data_iterator, valid_data_iterator):
+def train(forward_step_func, model, optimizer, opt_param_scheduler,
+          train_data_iterator, valid_data_iterator,
+          process_non_loss_data_func):
     """Train the model function."""
     args = get_args()
     timers = get_timers()
@@ -668,17 +688,18 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
     # Iterations.
     iteration = args.iteration
 
-    timers('interval-time').start()
+    timers('interval-time', log_level=0).start(barrier=True)
     print_datetime('before the start of training step')
     report_memory_flag = True
     while iteration < args.train_iters:
         update_num_microbatches(args.consumed_train_samples)
+        args.curr_iteration = iteration
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                        train_data_iterator,
                        model,
                        optimizer,
-                       lr_scheduler)
+                       opt_param_scheduler)
         iteration += 1
         args.consumed_train_samples += mpu.get_data_parallel_world_size() * \
                                        args.micro_batch_size * \
@@ -699,7 +720,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
         if args.adlr_autoresume and \
            (iteration % args.adlr_autoresume_interval == 0):
             check_adlr_autoresume_termination(iteration, model, optimizer,
-                                              lr_scheduler)
+                                              opt_param_scheduler)
 
         # Evaluation
         if args.eval_interval and iteration % args.eval_interval == 0 and \
@@ -707,14 +728,23 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
             prefix = 'iteration {}'.format(iteration)
             evaluate_and_print_results(prefix, forward_step_func,
                                        valid_data_iterator, model,
-                                       iteration, False)
+                                       iteration, process_non_loss_data_func,
+                                       False)
 
         # Checkpointing
         saved_checkpoint = False
+        if args.exit_signal_handler:
+            signal_handler = get_signal_handler()
+            if any(signal_handler.signals_received()):
+                save_checkpoint_and_time(iteration, model, optimizer,
+                                         opt_param_scheduler)
+                print_datetime('exiting program after receiving SIGTERM.')
+                sys.exit()
+
         if args.save and args.save_interval and \
            iteration % args.save_interval == 0:
             save_checkpoint_and_time(iteration, model, optimizer,
-                                     lr_scheduler)
+                                     opt_param_scheduler)
             saved_checkpoint = True
 
         # Exiting based on duration
@@ -728,7 +758,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
             if done:
                 if not saved_checkpoint:
                     save_checkpoint_and_time(iteration, model, optimizer,
-                                             lr_scheduler)
+                                             opt_param_scheduler)
                 print_datetime('exiting program after {} minutes'.format(train_time))
                 sys.exit()
 
@@ -736,7 +766,7 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
         if args.exit_interval and iteration % args.exit_interval == 0:
             if not saved_checkpoint:
                 save_checkpoint_and_time(iteration, model, optimizer,
-                                         lr_scheduler)
+                                         opt_param_scheduler)
             torch.distributed.barrier()
             print_datetime('exiting program at iteration {}'.format(iteration))
             sys.exit()
@@ -745,9 +775,16 @@ def train(forward_step_func, model, optimizer, lr_scheduler,
     return iteration
 
 
-def evaluate(forward_step_func, data_iterator, model, verbose=False):
+def evaluate(forward_step_func,
+             data_iterator,
+             model,
+             process_non_loss_data_func,
+             verbose=False):
     """Evaluation."""
     args = get_args()
+
+    if args.vision_pretraining and args.vision_pretraining_type == "dino":
+        compute_feature_bank(model)
 
     # Turn on evaluation mode which disables dropout.
     for model_module in model:
@@ -759,13 +796,13 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
         iteration = 0
         total_iterations = args.eval_iters
         if args.eval_iters == -1:
+            print_rank_0(F"Evaluation on the entire set as eval-iters is set to {args.eval_iters}")
             samples_per_iteration = mpu.get_data_parallel_world_size() \
                                         * args.micro_batch_size \
                                         * get_num_microbatches()
-            print_rank_0(F"Evaluation on the entire validation set as eval-iters is equal to {args.eval_iters} and samples per iteration: {samples_per_iteration}")
             total_iterations = math.ceil(args.eval_total_samples / samples_per_iteration)
-            # total_iterations = args.eval_total_samples // samples_per_iteration
-            print_rank_0(F"Total Evaluation Iterations: {total_iterations}, total eval samples: {args.eval_total_samples}")
+            print_rank_0(F"Evaluation Iterations: {total_iterations}, Total Eval Samples: {args.eval_total_samples}, samples per iteration: {samples_per_iteration}")
+            args.consumed_valid_samples = 0
         while iteration < total_iterations:
             iteration += 1
             if verbose and iteration % args.log_interval == 0:
@@ -788,10 +825,18 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
                         total_loss_dict[key] = total_loss_dict.get(
                             key, torch.cuda.DoubleTensor([0.0])) + loss_dict[key]
 
-            # TODO: might require accounting for padded batches
-            args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
-                                           * args.micro_batch_size \
-                                           * get_num_microbatches()
+            if args.eval_iters == -1 and iteration == total_iterations and args.eval_total_samples % samples_per_iteration != 0:
+                args.consumed_valid_samples += args.eval_total_samples % samples_per_iteration
+            else:
+                args.consumed_valid_samples += mpu.get_data_parallel_world_size() \
+                                            * args.micro_batch_size \
+                                            * get_num_microbatches()
+        collected_non_loss_data = None
+        if process_non_loss_data_func is not None and is_last_rank():
+            collected_non_loss_data = forward_backward_func(
+                forward_step_func, data_iterator, model, optimizer=None,
+                timers=None, forward_only=True, collect_non_loss_data=True)
+
     # Move model back to the train mode.
     for model_module in model:
         model_module.train()
@@ -801,22 +846,22 @@ def evaluate(forward_step_func, data_iterator, model, verbose=False):
             total_loss_dict[key] /= total_iterations * get_num_microbatches()
 
     if 'lm loss sum' in total_loss_dict and 'lm mask sum' in total_loss_dict:
-        if args.eval_iters == -1:
-            assert total_loss_dict['lm mask sum'] / args.seq_length == args.eval_total_samples, \
-                f'{total_loss_dict["lm mask sum"]} / {args.seq_length} != {args.eval_total_samples}'
         total_loss_dict['lm loss'] = (total_loss_dict.pop('lm loss sum')
                                       / total_loss_dict.pop('lm mask sum'))
 
-    return total_loss_dict
+    return total_loss_dict, collected_non_loss_data
 
 def evaluate_and_print_results(prefix, forward_step_func,
                                data_iterator, model,
-                               iteration, verbose=False):
+                               iteration, process_non_loss_data_func,
+                               verbose=False):
     """Helper function to evaluate and dump results on screen."""
     args = get_args()
     writer = get_tensorboard_writer()
 
-    total_loss_dict = evaluate(forward_step_func, data_iterator, model, verbose)
+    total_loss_dict, collected_non_loss_data = evaluate(
+        forward_step_func, data_iterator, model,
+        process_non_loss_data_func, verbose)
     string = ' validation loss at {} | '.format(prefix)
     for key in total_loss_dict:
         string += '{} value: {:.6E} | '.format(key, total_loss_dict[key].item())
@@ -834,6 +879,9 @@ def evaluate_and_print_results(prefix, forward_step_func,
                                   iteration)
                 writer.add_scalar('{} validation ppl vs samples'.format(key),
                                   ppl, args.consumed_train_samples)
+
+    if process_non_loss_data_func is not None and writer and is_last_rank():
+        process_non_loss_data_func(collected_non_loss_data, iteration, writer)
 
     length = len(string) + 1
     print_rank_last('-' * length)
@@ -876,9 +924,13 @@ def build_train_valid_test_data_iterators(
         eval_iters = (args.train_iters // args.eval_interval + 1) * \
                      args.eval_iters
         test_iters = args.eval_iters
-        train_val_test_num_samples = [train_samples,
-                                      eval_iters * args.global_batch_size,
-                                      test_iters * args.global_batch_size]
+        if args.eval_iters == -1:
+            print_rank_0("Evaluation iterations are set to -1")
+            train_val_test_num_samples = [train_samples, -1, -1]
+        else:
+            train_val_test_num_samples = [train_samples,
+                                        eval_iters * args.global_batch_size,
+                                        test_iters * args.global_batch_size]
         print_rank_0(' > datasets target sizes (minimum size):')
         print_rank_0('    train:      {}'.format(train_val_test_num_samples[0]))
         print_rank_0('    validation: {}'.format(train_val_test_num_samples[1]))
@@ -887,15 +939,21 @@ def build_train_valid_test_data_iterators(
         # Build the datasets.
         train_ds, valid_ds, test_ds = build_train_valid_test_datasets_provider(
             train_val_test_num_samples)
+
         if args.eval_iters == -1:
             eval_total_samples = len(valid_ds)
+            consumed_valid_samples = 0
+            use_all_eval_samples = True
         else:
             eval_total_samples = 0
+            consumed_valid_samples = args.consumed_valid_samples
+            use_all_eval_samples = False
+
         # Build dataloders.
         train_dataloader = build_pretraining_data_loader(
             train_ds, args.consumed_train_samples)
         valid_dataloader = build_pretraining_data_loader(
-            valid_ds, args.consumed_valid_samples, use_all_samples=args.eval_iters == -1)
+            valid_ds, consumed_valid_samples, use_all_eval_samples)
         test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
         # Flags to know if we need to do training/validation/testing.
@@ -916,7 +974,6 @@ def build_train_valid_test_data_iterators(
     args.do_valid = flags[1].item()
     args.do_test = flags[2].item()
     args.eval_total_samples = flags[3].item()
-
 
     # Build iterators.
     dl_type = args.dataloader_type

@@ -3,7 +3,7 @@
 #SBATCH --exclusive
 #SBATCH --dependency=singleton
 #SBATCH --mem=0
-#SBATCH --array=0-7%8
+#SBATCH --array=6-7%8
 #SBATCH --requeue
 
 C4_PATH=$1

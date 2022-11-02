@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,20 +32,26 @@ def post_language_model_processing(lm_output, labels, logit_weights,
                                    parallel_output,
                                    fp16_lm_cross_entropy):
 
-    # Output.
+    # Output. Format [s b h]
     output = parallel_lm_logits(
         lm_output,
         logit_weights,
         parallel_output)
 
     if labels is None:
-        return output
+        # [s b h] => [b s h]
+        return output.transpose(0,1).contiguous()
     else:
+        # [b s] => [s b]
+        labels = labels.transpose(0,1).contiguous()
         if fp16_lm_cross_entropy:
             assert output.dtype == torch.half
             loss = mpu.vocab_parallel_cross_entropy(output, labels)
         else:
             loss = mpu.vocab_parallel_cross_entropy(output.float(), labels)
+        
+        # [s b] => [b, s]
+        loss = loss.transpose(0,1).contiguous()
         return loss
 
 
@@ -64,13 +70,18 @@ class GPTModel(MegatronModule):
         self.pre_process = pre_process
         self.post_process = post_process
         self.fp16_lm_cross_entropy = args.fp16_lm_cross_entropy
+        if args.no_scaled_init:
+            scaled_init_method = init_method_normal(args.init_method_std)
+        else:
+            scaled_init_method = scaled_init_method_normal(args.init_method_std, args.num_layers)
+
 
         self.language_model, self._language_model_key = get_language_model(
             num_tokentypes=num_tokentypes,
             add_pooler=False,
             encoder_attn_mask_type=AttnMaskType.causal,
             init_method=init_method_normal(args.init_method_std),
-            scaled_init_method=init_method_normal(args.init_method_std),
+            scaled_init_method=scaled_init_method,
             pre_process=self.pre_process,
             post_process=self.post_process)
 
