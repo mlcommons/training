@@ -51,7 +51,6 @@ from megatron.data.data_samplers import build_pretraining_data_loader
 from megatron.utils import calc_params_l2_norm
 from megatron.schedules import get_forward_backward_func
 from megatron.utils import report_memory
-from megatron.model.vision.knn_monitor import compute_feature_bank
 
 
 def print_datetime(string):
@@ -782,9 +781,6 @@ def evaluate(forward_step_func,
              verbose=False):
     """Evaluation."""
     args = get_args()
-
-    if args.vision_pretraining and args.vision_pretraining_type == "dino":
-        compute_feature_bank(model)
 
     # Turn on evaluation mode which disables dropout.
     for model_module in model:
