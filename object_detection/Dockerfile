@@ -22,6 +22,12 @@ RUN pip install ninja==1.8.2.post2 \
 
 RUN pip install --no-cache-dir https://github.com/mlperf/logging/archive/9ea0afa.zip
 
+WORKDIR /workspace/object_detection
+COPY . .
+RUN cd pytorch \
+ && rm -rf build/ \
+ && python setup.py clean build develop --user
+
 # For information purposes only, these are the versions of the packages which we've successfully used:
 # $ pip list
 # Package              Version           Location
