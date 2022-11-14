@@ -55,4 +55,6 @@ RUN pip install --global-option="--cpp_ext" --global-option="--cuda_ext" https:/
 COPY requirements.txt .
 RUN pip install --no-cache --disable-pip-version-check -U -r requirements.txt
 
+ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+
 COPY . .
