@@ -1,10 +1,11 @@
 FROM pytorch/pytorch:1.6.0-cuda10.1-cudnn7-devel
 
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 
 # install basics
 RUN apt-get update -y \
- && apt-get install -y apt-utils=1.6.12ubuntu0.2 \
+ && apt-get install -y apt-utils \
                        libglib2.0-0=2.56.1-2ubuntu1 \
                        libsm6=2:1.2.2-1 \
                        libxext6=2:1.3.3-1 \
