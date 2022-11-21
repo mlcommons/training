@@ -1,5 +1,5 @@
 # 1. Problem 
-This task benchmarks on policy reinforcement learning for the 19x19 version of the boardgame go. The model plays games against itself and uses these games to improve play.
+The purpose of this benchmark is to evaluate the performance on the 19x19 version of the board game Go.  While inspired by DeepMind's AlphaGo algorithm, this project is not a DeepMind project nor is it affiliated with the official AlphaGo project.  The Go engine to be evaluated here is based on a fork of Minigo, which uses self-play reinforcement learning to play against itself and improve its performance.  Unlike some of its predecessors, this type of Go engine does not require any supervisory knowledge from human experts.
 
 # 2. Directions
 ### Steps to configure machine
@@ -64,21 +64,50 @@ To run, this assumes you checked out the repo into $HOME, adjust paths as necess
     NOW=`date "+%F-%T"`
     sudo docker run --runtime=nvidia -t -i $IMAGE "./run_and_time.sh" $SEED | tee benchmark-$NOW.log
     
-To change the quality target, modify `params/final.json` and set the field `TERMINATION_ACCURACY` to be `0.10` for about a 10 hour runtime, or `0.03` for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying `params/final.josn`.
+To change the quality target, modify 'params/final.json' and set the field 'TERMINATION_ACCURACY' to be '0.10' for about a 10 hour runtime, or '0.03' for about a 3 hour runtime. Note that you will have to rebuild the docker after modifying 'params/final.json'.
+
+### Tunable hyperparameters
+
+The following flags are allowed to be modified by entrants:
+Flags that do not directly affect convergence:
+ - _all flags related to file paths & device IDs_
+ - `bool_features`
+ - `input_layout`
+ - `summary_steps`
+ - `cache_size_mb`
+ - `num_read_threads`
+ - `num_write_threads`
+ - `output_threads`
+ - `selfplay_threads`
+ - `parallel_search`
+ - `parallel_inference`
+ - `concurrent_games_per_thread`
+ - `validate`
+ - `holdout_pct`
+
+Flags that directly affect convergence:
+ - `train_batch_size`
+ - `lr_rates`
+ - `lr_boundaries`
+
+Entrants are also free to replace the code responsible for writing, shuffling
+and sampling training examples with equivalent functionality (e.g. replacing the
+use of `sample_records` and a file system with a different storage solution).
 
 # 3. Model
-### Publication/Attribution
+The seminal work on AlphaGo [1] showed that the combination supervised learning (guided by human expert games) with self-play based reinforcement learning could result in a system capable of defeating professional players. In follow-up work, AlphaGo Zero was introduced [2], which abandoned the requirement for supervised learning and relied purely on self-play reinforcement learning to achieve superhuman performance. 
 
-This benchmark is based on a fork of the minigo project (https://github.com/tensorflow/minigo); which is inspired by the work done by Deepmind with ["Mastering the Game of Go with Deep Neural Networks and
-Tree Search"](https://www.nature.com/articles/nature16961), ["Mastering the Game of Go without Human
-Knowledge"](https://www.nature.com/articles/nature24270), and ["Mastering Chess and Shogi by
-Self-Play with a General Reinforcement Learning
-Algorithm"](https://arxiv.org/abs/1712.01815). Note that minigo is an
-independent effort from AlphaGo, and that this fork is minigo is independent from minigo itself. 
+This benchmark does not use AlphaGo Zero directly, but rather is based on a fork of the Minigo project (https://github.com/tensorflow/minigo). Minigo is a compact Go engine that is modeled after and inspired by AlphaGo Zero.  
+
+[1] [Mastering the game of Go with deep neural networks and tree search](https://www.nature.com/articles/nature16961) by David Silver, et al., Jan. 2016.
+
+[2] [Mastering the game of Go without human knowledge](https://www.nature.com/articles/nature24270) by David Silver, et al., Oct. 2017.
+
+[3] [Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm](https://arxiv.org/abs/1712.01815) by David Silver, et al., Dec. 2017.
 
 ### Reinforcement Setup
 
-This benchmark includes both the environment and training for 19x19 go. There are four primary phases in this benchmark, these phases are repeated in order:
+This benchmark includes both the environment and training for 19x19 Go. There are four primary phases in this benchmark, these phases are repeated in order:
 
  - Selfplay: the *current best* model plays games against itself to produce board positions for training.
  - Training: train the neural networks selfplay data from several recent models. 
