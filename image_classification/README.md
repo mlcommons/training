@@ -1,8 +1,14 @@
 This is the README for v1.0 using the TensorFlow2 model. The pre-v1.0 README using the TensorFlow1 model is [here](./README_old.md).
 
 # 1. Problem
-This benchmark uses resnet v1.5 to classify images with a fork from
-https://github.com/tensorflow/models/tree/master/official/vision/image_classification/resnet .
+The purpose of this benchmark is to evaluate the performance of a ResNet50 network for image classification.  In computer vision, the task of image classification entails the assignment of a single class label to a given input image.  For example, in the graphic below, the image classification system assigns the label "soccer_ball" to the input image with 93.43% confidence: 
+
+![](https://www.pyimagesearch.com/wp-content/uploads/2017/03/imagenet_vgg16_soccer_ball.jpg)
+
+ImageNet is a standard dataset for evaluating the performance of deep neural networks on classification tasks.  ImageNet contains more than 14 million hand-annotated images from over 20,000 categories, such as peacock, eggnog, and corn.
+
+This benchmark uses ResNet50 v1.5 to classify images from the ImageNet dataset with a fork from
+https://github.com/tensorflow/models/tree/master/official/vision/configs/experiments/image_classification .
 
 # 2. Dataset/Environment
 ## Publication/Attribution
@@ -53,18 +59,34 @@ traversal for evaluation.
 
 # 3. Model
 ## Publication/Attribution
+The model used in this benchmark is a ResNet50 deep network, which was first introduced in 2015 [1].  Prior to the introduction of ResNet, some of the deepest networks included VGG and GoogleNet, with only 19 and 22 layers, respectively. In theory, the deeper the network, the greater its capacity, which in turn allows it to approximate increasingly complex functions.  However, prior to ResNet's release, practically it was observed that very deep networks exhibited higher errors on training data compared to their shallower counterparts.  The ground-breaking contribution of ResNet [1][2] was the introduction of the residual block, which configured the network to approximate a residual mapping rather than the underlying original mapping.  An image of a residual block is shown in the figure below.  The advantages of the residual block are two-fold: i) Allow for faster convergence of optimizers. ii) Avoid vanishing gradients.
+
+![](https://miro.medium.com/max/1140/1*D0F3UitQ2l5Q0Ak-tjEdJg.png)
+
+In the figure below, a VGG-19 network (left) is compared with a 34-layer plain network (center) and a 34-layer residual network. 
+
+![](https://miro.medium.com/max/750/1*kBlZtheCjJiA3F1e0IurCw.png)
+
 See the following papers for more background:
 
 [1] [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
 
 [2] [Identity Mappings in Deep Residual Networks](https://arxiv.org/abs/1603.05027) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
 
+## Structure
+For this benchmark, a 50 layer ResNet architecture is used.  In the 50-layer variant of ResNet, a 3-layer bottleneck building block is adopted, as shown in the figure below.  
 
-## Structure & Loss
-In brief, this is a 50 layer v1 RNN. Refer to
-[Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf)
-for the layer structure and loss function.
+![](https://pyimagesearch.com/wp-content/uploads/2018/12/keras_conv2d_resnet_module.png)
 
+The overall network architecture for ResNet50 is shown in the center of the following table.  In total, 16 of the 3-layer residual blocks are used in addition to an initial convolutional layer and a final fully connected layer.
+
+![](https://pytorch.org/assets/images/resnet.png)
+
+One final subtle note of distinction is that this benchmark uses a slight variant of the original ResNet bottleneck building block [1]. This modified version changes where striding is performed when downsampling.  In the original ResNet implementation, a stride = 2 was used during the first 1x1 convolution within the bottleneck building blocks; however, the v1.5 variant uses stride = 2 during the 3x3 convolution.  As such, this benchmark actually uses ResNet50 v1.5 rather than the original ResNet50 v1 from [1].  The rationale for using ResNet50 v1.5 is that it offers slightly higher accuracies at the expense of marginally slower speed. 
+
+## Loss function
+Details of the loss function can be found here:
+[Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf).
 
 ## Weight and bias initialization
 Weight initialization is done as described here in
@@ -72,8 +94,8 @@ Weight initialization is done as described here in
 
 
 ## Optimizer
-Either SGD Momentum based optimizer, or the [LARS optimizer](https://arxiv.org/abs/1708.03888) can be used.
-
+Either SGD Momentum based optimizer, or the [LARS optimizer](https://arxiv.org/abs/1708.03888) can be used.  
+MLCommons RCP Hyperparemeters can be found [here](https://github.com/mlcommons/logging/tree/master/mlperf_logging/rcp_checker) 
 
 # 4. Quality
 ## Quality metric
