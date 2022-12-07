@@ -61,7 +61,7 @@ See the following papers for more background:
 
 
 ## Structure & Loss
-In brief, this is a 50 layer v1 RNN. Refer to
+In brief, this is a 50 layer v1.5 ResNet. Refer to
 [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385.pdf)
 for the layer structure and loss function.
 
