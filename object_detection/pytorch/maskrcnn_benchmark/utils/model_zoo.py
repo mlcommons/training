@@ -16,7 +16,7 @@ import os
 import sys
 
 # apis moved from torch.utils.model_zoo to torch.hub
-from torch.hub import _download_url_to_file
+from torch.hub import download_url_to_file
 from torch.hub import urlparse
 from torch.hub import HASH_REGEX
 
@@ -65,6 +65,6 @@ def cache_url(url, model_dir=None, progress=True):
             # if the hash_prefix is less than 6 characters
             if len(hash_prefix) < 6:
                 hash_prefix = None
-        _download_url_to_file(url, cached_file, hash_prefix, progress=progress)
+        download_url_to_file(url, cached_file, hash_prefix, progress=progress)
     synchronize()
     return cached_file
