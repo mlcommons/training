@@ -1,0 +1,3 @@
+fbgemm-gpu==0.3.2
+torchmetrics==0.11.0
+torchrec==0.3.2
