@@ -26,8 +26,9 @@ from megatron.model.enums import AttnMaskType, ModelType, LayerType, AttnType
 from megatron.model import LayerNorm
 from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
-from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
-
+from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu, \
+    make_sharded_tensor_for_checkpoint
+from megatron.core.dist_checkpointing import ShardedTensor
 
 """ We use the following notation throughout this file:
      h: hidden size
@@ -772,6 +773,34 @@ class ParallelTransformer(MegatronModule):
                 layer_type=layer_type,
                 self_attn_mask_type=self_attn_mask_type,
                 drop_path_rate=self.drop_path_rates[layer_number - 1])
+
+        offset = self.get_layers_offset()
+
+        if self.num_layers == 0:
+            # When a standalone embedding stage is used (e.g.,
+            # args.standalone_embedding_stage == True), virtual pipeline ranks
+            # on pipeline rank 0 will have zero transformer layers assigned to
+            # them. This results in the model's input and output tensors to be
+            # the same, which will cause failure for certain output tensor
+            # optimizations (e.g., pipeline output deallocation). To remedy
+            # this, we assign a 'no-op' layer on these ranks, which will
+            # disconnect the input tensor from the output tensor.
+            self.num_layers = 1
+            self.layers = torch.nn.ModuleList([ NoopTransformerLayer(1) ])
+        else:
+            self.layers = torch.nn.ModuleList(
+                [build_layer(i + 1 + offset) for i in range(self.num_layers)])
+
+        if self.post_process and self.post_layer_norm:
+            # Final layer norm before output.
+            self.final_layernorm = LayerNorm(
+                args.hidden_size,
+                eps=args.layernorm_epsilon,
+                no_persist_layer_norm=args.no_persist_layer_norm,
+                sequence_parallel=args.sequence_parallel)
+
+    def get_layers_offset(self):
+        args = get_args()
         if args.virtual_pipeline_model_parallel_size is not None:
             assert args.num_layers % args.virtual_pipeline_model_parallel_size == 0, \
                 'num_layers_per_stage must be divisible by ' \
@@ -796,36 +825,14 @@ class ParallelTransformer(MegatronModule):
             if args.model_type == ModelType.encoder_and_decoder and \
                     mpu.get_pipeline_model_parallel_world_size() > 1:
                 pipeline_rank = mpu.get_pipeline_model_parallel_rank()
-                if layer_type == LayerType.encoder:
+                if self.layer_type == LayerType.encoder:
                     offset = pipeline_rank * self.num_layers
                 else:
                     num_ranks_in_enc = args.pipeline_model_parallel_split_rank
                     offset = (pipeline_rank - num_ranks_in_enc) * self.num_layers
             else:
                 offset = mpu.get_pipeline_model_parallel_rank() * self.num_layers
-
-        if self.num_layers == 0:
-            # When a standalone embedding stage is used (e.g.,
-            # args.standalone_embedding_stage == True), virtual pipeline ranks
-            # on pipeline rank 0 will have zero transformer layers assigned to
-            # them. This results in the model's input and output tensors to be
-            # the same, which will cause failure for certain output tensor
-            # optimizations (e.g., pipeline output deallocation). To remedy
-            # this, we assign a 'no-op' layer on these ranks, which will
-            # disconnect the input tensor from the output tensor.
-            self.num_layers = 1
-            self.layers = torch.nn.ModuleList([ NoopTransformerLayer(1) ])
-        else:
-            self.layers = torch.nn.ModuleList(
-                [build_layer(i + 1 + offset) for i in range(self.num_layers)])
-
-        if self.post_process and self.post_layer_norm:
-            # Final layer norm before output.
-            self.final_layernorm = LayerNorm(
-                args.hidden_size,
-                eps=args.layernorm_epsilon,
-                no_persist_layer_norm=args.no_persist_layer_norm,
-                sequence_parallel=args.sequence_parallel)
+        return offset
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
@@ -947,3 +954,48 @@ class ParallelTransformer(MegatronModule):
             hidden_states = self.final_layernorm(hidden_states)
 
         return hidden_states
+
+    def state_dict_for_save_checkpoint(self, destination=None, prefix='', keep_vars=False,
+                                       unified_checkpoint=False):
+        state_dict = self.state_dict(prefix=prefix, keep_vars=keep_vars or unified_checkpoint)
+        if not unified_checkpoint:
+            return state_dict
+        tensor_parallel_layers_axis_map = {
+            'self_attention.query_key_value.weight': 0,
+            'self_attention.query_key_value.bias': 0,
+            'self_attention.dense.weight': 1,
+            'mlp.dense_h_to_4h.weight': 0,
+            'mlp.dense_h_to_4h.bias': 0,
+            'mlp.dense_4h_to_h.weight': 1,
+        }
+
+        offset = self.get_layers_offset()
+        num_layers = get_args().num_layers
+
+        for layer_name in state_dict.keys():
+            tensor = state_dict[layer_name]
+            if layer_name.startswith('final_layernorm'):
+                state_dict[layer_name] = make_sharded_tensor_for_checkpoint(tensor, layer_name)
+                continue
+            assert layer_name.startswith('layers.')
+            global_layer_offset = offset + int(layer_name.split('.')[1])
+            layer_name_base = '.'.join(layer_name.split('.')[2:])
+            sharded_offsets = [(0, global_layer_offset, num_layers)]  # PP sharding
+            if layer_name_base in tensor_parallel_layers_axis_map:
+                tp_axis = tensor_parallel_layers_axis_map[layer_name_base]
+                # TP sharding
+                sharded_offsets.append([tp_axis + 1,  # +1 for PP dimension
+                                        mpu.get_tensor_model_parallel_rank(),
+                                        mpu.get_tensor_model_parallel_world_size()])
+                replica_id = mpu.get_data_parallel_rank()
+            else:
+                replica_id = mpu.get_data_parallel_rank() * mpu.get_data_parallel_world_size() + mpu.get_tensor_model_parallel_rank()
+            state_dict[layer_name] = ShardedTensor.from_rank_offsets(
+                'layers.' + layer_name_base,
+                tensor,
+                *sharded_offsets,
+                replica_id=replica_id,
+                prepend_axis_num=1  # for PP sharding
+            )
+
+        return state_dict

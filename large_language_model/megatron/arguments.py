@@ -739,6 +739,8 @@ def _add_checkpointing_args(parser):
     group.add_argument('--optimizer-model-map', type=str, default=None,
                        help='Map optimizer index with model layer names.')
 
+    group.add_argument('--use-distributed-checkpointing', action='store_true',
+                       help='Use distributed checkpoint format')
     return parser
 
 

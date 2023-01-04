@@ -14,17 +14,19 @@
 # limitations under the License.
 
 """GPT-2 model."""
+from functools import partial
 
 import torch
 
 from megatron import get_args
 from megatron import mpu
+from megatron.core.dist_checkpointing.utils import add_prefix_for_sharding
 from .module import MegatronModule
 
-from .enums import AttnMaskType
+from .enums import AttnMaskType, LayerType
 from .language_model import parallel_lm_logits
 from .language_model import get_language_model
-from .utils import init_method_normal
+from .utils import init_method_normal, make_tp_sharded_tensor_for_checkpoint
 from .utils import scaled_init_method_normal
 
 
@@ -110,16 +112,26 @@ class GPTModel(MegatronModule):
             return lm_output
 
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
-                                       keep_vars=False):
-
+                                       keep_vars=False, unified_checkpoint=False):
         state_dict_ = {}
         state_dict_[self._language_model_key] \
             = self.language_model.state_dict_for_save_checkpoint(
-                destination, prefix, keep_vars)
+                destination, prefix, keep_vars, unified_checkpoint=unified_checkpoint)
+        if unified_checkpoint:
+            add_prefix_for_sharding(state_dict_[self._language_model_key], self._language_model_key)
         # Save word_embeddings.
         if self.post_process and not self.pre_process:
             state_dict_[self._word_embeddings_for_head_key] \
-                = self.word_embeddings.state_dict(destination, prefix, keep_vars)
+                = self.word_embeddings.state_dict(
+                    destination, prefix,keep_vars or unified_checkpoint)
+            if unified_checkpoint:
+                state_dict_[self._word_embeddings_for_head_key]['weight'] \
+                    = make_tp_sharded_tensor_for_checkpoint(
+                        state_dict_[self._word_embeddings_for_head_key]['weight'],
+                        f'{self._language_model_key}.embedding.word_embeddings.weight',  # reusing the same tensor!
+                        replica_id=mpu.get_data_parallel_rank() + mpu.get_data_parallel_world_size(),  # indexed twice
+                        allow_shape_mismatch=True
+                    )
         return state_dict_
 
     def load_state_dict(self, state_dict, strict=True):

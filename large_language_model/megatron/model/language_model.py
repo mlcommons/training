@@ -23,8 +23,10 @@ from megatron import mpu
 from .module import MegatronModule
 from megatron.model.enums import LayerType, AttnMaskType
 from megatron.model.transformer import ParallelTransformer
-from megatron.model.utils import get_linear_layer
+from megatron.model.utils import get_linear_layer, \
+    make_tp_sharded_tensor_for_checkpoint, make_sharded_tensor_for_checkpoint
 from megatron.model.utils import init_method_normal, scaled_init_method_normal
+from megatron.core.dist_checkpointing.utils import add_prefix_for_sharding
 
 
 def parallel_lm_logits(input_, word_embeddings_weight, parallel_output,
@@ -244,19 +246,34 @@ class Embedding(MegatronModule):
         return embeddings
 
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
-                                       keep_vars=False):
+                                       keep_vars=False, unified_checkpoint=False):
         """For easy load."""
 
         state_dict_ = {}
         state_dict_[self._word_embeddings_key] \
-            = self.word_embeddings.state_dict(destination, prefix, keep_vars)
+            = self.word_embeddings.state_dict(destination, prefix, keep_vars or unified_checkpoint)
         state_dict_[self._position_embeddings_key] \
             = self.position_embeddings.state_dict(
-                destination, prefix, keep_vars)
+                destination, prefix, keep_vars or unified_checkpoint)
+        if unified_checkpoint:
+            state_dict_[self._word_embeddings_key]['weight'] = make_tp_sharded_tensor_for_checkpoint(
+                state_dict_[self._word_embeddings_key]['weight'],
+                f'{self._word_embeddings_key}.weight',
+                allow_shape_mismatch=True
+            )
+            state_dict_[self._position_embeddings_key]['weight'] = make_sharded_tensor_for_checkpoint(
+                state_dict_[self._position_embeddings_key]['weight'],
+                f'{self._position_embeddings_key}.weight'
+            )
         if self.num_tokentypes > 0:
             state_dict_[self._tokentype_embeddings_key] \
                 = self.tokentype_embeddings.state_dict(
-                    destination, prefix, keep_vars)
+                    destination, prefix, keep_vars or unified_checkpoint)
+            if unified_checkpoint:
+                state_dict_[self._tokentype_embeddings_key]['weight'] = make_sharded_tensor_for_checkpoint(
+                    state_dict_[self._tokentype_embeddings_key]['weight'],
+                    f'{self._tokentype_embeddings_key}.weight'
+                )
 
         return state_dict_
 
@@ -479,18 +496,25 @@ class TransformerLanguageModel(MegatronModule):
             return decoder_output, encoder_output
 
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
-                                       keep_vars=False):
+                                       keep_vars=False, unified_checkpoint=False):
         """For easy load."""
 
         state_dict_ = {}
         if self.pre_process:
             state_dict_[self._embedding_key] \
                 = self.embedding.state_dict_for_save_checkpoint(
-                    destination, prefix, keep_vars)
+                    destination, prefix, keep_vars,
+                    unified_checkpoint=unified_checkpoint)
+            if unified_checkpoint:
+                add_prefix_for_sharding(state_dict_[self._embedding_key], self._embedding_key)
         if self.add_encoder:
             state_dict_[self._encoder_key] \
                 = self.encoder.state_dict_for_save_checkpoint(
-                    destination, prefix, keep_vars)
+                    destination, prefix, keep_vars,
+                    unified_checkpoint=unified_checkpoint)
+            if unified_checkpoint:
+                add_prefix_for_sharding(state_dict_[self._encoder_key], self._encoder_key)
+        # TODO: add unified checkpoint support below
         if self.post_process:
             if self.add_pooler:
                 state_dict_[self._pooler_key] \

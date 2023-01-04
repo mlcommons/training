@@ -2,11 +2,23 @@
 
 #SBATCH -p luna -A mlperf -t 00:20:00 --nodes=8 --exclusive --mem=0 --overcommit --ntasks-per-node=8 --job-name=mlperf-megatron:megatron
 
-DIR=$PWD
-MEGATRON_DIR="${DIR}"
+# Vars without defaults
+LOG_DIR=${1:?LOG_DIR not set}
+BPE_DIR=${2:?BPE_DIR not set}
+CONT="${3:?CONT not set}"
 
-LOG_DIR=$1
-BPE_DIR=$2
+# Vars with defaults
+: "${MEGATRON_DIR:=$PWD}"
+: "${GBS:=1536}"
+: "${LR:=2.0e-5}"
+: "${MIN_LR:=2.0e-6}"
+: "${EVAL_INTERVAL:=50}"
+: "${USE_BF16:=true}"  # set to false for FP32
+: "${EXTERNAL_MODEL_CHECKPOINT_DIR:=}"
+: "${EXTERNAL_TRAINING_ITERATIONS:=4000}"
+: "${EXTERNAL_GBS:=1536}"
+
+# Setup directories
 CHECKPOINT_DIR="${LOG_DIR}/GPT3-175B-checkpoints"
 TENSORBOARD_DIR="${LOG_DIR}/GPT3-175B-tensorboard"
 
@@ -43,16 +55,16 @@ options=" \
 --seq-length 2048 \
 --max-position-embeddings 2048 \
 --micro-batch-size 1 \
---global-batch-size 1536 \
---train-samples 84500000 \
+--global-batch-size ${GBS} \
+--train-samples 20000000 \
 --lr-warmup-samples 407040 \
 --lr-decay-samples 166809600 \
---lr 6.0e-5 \
---min-lr 6.0e-6 \
+--lr ${LR} \
+--min-lr ${MIN_LR} \
 --lr-decay-style cosine \
 --log-interval 1 \
 --eval-iters -1 \
---eval-interval 50 \
+--eval-interval ${EVAL_INTERVAL} \
 --attention-dropout 0.0 \
 --hidden-dropout 0.0 \
 --train-data-path ${DATA_BLEND} \
@@ -61,7 +73,6 @@ options=" \
 --merge-file ${BPE_DIR}/merges.txt \
 --save-interval 500 \
 --save ${CHECKPOINT_DIR} \
---load ${CHECKPOINT_DIR} \
 --do-layernorm-bias-weight-decay \
 --no-scaled-init \
 --loss-scale 1.0 \
@@ -78,14 +89,26 @@ options=" \
 --tensorboard-dir ${TENSORBOARD_DIR} \
 --no-query-key-layer-scaling \
 --no-seq-len-plus-one-tokens \
---bf16 \
 --seed ${RANDOM} "
 
+[ ${USE_BF16} = true ] && options+=" --bf16"
+if [ -n "${EXTERNAL_MODEL_CHECKPOINT_DIR}" ]; then
+  options+=" \
+		--no-load-rng \
+		--use-ext-ckpt \
+		--ext-iterations ${EXTERNAL_TRAINING_ITERATIONS} \
+		--ext-lr-steps $(( $EXTERNAL_TRAINING_ITERATIONS * $EXTERNAL_GBS)) \
+		--load ${EXTERNAL_MODEL_CHECKPOINT_DIR}"
+else
+  options+=" --load ${CHECKPOINT_DIR}"
+fi
+
+# Run
 run_cmd="python -u ${MEGATRON_DIR}/pretrain_gpt.py ${options}"
 DATETIME=`date +'date_%y-%m-%d_time_%H-%M-%S'`
 
 srun -l \
-     --container-image "nvcr.io/nvidia/pytorch:22.04-py3" \
+     --container-image $CONT \
      --container-mounts "$PWD:$PWD,${COM_DIR}:${COM_DIR},${LOG_DIR}:${LOG_DIR},${BPE_DIR}:${BPE_DIR}" \
      --output=$LOG_DIR/GPT3-175B-runlog-$DATETIME.log sh -c "${run_cmd}"
 

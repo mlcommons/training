@@ -9,7 +9,7 @@ To use this repository, please install a supported version of PyTorch with GPU s
 To train GPT-3, set `COM_DIR` in `gpt3_blend.sh` to point to the C4 dataset location which contains the dataset after preprocessing.
 
 ```
-sbatch run_gpt3.sh <path to log directory> <path to BPE processed directory>
+sbatch run_gpt3.sh <path to log directory> <path to BPE processed directory> <container>
 ```
 
 Use script `run_gpt3.sh` as shown above to run GPT-3 175B on clusters using slurm. You can adjust number of nodes (tested only with nodes>=8) and job run time in the sbatch command in line #3 of the `run_gpt3.sh` script.
@@ -67,15 +67,22 @@ Currently, the training script expects BPE [vocab.json](https://huggingface.co/g
 1. To find out the eod entry index (value is 5025)
 2. To find out the vocab size (value is 50257)
 
-# 3. Run External Checkpoints
-To run external checkpoints (including modified PAXML checkpoint), add following arguments to the run script after converting these checkpoints to the Megatron compliant format:
+# 3. External Checkpoints
+### How to run
+To run external checkpoints (including PAXML checkpoint converted to Megatron compliant format), set the following env variables:
+- `EXTERNAL_MODEL_CHECKPOINT_DIR` pointing to the checkpoint directory
+- `EXTERNAL_TRAINING_ITERATIONS` to number of iterations the external checkpoint was trained with (default: 4000)
+- `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
+
+Note that using an external checkpoint is needed only for the first training run. When _resuming_ Megatron training (e.g. after hitting a time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+
+### Paxml checkpoints conversion
+To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
 ```bash
---no-load-rng \
---use-ext-ckpt \
---load {EXTERNAL_MODEL_CHECKPOINT_DIR} \
---ext-iterations {TRAINING_ITERATIONS} \
---ext-optim-dir {EXTERNAL_OPTIMIZER_CHECKPOINT_DIR} \
---ext-lr-steps {GLOBAL_BATCH_SIZE * TRAINING_ITERATIONS} \
+# Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
+python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype bf16  # or `--dtype fp32` for FP32 checkpoint
+# Add framework-specific common.pt file to the checkpoint (instantaneous):
+python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_fp32.json` for FP32 checkpoint
 ```
 
 # 4. Model

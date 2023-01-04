@@ -76,10 +76,10 @@ class DistributedDataParallelBase(MegatronModule, ABC):
 
 
     def state_dict_for_save_checkpoint(self, destination=None, prefix='',
-                                       keep_vars=False):
+                                       keep_vars=False, unified_checkpoint=False):
         return self.module.state_dict_for_save_checkpoint(destination, prefix,
-                                                          keep_vars)
-
+                                                          keep_vars,
+                                                          unified_checkpoint=unified_checkpoint)
 
     def load_state_dict(self, state_dict, strict=True):
         self.module.load_state_dict(state_dict, strict=strict)

@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import torch
 from apex.optimizers import FusedAdam as Adam
 from apex.optimizers import FusedSGD as SGD
 
@@ -125,11 +126,21 @@ def get_megatron_optimizer(model,
                          weight_decay=args.weight_decay,
                          betas=(args.adam_beta1, args.adam_beta2),
                          eps=args.adam_eps)
+
+        # TODO: verify for distributed optimizer
+        def init_state_fn(opt):
+            for group in opt.param_groups:
+                for p in group['params']:
+                    if len(opt.state[p]) == 0:
+                        opt.state[p]['exp_avg'] = torch.zeros_like(p.data)
+                        opt.state[p]['exp_avg_sq'] = torch.zeros_like(p.data)
     elif args.optimizer == 'sgd':
         optimizer = SGD(param_groups,
                         lr=args.lr,
                         weight_decay=args.weight_decay,
                         momentum=args.sgd_momentum)
+        init_state_fn = None
+
     else:
         raise Exception('{} optimizer is not supported.'.format(
             args.optimizer))
@@ -182,11 +193,12 @@ def get_megatron_optimizer(model,
                       args.fp16,
                       args.bf16,
                       grad_scaler,
-                      model)
+                      model,
+                      init_state_fn)
 
     # FP32.
     return FP32Optimizer(optimizer, args.clip_grad,
                          args.log_num_zeros_in_grad,
                          params_have_main_grad,
                          args.use_contiguous_buffers_in_local_ddp,
-                         model)
+                         model, init_state_fn)

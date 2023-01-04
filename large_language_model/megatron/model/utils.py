@@ -19,7 +19,8 @@ import math
 
 import torch
 
-from megatron import get_args
+from megatron import get_args, mpu
+from megatron.core.dist_checkpointing.mapping import ShardedTensor
 
 def init_method_normal(sigma):
     """Init method based on N(0, sigma)."""
@@ -65,3 +66,19 @@ def openai_gelu(x):
 @torch.jit.script
 def erf_gelu(x):
     return x * 0.5 * (torch.erf(x / 1.41421).to(dtype=x.dtype)+torch.ones_like(x).to(dtype=x.dtype))
+
+
+def make_tp_sharded_tensor_for_checkpoint(tensor, key, tp_axis=0, replica_id=None, **kwargs):
+    return ShardedTensor.from_rank_offsets(
+        key, tensor,
+        (tp_axis, mpu.get_tensor_model_parallel_rank(), mpu.get_tensor_model_parallel_world_size()),
+        replica_id=mpu.get_data_parallel_rank() if replica_id is None else replica_id,
+        **kwargs
+    )
+
+def make_sharded_tensor_for_checkpoint(tensor, key, **kwargs):
+    return ShardedTensor.from_rank_offsets(
+        key, tensor,
+        replica_id=mpu.get_data_parallel_rank() * mpu.get_data_parallel_world_size() + mpu.get_tensor_model_parallel_rank(),
+        **kwargs
+    )

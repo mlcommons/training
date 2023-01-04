@@ -17,6 +17,8 @@
 
 from abc import ABC
 from abc import abstractmethod
+from itertools import chain
+
 from apex.multi_tensor_apply import multi_tensor_applier
 import amp_C
 import torch
@@ -26,6 +28,9 @@ from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 from megatron import get_timers
 from megatron import mpu
 from megatron import print_rank_0
+from megatron.core.dist_checkpointing.optimizer import \
+    get_param_id_to_sharded_param_map, make_sharded_optimizer_tensor, \
+    optim_state_to_sharding_state
 from megatron.model import DistributedDataParallel as LocalDDP
 from megatron.model import Float16Module
 from megatron.model.module import param_is_not_shared
@@ -75,7 +80,7 @@ class MegatronOptimizer(ABC):
                  log_num_zeros_in_grad,
                  params_have_main_grad,
                  use_contiguous_buffers_in_local_ddp,
-                 models):
+                 models, init_state_fn=None):
 
         """Input optimizer is the base optimizer for example Adam."""
         self.optimizer = optimizer
@@ -93,6 +98,8 @@ class MegatronOptimizer(ABC):
         if self.use_contiguous_buffers_in_local_ddp:
             assert self.params_have_main_grad, \
                 "use of contiguous buffer requires that params have main grad"
+
+        self.init_state_fn = init_state_fn if init_state_fn is not None else lambda x: None
 
 
     def get_parameters(self):
@@ -171,6 +178,11 @@ class MegatronOptimizer(ABC):
     def state_dict(self):
         pass
 
+    def state_dict_for_save_checkpoint(self, unified_checkpoint=False, model_sharded_state_dict=None):
+        if unified_checkpoint:
+            raise NotImplementedError(f'{self.__class__.__name__} does not support unified checkpointing')
+
+        return self.state_dict()
 
     @abstractmethod
     def load_state_dict(self, state_dict):
@@ -347,12 +359,12 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
     def __init__(self, optimizer, clip_grad, log_num_zeros_in_grad,
                  params_have_main_grad, use_contiguous_buffers_in_local_ddp,
                  fp16, bf16, grad_scaler,
-                 models):
+                 models, init_state_fn=None):
 
         super().__init__(
             optimizer, clip_grad, log_num_zeros_in_grad,
             params_have_main_grad, use_contiguous_buffers_in_local_ddp,
-            models)
+            models, init_state_fn)
 
         self.fp16 = fp16
         self.bf16 = bf16
@@ -505,12 +517,12 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
 
     def __init__(self, optimizer, clip_grad, log_num_zeros_in_grad,
                  params_have_main_grad, use_contiguous_buffers_in_local_ddp,
-                 fp16, bf16, grad_scaler, models):
+                 fp16, bf16, grad_scaler, models, init_state_fn=None):
 
         super().__init__(
             optimizer, clip_grad, log_num_zeros_in_grad,
             params_have_main_grad, use_contiguous_buffers_in_local_ddp,
-            fp16, bf16, grad_scaler, models)
+            fp16, bf16, grad_scaler, models, init_state_fn)
 
         # ======================
         # main parameter stuff
@@ -668,6 +680,37 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
         state_dict['fp32_from_fp16_params'] = self.fp32_from_float16_groups
         return state_dict
 
+    def state_dict_for_save_checkpoint(self, unified_checkpoint=False, model_sharded_state_dict=None):
+        if unified_checkpoint:
+            assert model_sharded_state_dict is not None, \
+                '`unified_checkpoint` flag requires passing `model_sharded_state_dict`'
+
+            self.init_state_fn(self.optimizer)  # TODO: consider running init only during checkpoint loading
+
+        state_dict = self.state_dict()
+        if not unified_checkpoint:
+            return state_dict
+
+        id_to_sharded_param_map = get_param_id_to_sharded_param_map(
+            model_sharded_state_dict,
+            chain.from_iterable(g for g in self.float16_groups))
+
+        # Convert fp32_from_fp16_params
+        assert len(state_dict['fp32_from_fp16_params']) == len(state_dict['optimizer']['param_groups'])
+        state_dict['fp32_from_fp16_params'] = [
+            [
+                make_sharded_optimizer_tensor(id_to_sharded_param_map[param_id], fp32_param,
+                                              prefix=f'optimizer.state.fp32_from_fp16')
+                for param_id, fp32_param in zip(state_group['params'], fp32_group)
+            ]
+            for fp32_group, state_group in zip(state_dict['fp32_from_fp16_params'],
+                                               state_dict['optimizer']['param_groups'])
+        ]
+
+        # Convert state
+        optim_state_to_sharding_state(state_dict['optimizer'], id_to_sharded_param_map)
+        return state_dict
+
 
     def load_state_dict(self, state_dict):
         # Optimizer.
@@ -708,12 +751,12 @@ class FP32Optimizer(MegatronOptimizer):
                  log_num_zeros_in_grad,
                  params_have_main_grad,
                  use_contiguous_buffers_in_local_ddp,
-                 models):
+                 models, init_state_fn=None):
 
         super(FP32Optimizer, self).__init__(
             optimizer, clip_grad, log_num_zeros_in_grad,
             params_have_main_grad, use_contiguous_buffers_in_local_ddp,
-            models)
+            models, init_state_fn)
 
         self._scale = torch.cuda.FloatTensor([1.0])
 
@@ -780,6 +823,25 @@ class FP32Optimizer(MegatronOptimizer):
 
     def state_dict(self):
         return self.optimizer.state_dict()
+
+    def state_dict_for_save_checkpoint(self, unified_checkpoint=False, model_sharded_state_dict=None):
+        if unified_checkpoint:
+            assert model_sharded_state_dict is not None, \
+                '`unified_checkpoint` flag requires passing `model_sharded_state_dict`'
+
+            self.init_state_fn(self.optimizer)  # TODO: consider running init only during checkpoint loading
+
+        state_dict = self.state_dict()
+        if not unified_checkpoint:
+            return state_dict
+
+        id_to_sharded_param_map = get_param_id_to_sharded_param_map(
+            model_sharded_state_dict,
+            chain.from_iterable(g['params'] for g in self.optimizer.param_groups))
+
+        # Convert state
+        optim_state_to_sharding_state(state_dict, id_to_sharded_param_map)
+        return state_dict
 
 
     def load_state_dict(self, state_dict):

@@ -29,3 +29,8 @@ from .initialize  import initialize_megatron
 from .utils import (print_rank_0,
                     is_last_rank,
                     print_rank_last)
+
+from mlperf_common.logging import MLLoggerWrapper
+from mlperf_common.frameworks.pyt import PyTCommunicationHandler
+
+mllogger = MLLoggerWrapper(PyTCommunicationHandler())
