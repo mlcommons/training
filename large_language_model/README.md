@@ -84,6 +84,7 @@ python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $E
 # Add framework-specific common.pt file to the checkpoint (instantaneous):
 python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_fp32.json` for FP32 checkpoint
 ```
+Correctness of the dataset preprocessing can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log)
 
 ### How to run
 To run external checkpoints (including PAXML checkpoint converted to Megatron compliant format), set the following env variables:
@@ -92,6 +93,8 @@ To run external checkpoints (including PAXML checkpoint converted to Megatron co
 - `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
 
 Note that using an external checkpoint is needed only for the first training run. When _resuming_ Megatron training (e.g. after hitting a time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+
+The log perplexity of the validation dataset on the starting checkpoint is 2.7767 on average (with the standard deviation of 0.00035)
 
 # 4. Model
 ### Publication/Attribution
