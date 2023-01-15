@@ -122,15 +122,16 @@ def pretrain(train_valid_test_dataset_provider,
                         sync=False)
     mllogger.event(key=mllogger.constants.OPT_BASE_LR,
                             value=args.lr, sync=False)
-    mllogger.event(key="opt_lr_min", value=args.min_lr, sync=False)
-    mllogger.event(key=mllogger.constants.OPT_LR_TRAINING_STEPS, value=args.lr_decay_samples, sync=False)
-    mllogger.event(key="opt_lr_warmup_samples", value=args.lr_warmup_samples, sync=False)
-    mllogger.event(key="opt_lr_decay_schedule", value=args.lr_decay_style, sync=False)
-    mllogger.event(key="opt_type", value=args.optimizer, sync=False)
-    mllogger.event(key=mllogger.constants.OPT_LAMB_BETA_1, value=args.adam_beta1, sync=False)
-    mllogger.event(key=mllogger.constants.OPT_LAMB_BETA_2, value=args.adam_beta2, sync=False)
-    mllogger.event(key="opt_lamb_epsilon", value=args.adam_eps, sync=False)
-    mllogger.event(key=mllogger.constants.OPT_LAMB_WEIGHT_DECAY, value=args.weight_decay, sync=False)
+    mllogger.event(key="opt_init_checkpoint_step", value=args.ext_lr_steps, sync=False)
+    mllogger.event(key="opt_end_learning_rate", value=args.min_lr, sync=False)
+    mllogger.event(key="opt_learning_rate_decay_steps", value=args.lr_decay_samples, sync=False)
+    mllogger.event(key="opt_learning_rate_warmup_steps", value=args.lr_warmup_samples, sync=False)
+    mllogger.event(key="opt_learning_rate_decay_schedule", value=args.lr_decay_style, sync=False)
+    mllogger.event(key="opt_name", value=args.optimizer, sync=False)
+    mllogger.event(key="opt_adam_beta1", value=args.adam_beta1, sync=False)
+    mllogger.event(key="opt_adam_beta2", value=args.adam_beta2, sync=False)
+    mllogger.event(key="opt_adam_epsilon", value=args.adam_eps, sync=False)
+    mllogger.event(key="opt_adam_weight_decay", value=args.weight_decay, sync=False)
     mllogger.event(key="opt_gradient_clipping", value=args.clip_grad, sync=False)
     mllogger.event(key=mllogger.constants.GLOBAL_BATCH_SIZE, value=args.global_batch_size, sync=False)
     mllogger.event(key=mllogger.constants.GRADIENT_ACCUMULATION_STEPS,
@@ -815,6 +816,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     save_checkpoint_and_time(iteration, model, optimizer,
                                              opt_param_scheduler)
                 print_datetime('exiting program after {} minutes'.format(train_time))
+                mllogger.end(key=mllogger.constants.BLOCK_STOP,
+                            metadata={'first_epoch_num': 0},
+                            sync=False)
+                mllogger.end(key=mllogger.constants.EPOCH_STOP,
+                            metadata={'epoch_num': args.consumed_train_samples - args.ext_lr_steps}, sync=False)
                 sys.exit()
 
         # Exiting based on iterations
@@ -923,7 +929,7 @@ def evaluate_and_print_results(prefix, forward_step_func,
         string += '{} value: {:.6E} | '.format(key, total_loss_dict[key].item())
         ppl = math.exp(min(20, total_loss_dict[key].item()))
         if is_last_rank():
-            mllogger.event(mllogger.constants.EVAL_ACCURACY, value=ppl,
+            mllogger.event(mllogger.constants.EVAL_ACCURACY, value=total_loss_dict[key].item(),
                             metadata=dict(epoch_num=args.consumed_train_samples - args.ext_lr_steps), sync=False, unique=False)
         string += '{} PPL: {:.6E} | '.format(key, ppl)
         if writer:

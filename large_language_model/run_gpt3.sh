@@ -96,7 +96,7 @@ if [ -n "${EXTERNAL_MODEL_CHECKPOINT_DIR}" ]; then
   options+=" \
 		--no-load-rng \
 		--use-ext-ckpt \
-		--ext-iterations ${EXTERNAL_TRAINING_ITERATIONS} \
+		--ext-iterations $(( $EXTERNAL_TRAINING_ITERATIONS * $EXTERNAL_GBS / $GBS)) \
 		--ext-lr-steps $(( $EXTERNAL_TRAINING_ITERATIONS * $EXTERNAL_GBS)) \
 		--load ${EXTERNAL_MODEL_CHECKPOINT_DIR}"
 else

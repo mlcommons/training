@@ -67,14 +67,14 @@ Currently, the training script expects BPE [vocab.json](https://huggingface.co/g
 1. To find out the eod entry index (value is 5025)
 2. To find out the vocab size (value is 50257)
 
-# 3. External Checkpoints
-### How to run
-To run external checkpoints (including PAXML checkpoint converted to Megatron compliant format), set the following env variables:
-- `EXTERNAL_MODEL_CHECKPOINT_DIR` pointing to the checkpoint directory
-- `EXTERNAL_TRAINING_ITERATIONS` to number of iterations the external checkpoint was trained with (default: 4000)
-- `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
+Correctness of the dataset preprocessing can be verified by comparing the checksums provided [here](./checksums/dataset_checksum.log)
 
-Note that using an external checkpoint is needed only for the first training run. When _resuming_ Megatron training (e.g. after hitting a time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+# 3. External Checkpoints
+
+For the benchmarking region, we would be resuming training from a PAXML checkpoint which is trained on the Global Batch Size of 1536 for 4000 iterations.
+Paxml Checkpoint is available at: gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000
+To resume training from the above checkpoint on Megatron, we would need to first convert the above checkpoint into a format suitable for Megatron.
+This step only needs to be done once.
 
 ### Paxml checkpoints conversion
 To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
@@ -85,6 +85,14 @@ python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $E
 python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_fp32.json` for FP32 checkpoint
 ```
 
+### How to run
+To run external checkpoints (including PAXML checkpoint converted to Megatron compliant format), set the following env variables:
+- `EXTERNAL_MODEL_CHECKPOINT_DIR` pointing to the checkpoint directory
+- `EXTERNAL_TRAINING_ITERATIONS` to number of iterations the external checkpoint was trained with (default: 4000)
+- `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
+
+Note that using an external checkpoint is needed only for the first training run. When _resuming_ Megatron training (e.g. after hitting a time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+
 # 4. Model
 ### Publication/Attribution
-Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf) and [2](https://arxiv.org/pdf/2104.04473.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.
+Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf), [2](https://arxiv.org/pdf/2104.04473.pdf), and [3](https://arxiv.org/pdf/2205.05198.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.
