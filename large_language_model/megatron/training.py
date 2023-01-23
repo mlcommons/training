@@ -120,35 +120,32 @@ def pretrain(train_valid_test_dataset_provider,
     mllogger.mlperf_submission_log('llm')
     mllogger.event(key=mllogger.constants.SEED, value=args.seed,
                         sync=False)
-    mllogger.event(key=mllogger.constants.OPT_BASE_LR,
-                            value=args.lr, sync=False)
-    mllogger.event(key="opt_init_checkpoint_step", value=args.ext_lr_steps, sync=False)
-    mllogger.event(key="opt_end_learning_rate", value=args.min_lr, sync=False)
-    mllogger.event(key="opt_learning_rate_decay_steps", value=args.lr_decay_samples, sync=False)
-    mllogger.event(key="opt_learning_rate_warmup_steps", value=args.lr_warmup_samples, sync=False)
-    mllogger.event(key="opt_learning_rate_decay_schedule", value=args.lr_decay_style, sync=False)
     mllogger.event(key="opt_name", value=args.optimizer, sync=False)
-    mllogger.event(key="opt_adam_beta1", value=args.adam_beta1, sync=False)
-    mllogger.event(key="opt_adam_beta2", value=args.adam_beta2, sync=False)
+    mllogger.event(key="opt_adam_beta_1", value=args.adam_beta1, sync=False)
+    mllogger.event(key="opt_adam_beta_2", value=args.adam_beta2, sync=False)
     mllogger.event(key="opt_adam_epsilon", value=args.adam_eps, sync=False)
     mllogger.event(key="opt_adam_weight_decay", value=args.weight_decay, sync=False)
+    mllogger.event(key=mllogger.constants.OPT_BASE_LR, value=args.lr, sync=False)
+    mllogger.event(key="opt_end_learning_rate", value=args.min_lr, sync=False)
+    mllogger.event(key="opt_learning_rate_decay_steps", value=math.ceil(args.lr_decay_samples / args.global_batch_size), sync=False)
+    mllogger.event(key="opt_learning_rate_warmup_steps", value=math.ceil(args.lr_warmup_samples / args.global_batch_size), sync=False)
+    mllogger.event(key="opt_learning_rate_decay_schedule", value="cosine with linear warmup", sync=False)
     mllogger.event(key="opt_gradient_clipping", value=args.clip_grad, sync=False)
+    mllogger.event(key="opt_init_checkpoint_step", value=math.ceil(args.ext_lr_steps / args.global_batch_size), sync=False)
     mllogger.event(key=mllogger.constants.GLOBAL_BATCH_SIZE, value=args.global_batch_size, sync=False)
     mllogger.event(key=mllogger.constants.GRADIENT_ACCUMULATION_STEPS,
                                 value=get_num_microbatches(), sync=False, unique=True)
+    mllogger.event(key="sequence_length", value=args.seq_length, sync=False)
 
-
-    mllogger.event(key="num_layers", value=args.num_layers, sync=False)
-    mllogger.event(key="num_heads", value=args.num_attention_heads, sync=False)
-    mllogger.event(key="hidden_size", value=args.hidden_size, sync=False)
-    mllogger.event(key="ffn_hidden_size", value=args.ffn_hidden_size, sync=False)
-    mllogger.event(key="seq_length", value=args.seq_length, sync=False)
-    mllogger.event(key="hidden_dropout", value=args.hidden_dropout, sync=False)
-    mllogger.event(key="attention_dropout", value=args.attention_dropout, sync=False)
-    mllogger.event(key="layernorm_epsilon", value=args.layernorm_epsilon, sync=False)
-
-    mllogger.event(key="tokenizer", value="SPM", sync=False)
-    mllogger.event(key="dataset", value="C4", sync=False)
+    # mllogger.event(key="num_layers", value=args.num_layers, sync=False)
+    # mllogger.event(key="num_heads", value=args.num_attention_heads, sync=False)
+    # mllogger.event(key="hidden_size", value=args.hidden_size, sync=False)
+    # mllogger.event(key="ffn_hidden_size", value=args.ffn_hidden_size, sync=False)
+    # mllogger.event(key="hidden_dropout", value=args.hidden_dropout, sync=False)
+    # mllogger.event(key="attention_dropout", value=args.attention_dropout, sync=False)
+    # mllogger.event(key="layernorm_epsilon", value=args.layernorm_epsilon, sync=False)
+    # mllogger.event(key="tokenizer", value="SPM", sync=False)
+    # mllogger.event(key="dataset", value="C4", sync=False)
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
@@ -198,7 +195,7 @@ def pretrain(train_valid_test_dataset_provider,
                         metadata={'epoch_num': 0}, sync=False)
     mllogger.start(key=mllogger.constants.BLOCK_START,
                             metadata={'first_epoch_num': 0,
-                                        'epoch_count': 1},
+                                        'epoch_count': args.eval_interval * args.global_batch_size * args.seq_length},
                             sync=False)
 
     if args.do_train and args.train_iters > 0:
@@ -228,11 +225,17 @@ def pretrain(train_valid_test_dataset_provider,
 
     status = 'aborted'
     mllogger.log_run_stop(status)
+    mllogger.event(key="trained_samples",
+                    value=args.consumed_train_samples - args.ext_lr_steps,
+                    sync=False)
+    mllogger.event(key=mllogger.constants.EVAL_SAMPLES,
+                    value=args.consumed_valid_samples,
+                    sync=False)
     mllogger.end(key=mllogger.constants.BLOCK_STOP,
-                            metadata={'first_epoch_num': 0},
-                            sync=False)
+                    metadata={'first_epoch_num': 0},
+                    sync=False)
     mllogger.end(key=mllogger.constants.EPOCH_STOP,
-                            metadata={'epoch_num': args.consumed_train_samples - args.ext_lr_steps}, sync=False)
+                    metadata={'epoch_num': args.consumed_train_samples - args.ext_lr_steps}, sync=False)
 
 def update_train_iters(args):
 
@@ -806,7 +809,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             if done:
                 status = 'aborted'
                 mllogger.log_run_stop(status)
-                mllogger.event(key=mllogger.constants.TRAIN_SAMPLES,
+                mllogger.event(key="trained_samples",
                                 value=args.consumed_train_samples - args.ext_lr_steps,
                                 sync=False)
                 mllogger.event(key=mllogger.constants.EVAL_SAMPLES,
