@@ -13,8 +13,17 @@ dataset from TensorFlow Dataset. A version is
 [available](https://huggingface.co/datasets/allenai/c4/tree/main/en) 
 from Hugging Face.
 
-The benchmark follows the split in C4/en/3.0.1, with 365,868,901 examples
-in `train`, and 364,608 examples in `validation`.
+The benchmark uses a different split than the original C4/en/3.0.1:
+
+| Split | What's in it | What it is used for | number of samples |
+| - | - | - | - |
+| train1 | first 768 of 1024 files of C4/en/3.0.1:train | training the initial checkpoint | 274,651,678 |
+| train2 | last 256 of 1024 files of C4/en/3.0.1:train | training dataset of the benchmark | 91,217,223 |
+| validation\_24567exp | 1/20th of C4/en/3.0.1:validation | validation datset of the benchmark | 24,567 |
+
+The resplit dataset uses 3.0.4 as its version to differenciate from the original
+3.0.1 version, and it's available on
+[GCS](https://console.cloud.google.com/storage/browser/mlperf-llm-public2/c4/en/3.0.4)
 
 # 3. Model
 The model largely follows the GPT-3 paper, with key model architecture configs
@@ -39,15 +48,27 @@ Some components are different from GPT-3, listed below:
 ## Optimizer
 Adam
 
+## Initial checkpoint
+The benchmark starts from an initial checkpoint trained with the C4/en/3.0.4:train1
+split for 4000 steps of global batch size 1536.
+
+The PaxML initial checkpint is available for different pipeline configurations:
+
+| Pipeline | checkpoint |
+| - | - |
+| No pipeline | https://console.cloud.google.com/storage/browser/mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000 |
+| 4 stages | https://console.cloud.google.com/storage/browser/mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000_pipeline_4stages |
+| 8 stages | https://console.cloud.google.com/storage/browser/mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000_pipeline |
+
 # 4. Quality
 ## Quality metric
 Log Perplexity
 
 ## Quality target
-TBD
+2.69
 
 ## Evaluation frequency
-TBD
+24 * 1024 * 2048 tokens
 
 # 5. Steps to run the model
 ## On Google Cloud TPU
@@ -61,7 +82,7 @@ follow these steps:
 export TPU_NAME=paxml-tpu
 
 gcloud alpha compute tpus tpu-vm create $TPU_NAME \
---accelerator-type=v4-3072 \
+--accelerator-type=v4-1536 \
 --version=v2-nightly-tpuv4 \
 --project=<GCP project> \
 --zone=<GCP zone>
@@ -77,6 +98,8 @@ docker-credential-gcr configure-docker && |
 gcloud docker -- pull gcr.io/${PROJECT}/pax-dev:llm-ref "
 ```
 
+-   Copy the initial checkpoint to a GCS directory, i.e. "log\_dir".
+
 -   Launch the training job on each TPU host
 
 ```
@@ -84,8 +107,8 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_NAME --worker=all --command="\
 docker run --net=host -d --privileged -i --name=$TPU_NAME \
 gcr.io/${PROJECT}/pax-dev:llm-ref \
   bazel run paxml/tasks/lm/params:main -- \
-    --exp=c4.C4SpmdGpt3AdamOrgHP1536Replicas \
-    --job_log_dir=gs://<GCP bucket>/gpt3/logs/$(date +%s) 2>&1 | tee -a ~/logs.txt &"
+    --exp=c4.C4SpmdPipelineGpt3AdamMLPerfHPBS1p5k768Replicas \
+    --job_log_dir=<log_dir> 2>&1 | tee -a ~/logs.txt &"
 ```
 
 There won't be output to STDOUT except the hash of successfully started docker containers. To view the log on a worker, use
@@ -105,6 +128,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_NAME --worker=all --command="docker st
 
 Note: The working copy of the model is in the
 [PaxML library](https://github.com/google/paxml/tree/main/paxml/tasks/lm/params). The
-files in this repo are a copy of that as of 14-Jun-2022. The PaxML team is
+files in this repo are a copy of that as of 1-Feb-2023. The PaxML team is
 working to allow an easier way to define customer model configs. When such task
 is done, the files & repo steps in this repo will be updated accordingly.
+
