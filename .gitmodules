@@ -1,9 +1,3 @@
-[submodule "community"]
-	path = community
-	url = https://github.com/mlperf/community.git
-[submodule "compliance/verify_submission/mlperf_submission_helper/mlp_compliance"]
-	path = compliance/verify_submission/mlperf_submission_helper/mlp_compliance
-	url = https://github.com/bitfort/mlp_compliance
 [submodule "recommendation/dlrm"]
 	path = recommendation/dlrm
 	url = https://github.com/facebookresearch/dlrm.git

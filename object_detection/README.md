@@ -21,13 +21,6 @@ cd training/object_detection/
 nvidia-docker build . -t mlperf/object_detection
 ```
 
-4. Run docker container and install code
-```
-nvidia-docker run -v .:/workspace -t -i --rm --ipc=host mlperf/object_detection \
-    "cd mlperf/training/object_detection && ./install.sh"
-```
-Now exit the docker container (Ctrl-D) to get back to your host.
-
 ### Steps to download data
 ```
 # From training/object_detection/
