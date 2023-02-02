@@ -1,10 +1,15 @@
 # 1. Problem 
 Large Language Model - GPT-3 175B
+
 # 2. Directions
 
-Our codebase is capable of training large language models with both model and data parallelism
-.
+Our codebase is capable of training large language models with both model and data parallelism.
+
+### Steps to configure machine
+
 To use this repository, please install a supported version of PyTorch with GPU support (python 3.8, pytorch 1.8, cuda 11.1, and nccl 2.8.3 and above) and NVIDIA [APEX](https://github.com/NVIDIA/apex#quick-start). We recommend using one of [NGC's PyTorch containers](https://ngc.nvidia.com/catalog/containers/nvidia:pytorch). The latest tested compatible version is `nvcr.io/nvidia/pytorch:22.04-py3`).
+
+### Steps to run and time
 
 To train GPT-3, set `COM_DIR` in `gpt3_blend.sh` to point to the C4 dataset location which contains the dataset after preprocessing.
 
@@ -20,13 +25,18 @@ Command line arguments are described in detail in this source file [`arguments.p
 
 
 # 3. Dataset/Environment
+
+### Training and test data separation
+
 We use C4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4).
 We do not host any datasets for GPT training.
 For validation, a subset of the validation dataset has been selected. Details as follows:
 24,567 examples were [selected](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/select_example.md) in the validation split to form a smaller eval set. The resulting tfrecord file is at gs://mlperf-llm-public2/c4/en/3.0.1/c4-validation_24567exp.tfrecord , with hashes of the text at gs://mlperf-llm-public2/c4/en/3.0.1/c4-validation_24567exp.hash.
 
-### Data Preprocessing using SPM
 Benchmarking region will use only 1/4th of the 1024 original `json.gz` files. Specifically, the last 1/4th of the files from 768 till 1024 `json.gz` are required.
+
+### Data Preprocessing
+
 Run the following commands to merge these 256 files into 2 `json.gz` files. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`).
 
 ```bash
@@ -68,13 +78,20 @@ Currently, the training script expects BPE [vocab.json](https://huggingface.co/g
 
 Correctness of the dataset preprocessing can be verified by comparing the checksums provided [here](./checksums/dataset_checksum.log)
 
-# 3. External Checkpoints
 
+# 4. Model
+### Publication/Attribution
+Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf), [2](https://arxiv.org/pdf/2104.04473.pdf), and [3](https://arxiv.org/pdf/2205.05198.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.
+
+### List of Layers
+
+The model largely follows the GPT-3 paper, refer [here](https://docs.google.com/spreadsheets/d/1VdMXogbmoR-LWQJvdQ0BgIeK0Npe0qk50qVT7VpqIyo/edit?resourcekey=0-F8loESsxQtGsHMNNXMohTw#gid=620389348) for model details.
+
+### Checkpoint conversion
 In the benchmarking region, we should resume training from a PAXML checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
 Paxml Checkpoint is available at: gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000
 To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
 
-### Checkpoint conversion
 To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
 ```bash
 # Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
@@ -92,6 +109,17 @@ To load an external Megatron format checkpoint (in this case, it is a PAXML chec
 
 Note that using an external checkpoint is needed only while training from a checkpoint that was not generated during the current training process in the benchmarking region. When _resuming_ Megatron training (e.g. after hitting a preset node time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
 
-# 4. Model
-### Publication/Attribution
-Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf), [2](https://arxiv.org/pdf/2104.04473.pdf), and [3](https://arxiv.org/pdf/2205.05198.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.
+# 5. Quality
+
+### Quality metric
+Log Perplexity
+
+### Quality target
+2.69
+
+### Evaluation frequency
+Evaluate after every 24576 samples (=50.33B tokens)
+
+### Evaluation thoroughness
+Evaluation on the validation subset that consists of 24576 examples which makes up 5662 samples (=11.59B tokens).
+
