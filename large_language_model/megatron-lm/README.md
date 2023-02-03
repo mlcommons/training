@@ -87,7 +87,8 @@ Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf), [2](https://arxiv.org/pdf/2
 
 The model largely follows the GPT-3 paper, refer [here](https://docs.google.com/spreadsheets/d/1VdMXogbmoR-LWQJvdQ0BgIeK0Npe0qk50qVT7VpqIyo/edit?resourcekey=0-F8loESsxQtGsHMNNXMohTw#gid=620389348) for model details.
 
-### Checkpoint conversion
+## Model checkpoint
+### Conversion
 In the benchmarking region, we should resume training from a PAXML checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
 Paxml Checkpoint is available at: gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000
 To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
@@ -108,6 +109,62 @@ To load an external Megatron format checkpoint (in this case, it is a PAXML chec
 - `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
 
 Note that using an external checkpoint is needed only while training from a checkpoint that was not generated during the current training process in the benchmarking region. When _resuming_ Megatron training (e.g. after hitting a preset node time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+
+### Checkpoint structure
+#### Parameters
+There are four groups of parameters in the checkpoint:
+1. model BF16 weights (only for BF16 training)
+2. model FP32 weights
+3. first moments of the optimizer state
+4. second moments of the optimizer state
+
+For each model layer we store a separate directory for each of those groups, e.g. for position embeddings:
+1. `language_model.embedding.position_embeddings.weight` (model BF16 weights)
+2. `optimizer.state.fp32_from_fp16.language_model.embedding.position_embeddings.weight` (model FP32 weights)
+3. `optimizer.state.exp_avg.language_model.embedding.position_embeddings.weight` (first moments of the optimizer state)
+4. `optimizer.state.exp_avg_sq.language_model.embedding.position_embeddings.weight` (second moments of the optimizer state)
+
+Each directory contains a single Zarr array (see Zarr section below) and corresponds to a single parameter tensor
+(that might be split into different devices during model training).
+Pipeline parallel layers are stacked together in a single array.
+E.g. for a model with 96 transformer layers, the array corresponding to the self-attention QKV bias
+(`language_model.encoder.layers.self_attention.query_key_value.bias`) has shape [**96**, 36864, 12288].
+
+#### Metadata
+All non-parameters data is stored in a `common.pt` torch file and contains framework specific information.
+An example content of a Megatron specific common.pt file is presented in `scripts/common_bf16.json` file.
+
+Apart from that the checkpoint metadata is stored in `metadata.json` file.
+
+
+### Zarr format
+Each parameter is stored in a separate directory as a [Zarr](https://zarr.readthedocs.io/) array to allow parallel access.
+The content of a single directory is an array fragmented into multiple files (e.g. `0.0`, `0.1`, ...) and should be manipulated
+only with Zarr or Zarr-compatible libraries such as [TensorStore](https://google.github.io/tensorstore/).
+
+Megatron features a small library in `megatron.core.dist_checkpointing` that builds on the Zarr and TensorStore primitives
+and allows operating on arrays split into different devices (in tensor or pipeline parallel groups).
+
+We recommend to familiarize with the aforementioned libraries, but for convenience
+here is a snippet allowing to read a single layer array into a numpy array with either tensorstore or zarr:
+```python
+import tensorstore as ts
+import zarr
+
+def open_with_ts(layer_dir):
+    spec = {'driver': 'zarr',
+            'metadata_key': '.zarray',
+            'kvstore': {'driver': 'file', 'path': layer_dir}}
+    return ts.open(ts.Spec(spec), open=True).result().read().result()
+
+def open_with_zarr(layer_dir):
+    return zarr.open(layer_dir)[:]
+
+# e.g.
+layer_norm_weights_optim_state = open_with_ts('/llm_checkpoint/optimizer.state.exp_avg.language_model.encoder.final_layernorm.weight')
+```
+
+Currently NumPy does not support BF16 datatype natively, but it can be added by just importing the tensorstore library (`import tensorstore`).
 
 # 5. Quality
 
