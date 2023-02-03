@@ -17,6 +17,6 @@ srun --container-image nvcr.io/nvidia/pytorch:21.12-py3 \
     --input ${C4_PATH}/en_merge/c4-train.en_\${SLURM_ARRAY_TASK_ID}.json.gz \
     --tokenizer-library sentencepiece \
     --tokenizer-model ${C4_PATH}/tokenizers/c4_spm/sentencepiece.model \
-    --output-prefix ${C4_PATH}/preprocessed_c4_spm/c4_en_\${SLURM_ARRAY_TASK_ID}_c4_spm \
+    --output-prefix ${C4_PATH}/preprocessed_c4_spm/c4_en_\${SLURM_ARRAY_TASK_ID}_c4_spm_text_document \
     --dataset-impl mmap \
     --workers 128 "

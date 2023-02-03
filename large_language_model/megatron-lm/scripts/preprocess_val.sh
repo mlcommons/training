@@ -16,6 +16,6 @@ srun --container-image nvcr.io/nvidia/pytorch:21.12-py3 \
     --input ${C4_PATH}/en_merge/c4-validation.json.gz \
     --tokenizer-library sentencepiece \
     --tokenizer-model ${C4_PATH}/tokenizers/c4_spm/sentencepiece.model \
-    --output-prefix ${C4_PATH}/preprocessed_c4_spm/c4_en_validation_mc4_spm \
+    --output-prefix ${C4_PATH}/preprocessed_c4_spm/c4_en_validation_subset_c4_spm_text_document \
     --dataset-impl mmap \
     --workers 128 "

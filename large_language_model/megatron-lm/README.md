@@ -7,7 +7,7 @@ Our codebase is capable of training large language models with both model and da
 
 ### Steps to configure machine
 
-To use this repository, please install a supported version of PyTorch with GPU support (python 3.8, pytorch 1.8, cuda 11.1, and nccl 2.8.3 and above) and NVIDIA [APEX](https://github.com/NVIDIA/apex#quick-start). We recommend using one of [NGC's PyTorch containers](https://ngc.nvidia.com/catalog/containers/nvidia:pytorch). The latest tested compatible version is `nvcr.io/nvidia/pytorch:22.04-py3`).
+To use this repository, please install a supported version of PyTorch with GPU support (python 3.8, pytorch 1.12, cuda 11.6.2, and nccl 2.12.10 and above) and NVIDIA [APEX](https://github.com/NVIDIA/apex#quick-start). We recommend using one of [NGC's PyTorch containers](https://ngc.nvidia.com/catalog/containers/nvidia:pytorch). The latest tested compatible version is `nvcr.io/nvidia/pytorch:22.04-py3`).
 
 ### Steps to run and time
 
@@ -67,13 +67,14 @@ Currently, SPM trained by google using [these](https://github.com/sgpyc/training
 Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
 the correct input/output paths and run preprocessing as follows
 ```bash
+cd scripts
 sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4>
 ```
 
 Currently, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the above step:
 
-1. To find out the eod entry index (value is 5025)
+1. To find out the eod entry index (value is 50256)
 2. To find out the vocab size (value is 50257)
 
 Correctness of the dataset preprocessing can be verified by comparing the checksums provided [here](./checksums/dataset_checksum.log)
@@ -87,8 +88,8 @@ Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf), [2](https://arxiv.org/pdf/2
 
 The model largely follows the GPT-3 paper, refer [here](https://docs.google.com/spreadsheets/d/1VdMXogbmoR-LWQJvdQ0BgIeK0Npe0qk50qVT7VpqIyo/edit?resourcekey=0-F8loESsxQtGsHMNNXMohTw#gid=620389348) for model details.
 
-## Model checkpoint
-### Conversion
+### Model checkpoint
+#### Conversion
 In the benchmarking region, we should resume training from a PAXML checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
 Paxml Checkpoint is available at: gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000
 To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
@@ -102,16 +103,7 @@ python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/co
 ```
 Correctness of the Megatron format checkpoint can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log). Validation log perplexity can also be used as a metric to verify the correctness of the checkpoint and the loading scripts. To do this, the model should be evaluated on the entire validation dataset after loading weights from the checkpoint. We have observed an average log perplexity of 2.7767 and a standard deviation of 0.00035 (data obtained from 16 runs).
 
-### How to run
-To load an external Megatron format checkpoint (in this case, it is a PAXML checkpoint converted to Megatron format) before training, set the following env variables:
-- `EXTERNAL_MODEL_CHECKPOINT_DIR` pointing to the checkpoint directory
-- `EXTERNAL_TRAINING_ITERATIONS` to number of iterations the external checkpoint was trained with (default: 4000)
-- `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
-
-Note that using an external checkpoint is needed only while training from a checkpoint that was not generated during the current training process in the benchmarking region. When _resuming_ Megatron training (e.g. after hitting a preset node time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
-
-### Checkpoint structure
-#### Parameters
+#### Checkpoint Parameters
 There are four groups of parameters in the checkpoint:
 1. model BF16 weights (only for BF16 training)
 2. model FP32 weights
@@ -130,14 +122,13 @@ Pipeline parallel layers are stacked together in a single array.
 E.g. for a model with 96 transformer layers, the array corresponding to the self-attention QKV bias
 (`language_model.encoder.layers.self_attention.query_key_value.bias`) has shape [**96**, 36864, 12288].
 
-#### Metadata
+#### Checkpoint Metadata
 All non-parameters data is stored in a `common.pt` torch file and contains framework specific information.
 An example content of a Megatron specific common.pt file is presented in `scripts/common_bf16.json` file.
 
 Apart from that the checkpoint metadata is stored in `metadata.json` file.
 
-
-### Zarr format
+#### Checkpoint Zarr format
 Each parameter is stored in a separate directory as a [Zarr](https://zarr.readthedocs.io/) array to allow parallel access.
 The content of a single directory is an array fragmented into multiple files (e.g. `0.0`, `0.1`, ...) and should be manipulated
 only with Zarr or Zarr-compatible libraries such as [TensorStore](https://google.github.io/tensorstore/).
@@ -166,6 +157,14 @@ layer_norm_weights_optim_state = open_with_ts('/llm_checkpoint/optimizer.state.e
 
 Currently NumPy does not support BF16 datatype natively, but it can be added by just importing the tensorstore library (`import tensorstore`).
 
+### How to run
+To load an external Megatron format checkpoint (in this case, it is a PAXML checkpoint converted to Megatron format) before training, set the following env variables:
+- `EXTERNAL_MODEL_CHECKPOINT_DIR` pointing to the checkpoint directory
+- `EXTERNAL_TRAINING_ITERATIONS` to number of iterations the external checkpoint was trained with (default: 4000)
+- `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
+
+Note that using an external checkpoint is needed only while training from a checkpoint that was not generated during the current training process in the benchmarking region. When _resuming_ Megatron training (e.g. after hitting a preset node time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+
 # 5. Quality
 
 ### Quality metric
@@ -178,5 +177,5 @@ Log Perplexity
 Evaluate after every 24576 samples (=50.33B tokens)
 
 ### Evaluation thoroughness
-Evaluation on the validation subset that consists of 24576 examples which makes up 5662 samples (=11.59B tokens).
+Evaluation on the validation subset that consists of 24567 examples.
 
