@@ -848,7 +848,7 @@ def main(argv: List[str]) -> None:
     if is_rank_zero:
         mllogger.event(
             key=mllog_constants.OPT_NAME,
-            value="adagrad" if args.adagrad else mllog_constants.SGD,
+            value=mllog_constants.ADAGRAD if args.adagrad else mllog_constants.SGD,
         )
         mllogger.event(
             key=mllog_constants.OPT_BASE_LR,
