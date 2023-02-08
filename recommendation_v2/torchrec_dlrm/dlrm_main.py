@@ -72,7 +72,7 @@ TRAIN_PIPELINE_STAGES = 3  # Number of stages in TrainPipelineSparseDist.
 # Optimizer parameters:
 ADAGRAD_LR_DECAY = 0
 ADAGRAD_INIT_ACC = 0
-ADAGRAD_EPS = 1e-10
+ADAGRAD_EPS = 1e-8
 WEIGHT_DECAY = 0
 
 mllogger = mllog.get_mllogger()
