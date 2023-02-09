@@ -791,13 +791,13 @@ def main(argv: List[str]) -> None:
 
     # Note that lr_decay, weight_decay and initial_accumulator_value for Adagrad optimizer in FBGEMM v0.3.2
     # cannot be specified below. This equivalently means that all these parameters are hardcoded to zero.
+    optimizer_kwargs = {"lr": args.learning_rate}
+    if args.adagrad:
+        optimizer_kwargs["eps"] = ADAGRAD_EPS
     apply_optimizer_in_backward(
         embedding_optimizer,
         train_model.model.sparse_arch.parameters(),
-        {
-            "lr": args.learning_rate,
-            "eps": ADAGRAD_EPS,
-        },
+        optimizer_kwargs,
     )
     planner = EmbeddingShardingPlanner(
         topology=Topology(
