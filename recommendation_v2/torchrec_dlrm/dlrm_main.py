@@ -701,7 +701,7 @@ def main(argv: List[str]) -> None:
     is_rank_zero = dist.get_rank() == 0
     if is_rank_zero:
         pprint(vars(args))
-        submission_info(mllogger, "dcnv2", "reference_implementation")
+        submission_info(mllogger, mllog_constants.DLRMv2, "reference_implementation")
         mllogger.event(
             key=mllog_constants.GLOBAL_BATCH_SIZE,
             value=dist.get_world_size() * args.batch_size,
@@ -854,14 +854,14 @@ def main(argv: List[str]) -> None:
     if is_rank_zero:
         mllogger.event(
             key=mllog_constants.OPT_NAME,
-            value="adagrad" if args.adagrad else mllog_constants.SGD,
+            value=mllog_constants.ADAGRAD if args.adagrad else mllog_constants.SGD,
         )
         mllogger.event(
             key=mllog_constants.OPT_BASE_LR,
             value=args.learning_rate,
         )
         mllogger.event(
-            key="opt_adagrad_lr_decay",
+            key=mllog_constants.OPT_ADAGRAD_LR_DECAY,
             value=ADAGRAD_LR_DECAY,
         )
         mllogger.event(
@@ -869,11 +869,11 @@ def main(argv: List[str]) -> None:
             value=WEIGHT_DECAY,
         )
         mllogger.event(
-            key="opt_adagrad_init_acc_value",
+            key=mllog_constants.OPT_ADAGRAD_INITIAL_ACCUMULATOR_VALUE,
             value=ADAGRAD_INIT_ACC,
         )
         mllogger.event(
-            key="opt_adagrad_eps",
+            key=mllog_constants.OPT_ADAGRAD_EPSILON,
             value=ADAGRAD_EPS,
         )
         mllogger.event(
