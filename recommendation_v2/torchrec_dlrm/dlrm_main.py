@@ -72,7 +72,7 @@ TRAIN_PIPELINE_STAGES = 3  # Number of stages in TrainPipelineSparseDist.
 # Optimizer parameters:
 ADAGRAD_LR_DECAY = 0
 ADAGRAD_INIT_ACC = 0
-ADAGRAD_EPS = 1e-10
+ADAGRAD_EPS = 1e-8
 WEIGHT_DECAY = 0
 
 mllogger = mllog.get_mllogger()
@@ -788,10 +788,16 @@ def main(argv: List[str]) -> None:
     # the optimizer update will be applied in the backward pass, in this case through a fused op.
     # TorchRec will use the FBGEMM implementation of EXACT_ADAGRAD. For GPU devices, a fused CUDA kernel is invoked. For CPU, FBGEMM_GPU invokes CPU kernels
     # https://github.com/pytorch/FBGEMM/blob/2cb8b0dff3e67f9a009c4299defbd6b99cc12b8f/fbgemm_gpu/fbgemm_gpu/split_table_batched_embeddings_ops.py#L676-L678
+
+    # Note that lr_decay, weight_decay and initial_accumulator_value for Adagrad optimizer in FBGEMM v0.3.2
+    # cannot be specified below. This equivalently means that all these parameters are hardcoded to zero.
+    optimizer_kwargs = {"lr": args.learning_rate}
+    if args.adagrad:
+        optimizer_kwargs["eps"] = ADAGRAD_EPS
     apply_optimizer_in_backward(
         embedding_optimizer,
         train_model.model.sparse_arch.parameters(),
-        {"lr": args.learning_rate},
+        optimizer_kwargs,
     )
     planner = EmbeddingShardingPlanner(
         topology=Topology(
