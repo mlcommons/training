@@ -97,24 +97,26 @@ To resume training from the above checkpoint on Megatron, it should be converted
 To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
 ```bash
 # Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
-python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype bf16  # or `--dtype fp32` for FP32 checkpoint
+python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype fp32  # or `--dtype bf16` for BF16 checkpoint
 # Add framework-specific common.pt file to the checkpoint (instantaneous):
-python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_fp32.json` for FP32 checkpoint
+python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_bf16.json` for BF16 checkpoint
 ```
 Correctness of the Megatron format checkpoint can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log). Validation log perplexity can also be used as a metric to verify the correctness of the checkpoint and the loading scripts. To do this, the model should be evaluated on the entire validation dataset after loading weights from the checkpoint. We have observed an average log perplexity of 2.7767 and a standard deviation of 0.00035 (data obtained from 16 runs).
 
+**Note: For BF16 training, the conversion scripts need to be run again with the bf16 arguments specified above**
+
 #### Checkpoint Parameters
 There are four groups of parameters in the checkpoint:
-1. model BF16 weights (only for BF16 training)
-2. model FP32 weights
-3. first moments of the optimizer state
-4. second moments of the optimizer state
+1. model FP32 weights (or BF16 weights)
+2. first moments of the optimizer state
+3. second moments of the optimizer state
+4. model FP32 weights copy (created only for BF16 training)
 
 For each model layer we store a separate directory for each of those groups, e.g. for position embeddings:
-1. `language_model.embedding.position_embeddings.weight` (model BF16 weights)
-2. `optimizer.state.fp32_from_fp16.language_model.embedding.position_embeddings.weight` (model FP32 weights)
-3. `optimizer.state.exp_avg.language_model.embedding.position_embeddings.weight` (first moments of the optimizer state)
-4. `optimizer.state.exp_avg_sq.language_model.embedding.position_embeddings.weight` (second moments of the optimizer state)
+1. `language_model.embedding.position_embeddings.weight`
+2. `optimizer.state.exp_avg.language_model.embedding.position_embeddings.weight` (first moments of the optimizer state)
+3. `optimizer.state.exp_avg_sq.language_model.embedding.position_embeddings.weight` (second moments of the optimizer state)
+4. `optimizer.state.fp32_from_fp16.language_model.embedding.position_embeddings.weight` (model FP32 weights copy created only for BF16 training)
 
 Each directory contains a single Zarr array (see Zarr section below) and corresponds to a single parameter tensor
 (that might be split into different devices during model training).
@@ -164,6 +166,8 @@ To load an external Megatron format checkpoint (in this case, it is a PAXML chec
 - `EXTERNAL_GBS` to global batch size the external checkpoint was trained with to determine number of samples already consumed (default: 1536)
 
 Note that using an external checkpoint is needed only while training from a checkpoint that was not generated during the current training process in the benchmarking region. When _resuming_ Megatron training (e.g. after hitting a preset node time limit), `EXTERNAL_MODEL_CHECKPOINT_DIR` should not be set.
+
+- Set `USE_BF16` env variable to true for BF16 training.
 
 # 5. Quality
 
