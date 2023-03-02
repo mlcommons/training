@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2022 Google LLC.
+# Copyright 2022 The Pax Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 """Language Model configurations on the T5/C4 dataset."""
 
 import functools
-from typing import List, Optional
+from typing import Dict, List, Optional
+import math
 
 from absl import logging
 import jax
@@ -25,8 +26,10 @@ from paxml import base_experiment
 from paxml import experiment_registry
 from paxml import seqio_input
 from paxml import tasks_lib
+from paxml import trainer_lib
 from paxml.tasks.lm import model_params
 from paxml.tasks.lm.params import lm_cloud
+from praxis import base_hyperparams
 from praxis import base_input
 from praxis import base_layer
 from praxis import layers
@@ -36,7 +39,6 @@ from praxis.layers import transformers
 import seqio
 import t5.data
 from t5.data import preprocessors as t5_preprocessors
-
 
 WeightInit = base_layer.WeightInit
 
@@ -150,26 +152,33 @@ class C4UnsupervisedDataset(base_experiment.BaseExperiment):
   """Used for training Baseline ULM."""
   PERCORE_BATCH_SIZE = 1
   MAX_SEQ_LEN = 1024
+  TRAINING_SEED = 9876
+  TRAINING_NUM_BATCHES_TO_SKIP = None
 
   def _dataset_common(self, is_training) -> base_input.BaseInput.HParams:
     num_local_devices = jax.local_device_count()
     if self.PERCORE_BATCH_SIZE >= 1:
-      batch_size_per_process = int(self.PERCORE_BATCH_SIZE * num_local_devices)
+      batch_size_per_process = int(
+          self.PERCORE_BATCH_SIZE * num_local_devices + 1e-6
+      )
       num_infeed_hosts = jax.process_count()
     else:
-      global_batch_size = int(self.PERCORE_BATCH_SIZE * num_local_devices *
-                              jax.process_count())
+      global_batch_size = int(
+          self.PERCORE_BATCH_SIZE * num_local_devices * jax.process_count()
+          + 1e-6
+      )
       if jax.process_count() > 1:
         assert global_batch_size % num_local_devices == 0
         batch_size_per_process = num_local_devices
         num_infeed_hosts = global_batch_size // batch_size_per_process
       else:
-        batch_size_per_process = int(self.PERCORE_BATCH_SIZE *
-                                     num_local_devices)
+        batch_size_per_process = int(
+            self.PERCORE_BATCH_SIZE * num_local_devices + 1e-6
+        )
         num_infeed_hosts = 1
     seed = None
     if is_training:
-      seed = 9876
+      seed = self.TRAINING_SEED
       # TODO(sgpyc): enable sync of seeds across hosts, currently the
       # following failed because of "sync_global_devices name mismatch"
       # seed = jnp.int32(multihost_utils.broadcast_one_to_all(seed))
@@ -193,6 +202,7 @@ class C4UnsupervisedDataset(base_experiment.BaseExperiment):
         input_random_seed=(seed if is_training else 4321),
         batch_size=batch_size_per_process,
         drop_remainder=True if is_training else False,
+        num_batches_to_skip=self.TRAINING_NUM_BATCHES_TO_SKIP,
         num_infeed_hosts=num_infeed_hosts,
         reset_for_eval=False if is_training else True,
         annotate_padding_fields=True,
@@ -208,7 +218,8 @@ class C4UnsupervisedDataset(base_experiment.BaseExperiment):
 
 
 def set_adam_and_learning_rate_schedule(
-    cls, task_p: tasks_lib.SingleTask.HParams
+    cls,
+    task_p: tasks_lib.SingleTask.HParams,
 ) -> tasks_lib.SingleTask.HParams:
   """Sets the Adam optimizer and the learning rate schedule."""
   lp = task_p.train.learner
@@ -226,7 +237,22 @@ def set_adam_and_learning_rate_schedule(
       if cls.ADAM_CLIP_THRESHOLD
       else 1.0,
   )
-  lp.optimizer.learning_rate = cls.LEARNING_RATE
+
+  if hasattr(cls, 'PERCORE_BATCH_SIZE'):
+    global_batch_size = int(cls.PERCORE_BATCH_SIZE * jax.device_count() + 1e-6)
+    assert global_batch_size > 0
+    assert global_batch_size <= 8192
+  else:
+    global_batch_size = None
+
+  if cls.LEARNING_RATE is not None:
+    lp.optimizer.learning_rate = cls.LEARNING_RATE
+  else:
+    assert global_batch_size is not None
+    if global_batch_size <= 3584:
+      lp.optimizer.learning_rate = 2e-5
+    else:
+      lp.optimizer.learning_rate = 3e-5
 
   if cls.LR_SCHEDULE == 'linear_rampup_exponential_decay':
     lp.optimizer.lr_schedule = schedules.LinearRampupExponentialDecay.HParams(
@@ -237,10 +263,29 @@ def set_adam_and_learning_rate_schedule(
         max=cls.LR_LRED_MAX,
     )
   elif cls.LR_SCHEDULE == 'linear_rampup_cosine_decay':
+    if cls.LR_COS_WARMUP is not None:
+      warmup_steps = cls.LR_COS_WARMUP
+    else:
+      assert global_batch_size is not None
+      warmup_steps = math.ceil(265.0 * 1536 / global_batch_size - 1e-6)
+      assert warmup_steps > 0
+
+    if cls.LR_COS_DECAY_START is not None:
+      decay_start_step = cls.LR_COS_DECAY_START
+    else:
+      decay_start_step = warmup_steps + 1
+
+    if cls.LR_COS_DECAY_END is not None:
+      decay_end_step = cls.LR_COS_DECAY_END
+    else:
+      assert global_batch_size is not None
+      decay_end_step = math.ceil(108600.0 * 1536 / global_batch_size - 1e-6)
+      assert decay_end_step > 0
+
     lp.optimizer.lr_schedule = schedules.LinearRampupCosineDecay.HParams(
-        warmup_steps=cls.LR_COS_WARMUP,
-        decay_start=cls.LR_COS_DECAY_START,
-        decay_end=cls.LR_COS_DECAY_END,
+        warmup_steps=warmup_steps,
+        decay_start=decay_start_step,
+        decay_end=decay_end_step,
         min_ratio=cls.LR_COS_MIN_RATIO,
         max=cls.LR_COS_MAX,
     )
@@ -315,7 +360,6 @@ class TransformerLmSpmdPipelineAdam(
 
   Only things different from TransformerLmSpmdPipelineAdafactor are listed.
   """
-
   # architecture related
   NUM_LAYERS = 32
   NUM_HEADS = 16
@@ -370,7 +414,6 @@ class TransformerLmSpmdPipelineAdam(
 @experiment_registry.register
 class LmCloudSpmdAdam(TransformerLmSpmdAdam, lm_cloud.SyntheticDataset):
   """Base config for an SPMD model."""
-
   NUM_LAYERS = 2
   MODEL_DIMS = 2048
   HIDDEN_DIMS = MODEL_DIMS * 4
@@ -382,6 +425,45 @@ class LmCloudSpmdAdam(TransformerLmSpmdAdam, lm_cloud.SyntheticDataset):
 
   # Sub-class has to specify a mesh.
   ICI_MESH_SHAPE = [1, 4, 2]
+
+
+@experiment_registry.register
+class LmCloudSpmdAdamLimitSteps(LmCloudSpmdAdam):
+
+  def task(self) -> tasks_lib.SingleTask.HParams:
+    task_p = super().task()
+    task_p.train.num_train_steps = 4000
+    return task_p
+
+
+class EarlyStoppingFn(base_hyperparams.BaseParameterizable):
+  r"""Early stopping function to log eval log_pplx and stop when reaching target."""
+
+  class HParams(base_hyperparams.BaseParameterizable.HParams):
+    """Hyper-parameters associated with the early stopping function.
+
+    Attributes:
+      target_log_pplx: target log pplx value to stop training when eval log pplx
+        reaches this value.
+    """
+
+    target_log_pplx: Optional[float] = None
+
+  def __call__(
+      self,
+      metrics: Dict[str, float],
+      running_mode: trainer_lib.RunningMode,
+      global_step: int,
+      is_last_ckpt: bool,
+  ) -> bool:
+    """Returns True if run should be stopped early."""
+    if 'eval_test_C4Validation/metrics/log_pplx' not in metrics.keys():
+      return False
+    log_pplx = metrics['eval_test_C4Validation/metrics/log_pplx']
+
+    if log_pplx <= self.hparams.target_log_pplx:
+      return True
+    return False
 
 
 def configure_gpt3_task(
@@ -438,6 +520,10 @@ def configure_gpt3_task(
     atten_wp = atten_p.weight_split_dims_mapping
     atten_wp.proj = ['data', 'mdl', None]
 
+  if task_p.early_stopping_fn is None:
+    task_p.early_stopping_fn = EarlyStoppingFn.HParams()
+    task_p.early_stopping_fn.target_log_pplx = cls.TARGET_LOG_PPLX
+
   return task_p
 
 
@@ -445,7 +531,6 @@ def configure_gpt3_task(
 class C4SpmdAdam(TransformerLmSpmdAdam,
                  C4UnsupervisedDataset):
   r"""Base config for a decoder only transformer."""
-
   NUM_LAYERS = 24
   NUM_HEADS = 32
   MODEL_DIMS = 2048
@@ -467,10 +552,12 @@ class C4SpmdAdam(TransformerLmSpmdAdam,
   def task(self) -> tasks_lib.SingleTask.HParams:
     """Returns the task parameters."""
     task_p = super().task()
+    task_p.train.learner.repeat_prefix_sep = '_'
     model_p = task_p.model  # pytype: disable=attribute-error  # enable-nested-classes
     model_p.decoder_tpl.eos_id = GPT_EOS_ID  # pytype: disable=attribute-error  # enable-nested-classes
     model_p.decoder_tpl.seqlen = self.MAX_SEQ_LEN  # pytype: disable=attribute-error  # enable-nested-classes
 
+    task_p = set_adam_and_learning_rate_schedule(cls=self, task_p=task_p)
     return task_p
 
 
@@ -493,7 +580,7 @@ class C4SpmdGpt3AdamOrgHP(C4SpmdAdam):
   VOCAB_SIZE = 50257
   USE_REPEATED_LAYER = True
 
-  # HPs
+  # Model configs
   ACTIVATION_CLS = layers.GELU
   USE_GATED_ACTIVATION = False
   SEPARATE_EMBEDDING = False
@@ -501,6 +588,7 @@ class C4SpmdGpt3AdamOrgHP(C4SpmdAdam):
   TRAINABLE_PE_MAX_SEQ_LEN = 16384
   ATTEN_LOGIT_CAP = -1.0  # Disable logits cap in atten
 
+  # HPs
   LEARNING_RATE = 6e-5
   WEIGHT_DECAY = 0.1
   ADAM_BETA1 = 0.9
@@ -517,6 +605,9 @@ class C4SpmdGpt3AdamOrgHP(C4SpmdAdam):
   LR_COS_DECAY_END = 108600
   LR_COS_MAX = 1.0
   LR_COS_MIN_RATIO = 0.1
+
+  # Training target
+  TARGET_LOG_PPLX = 2.69
 
   # Autodiff remat.
   CHECKPOINT_POLICY = layers.AutodiffCheckpointType.SAVE_NOTHING
@@ -551,7 +642,6 @@ class C4SpmdGpt3AdamOrgHPBS1p5k1536Replicas(C4SpmdGpt3AdamOrgHP):
 @experiment_registry.register
 class C4SpmdPipelineAdam(TransformerLmSpmdPipelineAdam, C4UnsupervisedDataset):
   r"""Base config for a decoder only transformer with pipeline."""
-
   NUM_LAYERS = 24
   NUM_HEADS = 32
   MODEL_DIMS = 2048
@@ -582,6 +672,8 @@ class C4SpmdPipelineAdam(TransformerLmSpmdPipelineAdam, C4UnsupervisedDataset):
     )
     model_p.decoder_tpl.seqlen = self.MAX_SEQ_LEN  # pytype: disable=attribute-error  # enable-nested-classes
 
+    task_p = set_adam_and_learning_rate_schedule(cls=self, task_p=task_p)
+
     return task_p
 
 
@@ -604,7 +696,7 @@ class C4SpmdPipelineGpt3AdamOrgHP(C4SpmdPipelineAdam):
   VOCAB_SIZE = 50257
   USE_REPEATED_LAYER = False
 
-  # HPs
+  # Model configs
   ACTIVATION_CLS = layers.GELU
   USE_GATED_ACTIVATION = False
   SEPARATE_EMBEDDING = False
@@ -612,6 +704,7 @@ class C4SpmdPipelineGpt3AdamOrgHP(C4SpmdPipelineAdam):
   TRAINABLE_PE_MAX_SEQ_LEN = 16384
   ATTEN_LOGIT_CAP = -1.0  # Disable logits cap in atten
 
+  # HPs
   LEARNING_RATE = 6e-5
   WEIGHT_DECAY = 0.1
   ADAM_BETA1 = 0.9
@@ -629,6 +722,9 @@ class C4SpmdPipelineGpt3AdamOrgHP(C4SpmdPipelineAdam):
   LR_COS_MAX = 1.0
   LR_COS_MIN_RATIO = 0.1
 
+  # Training target
+  TARGET_LOG_PPLX = 2.69
+
   # Autodiff remat.
   CHECKPOINT_POLICY = layers.AutodiffCheckpointType.SAVE_NOTHING
 
@@ -645,15 +741,36 @@ class C4SpmdPipelineGpt3AdamOrgHP(C4SpmdPipelineAdam):
     return task_p
 
 
-@experiment_registry.register
-class C4SpmdPipelineGpt3AdamOrgHPBS1p5k768Replicas(C4SpmdPipelineGpt3AdamOrgHP):
-  r"""GPT-3 config in fp32 for 768 replicas with 1536 global batch size."""
+class C4SpmdPipelineGpt3AdamMLPerfHP(C4SpmdPipelineGpt3AdamOrgHP):
+  r"""GPT-3 config for MLPerf reference."""
   # Padded to TPU friendly size
   VOCAB_SIZE = 51200
+  FPROP_DTYPE = jnp.float32
+  SUMMARY_INTERVAL_STEPS = 1
+  # subclass must set the eval and the checkpoint intervals
+  EVAL_INTERVAL_STEPS = None
+  CHECKPOINT_EVERY_N_STEPS = None
+  CHECKPOINT_MAX_TO_KEEP = 100
 
+  # Let set_adam_and_learning_rate_schedule calculate the following HPs
+  # based on global batch size
+  LEARNING_RATE = None
+  LR_COS_WARMUP = None
+  LR_COS_DECAY_START = None
+  LR_COS_DECAY_END = None
+
+
+@experiment_registry.register
+class C4SpmdPipelineGpt3AdamOrgHPBS1p5k768Replicas(C4SpmdPipelineGpt3AdamOrgHP):
+  r"""GPT-3 config in fp32 for 768 replicas with 1536 global batch size.
+
+  Using the orininal HP set.
+  """
   PERCORE_BATCH_SIZE = 2
+  VOCAB_SIZE = 51200
   NUM_STAGES = 8
   ICI_MESH_SHAPE = [8, 1, 8, 12]
+  # NUM_MICROBATCHS = 192
   MICROBATCH_SIAZE = 8
   FPROP_DTYPE = jnp.float32
   CHECKPOINT_MAX_TO_KEEP = 100
@@ -665,120 +782,92 @@ class C4SpmdPipelineGpt3AdamOrgHPBS1p5k768Replicas(C4SpmdPipelineGpt3AdamOrgHP):
 
 @experiment_registry.register
 class C4SpmdPipelineGpt3AdamMLPerfHPBS1p5k768Replicas(
-    C4SpmdPipelineGpt3AdamOrgHP
+    C4SpmdPipelineGpt3AdamMLPerfHP
 ):
-  r"""GPT-3 config in fp32 for 768 replicas with 1536 global batch size."""
-  VOCAB_SIZE = 51200
+  r"""GPT-3 config in fp32 for 768 replicas with 1536 global batch size.
+
+  Following MLPerf training benchmarking HP requirements.
+  """
   PERCORE_BATCH_SIZE = 2
   NUM_STAGES = 8
   ICI_MESH_SHAPE = [8, 1, 8, 12]
   # NUM_MICROBATCHS = 192
   MICROBATCH_SIZE = 8
-  FPROP_DTYPE = jnp.float32
-  CHECKPOINT_MAX_TO_KEEP = 100
   EVAL_INTERVAL_STEPS = 16
-  SUMMARY_INTERVAL_STEPS = 1
-  CHECKPOINT_EVERY_N_STEPS = 32
-
-  LEARNING_RATE = 2e-5
+  CHECKPOINT_EVERY_N_STEPS = EVAL_INTERVAL_STEPS * 2
   STREAM_IO = False
 
 
 @experiment_registry.register
 class C4SpmdPipelineGpt3AdamMLPerfHPBS2k512Replicas(
-    C4SpmdPipelineGpt3AdamOrgHP
+    C4SpmdPipelineGpt3AdamMLPerfHP
 ):
-  r"""GPT-3 config in fp32 for 512 replicas with 2k global batch size."""
-  VOCAB_SIZE = 51200
+  r"""GPT-3 config in fp32 for 512 replicas with 2k global batch size.
+
+  Following MLPerf training benchmarking HP requirements.
+  """
   PERCORE_BATCH_SIZE = 4
   NUM_STAGES = 8
   ICI_MESH_SHAPE = [8, 1, 8, 8]
   # NUM_MICROBATCHS = 256
   MICROBATCH_SIZE = 8
-  # FPROP_DTYPE = jnp.bfloat16
-  FPROP_DTYPE = jnp.float32
-  CHECKPOINT_MAX_TO_KEEP = 100
   EVAL_INTERVAL_STEPS = 12
-  SUMMARY_INTERVAL_STEPS = 1
-  CHECKPOINT_EVERY_N_STEPS = 24
-
-  LEARNING_RATE = 2e-5
+  CHECKPOINT_EVERY_N_STEPS = EVAL_INTERVAL_STEPS * 2
   STREAM_IO = True
-  LR_COS_WARMUP = 199
-  LR_COS_DECAY_START = LR_COS_WARMUP + 1
-  LR_COS_DECAY_END = 81450
 
 
 @experiment_registry.register
 class C4SpmdPipelineGpt3AdamMLPerfHPBS3k768Replicas(
-    C4SpmdPipelineGpt3AdamOrgHP
+    C4SpmdPipelineGpt3AdamMLPerfHP
 ):
-  r"""GPT-3 config in fp32 for 768 replicas with 3072 global batch size."""
-  VOCAB_SIZE = 51200
+  r"""GPT-3 config in fp32 for 768 replicas with 3072 global batch size.
+
+  Following MLPerf benchmarking HP requirements.
+  """
   PERCORE_BATCH_SIZE = 4
   NUM_STAGES = 4
   ICI_MESH_SHAPE = [4, 1, 16, 12]
   # NUM_MICROBATCHS = 192
   MICROBATCH_SIZE = 16
-  FPROP_DTYPE = jnp.float32
-  CHECKPOINT_MAX_TO_KEEP = 100
   EVAL_INTERVAL_STEPS = 8
-  SUMMARY_INTERVAL_STEPS = 1
-  CHECKPOINT_EVERY_N_STEPS = 16
-
-  LEARNING_RATE = 2e-5
+  CHECKPOINT_EVERY_N_STEPS = EVAL_INTERVAL_STEPS * 2
   STREAM_IO = True
-  LR_COS_WARMUP = 133
-  LR_COS_DECAY_START = LR_COS_WARMUP + 1
-  LR_COS_DECAY_END = 54300
 
 
 @experiment_registry.register
 class C4SpmdPipelineGpt3AdamMLPerfHPBS4k1024Replicas(
-    C4SpmdPipelineGpt3AdamOrgHP
+    C4SpmdPipelineGpt3AdamMLPerfHP
 ):
-  r"""GPT-3 config in fp32 for 1024 replicas with 4096 global batch size."""
-  VOCAB_SIZE = 51200
+  r"""GPT-3 config in fp32 for 1024 replicas with 4096 global batch size.
+
+  Following MLPerf benchmarking HP requirements.
+  """
   PERCORE_BATCH_SIZE = 4
   NUM_STAGES = 8
   ICI_MESH_SHAPE = [8, 1, 8, 16]
   # NUM_MICROBATCHS = 512
   MICROBATCH_SIZE = 8
-  FPROP_DTYPE = jnp.float32
-  CHECKPOINT_MAX_TO_KEEP = 36
   EVAL_INTERVAL_STEPS = 6
-  SUMMARY_INTERVAL_STEPS = 1
-  CHECKPOINT_EVERY_N_STEPS = 12
-
-  LEARNING_RATE = 3e-5
+  CHECKPOINT_EVERY_N_STEPS = EVAL_INTERVAL_STEPS * 2
   STREAM_IO = True
-  LR_COS_WARMUP = 99
-  LR_COS_DECAY_START = LR_COS_WARMUP + 1
-  LR_COS_DECAY_END = 40725
 
 
 @experiment_registry.register
 class C4SpmdPipelineGpt3AdamMLPerfHPBS8k1024Replicas(
-    C4SpmdPipelineGpt3AdamOrgHP
+    C4SpmdPipelineGpt3AdamMLPerfHP
 ):
-  r"""GPT-3 config in fp32 for 1024 replicas with 8192 global batch size."""
-  VOCAB_SIZE = 51200
+  r"""GPT-3 config in fp32 for 1024 replicas with 8192 global batch size.
+
+  Following MLPerf benchmarking HP requirements.
+  """
   PERCORE_BATCH_SIZE = 8
   NUM_STAGES = 4
   ICI_MESH_SHAPE = [4, 1, 16, 16]
   # NUM_MICROBATCHS = 512
   MICROBATCH_SIZE = 16
-  FPROP_DTYPE = jnp.float32
-  CHECKPOINT_MAX_TO_KEEP = 36
   EVAL_INTERVAL_STEPS = 3
-  SUMMARY_INTERVAL_STEPS = 1
-  CHECKPOINT_EVERY_N_STEPS = 6
-
-  LEARNING_RATE = 3e-5
+  CHECKPOINT_EVERY_N_STEPS = EVAL_INTERVAL_STEPS * 2
   STREAM_IO = True
-  LR_COS_WARMUP = 50
-  LR_COS_DECAY_START = LR_COS_WARMUP + 1
-  LR_COS_DECAY_END = 20363
 
 
 @experiment_registry.register
@@ -801,6 +890,15 @@ class C4Spmd1BAdam4Replicas(C4SpmdAdam):
   SUMMARY_INTERVAL_STEPS = 10
   CHECKPOINT_POLICY = layers.AutodiffCheckpointType.SAVE_NOTHING
   ICI_MESH_SHAPE = [1, 4, 1]
+
+
+@experiment_registry.register
+class C4Spmd1BAdam4ReplicasLimitSteps(C4Spmd1BAdam4Replicas):
+
+  def task(self) -> tasks_lib.SingleTask.HParams:
+    task_p = super().task()
+    task_p.train.num_train_steps = 15000
+    return task_p
 
 
 @experiment_registry.register
@@ -898,26 +996,28 @@ class C4SpmdGpt3L16AdamOrgHP(C4SpmdGpt3AdamOrgHP):
 
 
 @experiment_registry.register
-class C4SpmdPipelineGpt3SmallAdam64Replicas(C4SpmdPipelineGpt3AdamOrgHP):
-  """Small GPT-3 config in bf16 for 64 replicas with 512 global batch size.
+class C4SpmdPipelineGpt3SmallAdam8Replicas(C4SpmdPipelineGpt3AdamOrgHP):
+  """Small GPT-3 config in bf16 for 8 replicas with 512 global batch size.
 
   This was called GPT-3 XL in the GPT-3 paper, with 1.3B parameters.
   """
-  NUM_STAGES = 4
+
+  NUM_STAGES = 2
   NUM_LAYERS = 24
   NUM_HEADS = 24
   MODEL_DIMS = 3072
   # Known as MLP_DIM in t5x
   HIDDEN_DIMS = MODEL_DIMS * 4
   DIMS_PER_HEAD = 128
+  VOCAB_SIZE = 51200
 
-  PER_CORE_BATCH_SIZE = 8
-  MICROBATCH_SIZE = 16
+  PERCORE_BATCH_SIZE = 64
+  MICROBATCH_SIZE = 8
   FPROP_DTYPE = jnp.bfloat16
   LEARNING_RATE = 2.0e-4
-  ICI_MESH_SHAPE = [4, 1, 4, 4]
+  ICI_MESH_SHAPE = [2, 1, 2, 2]
 
   CHECKPOINT_MAX_TO_KEEP = 1000
-  EVAL_INTERVAL_STEPS = 100
-  SUMMARY_INTERVAL_STEPS = 1
+  EVAL_INTERVAL_STEPS = 10
+  SUMMARY_INTERVAL_STEPS = 5
   CHECKPOINT_EVERY_N_STEPS = 200
