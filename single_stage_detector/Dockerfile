@@ -17,9 +17,11 @@ ARG FROM_IMAGE_NAME=pytorch/pytorch:1.10.0-cuda11.3-cudnn8-devel
 FROM ${FROM_IMAGE_NAME}
 
 # Make sure git is installed (needed by pip)
+RUN rm /etc/apt/sources.list.d/cuda.list
+RUN rm /etc/apt/sources.list.d/nvidia-ml.list
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-        git \
+        git libcurl4 wget \
  && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
