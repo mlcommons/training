@@ -2,17 +2,14 @@
 
 MLCube™ GitHub [repository](https://github.com/mlcommons/mlcube). MLCube™ [wiki](https://mlcommons.github.io/mlcube/).
 
-Clone project from GitHub.
-```shell
-git clone https://github.com/mlcommons/training
-cd ./training/single_stage_detector
-```
+## Project setup
 
-Create python virtual environment.
-```shell
-virtualenv -p python3 ./env
-source ./env/bin/activate
-pip install mlcube mlcube-docker
+```bash
+# Create Python environment and install MLCube Docker runner 
+virtualenv -p python3 ./env && source ./env/bin/activate && pip install mlcube-docker
+
+# Fetch the implementation from GitHub
+git clone https://github.com/mlcommons/training && cd ./training/single_stage_detector
 ```
 
 Go to mlcube directory and study what tasks MLCube implements.
