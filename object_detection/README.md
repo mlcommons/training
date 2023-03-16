@@ -54,13 +54,13 @@ Any order.
 He, Kaiming, et al. "Mask r-cnn." Computer Vision (ICCV), 2017 IEEE International Conference on.
 IEEE, 2017.
 
-We use a version of Mask R-CNN with a ResNet50 backbone.
+We use a version of Mask R-CNN with a ResNet-50 backbone.
 
 ### List of layers
 Running the timing script will display a list of layers.
 
 ### Weight and bias initialization
-The ResNet50 base must be loaded from the provided weights. They may be quantized.
+The ResNet-50 base must be loaded from the provided weights. They may be quantized.
 
 ### Loss function
 Multi-task loss (classification, box, mask). Described in the Mask R-CNN paper.
