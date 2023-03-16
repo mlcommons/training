@@ -72,7 +72,7 @@ For an alternative way of preprocessing the dataset using NVTabular, which can d
 
 Preprocessing command (numpy):
 
-After downloading and uncompressing the [Criteo 1TB Click Logs dataset](https://storage.googleapis.com/criteo-cail-datasets/day_{0-23}.gz), process the raw tsv files into the proper format for training by running `./scripts/process_Criteo_1TB_Click_Logs_dataset.sh` with necessary command line arguments.
+After downloading and uncompressing the [Criteo 1TB Click Logs dataset](https://ailab.criteo.com/ressources/criteo-1tb-click-logs-dataset-for-mlperf), process the raw tsv files into the proper format for training by running `./scripts/process_Criteo_1TB_Click_Logs_dataset.sh` with necessary command line arguments.
 
 Example usage:
 
@@ -139,7 +139,7 @@ A module which can be used for DLRM inference exists [here](https://github.com/p
 # Running the MLPerf DLRM v2 benchmark
 
 ## Create the synthetic multi-hot dataset
-### Step 1: Download and uncompressing the [Criteo 1TB Click Logs dataset](https://storage.googleapis.com/criteo-cail-datasets/day_{0-23}.gz)
+### Step 1: Download and uncompressing the [Criteo 1TB Click Logs dataset](https://ailab.criteo.com/ressources/criteo-1tb-click-logs-dataset-for-mlperf)
 
 ### Step 2: Run the 1TB Criteo Preprocess script.
 Example usage:
