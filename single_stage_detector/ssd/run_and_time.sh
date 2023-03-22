@@ -39,6 +39,21 @@ LOG_INTERVAL=${LOG_INTERVAL:-20}
 DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6-mlperf"}
 TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
 
+# Handle MLCube parameters
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --data_dir=*)
+      DATASET_DIR="${1#*=}"
+      ;;
+    --log_dir=*)
+      LOG_DIR="${1#*=}"
+      ;;
+    *)
+  esac
+  shift
+done
+
+
 # run benchmark
 echo "running benchmark"
 
@@ -61,7 +76,7 @@ if [ -n "${SLURM_LOCALID-}" ]; then
   fi
 else
   # Mode 2: Single-node Docker; need to launch tasks with torchrun
-  CMD=( "torchrun" "--standalone" "--nnodes=1" "--nproc_per_node=${DGXNGPU}" )
+  CMD=( "torchrun" "--standalone" "--nnodes=1" "--nproc_per_node=1" )
   [ "$MEMBIND" = false ] &&  CMD+=( "--no_membind" )
 fi
 
@@ -75,6 +90,12 @@ PARAMS=(
 
 # run training
 "${CMD[@]}" train.py "${PARAMS[@]}" ${EXTRA_PARAMS} ; ret_code=$?
+
+# Copy log file to MLCube log folder
+if [ "$LOG_DIR" != "" ]; then
+  timestamp=$(date +%Y%m%d_%H%M%S)
+  cp mlperf_compliance.log "$LOG_DIR/mlperf_compliance_$timestamp.log"
+fi
 
 set +x
 

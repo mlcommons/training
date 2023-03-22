@@ -1,0 +1,44 @@
+name: SSD
+description: Single Stage Detector benchmark
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/ssd:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile"
+  # GPU arguments
+  gpu_args: "--gpus=all --shm-size 4G"
+
+tasks:
+  download_data:
+    entrypoint: ../scripts/download_openimages_mlperf.sh -a
+    parameters:
+      outputs:
+        data_dir: data/
+  download_model:
+    entrypoint: ../scripts/download_backbone.sh -a
+    parameters:
+      outputs:
+        model_dir: pretrained_model/
+  train:
+    entrypoint: ./run_and_time.sh -a
+    # torchrun --standalone --nnodes=1 train.py --epochs=1 --batch-size=16 --eval-batch-size=16
+    parameters:
+      inputs:
+        data_dir: data/
+      outputs:
+        log_dir: logs/
+  check_logs:
+    entrypoint: ./check_logs.sh -a
+    parameters:
+      inputs:
+        log_dir: logs/
+      outputs:
+        checker_logs_dir: checker_logs/
