@@ -130,12 +130,12 @@ def pretrain(train_valid_test_dataset_provider,
     mllogger.event(key="opt_learning_rate_decay_steps", value=math.ceil(args.lr_decay_samples / args.global_batch_size), sync=False)
     mllogger.event(key="opt_learning_rate_warmup_steps", value=math.ceil(args.lr_warmup_samples / args.global_batch_size), sync=False)
     mllogger.event(key="opt_learning_rate_decay_schedule", value="cosine with linear warmup", sync=False)
-    mllogger.event(key="opt_gradient_clipping", value=args.clip_grad, sync=False)
-    mllogger.event(key="opt_init_checkpoint_step", value=math.ceil(args.ext_lr_steps / args.global_batch_size), sync=False)
+    mllogger.event(key="opt_gradient_clip_norm", value=args.clip_grad, sync=False)
+    mllogger.event(key="init_checkpoint_step", value=math.ceil(args.ext_lr_steps / args.global_batch_size), sync=False)
     mllogger.event(key=mllogger.constants.GLOBAL_BATCH_SIZE, value=args.global_batch_size, sync=False)
     mllogger.event(key=mllogger.constants.GRADIENT_ACCUMULATION_STEPS,
                                 value=get_num_microbatches(), sync=False, unique=True)
-    mllogger.event(key="sequence_length", value=args.seq_length, sync=False)
+    mllogger.event(key="max_sequence_length", value=args.seq_length, sync=False)
 
     # mllogger.event(key="num_layers", value=args.num_layers, sync=False)
     # mllogger.event(key="num_heads", value=args.num_attention_heads, sync=False)
