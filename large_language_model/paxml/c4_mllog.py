@@ -10,25 +10,22 @@ from paxml import trainer_lib
 from paxml.tasks.lm.params import c4
 from praxis import base_hyperparams
 
-import mllog
+from mlperf_logging.mllog import mllog
 
 
-class EarlyStoppingFn(base_hyperparams.BaseParameterizable):
-  r"""Early stopping function to log eval log_pplx and stop when reaching target."""
+class EarlyStoppingFn(base_hyperparams.FiddleBaseParameterizable):
+  r"""Early stopping function to log eval log_pplx and stop when reaching target.
 
-  class HParams(base_hyperparams.BaseParameterizable.HParams):
-    """Hyper-parameters associated with the early stopping function.
+  Attributes:
+    target_log_pplx: target log pplx value to stop training when eval log pplx
+      reaches this value.
+    global_batch_size_tokens: global batch size in terms of tokens.
+    eval_frequency_tokens: eval frequency in terms of tokens.
+  """
 
-    Attributes:
-      target_log_pplx: target log pplx value to stop training when eval log pplx
-        reaches this value.
-      global_batch_size_tokens: global batch size in terms of tokens.
-      eval_frequency_tokens: eval frequency in terms of tokens.
-    """
-
-    target_log_pplx: Optional[float] = None
-    global_batch_size_tokens: Optional[int] = None
-    eval_frequency_tokens: Optional[int] = None
+  target_log_pplx: Optional[float] = None
+  global_batch_size_tokens: Optional[int] = None
+  eval_frequency_tokens: Optional[int] = None
 
   def __call__(
       self,
