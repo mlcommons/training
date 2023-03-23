@@ -2,7 +2,7 @@ This is the README for v1.0 using the TensorFlow2 model. The pre-v1.0 README usi
 
 # 1. Problem
 This benchmark uses resnet v1.5 to classify images with a fork from
-https://github.com/tensorflow/models/tree/master/official/vision/image_classification/resnet .
+https://github.com/tensorflow/models/tree/master/official/vision/configs/experiments/image_classification .
 
 # 2. Dataset/Environment
 ## Publication/Attribution

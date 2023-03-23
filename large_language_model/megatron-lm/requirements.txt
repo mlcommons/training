@@ -1,0 +1,4 @@
+git+https://github.com/mlcommons/logging.git@2.1.0-rc1
+git+https://github.com/NVIDIA/mlperf-common.git
+zarr==2.13
+tensorstore==0.1.27
