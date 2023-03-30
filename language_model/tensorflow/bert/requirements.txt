@@ -1,1 +1,2 @@
 gdown==4.6.4
+git+https://github.com/mlcommons/logging.git@1.1.0-rc4

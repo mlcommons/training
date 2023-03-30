@@ -1,8 +1,8 @@
 #!/bin/bash
 
-: "${INPUT_PATH:=/1/downloads/coco2017}"
-: "${VOCAB_PATH:=/2/coco2017}"
-: "${OUTPUT_PATH:=/3/coco2017}"
+: "${INPUT_PATH:=/workspace/data/dataset/processed_dataset/results4}"
+: "${VOCAB_PATH:=/workspace/data/vocab.txt}"
+: "${OUTPUT_PATH:=/workspace/output_data}"
 
 while [ "$1" != "" ]; do
     case $1 in
@@ -30,13 +30,13 @@ for FILE in $INPUT_PATH/part*; do
     NEW_FILE="$(basename -- $FILE)"
     echo "*Processing: " $NEW_FILE
     python3 create_pretraining_data.py \
-    --input_file=$FILE \
-    --vocab_file=$VOCAB_PATH \
-    --output_file=$OUTPUT_PATH/$NEW_FILE \
-    --do_lower_case=True \
-    --max_seq_length=512 \
-    --max_predictions_per_seq=76 \
-    --masked_lm_prob=0.15 \
-    --random_seed=12345 \
-    --dupe_factor=10
+        --input_file=$FILE \
+        --vocab_file=$VOCAB_PATH \
+        --output_file=$OUTPUT_PATH/$NEW_FILE \
+        --do_lower_case=True \
+        --max_seq_length=512 \
+        --max_predictions_per_seq=76 \
+        --masked_lm_prob=0.15 \
+        --random_seed=12345 \
+        --dupe_factor=10
 done

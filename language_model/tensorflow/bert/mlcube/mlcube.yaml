@@ -14,7 +14,7 @@ docker:
   # Docker file name within docker build context, default is `Dockerfile`.
   build_file: "Dockerfile"
   # GPU arguments
-  gpu_args: "--gpus=all --shm-size 4G"
+  gpu_args: "--gpus=all --shm-size 16G"
 
 tasks:
   download_data:
@@ -31,13 +31,13 @@ tasks:
           type: file
           default: data/vocab.txt
       outputs:
-        output_path: output_data/
+        output_path: tf_data/
   train:
     entrypoint: ./run_and_time.sh -a
-    # torchrun --standalone --nnodes=1 train.py --epochs=1 --batch-size=16 --eval-batch-size=16
     parameters:
       inputs:
-        data_dir: data/
+        tfdata_path: tf_data/
+        config_path: data/bert_config.json
       outputs:
         log_dir: logs/
   check_logs:
