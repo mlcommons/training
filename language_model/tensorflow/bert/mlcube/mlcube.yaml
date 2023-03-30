@@ -1,0 +1,49 @@
+name: BERT
+description: Bert Language Model
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/bert_benchmark:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile"
+  # GPU arguments
+  gpu_args: "--gpus=all --shm-size 4G"
+
+tasks:
+  download_data:
+    entrypoint: ./cleanup_scripts/download_and_uncompress.sh -a
+    parameters:
+      outputs:
+        data_dir: data/
+  process_data:
+    entrypoint: ./cleanup_scripts/create_pretraining_data.sh -a
+    parameters:
+      inputs:
+        input_path: data/dataset/processed_dataset/results4/
+        vocab_path:
+          type: file
+          default: data/vocab.txt
+      outputs:
+        output_path: output_data/
+  train:
+    entrypoint: ./run_and_time.sh -a
+    # torchrun --standalone --nnodes=1 train.py --epochs=1 --batch-size=16 --eval-batch-size=16
+    parameters:
+      inputs:
+        data_dir: data/
+      outputs:
+        log_dir: logs/
+  check_logs:
+    entrypoint: ./check_logs.sh -a
+    parameters:
+      inputs:
+        log_dir: logs/
+      outputs:
+        checker_logs_dir: checker_logs/
