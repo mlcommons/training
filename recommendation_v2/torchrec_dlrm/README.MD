@@ -186,7 +186,7 @@ torchx run -s local_cwd dist.ddp -j 1x8 --script dlrm_main.py -- \
     --adagrad \
     --learning_rate 0.005
 ```
-Note: The proposed target AUROC to reach within one epoch is 0.8030.
+Note: The proposed target AUROC to reach within one epoch is 0.80275.
 
 ## (Alternative method that trains multi-hot data generated on-the-fly)
 
