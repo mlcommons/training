@@ -117,14 +117,18 @@ def pretrain(train_valid_test_dataset_provider,
 
     args = get_args()
     timers = get_timers()
-    mllogger.mlperf_submission_log('llm')
+    mllogger.event('submission_org', 'Nvidia')
+    mllogger.event('submission_platform', f'GA100-{args.world_size}')
+    mllogger.event('submission_status', 'reference')
+    mllogger.event('submission_division', 'closed')
+    mllogger.event('submission_benchmark', 'gpt-3')
     mllogger.event(key=mllogger.constants.SEED, value=args.seed,
                         sync=False)
     mllogger.event(key="opt_name", value=args.optimizer, sync=False)
     mllogger.event(key="opt_adam_beta_1", value=args.adam_beta1, sync=False)
     mllogger.event(key="opt_adam_beta_2", value=args.adam_beta2, sync=False)
     mllogger.event(key="opt_adam_epsilon", value=args.adam_eps, sync=False)
-    mllogger.event(key="opt_adam_weight_decay", value=args.weight_decay, sync=False)
+    mllogger.event(key="opt_weight_decay", value=args.weight_decay, sync=False)
     mllogger.event(key=mllogger.constants.OPT_BASE_LR, value=args.lr, sync=False)
     mllogger.event(key="opt_end_learning_rate", value=args.min_lr, sync=False)
     mllogger.event(key="opt_learning_rate_decay_steps", value=math.ceil(args.lr_decay_samples / args.global_batch_size), sync=False)
@@ -136,7 +140,7 @@ def pretrain(train_valid_test_dataset_provider,
     mllogger.event(key=mllogger.constants.GRADIENT_ACCUMULATION_STEPS,
                                 value=get_num_microbatches(), sync=False, unique=True)
     mllogger.event(key="max_sequence_length", value=args.seq_length, sync=False)
-
+    mllogger.event(key=mllogger.constants.EVAL_SAMPLES, value=11590004, sync=False)
     # mllogger.event(key="num_layers", value=args.num_layers, sync=False)
     # mllogger.event(key="num_heads", value=args.num_attention_heads, sync=False)
     # mllogger.event(key="hidden_size", value=args.hidden_size, sync=False)
@@ -226,16 +230,13 @@ def pretrain(train_valid_test_dataset_provider,
     status = 'aborted'
     mllogger.log_run_stop(status)
     mllogger.event(key="trained_samples",
-                    value=args.consumed_train_samples - args.ext_lr_steps,
-                    sync=False)
-    mllogger.event(key=mllogger.constants.EVAL_SAMPLES,
-                    value=args.consumed_valid_samples,
+                    value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                     sync=False)
     mllogger.end(key=mllogger.constants.BLOCK_STOP,
                     metadata={'first_epoch_num': 0},
                     sync=False)
     mllogger.end(key=mllogger.constants.EPOCH_STOP,
-                    metadata={'epoch_num': args.consumed_train_samples - args.ext_lr_steps}, sync=False)
+                    metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
 
 def update_train_iters(args):
 
@@ -810,11 +811,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 status = 'aborted'
                 mllogger.log_run_stop(status)
                 mllogger.event(key="trained_samples",
-                                value=args.consumed_train_samples - args.ext_lr_steps,
+                                value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                                 sync=False)
-                mllogger.event(key=mllogger.constants.EVAL_SAMPLES,
-                                        value=args.consumed_valid_samples,
-                                        sync=False)
                 if not saved_checkpoint:
                     save_checkpoint_and_time(iteration, model, optimizer,
                                              opt_param_scheduler)
@@ -823,7 +821,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                             metadata={'first_epoch_num': 0},
                             sync=False)
                 mllogger.end(key=mllogger.constants.EPOCH_STOP,
-                            metadata={'epoch_num': args.consumed_train_samples - args.ext_lr_steps}, sync=False)
+                            metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
                 sys.exit()
 
         # Exiting based on iterations
@@ -919,7 +917,7 @@ def evaluate_and_print_results(prefix, forward_step_func,
     """Helper function to evaluate and dump results on screen."""
     args = get_args()
     mllogger.start(key=mllogger.constants.EVAL_START,
-                        metadata={'epoch_num': args.consumed_train_samples - args.ext_lr_steps}, sync=False)
+                        metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
 
     writer = get_tensorboard_writer()
 
@@ -933,7 +931,7 @@ def evaluate_and_print_results(prefix, forward_step_func,
         ppl = math.exp(min(20, total_loss_dict[key].item()))
         if is_last_rank():
             mllogger.event(mllogger.constants.EVAL_ACCURACY, value=total_loss_dict[key].item(),
-                            metadata=dict(epoch_num=args.consumed_train_samples - args.ext_lr_steps), sync=False, unique=False)
+                            metadata=dict(epoch_num=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length), sync=False, unique=False)
         string += '{} PPL: {:.6E} | '.format(key, ppl)
         if writer:
             writer.add_scalar('{} validation'.format(key),
@@ -956,7 +954,7 @@ def evaluate_and_print_results(prefix, forward_step_func,
     print_rank_last(string)
     print_rank_last('-' * length)
     mllogger.end(key=mllogger.constants.EVAL_STOP,
-                    metadata=dict(epoch_num=args.consumed_train_samples - args.ext_lr_steps), sync=False)
+                    metadata=dict(epoch_num=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length), sync=False)
 
 
 def cyclic_iter(iter):
