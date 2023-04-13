@@ -14,7 +14,7 @@ docker:
   # Docker file name within docker build context, default is `Dockerfile`.
   build_file: "Dockerfile"
   # GPU arguments
-  gpu_args: "--gpus=all --shm-size 16G"
+  gpu_args: "--gpus=all"
 
 tasks:
   download_data:
@@ -30,16 +30,27 @@ tasks:
         vocab_path:
           type: file
           default: data/vocab.txt
+        eval_txt:
+          type: file
+          default: data/dataset/processed_dataset/results4/eval.txt
       outputs:
         output_path: tf_data/
+        output_eval_path: tf_eval_data/
   train:
     entrypoint: ./run_and_time.sh -a
     parameters:
       inputs:
         tfdata_path: tf_data/
+        init_checkpoint:
+          type: file
+          default: data/tf2_ckpt/model.ckpt-28252
+        eval_file:
+          type: file
+          default: tf_eval_data/eval_10k
         config_path: data/bert_config.json
       outputs:
         log_dir: logs/
+        output_dir: final_output/
   check_logs:
     entrypoint: ./check_logs.sh -a
     parameters:

@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r /requirements.txt
 COPY . /workspace/bert
 
 RUN chmod +x /workspace/bert/cleanup_scripts/*.sh
+RUN chmod +x /workspace/bert/*.sh
 
 # Set working directory
 WORKDIR /workspace/bert

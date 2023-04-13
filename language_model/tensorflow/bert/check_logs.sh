@@ -20,7 +20,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-for filename in $LOG_DIR/*.log; do
+for filename in $LOG_DIR/bert_*.log; do
     log_file=${filename##*/}
     python -m mlperf_logging.compliance_checker $filename --log_output $CHECKER_LOG_DIR/$log_file || true
 done
