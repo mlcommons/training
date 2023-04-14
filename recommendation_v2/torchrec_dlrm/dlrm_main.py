@@ -701,7 +701,7 @@ def main(argv: List[str]) -> None:
     is_rank_zero = dist.get_rank() == 0
     if is_rank_zero:
         pprint(vars(args))
-        submission_info(mllogger, mllog_constants.DLRMv2, "reference_implementation")
+        submission_info(mllogger, mllog_constants.DLRM_DCNv2, "reference_implementation")
         mllogger.event(
             key=mllog_constants.GLOBAL_BATCH_SIZE,
             value=dist.get_world_size() * args.batch_size,
