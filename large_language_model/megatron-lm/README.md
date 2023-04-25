@@ -49,7 +49,7 @@ for shard in {6..7}; do
   end=$((shard * 128 + 127))
   mkdir -p softlinks/en_$shard
   for ind in $(seq -f "%05g" $start $end); do
-    ln -s ../../en/c4-train.${ind}-of-01024.json.gz softlinks/en_${shard}/c4-train.${ind}-of-01024.json.gz
+    ln -s en/c4-train.${ind}-of-01024.json.gz softlinks/en_${shard}/c4-train.${ind}-of-01024.json.gz
   done
 done
 
@@ -58,19 +58,22 @@ mkdir -p en_merge
 for shard in {6..7}; do
   cat softlinks/en_${shard}/*gz > en_merge/c4-train.en_${shard}.json.gz 
 done
-cat en/c4-validation.0000* > en_merge/c4-validation.json.gz
 ```
+
+Validation dataset json is available at: `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json`.
 
 After preparing the data folder, download tokenizer model.
 Currently, SPM trained by google using [these](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions is used.
+Tokenizer model is also available at `gs://mlperf-llm-public2/vocab/c4_en_301_5Mexp2_spm.model`
 
 Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
 the correct input/output paths and run preprocessing as follows
 ```bash
 cd scripts
 sbatch preprocess.sh <path to c4>
-sbatch preprocess_val.sh <path to c4>
+sbatch preprocess_val.sh <path to c4> <path to validation json>
 ```
+For the above scripts, the tokenizer model should be saved as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`
 
 Currently, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the above step:
 
