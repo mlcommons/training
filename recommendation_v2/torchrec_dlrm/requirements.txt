@@ -1,4 +1,4 @@
 fbgemm-gpu==0.3.2
-git+https://github.com/janekl/logging.git@mlcommons_logging_pr309  # TODO https://github.com/mlcommons/logging/pull/309
+git+https://github.com/mlperf/logging.git
 torchmetrics==0.11.0
 torchrec==0.3.2
