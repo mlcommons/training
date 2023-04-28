@@ -1,7 +1,7 @@
 name: BERT
 description: Bert Language Model
-authors: 
- - {name: "MLCommons Best Practices Working Group"}
+authors:
+  - { name: "MLCommons Best Practices Working Group" }
 
 platform:
   accelerator_count: 1
@@ -47,7 +47,29 @@ tasks:
         eval_file:
           type: file
           default: tf_eval_data/eval_10k
-        config_path: data/bert_config.json
+        config_path:
+          type: file
+          default: data/bert_config.json
+      outputs:
+        log_dir: logs/
+        output_dir: final_output/
+  train_tpu:
+    entrypoint: ./run_and_time_tpu.sh -a
+    parameters:
+      inputs:
+        tfdata_path: tf_data/
+        init_checkpoint:
+          type: file
+          default: data/tf2_ckpt/model.ckpt-28252
+        eval_file:
+          type: file
+          default: tf_eval_data/eval_10k
+        config_path:
+          type: file
+          default: data/bert_config.json
+        parameters_file:
+          type: file
+          default: parameters.yaml
       outputs:
         log_dir: logs/
         output_dir: final_output/

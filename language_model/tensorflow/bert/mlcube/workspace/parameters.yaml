@@ -1,0 +1,3 @@
+tpu_name: tpu_instance_name
+tpu_zone: gcp_zone
+gcp_project: gcp_project

@@ -1,1 +1,2 @@
-mlcube/workspace/
+mlcube/workspace/*
+!mlcube/workspace/parameters.yaml
