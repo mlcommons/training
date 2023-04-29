@@ -49,7 +49,7 @@ for shard in {6..7}; do
   end=$((shard * 128 + 127))
   mkdir -p softlinks/en_$shard
   for ind in $(seq -f "%05g" $start $end); do
-    ln -s en/c4-train.${ind}-of-01024.json.gz softlinks/en_${shard}/c4-train.${ind}-of-01024.json.gz
+    ln -s ../../en/c4-train.${ind}-of-01024.json.gz softlinks/en_${shard}/c4-train.${ind}-of-01024.json.gz
   done
 done
 
@@ -73,7 +73,7 @@ cd scripts
 sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4> <path to validation json>
 ```
-For the above scripts, the tokenizer model should be saved as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`
+For the above scripts, the tokenizer model should be saved as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model` and the output directory `${C4_PATH}/preprocessed_c4_spm` should already exist.
 
 Currently, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the above step:
 
