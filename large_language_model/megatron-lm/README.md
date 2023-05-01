@@ -35,6 +35,20 @@ For validation, a subset of the validation dataset has been selected. Details as
 
 Benchmarking region will use only 1/4th of the 1024 original `json.gz` files. Specifically, the last 1/4th of the files from 768 till 1024 `json.gz` are required.
 
+### Data Download
+Steps to download the training dataset are available [here](https://huggingface.co/datasets/allenai/c4#how-do-i-download-this).
+Since, the benchmarking region only requires a small subset of the training dataset, following steps can reduce the download time.
+```bash
+GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/allenai/c4
+cd c4
+git lfs pull --include "en/c4-train.007*.json.gz"
+git lfs pull --include "en/c4-train.008*.json.gz"
+git lfs pull --include "en/c4-train.009*.json.gz"
+git lfs pull --include "en/c4-train.01*.json.gz"
+```
+
+Validation dataset json is available at: `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json`.
+
 ### Data Preprocessing
 
 Run the following commands to merge these 256 files into 2 `json.gz` files. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`).
@@ -59,8 +73,6 @@ for shard in {6..7}; do
   cat softlinks/en_${shard}/*gz > en_merge/c4-train.en_${shard}.json.gz 
 done
 ```
-
-Validation dataset json is available at: `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json`.
 
 After preparing the data folder, download tokenizer model.
 Currently, SPM trained by google using [these](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions is used.
