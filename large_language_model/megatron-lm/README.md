@@ -26,35 +26,36 @@ Command line arguments are described in detail in this source file [`arguments.p
 
 # 3. Dataset/Environment
 
-### Training and test data separation
+### Background
 
-We use C4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4).
-We do not host any datasets for GPT training.
-For validation, a subset of the validation dataset has been selected. Details as follows:
-24,567 examples were [selected](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/select_example.md) in the validation split to form a smaller eval set. The resulting tfrecord file is at gs://mlperf-llm-public2/c4/en/3.0.1/c4-validation_24567exp.tfrecord , with hashes of the text at gs://mlperf-llm-public2/c4/en/3.0.1/c4-validation_24567exp.hash.
+We use c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4).
 
-Benchmarking region will use only 1/4th of the 1024 original `json.gz` files. Specifically, the last 1/4th of the files from 768 till 1024 `json.gz` are required.
+For training in the benchmarking region, only 1/4th of the 1024 original `json.gz` files are used. Specifically, the last 1/4th of the files from 768 till 1024 `json.gz` are required.
+
+For validation, a subset of the validation dataset has been selected. This was done by randomly selecting 24,567 examples using [select_example.md](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/select_example.md) to get a smaller evaluation dataset.
+
+The dataset is preprocessed using Sentence Piece Model. [These](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions were used to train the SPM. 
 
 ### Data Download
-Steps to download the training dataset are available [here](https://huggingface.co/datasets/allenai/c4#how-do-i-download-this).
-Since, the benchmarking region only requires a small subset of the training dataset, following steps can reduce the download time.
+Training dataset -
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/allenai/c4
-cd c4
+mkdir <${C4_PATH}>
+cd <${C4_PATH}>
 git lfs pull --include "en/c4-train.007*.json.gz"
 git lfs pull --include "en/c4-train.008*.json.gz"
 git lfs pull --include "en/c4-train.009*.json.gz"
 git lfs pull --include "en/c4-train.01*.json.gz"
 ```
 
-Validation dataset json is available at: `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json`.
+Validation dataset needs to be downloaded from `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json` to ${C4_PATH}.
 
-### Data Preprocessing
+### Data Preprocessing for Megatron-LM
 
 Run the following commands to merge these 256 files into 2 `json.gz` files. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`).
 
 ```bash
-cd <path to C4>
+cd <${C4_PATH}>
 
 # create softlinks to store each shard before merging
 mkdir -p softlinks
@@ -74,9 +75,7 @@ for shard in {6..7}; do
 done
 ```
 
-After preparing the data folder, download tokenizer model.
-Currently, SPM trained by google using [these](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions is used.
-Tokenizer model is also available at `gs://mlperf-llm-public2/vocab/c4_en_301_5Mexp2_spm.model`
+After preparing the data folder, download tokenizer model. The tokenizer model should be downloaded from `gs://mlperf-llm-public2/vocab/c4_en_301_5Mexp2_spm.model` and renamed as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`. Make sure an output directory `${C4_PATH}/preprocessed_c4_spm` exists before the next step.
 
 Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
 the correct input/output paths and run preprocessing as follows
@@ -85,7 +84,6 @@ cd scripts
 sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4> <path to validation json>
 ```
-For the above scripts, the tokenizer model should be saved as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model` and the output directory `${C4_PATH}/preprocessed_c4_spm` should already exist.
 
 Currently, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the above step:
 
