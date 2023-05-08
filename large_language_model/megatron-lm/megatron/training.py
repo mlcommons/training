@@ -232,6 +232,9 @@ def pretrain(train_valid_test_dataset_provider,
     mllogger.event(key="trained_samples",
                     value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                     sync=False)
+    mllogger.event(key="train_samples",
+                    value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
+                    sync=False)
     mllogger.end(key=mllogger.constants.BLOCK_STOP,
                     metadata={'first_epoch_num': 0},
                     sync=False)
@@ -811,6 +814,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 status = 'aborted'
                 mllogger.log_run_stop(status)
                 mllogger.event(key="trained_samples",
+                                value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
+                                sync=False)
+                mllogger.event(key="train_samples",
                                 value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                                 sync=False)
                 if not saved_checkpoint:
