@@ -37,7 +37,8 @@ the .tar files downloaded from image-net.org.
 **Stage 2**
 
 The second stage takes place as part of training and includes cropping, apply
-bounding boxes, and some basic color augmentation. The [reference model](https://github.com/mlperf/training/blob/master/image_classification/tensorflow/official/resnet/imagenet_preprocessing.py)
+bounding boxes, and some basic color augmentation. The [reference model]
+(https://github.com/mlcommons/training/blob/master/image_classification/tensorflow2/imagenet_preprocessing.py)
 is to be followed.
 
 
