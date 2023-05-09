@@ -95,6 +95,9 @@ def pretrain(train_valid_test_dataset_provider,
         args_defaults: a dictionary from argument-name to argument-value. It
             to set already parse arguments.
     """
+    # The reference implementation does not clear the cache currently
+    # but the submissions are required to do so
+    mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
     mllogger.start(key=mllogger.constants.INIT_START, sync=False)
 
     # Initalize and get arguments, timers, and Tensorboard writer.
