@@ -3,6 +3,8 @@ description: Bert Language Model
 authors:
   - { name: "MLCommons Best Practices Working Group" }
 
+platform:
+  accelerator_count: 1
 
 docker:
   # Image name.
@@ -10,14 +12,47 @@ docker:
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
   build_context: "../"
   # Docker file name within docker build context, default is `Dockerfile`.
-  build_file: "Dockerfile_tpu"
+  build_file: "Dockerfile"
+  # GPU arguments
+  gpu_args: "--gpus=all"
 
 tasks:
-  train:
-    entrypoint: ./run_tpu.sh -a
+  download_data:
+    entrypoint: ./cleanup_scripts/download_and_uncompress.sh -a
     parameters:
       outputs:
+        data_dir: data/
+  process_data:
+    entrypoint: ./cleanup_scripts/create_pretraining_data.sh -a
+    parameters:
+      inputs:
+        input_path: data/dataset/processed_dataset/results4/
+        vocab_path:
+          type: file
+          default: data/vocab.txt
+        eval_txt:
+          type: file
+          default: data/dataset/processed_dataset/results4/eval.txt
+      outputs:
+        output_path: tf_data/
+        output_eval_path: tf_eval_data/
+  train:
+    entrypoint: ./run_and_time.sh -a
+    parameters:
+      inputs:
+        tfdata_path: tf_data/
+        init_checkpoint:
+          type: file
+          default: data/tf2_ckpt/model.ckpt-28252
+        eval_file:
+          type: file
+          default: tf_eval_data/eval_10k
+        config_path:
+          type: file
+          default: data/bert_config.json
+      outputs:
         log_dir: logs/
+        output_dir: final_output/
   train_tpu:
     entrypoint: ./run_and_time_tpu.sh -a
     parameters:
