@@ -51,10 +51,10 @@ python3 ./run_pretraining.py \
 	--bert_config_file=gs://bert_tf_data/bert_config.json \
 	--nodo_eval \
 	--do_train \
-	--eval_batch_size=640 \
+	--eval_batch_size=64 \
 	--init_checkpoint=gs://bert_tf_data/tf2_ckpt/model.ckpt-28252 \
 	--input_file=gs://bert_tf_data/tf_data/part-* \
-	--iterations_per_loop=3 \
+	--iterations_per_loop=1 \
 	--lamb_beta_1=0.88 \
 	--lamb_beta_2=0.88 \
 	--lamb_weight_decay_rate=0.0166629 \
@@ -63,18 +63,18 @@ python3 ./run_pretraining.py \
 	--max_eval_steps=125 \
 	--max_predictions_per_seq=76 \
 	--max_seq_length=512 \
-	--num_tpu_cores=128 \
-	--num_train_steps=600 \
-	--num_warmup_steps=287 \
+	--num_tpu_cores=8 \
+	--num_train_steps=200 \
+	--num_warmup_steps=28 \
 	--optimizer=lamb \
 	--output_dir=gs://bert_tf_data/output/ \
 	--save_checkpoints_steps=3 \
 	--start_warmup_step=-76 \
 	--steps_per_update=1 \
-	--train_batch_size=8192 \
+	--train_batch_size=128 \
 	--use_tpu \
-	--tpu_name=tpu_test \
-	--tpu_zone=europe-west4-a \
+	--tpu_name=tpu \
+	--tpu_zone=us-central1-c \
 	--gcp_project=training-reference-bench-test |& tee "$LOG_DIR/train_console.log"
 
 
