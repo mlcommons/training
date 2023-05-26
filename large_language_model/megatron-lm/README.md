@@ -103,7 +103,7 @@ The model largely follows the GPT-3 [paper](https://arxiv.org/abs/2005.14165), S
 
 1. Tokenizer is changed from BPE to [SentencePiece](https://github.com/google/sentencepiece) with BPE.
 2. Alternating sparse attention layers are not used.
-3. Model parameters can be referred from [here](https://github.com/mlcommons/training/blob/master/large_language_model/megatron-lm/run_gpt3.sh#L46-L92).
+3. Model parameters are set [here](https://github.com/mlcommons/training/blob/master/large_language_model/megatron-lm/run_gpt3.sh#L46-L92).
 
 ### Model checkpoint
 #### Conversion
