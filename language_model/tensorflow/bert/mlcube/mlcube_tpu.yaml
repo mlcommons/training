@@ -54,6 +54,10 @@ tasks:
   train_tpu:
     entrypoint: ./run_tpu.sh -a
     parameters:
+      inputs:
+        parameters_yaml:
+          type: file
+          default: parameters.yaml
       outputs:
         log_dir: logs/
   check_logs:
