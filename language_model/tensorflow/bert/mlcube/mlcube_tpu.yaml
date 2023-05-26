@@ -4,7 +4,7 @@ authors:
   - { name: "MLCommons Best Practices Working Group" }
 
 platform:
-  accelerator_count: 1
+  accelerator_count: 0
 
 docker:
   # Image name.
@@ -12,9 +12,7 @@ docker:
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
   build_context: "../"
   # Docker file name within docker build context, default is `Dockerfile`.
-  build_file: "Dockerfile_gpu"
-  # GPU arguments
-  gpu_args: "--gpus=all"
+  build_file: "Dockerfile_cpu"
 
 tasks:
   download_data:
