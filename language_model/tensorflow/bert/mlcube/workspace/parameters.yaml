@@ -1,4 +1,4 @@
-input_gs: gs://bert_tf_data/
+input_gs: gs://bert_tf_data
 output_gs: your_gs_bucket_name
 tpu_name: your_tpu_instance_name
 tpu_zone: your_tpu_zone
