@@ -18,34 +18,32 @@ echo "STARTING TIMING RUN AT $start_fmt"
 
 # Handle MLCube parameters
 while [ $# -gt 0 ]; do
-  case "$1" in
-  --tfdata_path=*)
-    TFDATA_PATH="${1#*=}"
-    ;;
-  --config_path=*)
-    CONFIG_PATH="${1#*=}"
-    ;;
-  --init_checkpoint=*)
-    INIT_CHECKPOINT="${1#*=}"
-    ;;
-  --log_dir=*)
-    LOG_DIR="${1#*=}"
-    ;;
-  --output_dir=*)
-    OUTPUT_DIR="${1#*=}"
-    ;;
-  --eval_file=*)
-    EVAL_FILE="${1#*=}"
-    ;;
-  *) ;;
-  esac
-  shift
+	case "$1" in
+	--tfdata_path=*)
+		TFDATA_PATH="${1#*=}"
+		;;
+	--config_path=*)
+		CONFIG_PATH="${1#*=}"
+		;;
+	--init_checkpoint=*)
+		INIT_CHECKPOINT="${1#*=}"
+		;;
+	--log_dir=*)
+		LOG_DIR="${1#*=}"
+		;;
+	--output_dir=*)
+		OUTPUT_DIR="${1#*=}"
+		;;
+	--eval_file=*)
+		EVAL_FILE="${1#*=}"
+		;;
+	*) ;;
+	esac
+	shift
 done
 
 # run benchmark
 echo "running benchmark"
-
-
 
 python3 ./run_pretraining.py \
 	--bert_config_file=gs://bert_tf_data/bert_config.json \
@@ -64,20 +62,18 @@ python3 ./run_pretraining.py \
 	--max_predictions_per_seq=76 \
 	--max_seq_length=512 \
 	--num_tpu_cores=8 \
-	--num_train_steps=200 \
+	--num_train_steps=15000 \
 	--num_warmup_steps=28 \
 	--optimizer=lamb \
 	--output_dir=gs://bert_tf_data/output/ \
 	--save_checkpoints_steps=3 \
 	--start_warmup_step=-76 \
 	--steps_per_update=1 \
-	--train_batch_size=128 \
+	--train_batch_size=256 \
 	--use_tpu \
-	--tpu_name=tpu \
-	--tpu_zone=us-central1-c \
+	--tpu_name=node3 \
+	--tpu_zone=us-central1-b \
 	--gcp_project=training-reference-bench-test |& tee "$LOG_DIR/train_console.log"
-
-
 
 set +x
 
