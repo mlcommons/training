@@ -101,7 +101,8 @@ def generate_tokens_probs_and_return_on_first_stage(
         temperature=1.0,
         use_eod_token_for_early_termination=True,
         stop_on_double_eol=False,
-        stop_on_eol=False
+        stop_on_eol=False,
+        min_length=0
         ):
     """Main token generation function.
     Arguments:
@@ -204,6 +205,19 @@ def generate_tokens_probs_and_return_on_first_stage(
                                     top_p=top_p,
                                     temperature=temperature,
                                     vocab_size=tokenizer.vocab_size)
+                while ((new_sample == termination_id) and (context_length - min_prompt_length) < min_length):
+                    if (top_k == 1):
+                        new_sample = sample(last_token_logits,
+                                            top_k=top_k+1,
+                                            top_p=top_p,
+                                            temperature=temperature,
+                                            vocab_size=tokenizer.vocab_size)
+                    else:
+                        new_sample = sample(last_token_logits,
+                                            top_k=top_k,
+                                            top_p=top_p,
+                                            temperature=temperature,
+                                            vocab_size=tokenizer.vocab_size)
                 if top_p > 0.0 and top_p_decay > 0.0:
                     top_p = top_p * top_p_decay
                     if top_p_bound > 0.0:
@@ -289,7 +303,7 @@ def generate_tokens_probs_and_return_on_first_stage(
 
     return tokens, generated_sequence_lengths, output_log_probs
 
-def beam_search_and_return_on_first_stage(model, tokens, lengths, beam_size, stop_token, num_return_gen, length_penalty):
+def beam_search_and_return_on_first_stage(model, tokens, lengths, beam_size, stop_token, num_return_gen, length_penalty, min_length = 0):
     args = get_args()
     tokenizer = get_tokenizer()
 
@@ -340,17 +354,17 @@ def beam_search_and_return_on_first_stage(model, tokens, lengths, beam_size, sto
                     sorted_scores, indices = torch.sort(new_scores[0,:], descending=True)
                 else:
                     sorted_scores, indices = torch.sort(new_scores.view(-1), descending=True)
-
-                best_beam_ids = torch.div(indices[: 2 * beam_size], vocab_size).trunc().long()
-                best_words = indices[:2 * beam_size] % vocab_size
-                best_scores = sorted_scores[: 2 * beam_size]
-
+                best_beam_ids = torch.div(indices[: 2 * beam_size + 1], vocab_size).trunc().long()
+                best_words = indices[:2 * beam_size + 1] % vocab_size
+                best_scores = sorted_scores[: 2 * beam_size + 1]
                 next_beams = []
                 for beam_token_rank, (token_id, beam_score, beam_id) in enumerate(
                     zip(best_words, best_scores, best_beam_ids)
                 ):
                     if token_id.item() == stop_token:
                         # if beam_token does not belong to top num_beams tokens, it should not be added
+                        if (context_length - prompt_length) < min_length:
+                            continue
                         is_beam_token_worse_than_top_num_beams = beam_token_rank >= beam_size
                         if is_beam_token_worse_than_top_num_beams:
                             continue
