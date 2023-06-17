@@ -5,7 +5,7 @@ import argparse
 import time
 import logging
 import collections
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 parser = argparse.ArgumentParser(
     description="Eval sample picker for BERT.")
