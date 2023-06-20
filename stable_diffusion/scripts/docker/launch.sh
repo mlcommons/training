@@ -12,12 +12,11 @@ while [ "$1" != "" ]; do
 done
 
 docker run --rm -it --gpus=all --ipc=host \
+    -e PYTHONPYCACHEPREFIX=/tmp/.pycache \
     --workdir /pwd \
     -v ${PWD}:/pwd \
-    -v /datasets/laion2B-en-aesthetic:/datasets/laion2B-en-aesthetic \
     -v /datasets/laion-400m:/datasets/laion-400m \
-    -v /datasets/coco/coco2014:/datasets/coco2014 \
-    -v /lfs/stable-diffusion/checkpoints:/checkpoints \
-    -v /lfs/stable-diffusion/results:/results \
-    -e PYTHONPYCACHEPREFIX=/tmp/.pycache \
+    -v /datasets/coco2014:/datasets/coco2014 \
+    -v /checkpoints:/checkpoints \
+    -v /results:/results \
     ${DST_IMG} bash

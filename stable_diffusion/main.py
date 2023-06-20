@@ -4,6 +4,7 @@ import glob
 import os
 import sys
 import time
+import random
 
 import numpy as np
 import torch
@@ -23,14 +24,12 @@ from torch.utils.data import DataLoader, Dataset
 try:
     from lightning.pytorch import seed_everything
     from lightning.pytorch.callbacks import Callback
-    from lightning.pytorch.callbacks.early_stopping import EarlyStopping
     from lightning.pytorch.trainer import Trainer
     from lightning.pytorch.utilities import rank_zero_info
     LIGHTNING_PACK_NAME = "lightning.pytorch."
 except:
     from pytorch_lightning import seed_everything
     from pytorch_lightning.callbacks import Callback
-    from pytorch_lightning.callbacks.early_stopping import EarlyStopping
     from pytorch_lightning.trainer import Trainer
     from pytorch_lightning.utilities import rank_zero_info
     LIGHTNING_PACK_NAME = "pytorch_lightning."
@@ -39,20 +38,8 @@ from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
 
 import mlperf_logging_utils
-from mlperf_logging import mllog
 import mlperf_logging.mllog.constants as mllog_constants
-
-from typing import Any, Dict, Optional, Type
-from lightning.pytorch.utilities.types import STEP_OUTPUT
-
-
-
-class DataLoaderX(DataLoader):
-# A custom data loader class that inherits from DataLoader
-    def __iter__(self):
-        # Overriding the __iter__ method of DataLoader to return a BackgroundGenerator
-        # This is to enable data laoding in the background to improve training performance
-        return BackgroundGenerator(super().__iter__())
+from mlperf_logging_utils import mllogger
 
 
 def get_parser(**parser_kwargs):
@@ -143,20 +130,22 @@ def get_parser(**parser_kwargs):
         "-s",
         "--seed",
         type=int,
-        default=23,
+        default=random.SystemRandom().randint(0, 2**32 - 1),
         help="seed for seed_everything",
     )
     parser.add_argument(
-        "--fid-threshold",
+        "--fid_threshold",
         type=int,
-        default=None,  # TODO(ahmadki): change after finzliaing RCPs
-        help="halt training once this FID validation score or a smaller one is achieved",
+        default=None,  # TODO(ahmadki): set after finzliaing RCPs
+        help="halt training once this FID validation score or a smaller one is achieved."
+             "if used with --clip_threshold, both metrics need to reach their targets.",
     )
     parser.add_argument(
-        "--clip-threshold",
+        "--clip_threshold",
         type=int,
-        default=None,  # TODO(ahmadki): change after finzliaing RCPs
-        help="halt training once this CLIP validation score or a higher one is achieved",
+        default=None,  # TODO(ahmadki): set after finzliaing RCPs
+        help="halt training once this CLIP validation score or a higher one is achieved."
+             "if used with --fid_threshold, both metrics need to reach their targets.",
     )
     parser.add_argument(
         "-f",
@@ -180,6 +169,18 @@ def get_parser(**parser_kwargs):
         default=True,
         help="scale base-lr by ngpu * batch_size * n_accumulate",
     )
+    parser.add_argument(
+        "--train_log_interval",
+        type=int,
+        default=100,
+        help="Training logging interval"
+    )
+    parser.add_argument(
+        "--validation_log_interval",
+        type=int,
+        default=10,
+        help="Validation logging interval"
+    )
 
     return parser
 
@@ -194,143 +195,48 @@ def nondefault_trainer_args(opt):
     # return all non-default arguments
     return sorted(k for k in vars(args) if getattr(opt, k) != getattr(args, k))
 
-# A dataset wrapper class to create a pytorch dataset from an arbitrary object
-class WrappedDataset(Dataset):
-    """Wraps an arbitrary object with __len__ and __getitem__ into a pytorch dataset"""
+class ListEarlyStopping(Callback):
+    # Early stopping class that accepts a list of metrics and all stopping_thresholds
+    # must be met before stopping
+    def __init__(self, monitor_metrics: list = ["validation/fid", "validation/clip"],
+                 mode_metrics: dict = {'validation/fid': 'min', 'validation/clip': 'max'},
+                 stopping_thresholds: dict = {"validation/fid": None, "validation/clip": None},
+                 check_finite: bool = False):
+        super(ListEarlyStopping, self).__init__()
 
-    def __init__(self, dataset):
-        self.data = dataset
+        self.monitor_metrics = monitor_metrics
+        self.mode_metrics = mode_metrics
+        self.stopping_thresholds = stopping_thresholds
+        self.check_finite = check_finite
 
-    def __len__(self):
-        return len(self.data)
+    def check_metrics(self, current_metrics):
+        should_stop = []
+        for metric in self.monitor_metrics:
+            if metric in current_metrics:
+                current_value = current_metrics[metric]
 
-    def __getitem__(self, idx):
-        return self.data[idx]
+                if self.check_finite and not torch.isfinite(torch.as_tensor(current_value)):
+                    raise ValueError(f"The monitored metric {metric} has become non-finite.")
 
-# A function to initialize worker processes
-def worker_init_fn(_):
-    worker_info = torch.utils.data.get_worker_info()
+                # Skip metrics without a stopping thresholds
+                if self.stopping_thresholds[metric] is None:
+                    continue
 
-    dataset = worker_info.dataset
-    worker_id = worker_info.id
+                if self.mode_metrics[metric] == 'min':
+                    should_stop.append(current_value <= self.stopping_thresholds[metric])
 
-    if isinstance(dataset, Txt2ImgIterableBaseDataset):
-        # divide the dataset into equal parts for each worker
-        split_size = dataset.num_records // worker_info.num_workers
-        # set the sample IDs for the current worker
-        # reset num_records to the true number to retain reliable length information
-        dataset.sample_ids = dataset.valid_ids[worker_id * split_size:(worker_id + 1) * split_size]
-        # set the seed for the current worker
-        current_id = np.random.choice(len(np.random.get_state()[1]), 1)
-        return np.random.seed(np.random.get_state()[1][current_id] + worker_id)
-    else:
-        return np.random.seed(np.random.get_state()[1][0] + worker_id)
+                if self.mode_metrics[metric] == 'max':
+                    should_stop.append(current_value >= self.stopping_thresholds[metric])
 
-# Provide functionality for creating data loadedrs based on provided dataset configurations
-class DataModuleFromConfig(pl.LightningDataModule):
+        # A minimum of one metric should have been reviewed.
+        return False if not should_stop else all(should_stop)
 
-    def __init__(self,
-                 batch_size,
-                 train=None,
-                 validation=None,
-                 test=None,
-                 predict=None,
-                 wrap=False,
-                 num_workers=None,
-                 shuffle_test_loader=False,
-                 use_worker_init_fn=False,
-                 shuffle_val_dataloader=False):
-        super().__init__()
-        # Set data module attributes
-        self.batch_size = batch_size
-        self.dataset_configs = dict()
-        self.num_workers = num_workers if num_workers is not None else batch_size * 2
-        self.use_worker_init_fn = use_worker_init_fn
-        # If a dataset is passed, add it to the dataset configs and create a corresponding dataloader method
-        if train is not None:
-            self.dataset_configs["train"] = train
-            self.train_dataloader = self._train_dataloader
-        if validation is not None:
-            self.dataset_configs["validation"] = validation
-            self.val_dataloader = partial(self._val_dataloader, shuffle=shuffle_val_dataloader)
-        if test is not None:
-            self.dataset_configs["test"] = test
-            self.test_dataloader = partial(self._test_dataloader, shuffle=shuffle_test_loader)
-        if predict is not None:
-            self.dataset_configs["predict"] = predict
-            self.predict_dataloader = self._predict_dataloader
-        self.wrap = wrap
-
-    def prepare_data(self):
-        # Instantiate datasets
-        for data_cfg in self.dataset_configs.values():
-            instantiate_from_config(data_cfg)
-
-    def setup(self, stage=None):
-        # Instantiate datasets from the dataset configs
-        self.datasets = dict((k, instantiate_from_config(self.dataset_configs[k])) for k in self.dataset_configs)
-
-        # If wrap is true, create a WrappedDataset for each dataset
-        if self.wrap:
-            for k in self.datasets:
-                self.datasets[k] = WrappedDataset(self.datasets[k])
-
-    def _train_dataloader(self):
-        # Check if the train dataset is iterable
-        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
-        # Set the worker initialization function of the dataset isiterable or use_worker_init_fn is True
-        if is_iterable_dataset or self.use_worker_init_fn:
-            init_fn = worker_init_fn
-        else:
-            init_fn = None
-        # Return a DataLoaderX object for the train dataset
-        return DataLoaderX(self.datasets["train"],
-                           batch_size=self.batch_size,
-                           num_workers=self.num_workers,
-                           shuffle=False if is_iterable_dataset else True,
-                           worker_init_fn=init_fn)
-
-    def _val_dataloader(self, shuffle=False):
-        # Check if the validation dataset is iterable
-        if isinstance(self.datasets['validation'], Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
-            init_fn = worker_init_fn
-        else:
-            init_fn = None
-        # Return a DataLoaderX object for the validation dataset
-        return DataLoaderX(self.datasets["validation"],
-                           batch_size=self.batch_size,
-                           num_workers=self.num_workers,
-                           worker_init_fn=init_fn,
-                           shuffle=shuffle)
-
-    def _test_dataloader(self, shuffle=False):
-        # Check if the test dataset is iterable
-        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
-        # Set the worker initialization function if the dataset is iterable or use_worker_init_fn is True
-        if is_iterable_dataset or self.use_worker_init_fn:
-            init_fn = worker_init_fn
-        else:
-            init_fn = None
-
-        # do not shuffle dataloader for iterable dataset
-        shuffle = shuffle and (not is_iterable_dataset)
-
-        return DataLoaderX(self.datasets["test"],
-                           batch_size=self.batch_size,
-                           num_workers=self.num_workers,
-                           worker_init_fn=init_fn,
-                           shuffle=shuffle)
-
-    def _predict_dataloader(self, shuffle=False):
-        if isinstance(self.datasets['predict'], Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
-            init_fn = worker_init_fn
-        else:
-            init_fn = None
-        return DataLoaderX(self.datasets["predict"],
-                           batch_size=self.batch_size,
-                           num_workers=self.num_workers,
-                           worker_init_fn=init_fn)
-
+    def on_validation_end(self, trainer, pl_module):
+        logs = trainer.callback_metrics
+        should_stop = self.check_metrics(logs)
+        if should_stop:
+            rank_zero_info('Early stopping conditioned have been met. Stopping training.')
+            trainer.should_stop = True
 
 class SetupCallback(Callback):
     # I nitialize the callback with the necessary parameters
@@ -363,20 +269,6 @@ class SetupCallback(Callback):
 
             print("Project config")
             print(OmegaConf.to_yaml(self.config))
-            # ################################## TODO(ahmadki): debug
-            # if not os.path.exists(self.cfgdir):
-            #     import time
-            #     time.sleep(5)
-            #     os.makedirs(self.logdir, exist_ok=True)
-            #     os.makedirs(self.ckptdir, exist_ok=True)
-            #     os.makedirs(self.cfgdir, exist_ok=True)
-            #     os.makedirs(self.imgsdir, exist_ok=True)
-
-            #     os.makedirs(self.logdir, exist_ok=True)
-            #     os.makedirs(self.ckptdir, exist_ok=True)
-            #     os.makedirs(self.cfgdir, exist_ok=True)
-            #     os.makedirs(self.imgsdir, exist_ok=True)
-            # ################################## TODO(ahmadki): debug end
             OmegaConf.save(self.config, os.path.join(self.cfgdir, "{}-project.yaml".format(self.now)))
 
             # Save project config and lightning config as YAML files
@@ -478,7 +370,7 @@ if __name__ == "__main__":
     #               key: value
 
     # Setup mllogger
-    mllogger = mllog.get_mllogger()
+    # mllogger = mllog.get_mllogger()
     mlperf_logging_utils.submission_info(mllogger=mllogger,
                                          submission_benchmark=mllog_constants.STABLE_DIFFUSION,
                                          submission_division=mllog_constants.CLOSED,
@@ -666,25 +558,13 @@ if __name__ == "__main__":
             "cuda_callback": {                            # callback to handle CUDA-related operations
                 "target": "main.CUDACallback"
             },
-            # TODO(ahmadki): AND relation
-            "fid_early_stop_callback" : {
-                "target": "lightning.pytorch.callbacks.early_stopping.EarlyStopping",
+            "fid_clip_early_stop_callback" : {
+                "target": "main.ListEarlyStopping",
                 "params": {
-                    "monitor": "validation/fid",
-                    "stopping_threshold": opt.fid_threshold,
-                    "mode": "min",                        # Minimize FID
+                    "stopping_thresholds": {"validation/fid": opt.fid_threshold, "validation/clip": opt.clip_threshold},
                     "check_finite": True
                 }
             },
-            "clip_early_stop_callback" : {
-                "target": "lightning.pytorch.callbacks.early_stopping.EarlyStopping",
-                "params": {
-                    "monitor": "validation/clip",
-                    "stopping_threshold": opt.clip_threshold,
-                    "mode": "max",                        # Maximize CLIP
-                    "check_finite": True
-                }
-            }
         }
 
         # If the LightningModule configuration has specified callbacks, use those
@@ -699,7 +579,9 @@ if __name__ == "__main__":
         callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
 
         trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
-        trainer_kwargs["callbacks"].append(mlperf_logging_utils.MLPerfLoggingCallback(mllogger=mllogger))
+        trainer_kwargs["callbacks"].append(mlperf_logging_utils.MLPerfLoggingCallback(logger=mllogger,
+                                                                                      train_log_interval=opt.train_log_interval,
+                                                                                      validation_log_interval=opt.validation_log_interval))
 
         # Set up ModelCheckpoint callback to save best models
         # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
@@ -727,12 +609,9 @@ if __name__ == "__main__":
 
         # Create a data module based on the configuration file
         data = instantiate_from_config(config.data)
-        # TODO(ahmadki): check if this is necessary
-        # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
-        # calling these ourselves should not be necessary but it is.
-        # lightning still takes care of proper multiprocessing though
-        data.prepare_data()
-        data.setup()
+        # We can't get number of samples without reading the data (which we can't inside the init block), so we hard code them
+        mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=1) # TODO(ahmadki): a placeholder until a dataset is picked
+        mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=30000)
 
         # Configure gradient accumulation
         if 'accumulate_grad_batches' in lightning_config.trainer:
@@ -784,14 +663,11 @@ if __name__ == "__main__":
         signal.signal(signal.SIGUSR1, melk)
         signal.signal(signal.SIGUSR2, divein)
 
-        # TODO(ahmadki): when does pytorch lightning initialize/touches data ?
         mllogger.end(mllog_constants.INIT_STOP)
 
         # Run the training and validation
         if opt.mode=="train":
             try:
-                # TODO(ahmadki): when does pytorch lightning initialize/touches data ?
-                mllogger.end(mllog_constants.INIT_STOP)
                 trainer.fit(model, data)
             except Exception:
                 melk()
@@ -801,15 +677,13 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Unknown mode {opt.mode}")
 
-        # TODO(ahmadki): AND relation
         # Default is True in case thresholds are not defined
         fid_success = True
         clip_success = True
         if opt.fid_threshold is not None:
             fid_success =  "validation/fid" in trainer.callback_metrics and opt.fid_threshold >= trainer.callback_metrics["validation/fid"].item()
-        
         if opt.clip_threshold is not None:
-            clip_success = "validation/fid" in trainer.callback_metrics and opt.clip_threshold <= trainer.callback_metrics["validation/clip"].item()
+            clip_success = "validation/clip" in trainer.callback_metrics and opt.clip_threshold <= trainer.callback_metrics["validation/clip"].item()
 
         status = mllog_constants.SUCCESS if fid_success and clip_success else mllog_constants.ABORTED
 

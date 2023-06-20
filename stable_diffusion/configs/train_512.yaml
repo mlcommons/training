@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 1.0e-6
+  base_learning_rate: 1.25e-7
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     parameterization: "v"
@@ -38,13 +38,13 @@ model:
         enabled: True
         inception_weights_url: https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth
         cache_dir: /checkpoints/inception
-        gt_path: "/datasets/coco2014/val2014_512x512_30k/"
+        gt_path: /datasets/coco2014/val2014_512x512_30k_stats.npz
       clip:
         enabled: True
         clip_version: "ViT-H-14"
         cache_dir: /checkpoints/clip
 
-    scheduler_config: # 10000 warmup steps
+    scheduler_config:
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
         warm_up_steps: [ 10000 ]
@@ -78,7 +78,6 @@ model:
         embed_dim: 4
         monitor: val/rec_loss
         ddconfig:
-          #attn_type: "vanilla-xformers"
           double_z: true
           z_channels: 4
           resolution: 256
@@ -103,6 +102,7 @@ model:
         version: "laion2b_s32b_b79k"
         freeze: True
         layer: "penultimate"
+        cache_dir: /checkpoints/clip
 
 data:
     target: ldm.data.composable_data_module.ComposableDataModule
@@ -110,34 +110,23 @@ data:
       train:
         target: ldm.data.webdatasets.build_dataloader
         params:
-          urls: /datasets/laion2B-en-aesthetic/{00000..05247}.tar
+          urls: /datasets/laion-400m/webdataset-filtered/{00000..00771}.tar
           batch_size: 8
           shuffle: 1000
           partial: False
-          # metadata_filters:
-          #   - target: ldm.data.webdatasets.metadata_filter
-          #     params:
-          #       key: "aesthetic"
-          #       predicate: gte
-          #       value: 10
+          decode: pil
           keep_only_keys: ["jpg", "txt"]
-          image_transforms:
-            - target: torchvision.transforms.ToTensor
-            - target: torchvision.transforms.Resize
-              params:
-                size: 512
-                interpolation: bicubic
-            - target: torchvision.transforms.CenterCrop
-              params:
-                size: 512
-            # TODO(ahmadki): modify the SD pieline to take chw format (what pytorch nativly uses)
-            - target: ldm.data.utils.rearrange_transform
-              params:
-                pattern: 'c h w -> h w c'
-          # txt_transforms:
+          transformations:
+            jpg:
+              - target: torchvision.transforms.ToTensor
+              - target: torchvision.transforms.Resize
+                params:
+                  size: 512
+                  interpolation: bicubic
+              - target: torchvision.transforms.CenterCrop
+                params:
+                  size: 512
           num_workers: 4
-          # cache_size:
-          # cache_dir:
           persistent_workers: True
 
       validation:
@@ -160,7 +149,7 @@ lightning:
     enable_progress_bar: False
     max_epochs: -1
     max_steps: 10000000000000
-    val_check_interval: 100
+    val_check_interval: 1000 # TODO(ahmadki): final validation interval will be determined with RCPs
     enable_checkpointing: True
     num_sanity_val_steps: 0
     strategy:
@@ -172,4 +161,4 @@ lightning:
     target: lightning.pytorch.callbacks.ModelCheckpoint
     params:
       save_top_k: -1
-      every_n_train_steps: 5000
+      every_n_train_steps: 2000
