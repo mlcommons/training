@@ -44,6 +44,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from PIL import Image
 
+from mlperf_logging_utils import mllogger
 import mlperf_logging.mllog.constants as mllog_constants
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -531,7 +532,7 @@ class DDPM(pl.LightningModule):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
-        x = rearrange(x, 'b h w c -> b c h w')
+
         if self.use_fp16:
             x = x.to(memory_format=torch.contiguous_format).half()
         else:
@@ -572,7 +573,8 @@ class DDPM(pl.LightningModule):
         prompts = batch[self.prompt_key]
         fnames = batch[self.image_fname_key]
 
-        # TODO(ahmadki): x_T ?
+        # x_T = torch.randn([len(prompts), 4, 64, 64], device=self.device) // debug
+        x_T = None
 
         if self.validation_save_images or self.validation_run_fid or self.validation_run_clip:
             with self.ema_scope("validation"):
@@ -589,7 +591,7 @@ class DDPM(pl.LightningModule):
                                                  unconditional_guidance_scale=self.validation_scale,
                                                  unconditional_conditioning=uc,
                                                  eta=self.validation_ddim_eta,
-                                                 x_T=None)
+                                                 x_T=x_T)
 
                 x_samples = self.decode_first_stage(samples)
                 x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
@@ -622,7 +624,6 @@ class DDPM(pl.LightningModule):
                 score = self.clip_encoder.get_clip_score(prompt, img)
                 self.validation_clip_scores.append(score)
 
-
     def on_validation_epoch_end(self):
         if self.validation_run_fid:
             inception_activations = torch.cat(self.validation_inecption_activations, 0)
@@ -650,7 +651,6 @@ class DDPM(pl.LightningModule):
 
             self.log("validation/clip", clip_score)
             self.validation_clip_scores.clear()  # free memory
-
 
     def on_train_batch_end(self, *args, **kwargs):
         if self.use_ema:
@@ -706,13 +706,6 @@ class DDPM(pl.LightningModule):
         params = list(self.model.parameters())
         if self.learn_logvar:
             params = params + [self.logvar]
-    
-        # self.mllogger.event(mllog_constants.OPT_NAME, value=mllog_constants.ADAMW)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_BETA_1, value=0.9)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_BETA_2, value=0.999)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_EPSILON, value=1e-08)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_WEIGHT_DECAY, value=0.01)
-        # self.mllogger.event(mllog_constants.OPT_BASE_LR, value=lr)
 
         opt = torch.optim.AdamW(params, lr=lr)
         return opt
@@ -1016,7 +1009,7 @@ class LatentDiffusion(DDPM):
         if bs is not None:
             x = x[:bs]
         x = x.to(self.device)
-        encoder_posterior = self.encode_first_stage(x)
+        encoder_posterior = self.encode_first_stage(x) if self.first_stage_type == "images" else x
         z = self.get_first_stage_encoding(encoder_posterior).detach()
 
         if self.model.conditioning_key is not None and not self.force_null_conditioning:
@@ -1632,16 +1625,18 @@ class LatentDiffusion(DDPM):
             rank_zero_info('Diffusion model optimizing logvar')
             params.append(self.logvar)
 
-        # self.mllogger.event(mllog_constants.OPT_NAME, value=mllog_constants.ADAMW)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_BETA_1, value=0.9)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_BETA_2, value=0.999)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_EPSILON, value=1e-08)
-        # self.mllogger.event(mllog_constants.OPT_ADAMW_WEIGHT_DECAY, value=0.01)
-        # self.mllogger.event(mllog_constants.OPT_BASE_LR, value=lr)
+        mllogger.event(mllog_constants.OPT_NAME, value=mllog_constants.ADAMW)
+        mllogger.event(mllog_constants.OPT_ADAMW_BETA_1, value=0.9)
+        mllogger.event(mllog_constants.OPT_ADAMW_BETA_2, value=0.999)
+        mllogger.event(mllog_constants.OPT_ADAMW_EPSILON, value=1e-08)
+        mllogger.event(mllog_constants.OPT_ADAMW_WEIGHT_DECAY, value=0.01)
+        mllogger.event(mllog_constants.OPT_BASE_LR, value=lr)
         opt = torch.optim.AdamW(params, lr=lr)
 
         if self.use_scheduler:
             assert 'target' in self.scheduler_config
+            for warmup_step in self.scheduler_config.params.warm_up_steps:
+                mllogger.event(mllog_constants.OPT_LR_WARMUP_STEPS, value=warmup_step)
             scheduler = instantiate_from_config(self.scheduler_config)
 
             rank_zero_info("Setting up LambdaLR scheduler...")

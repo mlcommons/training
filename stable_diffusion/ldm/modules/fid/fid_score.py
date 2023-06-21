@@ -1,21 +1,30 @@
 """Calculates the Frechet Inception Distance (FID) to evalulate GANs
+
 The FID metric calculates the distance between two distributions of images.
 Typically, we have summary statistics (mean & covariance matrix) of one
 of these distributions, while the 2nd distribution is given by a GAN.
+
 When run as a stand-alone program, it compares the distribution of
 images that are stored as PNG/JPEG at a specified location with a
 distribution given by summary statistics (in pickle format).
+
 The FID is calculated by assuming that X_1 and X_2 are the activations of
 the pool_3 layer of the inception net for generated samples and real world
 samples respectively.
+
 See --help to see further details.
+
 Code apapted from https://github.com/bioinf-jku/TTUR to use PyTorch instead
 of Tensorflow
+
 Copyright 2018 Institute of Bioinformatics, JKU Linz
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
    http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -40,11 +49,33 @@ except ImportError:
     def tqdm(x):
         return x
 
-from pytorch_fid.inception import InceptionV3
+try:
+    from ldm.modules.fid.inception import InceptionV3
+except ImportError:
+    from inception import InceptionV3
 
+parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+parser.add_argument('--batch-size', type=int, default=50,
+                    help='Batch size to use')
+parser.add_argument('--num-workers', type=int,
+                    help=('Number of processes to use for data loading. '
+                          'Defaults to `min(8, num_cpus)`'))
+parser.add_argument('--device', type=str, default=None,
+                    help='Device to use. Like cuda, cuda:0 or cpu')
+parser.add_argument('--dims', type=int, default=2048,
+                    choices=list(InceptionV3.BLOCK_INDEX_BY_DIM),
+                    help=('Dimensionality of Inception features to use. '
+                          'By default, uses pool3 features'))
+parser.add_argument('--save-stats', action='store_true',
+                    help=('Generate an npz archive from a directory of samples. '
+                          'The first path is used as input and the second as output.'))
+parser.add_argument('path', type=str, nargs=2,
+                    help=('Paths to the generated images or '
+                          'to .npz statistic files'))
 
 IMAGE_EXTENSIONS = {'bmp', 'jpg', 'jpeg', 'pgm', 'png', 'ppm',
                     'tif', 'tiff', 'webp'}
+
 
 class ImagePathDataset(torch.utils.data.Dataset):
     def __init__(self, files, transforms=None):
@@ -65,6 +96,7 @@ class ImagePathDataset(torch.utils.data.Dataset):
 def get_activations(files, model, batch_size=50, dims=2048, device='cpu',
                     num_workers=1):
     """Calculates the activations of the pool_3 layer for all images.
+
     Params:
     -- files       : List of image files paths
     -- model       : Instance of inception model
@@ -76,6 +108,7 @@ def get_activations(files, model, batch_size=50, dims=2048, device='cpu',
     -- dims        : Dimensionality of features returned by Inception
     -- device      : Device to run calculations
     -- num_workers : Number of parallel dataloader workers
+
     Returns:
     -- A numpy array of dimension (num images, dims) that contains the
        activations of the given tensor when feeding inception with the
@@ -124,7 +157,9 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     The Frechet distance between two multivariate Gaussians X_1 ~ N(mu_1, C_1)
     and X_2 ~ N(mu_2, C_2) is
             d^2 = ||mu_1 - mu_2||^2 + Tr(C_1 + C_2 - 2*sqrt(C_1*C_2)).
+
     Stable version by Dougal J. Sutherland.
+
     Params:
     -- mu1   : Numpy array containing the activations of a layer of the
                inception net (like returned by the function 'get_predictions')
@@ -134,6 +169,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     -- sigma1: The covariance matrix over activations for generated samples.
     -- sigma2: The covariance matrix over activations, precalculated on an
                representative data set.
+
     Returns:
     --   : The Frechet Distance.
     """
@@ -185,6 +221,7 @@ def calculate_activation_statistics(files, model, batch_size=50, dims=2048,
     -- dims        : Dimensionality of features returned by Inception
     -- device      : Device to run calculations
     -- num_workers : Number of parallel dataloader workers
+
     Returns:
     -- mu    : The mean over samples of the activations of the pool_3 layer of
                the inception model.
@@ -249,3 +286,40 @@ def save_fid_stats(paths, batch_size, device, dims, num_workers=1):
                                         dims, device, num_workers)
 
     np.savez_compressed(paths[1], mu=m1, sigma=s1)
+
+
+def main():
+    args = parser.parse_args()
+
+    if args.device is None:
+        device = torch.device('cuda' if (torch.cuda.is_available()) else 'cpu')
+    else:
+        device = torch.device(args.device)
+
+    if args.num_workers is None:
+        try:
+            num_cpus = len(os.sched_getaffinity(0))
+        except AttributeError:
+            # os.sched_getaffinity is not available under Windows, use
+            # os.cpu_count instead (which may not return the *available* number
+            # of CPUs).
+            num_cpus = os.cpu_count()
+
+        num_workers = min(num_cpus, 8) if num_cpus is not None else 0
+    else:
+        num_workers = args.num_workers
+
+    if args.save_stats:
+        save_fid_stats(args.path, args.batch_size, device, args.dims, num_workers)
+        return
+
+    fid_value = calculate_fid_given_paths(args.path,
+                                          args.batch_size,
+                                          device,
+                                          args.dims,
+                                          num_workers)
+    print('FID: ', fid_value)
+
+
+if __name__ == '__main__':
+    main()
