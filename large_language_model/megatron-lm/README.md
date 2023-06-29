@@ -99,12 +99,16 @@ Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf), [2](https://arxiv.org/pdf/2
 
 ### List of Layers
 
-The model largely follows the GPT-3 paper, refer [here](https://docs.google.com/spreadsheets/d/1VdMXogbmoR-LWQJvdQ0BgIeK0Npe0qk50qVT7VpqIyo/edit?resourcekey=0-F8loESsxQtGsHMNNXMohTw#gid=620389348) for model details.
+The model largely follows the GPT-3 [paper](https://arxiv.org/abs/2005.14165), Some of the modifications are described below:
+
+1. Tokenizer is changed from BPE to [SentencePiece](https://github.com/google/sentencepiece) with BPE.
+2. Alternating sparse attention layers are not used.
+3. Model parameters are set [here](https://github.com/mlcommons/training/blob/master/large_language_model/megatron-lm/run_gpt3.sh#L46-L92).
 
 ### Model checkpoint
 #### Conversion
 In the benchmarking region, we should resume training from a PAXML checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
-Paxml Checkpoint is available at: gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000
+Paxml Checkpoint is available at: `gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000`
 To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
 
 To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
@@ -114,7 +118,9 @@ python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $E
 # Add framework-specific common.pt file to the checkpoint (instantaneous):
 python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_bf16.json` for BF16 checkpoint
 ```
-Correctness of the Megatron format checkpoint can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log). Validation log perplexity can also be used as a metric to verify the correctness of the checkpoint and the loading scripts. To do this, the model should be evaluated on the entire validation dataset after loading weights from the checkpoint. We have observed an average log perplexity of 2.7767 and a standard deviation of 0.00035 (data obtained from 16 runs).
+Correctness of the Megatron format checkpoint can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log). Checksum for two files (`metadata.json` and `common.pt`) may not match. These files are provided [here](./checksums/additional_checkpoint_files) for verification. 
+
+Validation log perplexity can also be used as a metric to verify the correctness of the checkpoint and the loading scripts. To do this, the model should be evaluated on the entire validation dataset after loading weights from the checkpoint. We have observed an average log perplexity of 2.7767 and a standard deviation of 0.00035 (data obtained from 16 runs).
 
 **Note: For BF16 training, the conversion scripts need to be run again with the bf16 arguments specified above**
 
