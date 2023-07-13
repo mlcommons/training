@@ -37,7 +37,7 @@ For validation, a subset of the validation dataset has been selected. This was d
 The dataset is preprocessed using Sentence Piece Model. [These](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions were used to train the SPM. 
 
 ### Preprocessed data download
-The preprocessed dataset in a training ready format is available in the S3 bucket at `mlcommons-training-wg-s3/TODO`
+The preprocessed dataset in a training ready format is available in the S3 bucket at `gpt3/megatron-lm/dataset_c4_spm.tar` path
 (the S3 download instructions are available at the end of this README in "S3 artifacts download" section).
 After downloading and unpacking the tarball, the `preprocessed_c4_spm` directory contains the preprocessed dataset and this is where the `COM_DIR` env variable (explained above) should point to.
 
@@ -65,7 +65,7 @@ The model largely follows the GPT-3 [paper](https://arxiv.org/abs/2005.14165), S
 In the benchmarking region, we should resume training from a checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
 
 #### Checkpoint download
-The FP32 Megatron checkpoint is available in the S3 bucket at `mlcommons-training-wg-s3/TODO`
+The FP32 Megatron checkpoint is available in the S3 bucket at `gpt3/megatron-lm/checkpoint_megatron_fp32.tar` path
 (the S3 download instructions are available at the end of this README in "S3 artifacts download" section).
 After downloading and unpacking the tarball, the `ckpt4000_fp32` directory with the checkpoint should be set as the `EXTERNAL_MODEL_CHECKPOINT_DIR` env variable.
 
@@ -74,8 +74,8 @@ Correctness of the Megatron format checkpoint can be verified by comparing the c
 Validation log perplexity can also be used as a metric to verify the correctness of the checkpoint and the loading scripts. To do this, the model should be evaluated on the entire validation dataset after loading weights from the checkpoint. We have observed an average log perplexity of 2.7767 and a standard deviation of 0.00035 (data obtained from 16 runs).
 
 ##### BF16 training
-BF16 training requires a different checkpoint, available in the S3 bucket at `mlcommons-training-wg-s3/TODO`.
-The BF16 checkpoint is not in the Megatron-compatible format and requires a very simple postprocessing step:
+BF16 training requires a different checkpoint, available in the S3 bucket at `gpt3/megatron-lm/checkpoint_nemo_bf16.tar` path.
+The BF16 checkpoint is not ready to instantly train in Megatron, but requires only a very simple postprocessing step:
 ```bash
 # Add framework-specific common.pt file to the checkpoint (instantaneous):
 python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt
@@ -163,13 +163,38 @@ Evaluation on the validation subset that consists of 24567 examples.
 
 # 6. Other
 
-## S3 artifacts download
-TODO
+### S3 artifacts download
+The dataset and the checkpoints are available to download from an S3 bucket.
+To achieve the best download bandwidth (currently no more than 25MB/s is expected) it's necessary to set up a third-party client capable of downloading the artifacts.
+[Here are the instructions](https://help.lyvecloud.seagate.com/en/connecting-s3-clients-to-lyve-cloud.html).
+The read-only access credentials are provided below.
 
-## Dataset preprocessing
+#### Access details
+- Bucket name: `mlcommons-training-wg-s3`
+- Endpoint URL: https://s3.us-east-1.lyvecloud.seagate.com
+- Access Key: `3ZC41B4Z2WHM5DT2`
+- Secret Key: `AK4NQQZV0NKFEJWJUZVPX5XQ0QNTXCGW`
+
+
+### Model conversion from Paxml checkpoints
+Alternatively to downloading the checkpoint in Megatron ready format, it can be obtained by converting a Paxml checkpoint.
+
+Paxml Checkpoint is available at: `gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000`
+To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
+
+To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
+```bash
+# Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
+python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype fp32  # or `--dtype bf16` for BF16 checkpoint
+# Add framework-specific common.pt file to the checkpoint (instantaneous):
+python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_bf16.json` for BF16 checkpoint
+```
+This should result in the same checkpoint as described in the "Checkpoint download" section above.
+
+### Dataset preprocessing
 Here are the instructions to prepare the preprocessed dataset from scratch.
 
-### Data Download
+#### Data Download
 Training dataset -
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/allenai/c4
@@ -183,7 +208,7 @@ git lfs pull --include "en/c4-train.01*.json.gz"
 
 Validation dataset needs to be downloaded from `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json` to ${C4_PATH}.
 
-### Data Preprocessing for Megatron-LM
+#### Data Preprocessing for Megatron-LM
 
 Run the following commands to merge these 256 files into 2 `json.gz` files. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`).
 
@@ -217,19 +242,3 @@ cd scripts
 sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4> <path to validation json>
 ```
-
-
-## Model conversion from Paxml checkpoints
-Alternatively to downloading the checkpoint in Megatron ready format, it can be obtained by converting a Paxml checkpoint.
-
-Paxml Checkpoint is available at: `gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000`
-To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
-
-To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
-```bash
-# Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
-python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype fp32  # or `--dtype bf16` for BF16 checkpoint
-# Add framework-specific common.pt file to the checkpoint (instantaneous):
-python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_bf16.json` for BF16 checkpoint
-```
-This should result in the same checkpoint as described in the "Checkpoint download" section above.
