@@ -3,4 +3,4 @@ ujson>=4.0.2
 matplotlib>=3.5.1
 pycocotools==2.0.4
 git+https://github.com/mlcommons/logging.git@1.1.0-rc4
-fiftyone
+fiftyone==0.15.1
