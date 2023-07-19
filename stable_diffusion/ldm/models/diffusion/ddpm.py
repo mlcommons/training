@@ -192,11 +192,6 @@ class DDPM(pl.LightningModule):
         self.validation_clip_scores = []
 
         if validation_config is not None:
-            self.validation_save_images = validation_config["save_images"]["enabled"]
-            self.validation_run_fid = validation_config["fid"]["enabled"]
-            self.validation_run_clip = validation_config["clip"]["enabled"]
-
-        if self.validation_save_images or self.validation_run_fid or self.validation_run_clip:
             if validation_config["sampler"] == "plms":
                 self.sampler = PLMSSampler(self)
             elif validation_config["sampler"] == "dpm":
@@ -205,13 +200,17 @@ class DDPM(pl.LightningModule):
                 self.sampler = DDIMSampler(self)
             else:
                 raise NotImplementedError(f"Sampler {self.sampler} not yet supported")
-
-            self.validation_scale = validation_config["scale"]
             self.validation_sampler_steps = validation_config["steps"]
+            self.validation_scale = validation_config["scale"]
             self.validation_ddim_eta = validation_config["ddim_eta"]
             self.prompt_key = validation_config["prompt_key"]
             self.image_fname_key = validation_config["image_fname_key"]
 
+            self.validation_save_images = validation_config["save_images"]["enabled"]
+            self.validation_run_fid = validation_config["fid"]["enabled"]
+            self.validation_run_clip = validation_config["clip"]["enabled"]
+
+            if self.validation_save_images or self.validation_run_fid or self.validation_run_clip:
             if self.validation_save_images:
                 self.validation_base_output_dir = validation_config["save_images"]["base_output_dir"]
 
@@ -1009,6 +1008,7 @@ class LatentDiffusion(DDPM):
         if bs is not None:
             x = x[:bs]
         x = x.to(self.device)
+
         encoder_posterior = self.encode_first_stage(x) if self.first_stage_type == "images" else x
         z = self.get_first_stage_encoding(encoder_posterior).detach()
 
