@@ -15,6 +15,9 @@ from ldm.data.utils import rearrange_transform
 from ldm.util import instantiate_from_config
 
 
+Image.MAX_IMAGE_PIXELS = None
+
+
 image_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".ico"]
 
 def is_image(filename):
