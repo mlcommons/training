@@ -450,7 +450,7 @@ if __name__ == "__main__":
     mllogger.event(key=mllog_constants.SEED, value=opt.seed)
     seed_everything(opt.seed)
 
-    # Intinalize and save configuratioon using teh OmegaConf library.
+    # Intinalize and save configuratioon using the OmegaConf library.
     try:
         # init and save configs
         configs = [OmegaConf.load(cfg) for cfg in opt.base]
