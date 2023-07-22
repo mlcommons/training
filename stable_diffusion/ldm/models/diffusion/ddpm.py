@@ -1009,7 +1009,14 @@ class LatentDiffusion(DDPM):
             x = x[:bs]
         x = x.to(self.device)
 
-        encoder_posterior = self.encode_first_stage(x) if self.first_stage_type == "images" else x
+        if self.first_stage_type == "images":
+            encoder_posterior = self.encode_first_stage(x)
+        elif self.first_stage_type == "latents":
+            encoder_posterior = x
+        elif self.first_stage_type == "moments":
+            x = torch.squeeze(x, dim=1)
+            encoder_posterior = DiagonalGaussianDistribution(x)
+
         z = self.get_first_stage_encoding(encoder_posterior).detach()
 
         if self.model.conditioning_key is not None and not self.force_null_conditioning:
@@ -1070,6 +1077,10 @@ class LatentDiffusion(DDPM):
     @torch.no_grad()
     def encode_first_stage(self, x):
         return self.first_stage_model.encode(x)
+
+    @torch.no_grad()
+    def moments_first_stage(self, x):
+        return self.first_stage_model.moments(x)
 
     def shared_step(self, batch, **kwargs):
         x, c = self.get_input(batch, self.first_stage_key)
