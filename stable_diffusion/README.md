@@ -1,5 +1,7 @@
 <h1 align="center">Text to image: Stable Diffusion (SD)</h1>
 
+![](imgs/overview.png)
+
 Welcome to the reference implementation for the MLPerf text to image
 benchmark, utilizing the Stable Diffusion (SD) model.
 Our repository prioritizes transparency, reproducibility, reliability,
@@ -31,6 +33,7 @@ understand the fundamentals of the Stable Diffusion model.
     - [FID](#fid)
     - [CLIP](#clip)
 - [Reference runs](#reference-runs)
+- [Rules](#rules)
 - [BibTeX](#bibtex)
 
 # Getting started
@@ -204,11 +207,14 @@ We achieved this subset by following these steps:
 Stable Diffusion v2 is a latent diffusion model which combines an autoencoder with a diffusion model that is trained in the latent space of the autoencoder. During training:
 
 * Images are encoded through an encoder, which turns images into latent representations. The autoencoder uses a relative downsampling factor of 8 and maps images of shape 512 x 512 x 3 to latents of shape 64 x 64 x 4
-* Text prompts are encoded through the OpenCLIP-ViT/H text-encoder.
+* Text prompts are encoded through the OpenCLIP-ViT/H text-encoder, the output embedding vector has a lengh of 1024.
 * The output of the text encoder is fed into the UNet backbone of the latent diffusion model via cross-attention.
 * The loss is a reconstruction objective between the noise that was added to the latent and the prediction made by the UNet. We also use the so-called v-objective, see https://arxiv.org/abs/2202.00512.
 
 The UNet backbone in our model serves as the sole trainable component, initialized from random weights. Conversely, the weights of both the image and text encoders are loaded from a pre-existing checkpoint and kept static throughout the training procedure
+
+Although our benchmark aims to adhere to the original Stable Diffusion v2 implementation as closely as possible, it's important to note some key deviations:
+1. The group norm of the UNet within our code uses a group size of 16 instead of the 32 used in the original implementation. This adjustment can be found in our code at this [link](https://github.com/ahmadki/training/blob/master/stable_diffusion/ldm/modules/diffusionmodules/util.py#L209)
 
 ### UNet
 TODO(ahmadki): give an overview
@@ -218,12 +224,19 @@ TODO(ahmadki): give an overview
 TODO(ahmadki): give an overview
 ## Validation metrics
 ### FID
-TODO(ahmadki): give an overview
+FID is a measure of similarity between two datasets of images. It was shown to correlate well with human judgement of visual quality and is most often used to evaluate the quality of samples of Generative Adversarial Networks. FID is calculated by computing the [Fréchet distance](https://en.wikipedia.org/wiki/Fr%C3%A9chet_distance) between two Gaussians fitted to feature representations of the Inception network. A lower FID implies a better image quality.
+
+Further insights and an independent evaluation of the FID score can be found in [Are GANs Created Equal? A Large-Scale Study.](https://arxiv.org/abs/1711.10337)
+
 ### CLIP
-TODO(ahmadki): give an overview
+CLIP is a reference free metric that can be used to evaluate the correlation between a caption for an image and the actual content of the image, it has been found to be highly correlated with human judgement. A higher CLIP Score implies that the caption matches closer to image.
 
 # Reference runs
-TODO(ahmadki): with RCPs
+The benchmark is expected to have the following convergence profile:
+TODO(ahmadki)
+# Rules
+The benchmark rules can be found [here](https://github.com/mlcommons/training_policies/blob/master/training_rules.adoc)
+
 
 # BibTeX
 ```
