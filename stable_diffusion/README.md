@@ -96,16 +96,12 @@ The benchmark employs two datasets:
 1. Validation: a subset of [coco-2014 validation](https://cocodataset.org/#download)
 
 ### Laion 400m
-**TODO(ahmadki): This README presumes that the training dataset is Laion-400m. However, the final dataset choice will be decided at the time of the RCP submission.**
-
 The benchmark uses a CC-BY licensed subset of the Laion400 dataset.
 
 The LAION datasets comprise lists of URLs for original images, paired with the ALT text linked to those images. As downloading millions of images from the internet is not a deterministic process and to ensure the replicability of the benchmark results, submitters are asked to download the subset from the MLCommons storage. The dataset is provided in two formats:
 
-**TODO(ahmadki): The scripts will be added once the dataset is uploaded to the MLCommons storage.**
-
-1. Preprocessed latents (recommended):`scripts/datasets/download_laion400m-ccby-latents.sh --output-dir /datasets/laion-400m/ccby_latents_512x512`
-2. Raw images: `scripts/datasets/download_laion400m-ccby-images.sh --output-dir /datasets/laion-400m/ccby_images`
+1. Preprocessed latents (recommended):`scripts/datasets/laion400m-filtered-download-latents.sh --output-dir /datasets/laion-400m/webdataset-latents-filtered`
+2. Raw images: `scripts/datasets/laion400m-filtered-download-images.sh --output-dir /datasets/laion-400m/webdataset-filtered`
 
 While the benchmark code is compatible with both formats, we recommend using the preprocessed latents to save on computational resources.
 
@@ -134,7 +130,7 @@ The benchmark utilizes several network architectures for both the training and v
 ```bash
 scripts/checkpoints/download_sd.sh --output-dir /checkpoints/sd
 ```
-2. **Inception**: The Inception network is employed during validation to compute the Frechet Inception Distance (FID) score. The necessary weights can be acquired with the following command:
+2. **Inception**: The Inception network is employed during validation to compute the Fréchet Inception Distance (FID) score. The necessary weights can be downloaded with the following command:
 ```bash
 scripts/checkpoints/download_inception.sh --output-dir /checkpoints/inception
 ```
@@ -178,11 +174,9 @@ Given the substantial variability among Slurm clusters, users are encouraged to 
 
 In any case, the dataset and checkpoints are expected to be available to all the nodes.
 
-
 # Benchmark details
 
 ## The datasets
-**TODO(ahmadki): Please note that Laion-400m is being used as a placeholder; the final decision regarding the training dataset has not yet been made.**
 ### Laion 400m
 
 [Laion-400m](#[the-model](https://laion.ai/blog/laion-400-open-dataset/)) is a rich dataset of 400 million image-text pairs, crafted by the Laion project. The benchmark uses a relatively small subset of this dataset, approximately 6.1M images, all under a CC-BY license.

@@ -110,7 +110,7 @@ data:
       train:
         target: ldm.data.webdatasets.build_dataloader
         params:
-          urls: /datasets/laion-400m/webdataset-filtered/{00000..00771}.tar
+          urls: /datasets/laion-400m/webdataset-filtered/{00000..00831}.tar
           batch_size: 8
           shuffle: 1000
           partial: False
