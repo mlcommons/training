@@ -9,7 +9,7 @@ model:
     log_every_t: 200
     timesteps: 1000
     first_stage_key: npy
-    first_stage_type: latents
+    first_stage_type: moments
     cond_stage_key: txt
     image_size: 64
     channels: 4
@@ -110,7 +110,7 @@ data:
       train:
         target: ldm.data.webdatasets.build_dataloader
         params:
-          urls: /datasets/laion-400m/webdataset-latents-filtered/{00000..00831}.tar
+          urls: /datasets/laion-400m/webdataset-moments-filtered/{00000..00831}.tar
           batch_size: 8
           shuffle: 1000
           partial: False

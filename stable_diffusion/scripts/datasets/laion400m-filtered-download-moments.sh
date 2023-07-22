@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-: "${OUTPUT_DIR:=/datasets/laion-400m/webdataset-latents-filtered}"
+: "${OUTPUT_DIR:=/datasets/laion-400m/webdataset-moments-filtered}"
 
 while [ "$1" != "" ]; do
     case $1 in
