@@ -24,4 +24,4 @@ cloudpathlib==0.13.0
 git+https://github.com/facebookresearch/xformers.git@5eb0dbf315d14b5f7b38ac2ff3d8379beca7df9b#egg=xformers
 bitsandbytes==0.37.2
 # TODO(ahmadki): use github.com:mlcommons/logging.git once the SD PR is merged
-git+https://github.com/ahmadki/logging.git@561b08ef9fa213478d7b78518108c8d5dbf6afc2
+git+https://github.com/mlcommons/logging.git@8405a08bbfc724f8888c419461c02d55a6ac960c
