@@ -8,8 +8,8 @@ model:
     num_timesteps_cond: 1
     log_every_t: 200
     timesteps: 1000
-    first_stage_key: npy
-    first_stage_type: moments
+    first_stage_key: jpg
+    first_stage_type: images
     cond_stage_key: txt
     image_size: 64
     channels: 4
@@ -47,7 +47,7 @@ model:
     scheduler_config:
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [ 10000 ]
+        warm_up_steps: [ 1000 ]
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
         f_start: [ 1.e-6 ]
         f_max: [ 1. ]
@@ -110,11 +110,22 @@ data:
       train:
         target: ldm.data.webdatasets.build_dataloader
         params:
-          urls: /datasets/laion-400m/webdataset-moments-filtered/{00000..00831}.tar
-          batch_size: 8
+          urls: /datasets/laion-400m/webdataset-filtered/{00000..00831}.tar
+          batch_size: 2
           shuffle: 1000
           partial: False
-          keep_only_keys: ["npy", "txt"]
+          decode: pil
+          keep_only_keys: ["jpg", "txt"]
+          transformations:
+            jpg:
+              - target: torchvision.transforms.ToTensor
+              - target: torchvision.transforms.Resize
+                params:
+                  size: 512
+                  interpolation: bicubic
+              - target: torchvision.transforms.CenterCrop
+                params:
+                  size: 512
           num_workers: 4
           persistent_workers: True
 
@@ -130,7 +141,7 @@ data:
 lightning:
   trainer:
     accelerator: 'gpu'
-    num_nodes: 1
+    num_nodes: 32
     devices: 8
     precision: 16
     logger: False
@@ -138,7 +149,7 @@ lightning:
     enable_progress_bar: False
     max_epochs: -1
     max_steps: 10000000000000
-    val_check_interval: 1000 # TODO(ahmadki): final validation interval will be determined with RCPs
+    val_check_interval: 1000
     enable_checkpointing: True
     num_sanity_val_steps: 0
     strategy:
@@ -150,4 +161,4 @@ lightning:
     target: lightning.pytorch.callbacks.ModelCheckpoint
     params:
       save_top_k: -1
-      every_n_train_steps: 2000
+      every_n_train_steps: 1000

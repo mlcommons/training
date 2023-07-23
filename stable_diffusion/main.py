@@ -136,14 +136,14 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "--fid_threshold",
         type=int,
-        default=None,  # TODO(ahmadki): set after finzliaing RCPs
+        default=90,
         help="halt training once this FID validation score or a smaller one is achieved."
              "if used with --clip_threshold, both metrics need to reach their targets.",
     )
     parser.add_argument(
         "--clip_threshold",
         type=int,
-        default=None,  # TODO(ahmadki): set after finzliaing RCPs
+        default=0.15,
         help="halt training once this CLIP validation score or a higher one is achieved."
              "if used with --fid_threshold, both metrics need to reach their targets.",
     )
