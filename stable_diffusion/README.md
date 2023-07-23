@@ -158,19 +158,19 @@ To initiate a single-node training run, execute the following command from withi
   --gpus-per-node 8 \
   --checkpoint /checkpoints/sd/512-base-ema.ckpt \
   --results-dir /results \
-  --config configs/train_512_moments.yaml
+  --config configs/train_01x08x08.yaml
 ```
-If you prefer to train using raw images, consider utilizing the `configs/train_512.yaml` configuration file.
+If you prefer to train using raw images, consider utilizing the `configs/train_32x08x02_raw_images.yaml` configuration file.
 
 ### Multi-node (with SLURM)
 Given the extended duration it typically takes to train the Stable Diffusion model, it's often beneficial to employ multiple nodes for expedited training. For this purpose, we provide rudimentary Slurm scripts to submit multi-node training batch jobs. Use the following command to submit a batch job:
 ```bash
 scripts/slurm/sbatch.sh \
-  --num-nodes 8 \
+  --num-nodes 32 \
   --gpus-per-node 8 \
   --checkpoint /checkpoints/sd/512-base-ema.ckpt \
   --config configs/train_512_moments.yaml \
-  --results-dir configs/train_512_moments.yaml \
+  --results-dir configs/train_32x08x02.yaml \
   --container mlperf/stable_diffusion
 ```
 
