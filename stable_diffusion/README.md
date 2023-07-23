@@ -116,7 +116,8 @@ The COCO-2014-validation dataset consists of 40,504 images and 202,654 annotatio
 To ensure reproducibility, we ask the submitters to download the relevant files from the MLCommons storage:
 
 ```bash
-scripts/datasets/download_coco-2014.sh --output-dir /datasets/coco2014/val2014-sd
+scripts/datasets/coco2014-validation-download-prompts.sh --output-dir /datasets/coco2014
+scripts/datasets/coco2014-validation-download-stats.sh --output-dir /datasets/coco2014
 ```
 
 While the benchmark code can work with raw images, we recommend using the preprocessed inception weights to save on computational resources.
