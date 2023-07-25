@@ -36,61 +36,17 @@ For validation, a subset of the validation dataset has been selected. This was d
 
 The dataset is preprocessed using Sentence Piece Model. [These](https://github.com/sgpyc/training/blob/paxml-llm-draft/large_language_model/paxml/utils/generate_spm.md) instructions were used to train the SPM. 
 
-### Data Download
-Training dataset -
-```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/allenai/c4
-mkdir <${C4_PATH}>
-cd <${C4_PATH}>
-git lfs pull --include "en/c4-train.007*.json.gz"
-git lfs pull --include "en/c4-train.008*.json.gz"
-git lfs pull --include "en/c4-train.009*.json.gz"
-git lfs pull --include "en/c4-train.01*.json.gz"
-```
+### Preprocessed data download
+The preprocessed dataset in a training ready format is available in the S3 bucket at `gpt3/megatron-lm/dataset_c4_spm.tar` path
+(the S3 download instructions are available at the end of this README in "S3 artifacts download" section).
+After downloading and unpacking the tarball, the `preprocessed_c4_spm` directory contains the preprocessed dataset and this is where the `COM_DIR` env variable (explained above) should point to.
 
-Validation dataset needs to be downloaded from `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json` to ${C4_PATH}.
-
-### Data Preprocessing for Megatron-LM
-
-Run the following commands to merge these 256 files into 2 `json.gz` files. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`).
-
-```bash
-cd <${C4_PATH}>
-
-# create softlinks to store each shard before merging
-mkdir -p softlinks
-for shard in {6..7}; do
-  start=$((shard * 128))
-  end=$((shard * 128 + 127))
-  mkdir -p softlinks/en_$shard
-  for ind in $(seq -f "%05g" $start $end); do
-    ln -s ../../en/c4-train.${ind}-of-01024.json.gz softlinks/en_${shard}/c4-train.${ind}-of-01024.json.gz
-  done
-done
-
-# merge
-mkdir -p en_merge
-for shard in {6..7}; do
-  cat softlinks/en_${shard}/*gz > en_merge/c4-train.en_${shard}.json.gz 
-done
-```
-
-After preparing the data folder, download tokenizer model. The tokenizer model should be downloaded from `gs://mlperf-llm-public2/vocab/c4_en_301_5Mexp2_spm.model` and renamed as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`. Make sure an output directory `${C4_PATH}/preprocessed_c4_spm` exists before the next step.
-
-Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
-the correct input/output paths and run preprocessing as follows
-```bash
-cd scripts
-sbatch preprocess.sh <path to c4>
-sbatch preprocess_val.sh <path to c4> <path to validation json>
-```
-
-Currently, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the above step:
+Additionally, the training script expects BPE [vocab.json](https://huggingface.co/gpt2/resolve/main/vocab.json) and [merges.txt](https://huggingface.co/gpt2/resolve/main/merges.txt) files. These files are used to create a BPE tokenizer which is only used for two things at this point in the code since tokenization is already done in the preprocessed dataset:
 
 1. To find out the eod entry index (value is 50256)
 2. To find out the vocab size (value is 50257)
 
-Correctness of the dataset preprocessing can be verified by comparing the checksums provided [here](./checksums/dataset_checksum.log)
+Correctness of the dataset can be verified by comparing the checksums provided [here](./checksums/dataset_checksum.log)
 
 
 # 4. Model
@@ -106,23 +62,25 @@ The model largely follows the GPT-3 [paper](https://arxiv.org/abs/2005.14165), S
 3. Model parameters are set [here](https://github.com/mlcommons/training/blob/master/large_language_model/megatron-lm/run_gpt3.sh#L46-L92).
 
 ### Model checkpoint
-#### Conversion
-In the benchmarking region, we should resume training from a PAXML checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
-Paxml Checkpoint is available at: `gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000`
-To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
+In the benchmarking region, we should resume training from a checkpoint which is trained with Global Batch Size of 1536 for 4000 iterations.
 
-To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
-```bash
-# Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
-python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype fp32  # or `--dtype bf16` for BF16 checkpoint
-# Add framework-specific common.pt file to the checkpoint (instantaneous):
-python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_bf16.json` for BF16 checkpoint
-```
-Correctness of the Megatron format checkpoint can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log). Checksum for two files (`metadata.json` and `common.pt`) may not match. These files are provided [here](./checksums/additional_checkpoint_files) for verification. 
+#### Checkpoint download
+The FP32 Megatron checkpoint is available in the S3 bucket at `gpt3/megatron-lm/checkpoint_megatron_fp32.tar` path
+(the S3 download instructions are available at the end of this README in "S3 artifacts download" section).
+After downloading and unpacking the tarball, the `ckpt4000_fp32` directory with the checkpoint should be set as the `EXTERNAL_MODEL_CHECKPOINT_DIR` env variable.
+
+Correctness of the Megatron format checkpoint can be verified by comparing the checksums provided [here](./checksums/fp32_checkpoint_checksum.log). Checksum for two files (`metadata.json` and `common.pt`) may not match. These files are provided [here](./checksums/additional_checkpoint_files) for verification.
 
 Validation log perplexity can also be used as a metric to verify the correctness of the checkpoint and the loading scripts. To do this, the model should be evaluated on the entire validation dataset after loading weights from the checkpoint. We have observed an average log perplexity of 2.7767 and a standard deviation of 0.00035 (data obtained from 16 runs).
 
-**Note: For BF16 training, the conversion scripts need to be run again with the bf16 arguments specified above**
+##### BF16 training
+BF16 training requires a different checkpoint, available in the S3 bucket at `gpt3/megatron-lm/checkpoint_nemo_bf16.tar` path.
+The BF16 checkpoint is not ready to instantly train in Megatron, but requires only a very simple postprocessing step:
+```bash
+# Add framework-specific common.pt file to the checkpoint (instantaneous):
+python json_to_torch.py -i common_bf16.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt
+```
+where `EXTERNAL_MODEL_CHECKPOINT_DIR` points to the `ckpt4000-consumed_samples=0` directory available after unpacking the tarball.
 
 #### Checkpoint Parameters
 There are four groups of parameters in the checkpoint:
@@ -202,3 +160,85 @@ Evaluate after every 24576 samples (=50.33B tokens)
 ### Evaluation thoroughness
 Evaluation on the validation subset that consists of 24567 examples.
 
+
+# 6. Other
+
+### S3 artifacts download
+The dataset and the checkpoints are available to download from an S3 bucket.
+To achieve the best download bandwidth (currently no more than 25MB/s is expected) it's necessary to set up a third-party client capable of downloading the artifacts.
+[Here are the instructions](https://help.lyvecloud.seagate.com/en/connecting-s3-clients-to-lyve-cloud.html).
+The read-only access credentials are provided below.
+
+#### Access details
+- Bucket name: `mlcommons-training-wg-s3`
+- Endpoint URL: https://s3.us-east-1.lyvecloud.seagate.com
+- Access Key: `3ZC41B4Z2WHM5DT2`
+- Secret Key: `AK4NQQZV0NKFEJWJUZVPX5XQ0QNTXCGW`
+
+
+### Model conversion from Paxml checkpoints
+Alternatively to downloading the checkpoint in Megatron ready format, it can be obtained by converting a Paxml checkpoint.
+
+Paxml Checkpoint is available at: `gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000`
+To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
+
+To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
+```bash
+# Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
+python -u convert_paxml_to_megatron_distributed.py -gckpt $PAXML_CKPT_PATH -o $EXTERNAL_MODEL_CHECKPOINT_DIR --dtype fp32  # or `--dtype bf16` for BF16 checkpoint
+# Add framework-specific common.pt file to the checkpoint (instantaneous):
+python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/common.pt  # or `-i common_bf16.json` for BF16 checkpoint
+```
+This should result in the same checkpoint as described in the "Checkpoint download" section above.
+
+### Dataset preprocessing
+Here are the instructions to prepare the preprocessed dataset from scratch.
+
+#### Data Download
+Training dataset -
+```bash
+GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/allenai/c4
+mkdir <${C4_PATH}>
+cd <${C4_PATH}>
+git lfs pull --include "en/c4-train.007*.json.gz"
+git lfs pull --include "en/c4-train.008*.json.gz"
+git lfs pull --include "en/c4-train.009*.json.gz"
+git lfs pull --include "en/c4-train.01*.json.gz"
+```
+
+Validation dataset needs to be downloaded from `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json` to ${C4_PATH}.
+
+#### Data Preprocessing for Megatron-LM
+
+Run the following commands to merge these 256 files into 2 `json.gz` files. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`).
+
+```bash
+cd <${C4_PATH}>
+
+# create softlinks to store each shard before merging
+mkdir -p softlinks
+for shard in {6..7}; do
+  start=$((shard * 128))
+  end=$((shard * 128 + 127))
+  mkdir -p softlinks/en_$shard
+  for ind in $(seq -f "%05g" $start $end); do
+    ln -s ../../en/c4-train.${ind}-of-01024.json.gz softlinks/en_${shard}/c4-train.${ind}-of-01024.json.gz
+  done
+done
+
+# merge
+mkdir -p en_merge
+for shard in {6..7}; do
+  cat softlinks/en_${shard}/*gz > en_merge/c4-train.en_${shard}.json.gz 
+done
+```
+
+After preparing the data folder, download tokenizer model. The tokenizer model should be downloaded from `gs://mlperf-llm-public2/vocab/c4_en_301_5Mexp2_spm.model` and renamed as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`. Make sure an output directory `${C4_PATH}/preprocessed_c4_spm` exists before the next step.
+
+Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
+the correct input/output paths and run preprocessing as follows
+```bash
+cd scripts
+sbatch preprocess.sh <path to c4>
+sbatch preprocess_val.sh <path to c4> <path to validation json>
+```
