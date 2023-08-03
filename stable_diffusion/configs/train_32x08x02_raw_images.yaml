@@ -38,7 +38,7 @@ model:
         enabled: True
         inception_weights_url: https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth
         cache_dir: /checkpoints/inception
-        gt_path: /datasets/coco2014/val2014_512x512_30k_stats.npz
+        gt_path: /datasets/coco2014/val2014_30k_stats.npz
       clip:
         enabled: True
         clip_version: "ViT-H-14"
@@ -47,7 +47,7 @@ model:
     scheduler_config:
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [ 10000 ]
+        warm_up_steps: [ 1000 ]
         cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
         f_start: [ 1.e-6 ]
         f_max: [ 1. ]
@@ -110,8 +110,8 @@ data:
       train:
         target: ldm.data.webdatasets.build_dataloader
         params:
-          urls: /datasets/laion-400m/webdataset-filtered/{00000..00771}.tar
-          batch_size: 8
+          urls: /datasets/laion-400m/webdataset-filtered/{00000..00831}.tar
+          batch_size: 2
           shuffle: 1000
           partial: False
           decode: pil
@@ -141,7 +141,7 @@ data:
 lightning:
   trainer:
     accelerator: 'gpu'
-    num_nodes: 1
+    num_nodes: 32
     devices: 8
     precision: 16
     logger: False
@@ -149,7 +149,7 @@ lightning:
     enable_progress_bar: False
     max_epochs: -1
     max_steps: 10000000000000
-    val_check_interval: 1000 # TODO(ahmadki): final validation interval will be determined with RCPs
+    val_check_interval: 1000
     enable_checkpointing: True
     num_sanity_val_steps: 0
     strategy:
@@ -161,4 +161,4 @@ lightning:
     target: lightning.pytorch.callbacks.ModelCheckpoint
     params:
       save_top_k: -1
-      every_n_train_steps: 2000
+      every_n_train_steps: 1000

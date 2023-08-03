@@ -15,6 +15,9 @@ from ldm.data.utils import rearrange_transform
 from ldm.util import instantiate_from_config
 
 
+Image.MAX_IMAGE_PIXELS = None
+
+
 image_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".ico"]
 
 def is_image(filename):
@@ -24,8 +27,8 @@ def is_image(filename):
 def process_image(input_image_path, output_tensor_name, image_transforms, model):
     original_image = Image.open(input_image_path).convert('RGB')
     transformed_img = image_transforms(original_image).float().unsqueeze(0).to(model.device)
-    encoded_image = model.encode_first_stage(transformed_img).sample().squeeze(0)
-    np.save(output_tensor_name, encoded_image.to("cpu").numpy())
+    moments = model.moments_first_stage(transformed_img)
+    np.save(output_tensor_name, moments.to("cpu").numpy())
 
 
 def process_tar(input_tar, output_tar, image_transforms, model):

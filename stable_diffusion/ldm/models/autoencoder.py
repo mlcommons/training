@@ -83,9 +83,13 @@ class AutoencoderKL(pl.LightningModule):
         if self.use_ema:
             self.model_ema(self)
 
-    def encode(self, x):
+    def moments(self, x):
         h = self.encoder(x)
         moments = self.quant_conv(h)
+        return moments
+
+    def encode(self, x):
+        moments = self.moments(x)
         posterior = DiagonalGaussianDistribution(moments)
         return posterior
 

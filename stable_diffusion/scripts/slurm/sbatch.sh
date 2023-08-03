@@ -56,10 +56,6 @@ WORKDIR_MNT=/workdir
 # Job config
 JOB_NAME=train_${CONFIG_NAME}_${SUFFIX}
 
-# Laion aesthetic
-LAION2B_EN_AESTHETIC=/datasets/laion2B-en-aesthetic
-LAION2B_EN_AESTHETIC_MOUNT=/datasets/laion2B-en-aesthetic
-
 # Laion 400m
 LAION_400M=/datasets/laion-400m
 LAION_400M_MOUNT=/datasets/laion-400m
@@ -86,7 +82,7 @@ LOG_DIR="${BASE_LOG_DIR}"
 mkdir -p ${LOG_DIR}
 
 # Mounts
-MOUNTS="${PWD}:${WORKDIR_MNT},${LAION2B_EN_AESTHETIC}:${LAION2B_EN_AESTHETIC_MOUNT},${LAION_400M}:${LAION_400M_MOUNT},${COCO}:${COCO_MNT},${RESULTS_DIR}:${RESULTS_MNT},${CKPT_DIR}:${CKPT_MOUNT},${HF_HOME_DIR}:${HF_HOME_MOUNT}"
+MOUNTS="${PWD}:${WORKDIR_MNT},${LAION_400M}:${LAION_400M_MOUNT},${COCO}:${COCO_MNT},${RESULTS_DIR}:${RESULTS_MNT},${CKPT_DIR}:${CKPT_MOUNT},${HF_HOME_DIR}:${HF_HOME_MOUNT}"
 
 sbatch \
     --account=${ACCOUNT} \

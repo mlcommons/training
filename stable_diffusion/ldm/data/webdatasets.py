@@ -6,6 +6,11 @@ import webdataset as wds
 from ldm.util import instantiate_from_config
 from ldm.data.utils import instantiate_transforms_from_config, identity, keys_filter
 
+from PIL import Image
+
+Image.MAX_IMAGE_PIXELS = None
+
+
 def build_dataloader(
         urls,
         batch_size,
