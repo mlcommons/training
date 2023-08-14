@@ -2,7 +2,7 @@
 
 # Location of the input files 
 
-This [Google Drive location](https://drive.google.com/drive/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT) contains the following.
+[This MLCommons Cloud directory](https://cloud.mlcommons.org/index.php/s/wikipedia_for_bert) contains the following:
 * tf1_ckpt folder: contains checkpoint files 
   - model.ckpt-28252.data-00000-of-00001
   - model.ckpt-28252.index
@@ -34,7 +34,7 @@ Note that the checkpoint converter removes optimizer slot variables, so the resu
 
 The dataset was prepared using Python 3.7.6, nltk 3.4.5 and the [tensorflow/tensorflow:1.15.2-gpu](https://hub.docker.com/layers/tensorflow/tensorflow/1.15.2-gpu/images/sha256-da7b6c8a63bdafa77864e7e874664acfe939fdc140cb99940610c34b8c461cd0?context=explore) docker image.
 
-Files after the download, uncompress, extract, clean up and dataset seperation steps are providedat a [Google Drive location](https://drive.google.com/corp/drive/u/0/folders/1cywmDnAsrP5-2vsr8GDc6QUc7VWe-M3v). The main reason is that, WikiExtractor.py replaces some of the tags present in XML such as {CURRENTDAY}, {CURRENTMONTHNAMEGEN} with the current values obtained from time.strftime ([code](https://github.com/attardi/wikiextractor/blob/e4abb4cbd019b0257824ee47c23dd163919b731b/WikiExtractor.py#L632)). Hence, one might see slighly different preprocessed files after the WikiExtractor.py file is invoked. This means the md5sum hashes of these files will also be different each time WikiExtractor is called.
+Files after the download, uncompress, extract, clean up and dataset seperation steps are provided in a [MLCommons Cloud directory](https://cloud.mlcommons.org/index.php/s/wikipedia_for_bert?path=%2Fprocessed_dataset). The main reason is that, WikiExtractor.py replaces some of the tags present in XML such as {CURRENTDAY}, {CURRENTMONTHNAMEGEN} with the current values obtained from time.strftime ([code](https://github.com/attardi/wikiextractor/blob/e4abb4cbd019b0257824ee47c23dd163919b731b/WikiExtractor.py#L632)). Hence, one might see slighly different preprocessed files after the WikiExtractor.py file is invoked. This means the md5sum hashes of these files will also be different each time WikiExtractor is called.
 
 ### Files in ./results directory:
 
