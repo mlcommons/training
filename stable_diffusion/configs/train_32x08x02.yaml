@@ -38,7 +38,7 @@ model:
         enabled: True
         inception_weights_url: https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth
         cache_dir: /checkpoints/inception
-        gt_path: /datasets/coco2014/val2014_30k_stats.npz
+        gt_path: /datasets/coco2014/val2014_512x512_30k_stats.npz
       clip:
         enabled: True
         clip_version: "ViT-H-14"
