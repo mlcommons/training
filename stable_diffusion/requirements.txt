@@ -19,7 +19,6 @@ datasets==2.10.1
 colossalai==0.2.7
 invisible-watermark==0.1.5
 diffusers==0.14.0
-img2dataset==1.41.0
 cloudpathlib==0.13.0
 git+https://github.com/facebookresearch/xformers.git@5eb0dbf315d14b5f7b38ac2ff3d8379beca7df9b#egg=xformers
 bitsandbytes==0.37.2

@@ -25,6 +25,7 @@ done
 
 mkdir -p ${OUTPUT_DIR}
 
+pip install img2dataset==1.41.0
 img2dataset \
   --url_list ${METADATA_DIR} \
   --input_format "parquet" \
