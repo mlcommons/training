@@ -211,17 +211,17 @@ class DDPM(pl.LightningModule):
             self.validation_run_clip = validation_config["clip"]["enabled"]
 
             if self.validation_save_images or self.validation_run_fid or self.validation_run_clip:
-            if self.validation_save_images:
-                self.validation_base_output_dir = validation_config["save_images"]["base_output_dir"]
+                if self.validation_save_images:
+                    self.validation_base_output_dir = validation_config["save_images"]["base_output_dir"]
 
-            if self.validation_run_fid:
-                self.inception_weights_url = validation_config["fid"]["inception_weights_url"]
-                self.inception_cache_dir = validation_config["fid"]["cache_dir"]
-                self.fid_gt_path = validation_config["fid"]["gt_path"]
+                if self.validation_run_fid:
+                    self.inception_weights_url = validation_config["fid"]["inception_weights_url"]
+                    self.inception_cache_dir = validation_config["fid"]["cache_dir"]
+                    self.fid_gt_path = validation_config["fid"]["gt_path"]
 
-            if self.validation_run_clip:
-                self.clip_version = validation_config["clip"]["clip_version"]
-                self.clip_cache_dir = validation_config["clip"]["cache_dir"]
+                if self.validation_run_clip:
+                    self.clip_version = validation_config["clip"]["clip_version"]
+                    self.clip_cache_dir = validation_config["clip"]["cache_dir"]
 
 
     def register_schedule(self,

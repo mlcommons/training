@@ -32,6 +32,11 @@ understand the fundamentals of the Stable Diffusion model.
   - [Validation metrics](#validation-metrics)
     - [FID](#fid)
     - [CLIP](#clip)
+- [Quality](#quality)
+  - [Quality metric](#quality-metric)
+  - [Quality target](#quality-target)
+  - [Evaluation frequency](#evaluation-frequency)
+  - [Evaluation thoroughness](#evaluation-thoroughness)
 - [Reference runs](#reference-runs)
 - [Rules](#rules)
 - [BibTeX](#bibtex)
@@ -231,6 +236,21 @@ Further insights and an independent evaluation of the FID score can be found in 
 
 ### CLIP
 CLIP is a reference free metric that can be used to evaluate the correlation between a caption for an image and the actual content of the image, it has been found to be highly correlated with human judgement. A higher CLIP Score implies that the caption matches closer to image.
+
+# Quality
+## Quality metric
+Both FID and CLIP are used to evaulte the model's quality.
+
+## Quality target
+FID<=90 and CLIP>=0.15
+
+## Evaluation frequency
+Every 512,000 images, or `CEIL(512000 / global_batch_size)` if 512,000 is not divisible by GBS.
+
+Please refer to the benchmark rules [here](https://github.com/mlcommons/training_policies/blob/master/training_rules.adoc) for the exact evaluation rules.
+
+## Evaluation thoroughness
+All the prompts in the [coco-2014](#coco-2014) validation subset.
 
 # Reference runs
 The benchmark is expected to have the following convergence profile:
