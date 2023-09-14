@@ -33,24 +33,23 @@ echo "OUTPUT_PATH:" $OUTPUT_PATH
 
 cd cleanup_scripts
 
-#for FILE in $INPUT_PATH/part*; do
-#    echo "file: " $FILE
-#    NEW_FILE="$(basename -- $FILE)"
-#    echo "*Processing: " $NEW_FILE
-#    python3 create_pretraining_data.py \
-#        --input_file=$FILE \
-#        --vocab_file=$VOCAB_PATH \
-#        --output_file=$OUTPUT_PATH/$NEW_FILE \
-#        --do_lower_case=True \
-#        --max_seq_length=512 \
-#        --max_predictions_per_seq=76 \
-#        --masked_lm_prob=0.15 \
-#        --random_seed=12345 \
-#        --dupe_factor=10
-#done
+for FILE in $INPUT_PATH/part*; do
+    echo "file: " $FILE
+    NEW_FILE="$(basename -- $FILE)"
+    echo "*Processing: " $NEW_FILE
+    python3 create_pretraining_data.py \
+        --input_file=$FILE \
+        --vocab_file=$VOCAB_PATH \
+        --output_file=$OUTPUT_PATH/$NEW_FILE \
+        --do_lower_case=True \
+        --max_seq_length=512 \
+        --max_predictions_per_seq=76 \
+        --masked_lm_prob=0.15 \
+        --random_seed=12345 \
+        --dupe_factor=10
+done
 
 TEMP_FILE=$OUTPUT_EVAL_PATH/eval_temp
-echo "AQUI"
 echo $TEMP_FILE
 
 python3 create_pretraining_data.py \
