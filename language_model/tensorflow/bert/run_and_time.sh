@@ -15,7 +15,6 @@ echo "STARTING TIMING RUN AT $start_fmt"
 : "${CONFIG_PATH:=./workspace/data/bert_config.json}"
 : "${LOG_DIR:=./workspace/logs}"
 : "${OUTPUT_DIR:=./workspace/final_output}"
-: "${PARAMETERS_YAML:=./workspace/parameters.yaml}"
 
 # Handle MLCube parameters
 while [ $# -gt 0 ]; do
@@ -43,57 +42,29 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-function parse_yaml {
-   local prefix=$2
-   local s='[[:space:]]*' w='[a-zA-Z0-9_]*' fs=$(echo @|tr @ '\034')
-   sed -ne "s|^\($s\):|\1|" \
-        -e "s|^\($s\)\($w\)$s:$s[\"']\(.*\)[\"']$s\$|\1$fs\2$fs\3|p" \
-        -e "s|^\($s\)\($w\)$s:$s\(.*\)$s\$|\1$fs\2$fs\3|p"  $1 |
-   awk -F$fs '{
-      indent = length($1)/2;
-      vname[indent] = $2;
-      for (i in vname) {if (i > indent) {delete vname[i]}}
-      if (length($3) > 0) {
-         vn=""; for (i=0; i<indent; i++) {vn=(vn)(vname[i])("_")}
-         printf("%s%s%s=\"%s\"\n", "'$prefix'",vn, $2, $3);
-      }
-   }'
-}
-
-eval $(parse_yaml $PARAMETERS_YAML)
-
 # run benchmark
 echo "running benchmark"
 
-python3 ./run_pretraining.py \
---bert_config_file=$CONFIG_PATH \
---nodo_eval \
---do_train \
---eval_batch_size=640 \
---init_checkpoint=$INIT_CHECKPOINT \
---input_file="$TFDATA_PATH/part*" \
---iterations_per_loop=3 \
---lamb_beta_1=0.88 \
---lamb_beta_2=0.88 \
---lamb_weight_decay_rate=0.0166629 \
---learning_rate=0.00288293 \
---log_epsilon=-6 \
---max_eval_steps=125 \
---max_predictions_per_seq=76 \
---max_seq_length=512 \
---num_tpu_cores=128 \
---num_train_steps=600 \
---num_warmup_steps=287 \
---optimizer=lamb \
---output_dir=$OUTPUT_DIR \
---save_checkpoints_steps=3 \
---start_warmup_step=-76 \
---steps_per_update=1 \
---train_batch_size=8192 \
---use_tpu \
---tpu_name=$tpu_name \
---tpu_zone=$tpu_zone \
---gcp_project=$gcp_project |& tee "$LOG_DIR/train_console.log"
+TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
+  python run_pretraining.py \
+  --bert_config_file=$CONFIG_PATH \
+  --output_dir=$OUTPUT_DIR \
+  --input_file="$TFDATA_PATH/part*" \
+  --init_checkpoint=$INIT_CHECKPOINT \
+  --nodo_eval \
+  --do_train \
+  --eval_batch_size=4 \
+  --learning_rate=0.0001 \
+  --iterations_per_loop=1000 \
+  --max_predictions_per_seq=76 \
+  --max_seq_length=512 \
+  --num_train_steps=107538 \
+  --num_warmup_steps=1562 \
+  --optimizer=lamb \
+  --save_checkpoints_steps=6250 \
+  --start_warmup_step=0 \
+  --num_gpus=1 \
+  --train_batch_size=12 |& tee "$LOG_DIR/train_console.log"
 
 # Copy log file to MLCube log folder
 if [ "$LOG_DIR" != "" ]; then
@@ -101,35 +72,28 @@ if [ "$LOG_DIR" != "" ]; then
   cp bert.log "$LOG_DIR/bert_train_$timestamp.log"
 fi
 
-python3 ./run_pretraining.py \
---bert_config_file=$CONFIG_PATH \
---do_eval \
---nodo_train \
---eval_batch_size=640 \
---init_checkpoint=$OUTPUT_DIR/model.ckpt-28252 \
---input_file=$EVAL_FILE \
---iterations_per_loop=3 \
---lamb_beta_1=0.88 \
---lamb_beta_2=0.88 \
---lamb_weight_decay_rate=0.0166629 \
---learning_rate=0.00288293 \
---log_epsilon=-6 \
---max_eval_steps=125 \
---max_predictions_per_seq=76 \
---max_seq_length=512 \
---num_tpu_cores=8 \
---num_train_steps=600 \
---num_warmup_steps=287 \
---optimizer=lamb \
---output_dir=$OUTPUT_DIR \
---save_checkpoints_steps=3 \
---start_warmup_step=-76 \
---steps_per_update=1 \
---train_batch_size=8192 \
---use_tpu \
---tpu_name=$tpu_name \
---tpu_zone=$tpu_zone \
---gcp_project=$gcp_project |& tee "$LOG_DIR/eval_console.log"
+TF_XLA_FLAGS='--tf_xla_auto_jit=2' \
+  python3 run_pretraining.py \
+  --bert_config_file=$CONFIG_PATH \
+  --output_dir=$OUTPUT_DIR \
+  --input_file=$EVAL_FILE \
+  --do_eval \
+  --nodo_train \
+  --eval_batch_size=8 \
+  --init_checkpoint=$OUTPUT_DIR/model.ckpt-107538 \
+  --iterations_per_loop=1000 \
+  --learning_rate=0.0001 \
+  --max_eval_steps=1250 \
+  --max_predictions_per_seq=76 \
+  --max_seq_length=512 \
+  --num_gpus=1 \
+  --num_train_steps=107538 \
+  --num_warmup_steps=1562 \
+  --optimizer=lamb \
+  --save_checkpoints_steps=1562 \
+  --start_warmup_step=0 \
+  --train_batch_size=24 \
+  --nouse_tpu |& tee "$LOG_DIR/eval_console.log"
 
 # Copy log file to MLCube log folder
 if [ "$LOG_DIR" != "" ]; then
