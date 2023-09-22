@@ -20,6 +20,22 @@ cd ./mlcube
 mlcube describe
 ```
 
+### Demo execution
+
+These tasks will use a demo dataset to execute a faster training workload for a quick demo (~8 min):
+
+```bash
+mlcube run --task=download_demo -Pdocker.build_strategy=always
+
+mlcube run --task=demo -Pdocker.build_strategy=always
+```
+
+It's also possible to execute the two tasks in one single instruction:
+
+```bash
+mlcube run --task=download_demo,demo -Pdocker.build_strategy=always
+```
+
 ### MLCube tasks
 
 Download dataset.

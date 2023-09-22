@@ -22,6 +22,11 @@ tasks:
     parameters:
       outputs:
         data_dir: data/
+  download_demo:
+    entrypoint: ./cleanup_scripts/download_demo.sh -a
+    parameters:
+      outputs:
+        data_dir: demo_data/
   process_data:
     entrypoint: ./cleanup_scripts/create_pretraining_data.sh -a
     parameters:
@@ -36,6 +41,23 @@ tasks:
       outputs:
         output_path: tf_data/
         output_eval_path: tf_eval_data/
+  demo:
+    entrypoint: ./run_demo.sh -a
+    parameters:
+      inputs:
+        tfdata_path: demo_data/tf_data/
+        init_checkpoint:
+          type: file
+          default: demo_data/tf2_ckpt/model.ckpt-28252
+        eval_file:
+          type: file
+          default: demo_data/tf_eval_data/eval_10k
+        config_path:
+          type: file
+          default: demo_data/bert_config.json
+      outputs:
+        log_dir: demo_logs/
+        output_dir: demo_output/
   train:
     entrypoint: ./run_and_time.sh -a
     parameters:
