@@ -46,12 +46,12 @@ tasks:
     entrypoint: ../scripts/download_openimages_demo.sh -a
     parameters:
       outputs:
-        data_dir: data/
+        data_dir: demo/
   demo:
     entrypoint: ./run_demo.sh -a
     # torchrun --standalone --nnodes=1 train.py --epochs=1 --batch-size=16 --eval-batch-size=16
     parameters:
       inputs:
-        data_dir: data/
+        data_dir: demo/
       outputs:
         log_dir: logs/
