@@ -2,7 +2,7 @@
 
 : "${INPUT_IMAGES_PATH:=/datasets/coco2014/val2014}"
 : "${INPUT_COCO_CAPTIONS:=/datasets/coco2014/annotations/captions_val2014.json}"
-: "${OUTPUT_IMAGES_PATH:=/datasets/coco2014/val2014_512x512_30k}"
+: "${OUTPUT_IMAGES_PATH:=/datasets/coco2014/val2014_30k}"
 : "${OUTPUT_TSV_FILE:=/datasets/coco2014/val2014_30k.tsv}"
 : "${NUM_SAMPLES:=30000}"
 

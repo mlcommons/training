@@ -207,7 +207,7 @@ We achieved this subset by following these steps:
 
 1. download coco-2014 validation dataset: `scripts/datasets/coco-2014-validation-download.sh --output-dir /datasets/coco2014`
 2. create the validation subset, and resize the images to 512x512: `scripts/datasets/coco-2014-validation-split-resize.sh --input-images-path /datasets/coco2014/val2014 --input-coco-captions /datasets/coco2014/annotations/captions_val2014.json --output-images-path /datasets/coco2014/val2014_512x512_30k --output-tsv-file /datasets/coco2014/val2014_30k.tsv`
-3. generate the FID statistics: `scripts/datasets/generate-fid-statistics.sh --dataset-dir /datasets/coco2014/val2014_512x512_30k --output-file /datasets/coco2014/val2014_512x512_30k_stats.npz`
+3. generate the FID statistics: `scripts/datasets/generate-fid-statistics.sh --dataset-dir /datasets/coco2014/val2014_512x512_30k --output-file /datasets/coco2014/val2014_30k_stats.npz`
 
 ## The Model
 Stable Diffusion v2 is a latent diffusion model which combines an autoencoder with a diffusion model that is trained in the latent space of the autoencoder. During training:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-: "${DATASET_DIR:=/datasets/coco2014/val2014_512x512_30k}"
-: "${OUTPUT_FILE:=/datasets/coco2014/val2014_512x512_30k_stats.npz}"
+: "${DATASET_DIR:=/datasets/coco2014/val2014_30k}"
+: "${OUTPUT_FILE:=/datasets/coco2014/val2014_30k_stats.npz}"
 
 while [ "$1" != "" ]; do
     case $1 in
