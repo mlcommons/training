@@ -22,11 +22,18 @@ tasks:
     parameters:
       outputs:
         data_dir: data/
+  process_data:
+    entrypoint: ./process_data.sh -a
+    parameters:
+      inputs:
+        data_dir: data/tiny-imagenet-200/
+      outputs:
+        processed_data_dir: tfdata/
   train:
     entrypoint: ./run_and_time.sh -a
     parameters:
       inputs:
-        data_dir: data/tiny-imagenet-200/
+        data_dir: tfdata/
       outputs:
         log_dir: logs/
         output_model_dir: output_model/
