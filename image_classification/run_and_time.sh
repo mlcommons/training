@@ -34,10 +34,9 @@ done
 echo "running benchmark"
 
 # run training
-python3 ./resnet_ctl_imagenet_main.py \
+python3 tensorflow2/resnet_ctl_imagenet_main.py \
   --base_learning_rate=8.5 \
   --batch_size=1024 \
-  --clean \
   --data_dir=${DATASET_DIR} \
   --datasets_num_private_threads=32 \
   --dtype=fp32 \
