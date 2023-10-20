@@ -33,7 +33,7 @@ tasks:
     entrypoint: ./run_and_time.sh -a
     parameters:
       inputs:
-        data_dir: tfdata/
+        data_dir: tfdata/train/
       outputs:
         log_dir: logs/
         output_model_dir: output_model/

@@ -28,6 +28,12 @@ Download demo dataset.
 mlcube run --task=download_demo -Pdocker.build_strategy=always
 ```
 
+Process dataset.
+
+```shell
+mlcube run --task=process_data -Pdocker.build_strategy=always
+```
+
 Train RESNET.
 
 ```shell
@@ -45,5 +51,5 @@ mlcube run --task=check_logs -Pdocker.build_strategy=always
 You can execute the complete pipeline with one single command.
 
 ```shell
-mlcube run --task=download_demo,train,check_logs -Pdocker.build_strategy=always
+mlcube run --task=download_demo,process_data,train,check_logs -Pdocker.build_strategy=always
 ```
