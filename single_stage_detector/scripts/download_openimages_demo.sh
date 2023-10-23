@@ -22,9 +22,9 @@ echo "saving to"
 echo $DATASET_PATH
 ls $DATASET_PATH
 
-MLPERF_CLASSES=('Apple' 'Banana' 'Orange')
+MLPERF_CLASSES=('Apple' 'Banana')
 
 python fiftyone_openimages.py \
-    --dataset-dir=${DATASET_PATH} \
-    --output-labels="openimages-mlperf.json" \
-    --classes "${MLPERF_CLASSES[@]}"
+  --dataset-dir=${DATASET_PATH} \
+  --output-labels="openimages-mlperf.json" \
+  --classes "${MLPERF_CLASSES[@]}"
