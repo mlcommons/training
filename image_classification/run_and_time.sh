@@ -30,6 +30,12 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Check if labels file exist
+if [ ! -f "$DATASET_DIR/synset_labels.txt" ]; then
+    wget -O $DATASET_DIR/synset_labels.txt \
+    https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt
+fi
+
 # run benchmark
 echo "running benchmark"
 
