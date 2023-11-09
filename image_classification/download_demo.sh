@@ -11,6 +11,6 @@ while [ "$1" != "" ]; do
     shift
 done
 
-wget http://cs231n.stanford.edu/tiny-imagenet-200.zip -P $DATASET_PATH
-unzip $DATASET_PATH/tiny-imagenet-200.zip -d $DATASET_PATH
-rm $DATASET_PATH/tiny-imagenet-200.zip
+wget https://storage.googleapis.com/bert_tf_data/image_net/demo/tfdata.zip -P $DATASET_PATH
+unzip $DATASET_PATH/tfdata.zip -d $DATASET_PATH
+rm $DATASET_PATH/tfdata.zip

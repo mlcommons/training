@@ -26,6 +26,12 @@ fi
 
 wget https://raw.githubusercontent.com/tensorflow/tpu/master/tools/datasets/imagenet_to_gcs.py
 
+# Check if labels file exist
+if [ ! -f "$DATASET_PATH/synset_labels.txt" ]; then
+    wget -O $DATASET_PATH/synset_labels.txt \
+    https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt
+fi
+
 python imagenet_to_gcs.py \
   --raw_data_dir=$DATASET_PATH \
   --local_scratch_dir=$PROCESSED_DATA_DIR \
