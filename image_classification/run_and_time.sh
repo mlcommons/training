@@ -36,6 +36,8 @@ if [ ! -f "$DATASET_DIR/synset_labels.txt" ]; then
     https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt
 fi
 
+export COMPLIANCE_FILE=$(pwd)/mlperf_compliance.log
+
 # run benchmark
 echo "running benchmark"
 
@@ -80,9 +82,9 @@ python3 tensorflow2/resnet_ctl_imagenet_main.py \
   --weight_decay=0.0002 |& tee "$LOG_DIR/train_console.log"
 
 # Copy log file to MLCube log folder
-if [ "$LOG_DIR" != "" ]; then
+if [[ "$LOG_DIR" != "" && -f "$COMPLIANCE_FILE" ]]; then
   timestamp=$(date +%Y%m%d_%H%M%S)
-  cp tensorflow2/mlperf_compliance.log "$LOG_DIR/mlperf_compliance_$timestamp.log"
+  cp "$COMPLIANCE_FILE" "$LOG_DIR/mlperf_compliance_$timestamp.log"
 fi
 
 set +x

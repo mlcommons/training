@@ -36,8 +36,10 @@ if [ ! -f "$DATASET_DIR/synset_labels.txt" ]; then
     https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt
 fi
 
+export COMPLIANCE_FILE=$(pwd)/mlperf_compliance.log
+
 # run benchmark
-echo "running demo benchmark"
+echo "running benchmark"
 
 # run training
 python3 tensorflow2/resnet_ctl_imagenet_main.py \
@@ -45,7 +47,7 @@ python3 tensorflow2/resnet_ctl_imagenet_main.py \
   --base_learning_rate=8.5 \
   --batch_size=150 \
   --data_dir=${DATASET_DIR} \
-  --datasets_num_private_threads=8 \
+  --datasets_num_private_threads=1 \
   --dtype=fp32 \
   --device_warmup_steps=1 \
   --noenable_device_warmup \
@@ -81,9 +83,9 @@ python3 tensorflow2/resnet_ctl_imagenet_main.py \
   --weight_decay=0.0002 |& tee "$LOG_DIR/train_console.log"
 
 # Copy log file to MLCube log folder
-if [ "$LOG_DIR" != "" ]; then
+if [[ "$LOG_DIR" != "" && -f "$COMPLIANCE_FILE" ]]; then
   timestamp=$(date +%Y%m%d_%H%M%S)
-  cp tensorflow2/mlperf_compliance.log "$LOG_DIR/mlperf_compliance_$timestamp.log"
+  cp "$COMPLIANCE_FILE" "$LOG_DIR/mlperf_compliance_$timestamp.log"
 fi
 
 set +x
@@ -98,6 +100,6 @@ echo "ENDING TIMING RUN AT $end_fmt"
 
 # report result
 result=$(($end - $start))
-result_name="IMAGE_CLASSIFICATION_DEMO"
+result_name="IMAGE_CLASSIFICATION"
 
 echo "RESULT,$result_name,,$result,nvidia,$start_fmt"
