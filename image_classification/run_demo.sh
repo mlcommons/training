@@ -37,46 +37,47 @@ if [ ! -f "$DATASET_DIR/synset_labels.txt" ]; then
 fi
 
 # run benchmark
-echo "running benchmark"
+echo "running demo benchmark"
 
 # run training
 python3 tensorflow2/resnet_ctl_imagenet_main.py \
+  --distribution_strategy="one_device" \
   --base_learning_rate=8.5 \
-  --batch_size=1024 \
+  --batch_size=150 \
   --data_dir=${DATASET_DIR} \
-  --datasets_num_private_threads=32 \
+  --datasets_num_private_threads=8 \
   --dtype=fp32 \
   --device_warmup_steps=1 \
   --noenable_device_warmup \
   --enable_eager \
   --noenable_xla \
-  --epochs_between_evals=4 \
+  --epochs_between_evals=1 \
   --noeval_dataset_cache \
-  --eval_offset_epochs=2 \
-  --eval_prefetch_batchs=192 \
+  --eval_offset_epochs=1 \
+  --eval_prefetch_batchs=8 \
   --label_smoothing=0.1 \
   --lars_epsilon=0 \
   --log_steps=125 \
   --lr_schedule=polynomial \
   --model_dir=${OUTPUT_MODEL_DIR} \
   --momentum=0.9 \
-  --num_accumulation_steps=2 \
+  --num_accumulation_steps=1 \
   --num_classes=1000 \
-  --num_gpus=8 \
+  --num_gpus=1 \
   --optimizer=LARS \
   --noreport_accuracy_metrics \
   --single_l2_loss_op \
-  --noskip_eval \
-  --steps_per_loop=1252 \
+  --skip_eval \
+  --steps_per_loop=1 \
   --target_accuracy=0.759 \
   --notf_data_experimental_slack \
   --tf_gpu_thread_mode=gpu_private \
   --notrace_warmup \
-  --train_epochs=41 \
+  --train_epochs=1 \
   --notraining_dataset_cache \
-  --training_prefetch_batchs=128 \
+  --training_prefetch_batchs=8 \
   --nouse_synthetic_data \
-  --warmup_epochs=5 \
+  --warmup_epochs=1 \
   --weight_decay=0.0002 |& tee "$LOG_DIR/train_console.log"
 
 # Copy log file to MLCube log folder
@@ -97,6 +98,6 @@ echo "ENDING TIMING RUN AT $end_fmt"
 
 # report result
 result=$(($end - $start))
-result_name="IMAGE_CLASSIFICATION"
+result_name="IMAGE_CLASSIFICATION_DEMO"
 
 echo "RESULT,$result_name,,$result,nvidia,$start_fmt"

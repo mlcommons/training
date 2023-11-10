@@ -26,7 +26,7 @@ tasks:
     entrypoint: ./process_data.sh -a
     parameters:
       inputs:
-        data_dir: data/tiny-imagenet-200/
+        data_dir: ILSVRC/Data/DET/
       outputs:
         processed_data_dir: tfdata/
   train:
@@ -37,6 +37,14 @@ tasks:
       outputs:
         log_dir: logs/
         output_model_dir: output_model/
+  demo:
+    entrypoint: ./run_demo.sh -a
+    parameters:
+      inputs:
+        data_dir: data/tfdata/train/
+      outputs:
+        log_dir: demo_logs/
+        output_model_dir: output_demo/
   check_logs:
     entrypoint: ./check_logs.sh -a
     parameters:
