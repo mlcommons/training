@@ -1,5 +1,4 @@
-ARG FROM_IMAGE_NAME=pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
-#ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:21.02-py3
+ARG FROM_IMAGE_NAME=pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
 FROM ${FROM_IMAGE_NAME}
 
 ADD . /workspace/unet3d

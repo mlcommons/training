@@ -64,7 +64,7 @@ arXiv preprint arXiv:1904.00445 (2019).
     ```bash
     mkdir data
     mkdir results
-    docker run --ipc=host -it --rm --runtime=nvidia -v RAW-DATA-DIR:/raw_data -v PREPROCESSED-DATA-DIR:/data -v RESULTS-DIR:/results unet3d:latest /bin/bash
+    docker run --ipc=host -it --rm --gpus all -v RAW-DATA-DIR:/raw_data -v PREPROCESSED-DATA-DIR:/data -v RESULTS-DIR:/results unet3d:latest /bin/bash
     ```
  
 3. Preprocess the dataset.
@@ -76,11 +76,26 @@ arXiv preprint arXiv:1904.00445 (2019).
    
     The script will preprocess each volume and save it as a numpy array at `/data`. It will also display some statistics like the volume shape, mean and stddev of the voxel intensity. Also, it will run a checksum on each file comparing it with the source.
 
+4. Build PyTorch and TorchVision:
+
+    We have not made any functional changes to the libraries which means PyTorch and TorchVision can be built as per the instructions. 
+    If there's an issue during the build of these libraries, it has nothing to do with our instrumentation.
+
+    1. The container image already has conda installed so simply create a new environment.
+    2. Install PyTorch before TorchVision because during TorchVision build if PyTorch is not found to be already installed then it will install from the public pytorch channel instead of using our build. 
+    3. Install PyTorch from https://github.com/rajveerb/pytorch.git using branch `v2.0.0_instrumentation`
+    4. Install TorchVision from https://github.com/rajveerb/vision.git using branch `v0.15_instrumentation`
+    5. You're all set!
+
+
 ## Steps to run and time
 
 The basic command to run on 1 worker takes form:
 ```bash
+#Use below for no logging
 bash run_and_time.sh <SEED>
+#Use below for logging, note: below works only for training case not for validation although it can be easily extended
+bash run_and_time.sh <SEED> <LOG_FILE_PATH>
 ```
 
 The script assumes that the data is available at `/data` directory.

@@ -16,6 +16,7 @@ LR_WARMUP_EPOCHS=200
 DATASET_DIR="/data"
 BATCH_SIZE=2
 GRADIENT_ACCUMULATION_STEPS=1
+LOG_FILE_PATH=${2}
 
 
 if [ -d ${DATASET_DIR} ]
@@ -31,7 +32,21 @@ from mlperf_logging.mllog import constants
 from runtime.logging import mllog_event
 mllog_event(key=constants.CACHE_CLEAR, value=True)"
 
-  python main.py --data_dir ${DATASET_DIR} \
+if [ $# -eq 2 ]; then 
+	python main.py --data_dir ${DATASET_DIR} \
+    --epochs ${MAX_EPOCHS} \
+    --evaluate_every ${EVALUATE_EVERY} \
+    --start_eval_at ${START_EVAL_AT} \
+    --quality_threshold ${QUALITY_THRESHOLD} \
+    --batch_size ${BATCH_SIZE} \
+    --optimizer sgd \
+    --ga_steps ${GRADIENT_ACCUMULATION_STEPS} \
+    --learning_rate ${LEARNING_RATE} \
+    --seed ${SEED} \
+    --lr_warmup_epochs ${LR_WARMUP_EPOCHS} \
+    --log_file ${LOG_FILE_PATH}
+else
+	python main.py --data_dir ${DATASET_DIR} \
     --epochs ${MAX_EPOCHS} \
     --evaluate_every ${EVALUATE_EVERY} \
     --start_eval_at ${START_EVAL_AT} \
@@ -42,6 +57,7 @@ mllog_event(key=constants.CACHE_CLEAR, value=True)"
     --learning_rate ${LEARNING_RATE} \
     --seed ${SEED} \
     --lr_warmup_epochs ${LR_WARMUP_EPOCHS}
+fi
 
 	# end timing
 	end=$(date +%s)

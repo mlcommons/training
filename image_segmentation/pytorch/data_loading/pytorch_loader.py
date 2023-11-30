@@ -5,12 +5,14 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 
-def get_train_transforms():
+def get_train_transforms(patch_size,oversampling,log_file):
+    load_image = LoadImage()
+    rand_crop = RandBalancedCrop(patch_size=patch_size, oversampling=oversampling)
     rand_flip = RandFlip()
     cast = Cast(types=(np.float32, np.uint8))
     rand_scale = RandomBrightnessAugmentation(factor=0.3, prob=0.1)
     rand_noise = GaussianNoise(mean=0.0, std=0.1, prob=0.1)
-    train_transforms = transforms.Compose([rand_flip, cast, rand_scale, rand_noise])
+    train_transforms = transforms.Compose([load_image,rand_crop,rand_flip, cast, rand_scale, rand_noise],log_transform_elapsed_time=log_file)
     return train_transforms
 
 
@@ -134,21 +136,28 @@ class GaussianNoise:
         return data
 
 
+class LoadImage:
+    def __init__(self):
+        pass
+    def __call__(self,data):
+        data = {"image": np.load(data['image']), "label": np.load(data['label'])}
+        return data
+
+
 class PytTrain(Dataset):
     def __init__(self, images, labels, **kwargs):
         self.images, self.labels = images, labels
-        self.train_transforms = get_train_transforms()
-        patch_size, oversampling = kwargs["patch_size"], kwargs["oversampling"]
+        patch_size, oversampling, log_file = kwargs["patch_size"], kwargs["oversampling"], kwargs["log_file"]
         self.patch_size = patch_size
-        self.rand_crop = RandBalancedCrop(patch_size=patch_size, oversampling=oversampling)
+        self.log_file=log_file
+        self.train_transforms = get_train_transforms(patch_size,oversampling,log_file)
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
-        data = {"image": np.load(self.images[idx]), "label": np.load(self.labels[idx])}
-        data = self.rand_crop(data)
-        data = self.train_transforms(data)
+        data = {"image": self.images[idx], "label": self.labels[idx]}
+        data = self.train_transforms(data,)
         return data["image"], data["label"]
 
 

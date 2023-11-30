@@ -45,3 +45,5 @@ PARSER.add_argument('--overlap', dest='overlap', type=float, default=0.5)
 PARSER.add_argument('--include_background', dest='include_background', action='store_true', default=False)
 PARSER.add_argument('--cudnn_benchmark', dest='cudnn_benchmark', action='store_true', default=False)
 PARSER.add_argument('--cudnn_deterministic', dest='cudnn_deterministic', action='store_true', default=False)
+
+PARSER.add_argument('--log_file', type=str, help='File path to log preprocessing related operations', default=None)
