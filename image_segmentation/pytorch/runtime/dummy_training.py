@@ -61,6 +61,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
     for callback in callbacks:
         callback.on_fit_start()
 
+    counts = {}
     while not diverged and not is_successful:
         mllog_start(key=CONSTANTS.BLOCK_START, sync=False,
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,
@@ -81,6 +82,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
 
             iteration += 1
             print(total_samples)
+            for b in batch:
+                print(*b)
 
 
         # Evaluation
