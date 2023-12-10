@@ -53,9 +53,6 @@ def main():
     train_dataloader, val_dataloader = get_data_loaders(flags, num_shards=world_size, global_rank=local_rank)
     samples_per_epoch = world_size * len(train_dataloader) * flags.batch_size
     mllog_event(key='samples_per_epoch', value=samples_per_epoch, sync=False)
-    flags.evaluate_every = flags.evaluate_every or ceil(20*DATASET_SIZE/samples_per_epoch)
-    flags.start_eval_at = flags.start_eval_at or ceil(1000*DATASET_SIZE/samples_per_epoch)
-
     mllog_event(key=constants.GLOBAL_BATCH_SIZE, value=flags.batch_size * world_size * flags.ga_steps, sync=False)
     mllog_event(key=constants.GRADIENT_ACCUMULATION_STEPS, value=flags.ga_steps)
     loss_fn = DiceCELoss(to_onehot_y=True, use_softmax=True, layout=flags.layout,

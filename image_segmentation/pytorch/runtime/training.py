@@ -9,6 +9,10 @@ from runtime.inference import evaluate
 from runtime.logging import mllog_event, mllog_start, mllog_end, CONSTANTS
 
 
+START_EVAL_AT = 168*1000
+EVALUATE_EVERY = 168*20
+
+
 def get_optimizer(params, flags):
     if flags.optimizer == "adam":
         optim = Adam(params, lr=flags.learning_rate, weight_decay=flags.weight_decay)
@@ -55,7 +59,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
     diverged = False
     total_samples = 0
     iteration = 0
-    next_eval_at = flags.start_eval_at
+    next_eval_at = START_EVAL_AT
     model.train()
     train_loader = iter(train_loader)
     for callback in callbacks:
@@ -124,7 +128,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=False,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,
                             CONSTANTS.EPOCH_COUNT: next_eval_at})
-        next_eval_at += flags.evaluate_every
+        next_eval_at += EVALUATE_EVERY
 
 
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,
