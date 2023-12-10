@@ -77,49 +77,21 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             total_samples = flags.batch_size * world_size
 
             image, label = batch
-            image, label = image.to(device), label.to(device)
-            for callback in callbacks:
-                callback.on_batch_start()
+            # image, label = image.to(device), label.to(device)
 
-            with autocast(enabled=flags.amp):
-                output = model(image)
-                loss_value = loss_fn(output, label)
-                loss_value /= flags.ga_steps
-
-            if flags.amp:
-                scaler.scale(loss_value).backward()
-            else:
-                loss_value.backward()
-
-            if (iteration + 1) % flags.ga_steps == 0:
-                if flags.amp:
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    optimizer.step()
-
-                optimizer.zero_grad()
             iteration += 1
+            print(total_samples)
 
 
         # Evaluation
-
-        del output
         mllog_start(key=CONSTANTS.EVAL_START, value=total_samples,
                     metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
 
-        eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, total_samples)
 
-        mllog_event(key=CONSTANTS.EVAL_ACCURACY, value=eval_metrics["mean_dice"],
-                    metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
+
         mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
 
         model.train()
-        if eval_metrics["mean_dice"] >= flags.quality_threshold:
-            is_successful = True
-        elif eval_metrics["mean_dice"] < 1e-6:
-            print("MODEL DIVERGED. ABORTING.")
-            diverged = True
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=False,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,

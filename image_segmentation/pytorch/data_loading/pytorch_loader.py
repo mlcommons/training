@@ -143,7 +143,7 @@ class PytTrain(Dataset):
         self.rand_crop = RandBalancedCrop(patch_size=patch_size, oversampling=oversampling)
 
     def __len__(self):
-        return len(self.images)
+        return 1e9 #len(self.images)
 
     def __getitem__(self, idx):
         data = {"image": np.load(self.images[idx]), "label": np.load(self.labels[idx])}
