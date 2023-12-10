@@ -38,9 +38,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
     torch.backends.cudnn.deterministic = flags.cudnn_deterministic
 
     optimizer = get_optimizer(model.parameters(), flags)
-    if flags.lr_decay_epochs:
+    if flags.lr_decay_samples:
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                         milestones=flags.lr_decay_epochs,
+                                                         milestones=flags.lr_decay_samples,
                                                          gamma=flags.lr_decay_factor)
     scaler = GradScaler()
 
@@ -67,7 +67,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                               CONSTANTS.EPOCH_COUNT: next_eval_at})
 
         while total_samples < next_eval_at:
-            if total_samples <= flags.lr_warmup_epochs * samples_per_epoch and flags.lr_warmup_epochs > 0:
+            if total_samples <= flags.lr_warmup_samples and flags.lr_warmup_samples > 0:
                 lr_warmup(optimizer, flags.init_learning_rate, flags.learning_rate, total_samples, flags.lr_warmup_samples)
 
             optimizer.zero_grad()

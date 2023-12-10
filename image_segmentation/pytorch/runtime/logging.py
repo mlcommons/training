@@ -83,9 +83,9 @@ def mlperf_submission_log():
 def mlperf_run_param_log(flags):
     mllog_event(key=mllog.constants.OPT_NAME, value=flags.optimizer)
     mllog_event(key=mllog.constants.OPT_BASE_LR, value=flags.learning_rate)
-    mllog_event(key=mllog.constants.OPT_LR_WARMUP_EPOCHS, value=flags.lr_warmup_epochs)
+    mllog_event(key=mllog.constants.OPT_LR_WARMUP_EPOCHS, value=flags.lr_warmup_samples)
     # mllog_event(key=mllog.constants.OPT_LR_WARMUP_FACTOR, value=flags.lr_warmup_factor)
-    mllog_event(key=mllog.constants.OPT_LR_DECAY_BOUNDARY_EPOCHS, value=flags.lr_decay_epochs)
+    mllog_event(key=mllog.constants.OPT_LR_DECAY_BOUNDARY_EPOCHS, value=flags.lr_decay_samples)
     mllog_event(key=mllog.constants.OPT_LR_DECAY_FACTOR, value=flags.lr_decay_factor)
     mllog_event(key=mllog.constants.OPT_WEIGHT_DECAY, value=flags.weight_decay)
     mllog_event(key="opt_momentum", value=flags.momentum)
