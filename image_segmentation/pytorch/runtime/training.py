@@ -71,7 +71,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                               CONSTANTS.EPOCH_COUNT: next_eval_at})
 
         while total_samples < next_eval_at:
-            if total_samples <= flags.lr_warmup_samples and flags.lr_warmup_epochs > 0:
+            if total_samples <= flags.lr_warmup_samples and flags.lr_warmup_samples > 0:
                 lr_warmup(optimizer, flags.init_learning_rate, flags.learning_rate, total_samples, flags.lr_warmup_samples)
 
             optimizer.zero_grad()

@@ -8,8 +8,7 @@ from model.losses import DiceCELoss, DiceScore
 
 from data_loading.data_loader import get_data_loaders
 
-# from runtime.training import train
-from runtime.dummy_training import train
+from runtime.training import train
 from runtime.inference import evaluate
 from runtime.arguments import PARSER
 from runtime.distributed_utils import init_distributed, get_world_size, get_device, is_main_process, get_rank
