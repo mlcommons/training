@@ -1,4 +1,5 @@
 from tqdm import tqdm
+from time import time
 
 import torch
 from torch.optim import Adam, SGD
@@ -34,18 +35,21 @@ def lr_warmup(optimizer, init_lr, lr, current_samples, warmup_samples):
         param_group['lr'] = init_lr + (lr - init_lr) * scale
 
 
-def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks,
-          is_distributed, samples_per_epoch):
-    rank = get_rank()
+def lr_decay(optimizer, lr_decay_samples, lr_decay_factor, total_samples):
+    if total_samples > lr_decay_samples[0]:
+        lr_decay_samples = lr_decay_samples[1:]
+        for param_group in optimizer.param_groups:
+            param_group['lr'] *= lr_decay_factor
+    return lr_decay_samples
+
+
+def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
+
     world_size = get_world_size()
     torch.backends.cudnn.benchmark = flags.cudnn_benchmark
     torch.backends.cudnn.deterministic = flags.cudnn_deterministic
 
     optimizer = get_optimizer(model.parameters(), flags)
-    if flags.lr_decay_samples:
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                         milestones=flags.lr_decay_samples,
-                                                         gamma=flags.lr_decay_factor)
     scaler = GradScaler()
 
     model.to(device)
@@ -59,7 +63,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
     diverged = False
     total_samples = 0
     iteration = 0
-    next_eval_at = START_EVAL_AT
+    lr_decay_samples = flags.lr_decay_samples
+    next_eval_at = EVALUATE_EVERY
     model.train()
     train_loader = iter(train_loader)
     for callback in callbacks:
@@ -70,15 +75,17 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,
                               CONSTANTS.EPOCH_COUNT: next_eval_at})
 
+        t0 = time()
         while total_samples < next_eval_at:
             if total_samples <= flags.lr_warmup_samples and flags.lr_warmup_samples > 0:
                 lr_warmup(optimizer, flags.init_learning_rate, flags.learning_rate, total_samples, flags.lr_warmup_samples)
+            if len(flags.lr_decay_samples) > 0:
+                lr_decay_samples = lr_decay(optimizer, lr_decay_samples, flags.lr_decay_factor, total_samples)
 
             optimizer.zero_grad()
-            # for iteration, batch in enumerate(tqdm(train_loader, disable=(rank != 0) or not flags.verbose)):
 
             batch = next(train_loader)
-            total_samples = flags.batch_size * world_size
+            total_samples += flags.batch_size * world_size
 
             image, label = batch
             image, label = image.to(device), label.to(device)
@@ -105,34 +112,34 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                 optimizer.zero_grad()
             iteration += 1
 
-
+        print(f"Throughput: {round(EVALUATE_EVERY / (time() - t0), 2)} samples/s. Time {time() - t0}")
         # Evaluation
-
         del output
-        mllog_start(key=CONSTANTS.EVAL_START, value=total_samples,
-                    metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
+        if total_samples >= START_EVAL_AT:
+            mllog_start(key=CONSTANTS.EVAL_START, value=total_samples,
+                        metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
 
-        eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, total_samples)
+            eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, total_samples)
 
-        mllog_event(key=CONSTANTS.EVAL_ACCURACY, value=eval_metrics["mean_dice"],
-                    metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
-        mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
+            mllog_event(key=CONSTANTS.EVAL_ACCURACY, value=eval_metrics["mean_dice"],
+                        metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
+            mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: total_samples}, sync=False)
 
-        model.train()
-        if eval_metrics["mean_dice"] >= flags.quality_threshold:
-            is_successful = True
-        elif eval_metrics["mean_dice"] < 1e-6:
-            print("MODEL DIVERGED. ABORTING.")
-            diverged = True
+            model.train()
+            if eval_metrics["mean_dice"] >= flags.quality_threshold:
+                is_successful = True
+            elif eval_metrics["mean_dice"] < 1e-6:
+                print("MODEL DIVERGED. ABORTING.")
+                diverged = True
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=False,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,
                             CONSTANTS.EPOCH_COUNT: next_eval_at})
         next_eval_at += EVALUATE_EVERY
 
-
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,
               metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if is_successful else CONSTANTS.ABORTED,
                         CONSTANTS.EPOCH_COUNT: total_samples})
+
     for callback in callbacks:
         callback.on_fit_end()
