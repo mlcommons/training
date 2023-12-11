@@ -50,8 +50,6 @@ def main():
     mllog_end(key=constants.INIT_STOP, sync=True)
     mllog_start(key=constants.RUN_START, sync=True)
     train_dataloader, val_dataloader = get_data_loaders(flags, num_shards=world_size, global_rank=local_rank)
-    # samples_per_epoch = world_size * len(train_dataloader) * flags.batch_size
-    # mllog_event(key='samples_per_epoch', value=samples_per_epoch, sync=False)
     mllog_event(key=constants.GLOBAL_BATCH_SIZE, value=flags.batch_size * world_size * flags.ga_steps, sync=False)
     mllog_event(key=constants.GRADIENT_ACCUMULATION_STEPS, value=flags.ga_steps)
     loss_fn = DiceCELoss(to_onehot_y=True, use_softmax=True, layout=flags.layout,
@@ -61,7 +59,7 @@ def main():
 
     if flags.exec_mode == 'train':
         train(flags, model, train_dataloader, val_dataloader, loss_fn, score_fn,
-              device=device, callbacks=callbacks, is_distributed=is_distributed, samples_per_epoch=samples_per_epoch)
+              device=device, callbacks=callbacks, is_distributed=is_distributed)
 
     elif flags.exec_mode == 'evaluate':
         eval_metrics = evaluate(flags, model, val_dataloader, loss_fn, score_fn,
