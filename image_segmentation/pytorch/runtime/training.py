@@ -36,7 +36,7 @@ def lr_warmup(optimizer, init_lr, lr, current_samples, warmup_samples):
 
 
 def lr_decay(optimizer, lr_decay_samples, lr_decay_factor, total_samples):
-    if total_samples > lr_decay_samples[0]:
+    if len(lr_decay_samples) > 0 and total_samples > lr_decay_samples[0]:
         lr_decay_samples = lr_decay_samples[1:]
         for param_group in optimizer.param_groups:
             param_group['lr'] *= lr_decay_factor
@@ -73,7 +73,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
     while not diverged and not is_successful:
         mllog_start(key=CONSTANTS.BLOCK_START, sync=False,
                     metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,
-                              CONSTANTS.EPOCH_COUNT: next_eval_at})
+                              CONSTANTS.EPOCH_COUNT: EVALUATE_EVERY})
 
         t0 = time()
         while total_samples < next_eval_at:
@@ -112,7 +112,6 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                 optimizer.zero_grad()
             iteration += 1
 
-        print(f"Throughput: {round(EVALUATE_EVERY / (time() - t0), 2)} samples/s. Time {time() - t0}")
         # Evaluation
         del output
         if total_samples >= START_EVAL_AT:
@@ -134,7 +133,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=False,
                   metadata={CONSTANTS.FIRST_EPOCH_NUM: total_samples,
-                            CONSTANTS.EPOCH_COUNT: next_eval_at})
+                            CONSTANTS.EPOCH_COUNT: EVALUATE_EVERY})
         next_eval_at += EVALUATE_EVERY
 
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,

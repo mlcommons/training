@@ -20,7 +20,6 @@ DATASET_SIZE = 168
 
 
 def main():
-    mllog.config(filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unet3d.log'))
     mllog.config(filename=os.path.join("/results", 'unet3d.log'))
     mllogger = mllog.get_mllogger()
     mllogger.logger.propagate = False
