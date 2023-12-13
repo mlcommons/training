@@ -27,8 +27,6 @@ tasks:
     parameters:
       inputs:
         data_dir: data/
-      outputs:
-        processed_data_dir: data/
   train:
     entrypoint: ./run_and_time.sh -a
     parameters:

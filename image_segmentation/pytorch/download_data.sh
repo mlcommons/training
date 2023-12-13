@@ -14,6 +14,8 @@ done
 
 git clone https://github.com/neheller/kits19
 cd kits19
-ln -s $DATASET_PATH kits19/data
+cp -r data/* $DATASET_PATH
+rm -r data/
+ln -s $DATASET_PATH data
 pip install -r requirements.txt
 python -m starter_code.get_imaging
