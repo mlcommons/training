@@ -14,7 +14,7 @@ docker:
   # Docker file name within docker build context, default is `Dockerfile`.
   build_file: "Dockerfile"
   # GPU arguments
-  gpu_args: "--gpus=all"
+  gpu_args: "--shm-size=1g --gpus=all"
 
 tasks:
   download_data:
@@ -27,10 +27,24 @@ tasks:
     parameters:
       inputs:
         data_dir: data/
+      outputs:
+        processed_data: processed_data/
   train:
-    entrypoint: ./run_and_time.sh -a
+    entrypoint: ./run_mlcube.sh -a
     parameters:
       inputs:
-        data_dir: data/
+        dataset_dir: processed_data/
       outputs:
         log_dir: logs/
+  download_demo:
+    entrypoint: ./download_demo.sh -a
+    parameters:
+      outputs:
+        data_dir: demo_data/
+  demo:
+    entrypoint: ./run_demo.sh -a
+    parameters:
+      inputs:
+        dataset_dir: demo_data/
+      outputs:
+        log_dir: demo_logs/

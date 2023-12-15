@@ -58,7 +58,7 @@ class Preprocessor:
     def preprocess_dataset(self):
         os.makedirs(self.results_dir, exist_ok=True)
         print(f"Preprocessing {self.data_dir}")
-        for case in sorted([f for f in os.listdir(self.data_dir) if "case" in f]):
+        for case in tqdm(sorted([f for f in os.listdir(self.data_dir) if "case" in f])):
             case_id = int(case.split("_")[1])
             if case_id in EXCLUDED_CASES or case_id >= MAX_ID:
                 print("Case {}. Skipped.".format(case_id))

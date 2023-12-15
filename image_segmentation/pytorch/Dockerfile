@@ -5,8 +5,7 @@ FROM ${FROM_IMAGE_NAME}
 
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y git
-RUN apt-get install -y vim
+    apt-get install -y git vim wget unzip
 
 RUN pip install --upgrade pip
 COPY requirements.txt /
