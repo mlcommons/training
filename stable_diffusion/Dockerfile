@@ -7,7 +7,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update
 RUN apt-get install -y ffmpeg libsm6 libxext6
 
+# pip dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 # install LDM
-COPY . /diffusion
-RUN cd /diffusion && \
-    pip install --no-cache-dir -r requirements.txt
+ADD . /diffusion
+RUN chmod +x /diffusion/*.sh
+WORKDIR /diffusion

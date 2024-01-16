@@ -1,0 +1,37 @@
+name: stable_diffusion
+description: Stable Diffusion benchmark
+authors:
+  - { name: "MLCommons Best Practices Working Group" }
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/stable_diffusion:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile"
+
+tasks:
+  download_data:
+    entrypoint: ./scripts/datasets/mlcube_data.sh -a
+    parameters:
+      outputs:
+        laion_output_dir: data_laion/
+        coco_output_dir: data_coco/
+  download_models:
+    entrypoint: ./scripts/checkpoints/download_all.sh -a
+    parameters:
+      outputs:
+        output_sd: checkpoints/sd
+        output_inception: checkpoints/inception
+        output_clip: checkpoints/clip
+  train:
+    entrypoint: ./run_and_time.sh --gpus-per-node=1
+    parameters:
+      inputs:
+        checkpoint: checkpoints/sd/512-base-ema.ckpt
+      outputs:
+        results_dir: results/
