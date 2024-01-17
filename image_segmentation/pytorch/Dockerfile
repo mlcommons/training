@@ -1,11 +1,11 @@
-#ARG FROM_IMAGE_NAME=pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
-ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:23.04-py3
+ARG FROM_IMAGE_NAME=pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
+#ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:21.02-py3
 FROM ${FROM_IMAGE_NAME}
 
-#RUN apt-get update && \
-#    apt-get upgrade -y && \
-#    apt-get install -y git
-#RUN apt-get install -y vim
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y git
+RUN apt-get install -y vim
 
 ADD . /workspace/unet3d
 WORKDIR /workspace/unet3d
