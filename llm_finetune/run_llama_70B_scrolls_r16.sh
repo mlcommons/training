@@ -1,0 +1,24 @@
+accelerate launch --config_file configs/default_config.yaml scripts/train.py \
+--model_name meta-llama/Llama-2-70b-hf \
+--dataset_name "tau/scrolls" --dataset_config_name "gov_report" \
+--max_seq_len 8192 \
+--bf16 True \
+--logging_steps 1 \
+--eval_steps 22 \
+--save_steps 22 \
+--output_dir "./results/llama-70b_scrolls_gov_report_r16_$1" \
+--per_device_train_batch_size 1 \
+--gradient_accumulation_steps 1 \
+--dataset_text_field "input" \
+--lr_scheduler_type "cosine" \
+--learning_rate 1e-3 \
+--warmup_ratio 0.03 \
+--use_gradient_checkpointing True \
+--use_peft_lora True \
+--lora_r 16 \
+--lora_alpha 32 \
+--lora_dropout 0.1 \
+--max_steps 440 \
+--use_flash_attn \
+--seed "$1" \
+--lora_target_modules "q_proj,v_proj,k_proj,o_proj"
