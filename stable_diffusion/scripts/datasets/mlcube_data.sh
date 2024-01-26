@@ -20,7 +20,7 @@ mkdir -p ${LAION_OUTPUT_DIR}
 cd ${LAION_OUTPUT_DIR}
 
 
-for i in {00000..00831}; do wget -O ${LAION_OUTPUT_DIR}/${i}.tar -c "https://cloud.mlcommons.org/index.php/s/training_stable_diffusion/download?path=/datasets/laion-400m/moments-webdataset-filtered&files=${i}.tar"; done
+for i in {00000..00003}; do wget -O ${LAION_OUTPUT_DIR}/${i}.tar -c "https://cloud.mlcommons.org/index.php/s/training_stable_diffusion/download?path=/datasets/laion-400m/moments-webdataset-filtered&files=${i}.tar"; done
 
 wget -O ${LAION_OUTPUT_DIR}/sha512sums.txt -c "https://cloud.mlcommons.org/index.php/s/training_stable_diffusion/download?path=/datasets/laion-400m/moments-webdataset-filtered&files=sha512sums.txt"
 

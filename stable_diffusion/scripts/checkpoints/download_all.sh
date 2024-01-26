@@ -21,6 +21,6 @@ while [ $# -gt 0 ]; do
 done
 
 cd "$(dirname "$0")"
-download_sd.sh --output-dir $OUTPUT_SD
-download_inception.sh --output-dir $OUTPUT_INCEPTION
-download_clip.sh --output-dir $OUTPUT_CLIP
+bash download_sd.sh --output-dir $OUTPUT_SD
+bash download_inception.sh --output-dir $OUTPUT_INCEPTION
+bash download_clip.sh --output-dir $OUTPUT_CLIP
