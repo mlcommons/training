@@ -25,7 +25,7 @@ model:
 
     validation_config:
       sampler: "ddim" # plms, ddim, dpm
-      steps: 50
+      steps: 10
       scale: 8.0
       ddim_eta: 0.0
       prompt_key: "caption"
@@ -137,7 +137,7 @@ lightning:
     log_every_n_steps: 1
     enable_progress_bar: False
     max_epochs: 2
-    max_steps: 5
+    max_steps: 2
     val_check_interval: 1
     enable_checkpointing: True
     num_sanity_val_steps: 0
