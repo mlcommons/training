@@ -22,4 +22,4 @@ diffusers==0.14.0
 cloudpathlib==0.13.0
 git+https://github.com/facebookresearch/xformers.git@5eb0dbf315d14b5f7b38ac2ff3d8379beca7df9b#egg=xformers
 bitsandbytes==0.37.2
-git+https://github.com/mlcommons/logging.git@8405a08bbfc724f8888c419461c02d55a6ac960c
+git+https://github.com/ahmadki/logging.git@6328dfcd04a1bda8ae5b3e4f1f586e9037d42ddf
