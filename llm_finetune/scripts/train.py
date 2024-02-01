@@ -106,7 +106,7 @@ class ScriptArguments:
         default=6, metadata={"help": "Log every X updates steps."}
     )
     target_eval_loss: float = field(
-        default=1.19, metadata={"help": "target eval loss - NOT FINAL."}
+        default=0.92, metadata={"help": "target eval loss - NOT FINAL."}
     )
     output_dir: str = field(
         default="results", metadata={"help": "Where to store the final model."}
