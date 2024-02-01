@@ -20,6 +20,7 @@ from typing import Optional
 import os
 from transformers import HfArgumentParser, TrainingArguments, Trainer
 from transformers.modeling_utils import unwrap_model
+from mlperf_logging_utils import MLPerfCallback,LoraLogger,submission_info
 from utils import (
     create_and_prepare_model,
     create_datasets,
@@ -100,9 +101,12 @@ class ScriptArguments:
     save_steps: int = field(
         default=10, metadata={"help": "Save checkpoint every X updates steps."}
     )
-    eval_steps: int = field(default=10, metadata={"help": "Eval model every X steps."})
+    eval_steps: int = field(default=24, metadata={"help": "Eval model every X steps."})
     logging_steps: int = field(
-        default=10, metadata={"help": "Log every X updates steps."}
+        default=6, metadata={"help": "Log every X updates steps."}
+    )
+    target_eval_loss: float = field(
+        default=1.19, metadata={"help": "target eval loss - NOT FINAL."}
     )
     output_dir: str = field(
         default="results", metadata={"help": "Where to store the final model."}
@@ -180,6 +184,15 @@ def main(args):
     # datasets
     train_dataset, eval_dataset = create_datasets(tokenizer, args)
 
+    loralogger=LoraLogger(target_eval_loss=args.target_eval_loss)
+    submission_info(loralogger,
+                    submission_benchmark="llm-finetuning",
+                    submission_division="Closed",
+                    submission_org="referece",
+                    submission_platform="referece",
+                    submission_poc_name="referece",
+                    submission_poc_email="referece",
+                    submission_status="referece")
 
     # trainer
     trainer = Trainer(
@@ -187,6 +200,7 @@ def main(args):
         args=training_arguments,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        callbacks=[MLPerfCallback(loralogger)],
     )
     trainer.accelerator.print(f"{trainer.model}")
     if args.use_peft_lora:

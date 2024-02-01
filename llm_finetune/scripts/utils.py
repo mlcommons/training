@@ -158,22 +158,34 @@ def create_datasets(tokenizer, args):
     valid_dataset = dataset["validation"]
     column_names = train_dataset.features
 
-    def tokenize_function(example):
+    def tokenize_function(example,eval=False):
         output_texts = []
+        mask_labels_sizes=[]
         for i in range(len(example["input"])):
             if 'gov_report' in args.dataset_config_name:
                 output_texts.append(
                     f"### Summarize the following text:\n {example['input'][i]}\n ### Summary:\n {example['output'][i]}{tokenizer.eos_token}"
                 )
+                if eval:
+                    mask_labels_sizes.append(f"### Summarize the following text:\n {example['input'][i]}\n ### Summary:\n")
             else:
                 output_texts.append(
                     f"### {example['input'][i]}\n ### The answer is:\n {example['output'][i]}{tokenizer.eos_token}"
                )
-        input_ids = tokenizer(
-            output_texts, padding="max_length", max_length=8192
-        ).input_ids
+            
+        input_ids = tokenizer(output_texts).input_ids
 
-        return {"input_ids": input_ids}
+        if eval:
+            labels_ids = tokenizer(mask_labels_sizes).input_ids
+            masked_labels=[]
+            for out,lb in zip(input_ids,labels_ids):
+                ml=out.copy()
+                ml[:len(lb)]=[-100]*len(lb)
+                ml[-1]=-100
+                masked_labels.append(ml)
+            return {"input_ids": input_ids,"labels": masked_labels}
+        else:
+            return {"input_ids": input_ids}
 
     train_dataset = train_dataset.map(
         tokenize_function,
@@ -182,7 +194,7 @@ def create_datasets(tokenizer, args):
         remove_columns=column_names,
     )
     valid_dataset = valid_dataset.map(
-        tokenize_function,
+        partial(tokenize_function,eval=True),
         batched=True,
         num_proc=2,
         remove_columns=column_names,
@@ -208,23 +220,25 @@ def create_datasets(tokenizer, args):
         filter_function,
         batched=True,
         # with_indices=True,
-        num_proc=8,
+        num_proc=2,
         # remove_columns=column_names,
     )
-
-    if args.use_flash_attn:
-        packing_method = partial(group_texts, block_size=args.max_seq_length)
-        # Packing
-        train_dataset = train_dataset.map(
-            packing_method,
-            batched=True,
-            num_proc=8,
-        )
-        valid_dataset = valid_dataset.map(
-            packing_method,
-            batched=True,
-            num_proc=8,
-        )
+    print(
+        f"Before packing, Size of the train set: {len(train_dataset)}. Size of the validation set: {len(valid_dataset)}"
+    )
+    
+    packing_method = partial(group_texts, block_size=args.max_seq_length)
+    # Packing
+    train_dataset = train_dataset.map(
+        packing_method,
+        batched=True,
+        num_proc=8,
+    )
+    valid_dataset = valid_dataset.map(
+        packing_method,
+        batched=True,
+        num_proc=2,
+    )
 
     print(
         f"Size of the train set: {len(train_dataset)}. Size of the validation set: {len(valid_dataset)}"
