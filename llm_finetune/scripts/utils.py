@@ -5,6 +5,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 import warnings
 from peft import LoraConfig, get_peft_model,prepare_model_for_kbit_training
+import yaml
 
 from peft.tuners.lora import LoraLayer
 from transformers import (
@@ -247,6 +248,10 @@ def create_datasets(tokenizer, args):
 
     return train_dataset, valid_dataset
 
+def world_size_from_yaml(yaml_path):
+    with open(yaml_path, 'r') as f:
+        data = yaml.load(f, Loader=yaml.SafeLoader)
+    return data['num_machines']*data['num_processes']
 
 def create_and_prepare_model(args):
     device_map = None

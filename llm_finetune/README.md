@@ -35,7 +35,11 @@ Then, you will need to be connected to your Hugging Face account with a read tok
 ```
 huggingface-cli login
 ```
-
+Finally please install mlperf logger:
+```
+git clone https://github.com/mlperf/logging.git mlperf-logging
+pip install -e mlperf-logging
+```
 
 ## Llama2-70B on 8 devices
 

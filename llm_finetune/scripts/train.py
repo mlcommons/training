@@ -20,10 +20,11 @@ from typing import Optional
 import os
 from transformers import HfArgumentParser, TrainingArguments, Trainer
 from transformers.modeling_utils import unwrap_model
-from mlperf_logging_utils import MLPerfCallback,LoraLogger,submission_info
+from mlperf_logging_utils import MLPerfCallback,LoraLogger,submission_info,general_info,optimization_info
 from utils import (
     create_and_prepare_model,
     create_datasets,
+    world_size_from_yaml,
     SaveDeepSpeedPeftModelCallback,
     peft_module_casting_to_bf16,
 )
@@ -146,6 +147,15 @@ class ScriptArguments:
 
 
 def main(args):
+    loralogger=LoraLogger(target_eval_loss=args.target_eval_loss)
+    submission_info(loralogger,
+                    submission_benchmark="llm-finetuning",
+                    submission_division="Closed",
+                    submission_org="referece",
+                    submission_platform="referece",
+                    submission_poc_name="referece",
+                    submission_poc_email="referece",
+                    submission_status="referece")    
     # training arguments
     is_deepspeed_peft_enabled = (
         os.environ.get("ACCELERATE_USE_DEEPSPEED", "False").lower() == "true"
@@ -176,23 +186,17 @@ def main(args):
         report_to="tensorboard",
         seed=args.seed,
     )
-
+    
     # model
     model, peft_config, tokenizer = create_and_prepare_model(args)
     model.config.use_cache = False
 
     # datasets
     train_dataset, eval_dataset = create_datasets(tokenizer, args)
+    world_size = world_size_from_yaml(args.config_path)
+    general_info(loralogger,args,world_size=world_size,eval_samples=len(eval_dataset),train_samples=len(train_dataset))
+    optimization_info(loralogger,args)
 
-    loralogger=LoraLogger(target_eval_loss=args.target_eval_loss)
-    submission_info(loralogger,
-                    submission_benchmark="llm-finetuning",
-                    submission_division="Closed",
-                    submission_org="referece",
-                    submission_platform="referece",
-                    submission_poc_name="referece",
-                    submission_poc_email="referece",
-                    submission_status="referece")
 
     # trainer
     trainer = Trainer(

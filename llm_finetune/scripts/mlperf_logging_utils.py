@@ -61,13 +61,29 @@ def submission_info(mllogger: LoraLogger,
                     submission_benchmark: str, submission_division: str, submission_org: str, submission_platform: str,
                     submission_poc_name: str, submission_poc_email: str, submission_status: str):
     """Logs required for a valid MLPerf submission."""
-    mllogger.event(key=constants.SUBMISSION_BENCHMARK, value=submission_benchmark)
-    mllogger.event(key=constants.SUBMISSION_DIVISION, value=submission_division)
-    mllogger.event(key=constants.SUBMISSION_ORG, value=submission_org)
-    mllogger.event(key=constants.SUBMISSION_PLATFORM, value=submission_platform)
-    mllogger.event(key=constants.SUBMISSION_POC_NAME, value=submission_poc_name)
-    mllogger.event(key=constants.SUBMISSION_POC_EMAIL, value=submission_poc_email)
-    mllogger.event(key=constants.SUBMISSION_STATUS, value=submission_status)
+    if mllogger.rank==0:
+        mllogger.event(key=constants.SUBMISSION_BENCHMARK, value=submission_benchmark)
+        mllogger.event(key=constants.SUBMISSION_DIVISION, value=submission_division)
+        mllogger.event(key=constants.SUBMISSION_ORG, value=submission_org)
+        mllogger.event(key=constants.SUBMISSION_PLATFORM, value=submission_platform)
+        mllogger.event(key=constants.SUBMISSION_POC_NAME, value=submission_poc_name)
+        mllogger.event(key=constants.SUBMISSION_POC_EMAIL, value=submission_poc_email)
+        mllogger.event(key=constants.SUBMISSION_STATUS, value=submission_status)
+
+def general_info(mllogger: LoraLogger,args,world_size,eval_samples,train_samples):
+    if mllogger.rank==0:
+        mllogger.event(key=constants.GLOBAL_BATCH_SIZE, value=args.per_device_train_batch_size*args.gradient_accumulation_steps*world_size)
+        mllogger.event(key=constants.TRAIN_SAMPLES, value=train_samples)
+        mllogger.event(key=constants.EVAL_SAMPLES, value=eval_samples)
+        mllogger.event(key=constants.SEED, value=args.seed)
+
+def optimization_info(mllogger: LoraLogger,args):
+    """Logs required for a valid MLPerf submission."""
+    if mllogger.rank==0:
+        mllogger.event(key=constants.OPT_LR_WARMUP_FACTOR, value=args.warmup_ratio)
+        mllogger.event(key=constants.OPT_LR_TRAINING_STEPS, value=args.max_steps)
+        mllogger.event(key=constants.OPT_BASE_LR, value=args.learning_rate)
+        #mllogger.event(key=constants.OPT_LAMB_BETA_1, value=args.beta1)
 
 class MLPerfCallback(TrainerCallback):
     "A callback that prints a message at the beginning of training"
