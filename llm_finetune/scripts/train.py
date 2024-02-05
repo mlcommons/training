@@ -67,6 +67,10 @@ class ScriptArguments:
         default="tau/scrolls",
         metadata={"help": "The preference dataset to use."},
     )
+    config_path: Optional[str] = field(
+        default="./configs/default_config.yaml",
+        metadata={"help": "path to model config"},
+    )    
     num_train_epochs: Optional[int] = field(
         default=1,
         metadata={"help": "The number of training epochs for the reward model."},
