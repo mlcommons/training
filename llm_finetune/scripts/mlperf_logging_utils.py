@@ -99,7 +99,7 @@ class MLPerfCallback(TrainerCallback):
         Event called at the beginning of a training step. If using gradient accumulation, one training step might take
         several inputs.
         """
-        if state.global_step % (state.logging_steps) == 0 and state.global_step > 0:
+        if state.global_step % (state.logging_steps) == 0 and state.global_step > 0 and not state.global_step % (state.eval_steps) == 0:
             self.mllogger.event('train_loss',value=state.log_history[-1]['loss'],metadata={"steps":state.log_history[-1]['step']})
             control.should_log = True
             
