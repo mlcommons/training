@@ -166,6 +166,7 @@ Evaluation on the validation subset that consists of 24567 examples.
 ### S3 artifacts download
 The dataset and the checkpoints are available to download from an S3 bucket. You can download this data from the bucket using Rclone as follows:
 
+To install Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
 To install Rclone on Linux/macOS/BSD systems, run:
 ```
 sudo -v ; curl https://rclone.org/install.sh | sudo bash
