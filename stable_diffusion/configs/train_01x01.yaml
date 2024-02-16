@@ -25,14 +25,14 @@ model:
 
     validation_config:
       sampler: "ddim" # plms, ddim, dpm
-      steps: 10
+      steps: 50
       scale: 8.0
       ddim_eta: 0.0
       prompt_key: "caption"
       image_fname_key: "image_id"
 
       save_images:
-        enabled: True
+        enabled: False
         base_output_dir: "/results/inference"
       fid:
         enabled: True
@@ -47,8 +47,8 @@ model:
     scheduler_config:
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [ 100 ]
-        cycle_lengths: [ 100 ] # incredibly large number to prevent corner cases
+        warm_up_steps: [ 1000 ]
+        cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
         f_start: [ 1.e-6 ]
         f_max: [ 1. ]
         f_min: [ 1. ]
@@ -134,10 +134,10 @@ lightning:
     devices: 8
     precision: 16
     logger: False
-    log_every_n_steps: 2
+    log_every_n_steps: 10
     enable_progress_bar: False
-    max_epochs: 2
-    max_steps: 2
+    max_epochs: 1
+    max_steps: 1
     val_check_interval: 1
     enable_checkpointing: True
     num_sanity_val_steps: 0
@@ -149,5 +149,5 @@ lightning:
   modelcheckpoint:
     target: lightning.pytorch.callbacks.ModelCheckpoint
     params:
-      save_top_k: 1
-      every_n_train_steps: 1
+      save_top_k: -1
+      every_n_train_steps: 1000000000000

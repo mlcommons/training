@@ -8,7 +8,7 @@
 : "${COCO_DIR:=data_coco/}"
 : "${LAION_DIR:=data_laion/}"
 : "${RESULTS_DIR:=/results}"
-: "${CONFIG:=./configs/train_demo.yaml}"
+: "${CONFIG:=./configs/train_01x01.yaml}"
 
 
 while [ $# -gt 0 ]; do

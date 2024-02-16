@@ -8,7 +8,7 @@ platform:
 
 docker:
   # Image name.
-  image: mlcommons/stable_diffusion:0.0.1
+  image: dfjbtest/stable_diffusion:0.0.1
   # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
   build_context: "../"
   # Docker file name within docker build context, default is `Dockerfile`.
@@ -46,3 +46,15 @@ tasks:
         laion_dir: demo_data/data_laion/
       outputs:
         results_dir: results/
+  train:
+    entrypoint: ./run_train_mlcube.sh --gpus-per-node=1
+    parameters:
+      inputs:
+        checkpoint_sd: checkpoints/sd/512-base-ema.ckpt
+        checkpoint_clip: checkpoints/clip/
+        checkpoint_inception: checkpoints/inception/
+        coco_dir: coco2014/
+        laion_dir: laion-400m/moments-webdataset-filtered/
+      outputs:
+        results_dir: results/
+
