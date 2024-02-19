@@ -40,6 +40,8 @@ Finally please install mlperf logger:
 git clone https://github.com/mlperf/logging.git mlperf-logging
 pip install -e mlperf-logging
 ```
+## Download Data
+data can be downloaded from [mlperf drive](https://drive.google.com/drive/folders/1sfnK9m5FSQrWMqI2dajNTX2dxlJegR94)
 
 ## Llama2-70B on 8 devices
 

@@ -106,7 +106,7 @@ class MLPerfCallback(TrainerCallback):
         if state.global_step % (state.eval_steps) == 0 and state.global_step>0:
             self.mllogger.event('eval_loss',value=state.log_history[-1]['eval_loss'],metadata={"steps":state.log_history[-1]['step']})
             control.should_log = True
-            print(self.mllogger.target_eval_loss)
+            
         eval_loss_list=[sl['eval_loss'] for sl in state.log_history if 'eval_loss' in sl]
         if eval_loss_list and eval_loss_list[-1]<=self.mllogger.target_eval_loss: 
             control.should_training_stop = True

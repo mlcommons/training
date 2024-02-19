@@ -21,10 +21,13 @@ import os
 from transformers import HfArgumentParser, TrainingArguments, Trainer
 from transformers.modeling_utils import unwrap_model
 from mlperf_logging_utils import MLPerfCallback,LoraLogger,submission_info,general_info,optimization_info
+from datasets import load_dataset
+import numpy as np
+import functools
 from utils import (
     create_and_prepare_model,
-    create_datasets,
     world_size_from_yaml,
+    training_step,
     SaveDeepSpeedPeftModelCallback,
     peft_module_casting_to_bf16,
 )
@@ -63,9 +66,9 @@ class ScriptArguments:
         },
     )
 
-    dataset_name: Optional[str] = field(
-        default="tau/scrolls",
-        metadata={"help": "The preference dataset to use."},
+    dataset_path: Optional[str] = field(
+        default='./dataset.npy',
+        metadata={"help": "The path to the downloaded dataset."},
     )
     config_path: Optional[str] = field(
         default="./configs/default_config.yaml",
@@ -160,6 +163,7 @@ def main(args):
                     submission_poc_name="referece",
                     submission_poc_email="referece",
                     submission_status="referece")    
+    
     # training arguments
     is_deepspeed_peft_enabled = (
         os.environ.get("ACCELERATE_USE_DEEPSPEED", "False").lower() == "true"
@@ -196,7 +200,11 @@ def main(args):
     model.config.use_cache = False
 
     # datasets
-    train_dataset, eval_dataset = create_datasets(tokenizer, args)
+    #dataset = load_dataset("regisss/scrolls_gov_report_preprocessed_mlperf_2")
+    dataset = np.load(args.dataset_path,allow_pickle=True).tolist()
+    train_dataset, eval_dataset = dataset["train"], dataset["validation"]
+    #train_dataset, eval_dataset = create_datasets(tokenizer, args)
+    
     world_size = world_size_from_yaml(args.config_path)
     general_info(loralogger,args,world_size=world_size,eval_samples=len(eval_dataset),train_samples=len(train_dataset))
     optimization_info(loralogger,args)
@@ -210,6 +218,7 @@ def main(args):
         eval_dataset=eval_dataset,
         callbacks=[MLPerfCallback(loralogger)],
     )
+    trainer.training_step = functools.partial(training_step, trainer) 
     trainer.accelerator.print(f"{trainer.model}")
     if args.use_peft_lora:
         trainer.model.print_trainable_parameters()
