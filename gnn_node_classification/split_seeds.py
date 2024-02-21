@@ -48,7 +48,7 @@ if __name__ == '__main__':
   parser.add_argument("--random_seed", type=int, default='42')
   parser.add_argument('--num_classes', type=int, default=2983,
       choices=[19, 2983], help='number of classes')
-  parser.add_argument("--validation_frac", type=float, default=0.025,
+  parser.add_argument("--validation_frac", type=float, default=0.005,
       help="Fraction of labeled vertices to be used for validation.")
   
   args = parser.parse_args()
