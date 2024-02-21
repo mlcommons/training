@@ -40,8 +40,12 @@ Finally please install mlperf logger:
 git clone https://github.com/mlperf/logging.git mlperf-logging
 pip install -e mlperf-logging
 ```
-## Download Data
-data can be downloaded from [mlperf drive](https://drive.google.com/drive/folders/1sfnK9m5FSQrWMqI2dajNTX2dxlJegR94)
+## Download Data and Model
+data can be downloaded from:
+[mlperf drive - train data](https://drive.google.com/file/d/1-JgY1mEafcJ7qhggt6UR3OEKAciIPd5s/view?usp=sharing)
+[mlperf drive - validation data](https://drive.google.com/file/d/1jrm6Lacrq49AYv0uB_Qy22xRmfPixQvs/view?usp=sharing)
+[mlperf drive - llama-v2 model](https://drive.google.com/drive/folders/1sTeuxkPhwkNPKIPFnOLIYCcK53oB3Ypc?usp=sharing)
+As defaults the scripts assume the model is under at ```./llama-v2-fused-qkv``` and the both train and validation are under ```dataset``` folder.
 
 ## Llama2-70B on 8 devices
 

@@ -65,7 +65,12 @@ class ScriptArguments:
             "help": "The model that you want to train from the Hugging Face hub. E.g. gpt2, gpt2-xl, bert, etc."
         },
     )
-
+    model_path: Optional[str] = field(
+        default='./llama-v2-fused-qkv',
+        metadata={
+            "help": "Path to the model directory."
+        },
+    )
     dataset_path: Optional[str] = field(
         default='./dataset.npy',
         metadata={"help": "The path to the downloaded dataset."},
@@ -200,10 +205,13 @@ def main(args):
     model.config.use_cache = False
 
     # datasets
-    #dataset = load_dataset("regisss/scrolls_gov_report_preprocessed_mlperf_2")
-    dataset = np.load(args.dataset_path,allow_pickle=True).tolist()
+    ## ToDo uncomment once drive goes public
+    #train_url = "https://drive.google.com/file/d/1-JgY1mEafcJ7qhggt6UR3OEKAciIPd5s/view?usp=sharing" 
+    #eval_url =  "https://drive.google.com/file/d/1jrm6Lacrq49AYv0uB_Qy22xRmfPixQvs/view?usp=sharing" 
+    #dataset = load_dataset("parquet", data_files={'train': train_url, 'validation': eval_url})
+    dataset = load_dataset("parquet", data_files={'train': 'dataset/train-00000-of-00001.parquet', 'validation': 'dataset/validation-00000-of-00001.parquet'})
     train_dataset, eval_dataset = dataset["train"], dataset["validation"]
-    #train_dataset, eval_dataset = create_datasets(tokenizer, args)
+    
     
     world_size = world_size_from_yaml(args.config_path)
     general_info(loralogger,args,world_size=world_size,eval_samples=len(eval_dataset),train_samples=len(train_dataset))

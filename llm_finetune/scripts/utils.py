@@ -277,7 +277,7 @@ def create_and_prepare_model(args):
     device_map = None
 
     model = AutoModelForCausalLM.from_pretrained(
-        'regisss/llama2-70b-fused-qkv-mlperf',
+        args.model_path,
         device_map=device_map,
         use_cache=not args.use_gradient_checkpointing,
         trust_remote_code=True,
