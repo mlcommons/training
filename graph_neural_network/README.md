@@ -162,3 +162,10 @@ The validation accuracy is the target quality metric.
 4,730,280 training seeds (5% of the entire training seeds, evaluated every 0.05 epoch)
 ### Evaluation thoroughness
 788,380 validation seeds
+
+# 6. Contributors
+This benchmark is a collaborative effort with contributions from Alibaba, Intel, and Nvidia:
+
+- Alibaba: Li Su, Baole Ai, Wenting Shen, Shuxian Hu, Wenyuan Yu, Yong Li
+- Nvidia: Yunzhou (David) Liu, Kyle Kranen, Shriya Palasamudram
+- Intel: Kaixuan Liu, Hesham Mostafa, Sasikanth Avancha, Keith Achorn, Radha Giduthuri, Deepak Canchi
