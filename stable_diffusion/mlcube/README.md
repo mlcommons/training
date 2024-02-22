@@ -23,19 +23,41 @@ mlcube describe
 
 ### MLCube tasks
 
+* Core tasks:
+
 Download dataset.
 
 ```shell
-mlcube run --task=download_demo
+mlcube run --task=download_data
 ```
 
-Process dataset.
+Download models.
 
 ```shell
 mlcube run --task=download_models
 ```
 
-Train SSD.
+Train.
+
+```shell
+mlcube run --task=train
+```
+
+* Demo tasks:
+
+Download demo dataset.
+
+```shell
+mlcube run --task=download_demo
+```
+
+Download models.
+
+```shell
+mlcube run --task=download_models
+```
+
+Train demo.
 
 ```shell
 mlcube run --task=demo
@@ -45,6 +67,16 @@ mlcube run --task=demo
 
 You can execute the complete pipeline with one single command.
 
+* Core pipeline:
+
+```shell
+mlcube run --task=download_data,download_models,train
+```
+
+* Demo pipeline:
+
 ```shell
 mlcube run --task=download_demo,download_models,demo
 ```
+
+**Note**: To rebuild the image use the flag: `-Pdocker.build_strategy=always` during the `mlcube run` command.
