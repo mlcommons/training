@@ -1,9 +1,0 @@
-transformers
-accelerate
-peft
-datasets
-deepspeed
-bitsandbytes
-evaluate
-nltk
-rouge-score
