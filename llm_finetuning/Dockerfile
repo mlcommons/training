@@ -4,7 +4,5 @@ FROM ${FROM_IMAGE_NAME}
 WORKDIR /workspace/ft-llm
 ADD . /workspace/ft-llm
 
-ENV OMP_NUM_THREADS=8
-
 RUN pip install -r requirements.txt
 RUN pip install flash-attn==2.4.1 --no-build-isolation

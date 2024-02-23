@@ -32,29 +32,22 @@ class ScriptArguments:
     local_rank: Optional[int] = field(
         default=-1, metadata={"help": "Used for multi-gpu"}
     )
-
-    per_device_train_batch_size: Optional[int] = field(default=4)
+    per_device_train_batch_size: Optional[int] = field(default=1)
     per_device_eval_batch_size: Optional[int] = field(default=1)
-    gradient_accumulation_steps: Optional[int] = field(default=4)
+    gradient_accumulation_steps: Optional[int] = field(default=1)
     learning_rate: Optional[float] = field(default=2e-4)
-    max_grad_norm: Optional[float] = field(default=0.3)
+    max_grad_norm: Optional[float] = field(default=0.0)
     weight_decay: Optional[float] = field(default=0.001)
-    lora_alpha: Optional[int] = field(default=16)
+    lora_alpha: Optional[int] = field(default=32)
     lora_dropout: Optional[float] = field(default=0.1)
-    lora_r: Optional[int] = field(default=64)
+    lora_r: Optional[int] = field(default=16)
     lora_target_modules: Optional[str] = field(
         default=None,
         metadata={
             "help": "comma separated list of target modules to apply LoRA layers to"
         },
     )
-    max_seq_length: Optional[int] = field(default=512)
-    model_name: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "The model that you want to train from the Hugging Face hub. E.g. gpt2, gpt2-xl, bert, etc."
-        },
-    )
+    max_seq_length: Optional[int] = field(default=8192)
     model_path: Optional[str] = field(
         default="./llama-v2-fused-qkv",
         metadata={"help": "Path to the model directory."},
@@ -84,11 +77,11 @@ class ScriptArguments:
         metadata={"help": "Enables gradient checkpointing."},
     )
     optim: Optional[str] = field(
-        default="paged_adamw_32bit",
+        default="adamw_torch",
         metadata={"help": "The optimizer to use."},
     )
     lr_scheduler_type: str = field(
-        default="constant",
+        default="cosine",
         metadata={
             "help": "Learning rate schedule. Constant a bit better than cosine, and has advantage for analysis"
         },
@@ -113,11 +106,11 @@ class ScriptArguments:
         default="results", metadata={"help": "Where to store the final model."}
     )
     use_flash_attn: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Enables Flash attention for training."},
     )
     use_peft_lora: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Enables PEFT LoRA for training."},
     )
     use_gradient_checkpointing: Optional[bool] = field(
@@ -140,7 +133,6 @@ class ScriptArguments:
             "help": "If True, tests things like proper saving/loading/logging of model"
         },
     )
-
     dataset_config_name: Optional[str] = field(default="gov_report")
     hub_model_id: Optional[str] = field(default=None)
     seed: Optional[int] = field(default=42)
