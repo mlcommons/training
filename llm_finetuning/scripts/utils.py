@@ -1,32 +1,11 @@
-import torch
-from datasets import load_dataset
-from deepspeed.accelerator import get_accelerator
-from peft import LoraConfig, get_peft_model
-from peft.tuners.lora import LoraLayer
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers.utils import is_apex_available, is_sagemaker_mp_enabled
-
-if is_apex_available():
-    from apex import amp
-
-if is_sagemaker_mp_enabled():
-    import smdistributed.modelparallel.torch as smp
-    from smdistributed.modelparallel import __version__ as SMP_VERSION
-
-    IS_SAGEMAKER_MP_POST_1_10 = version.parse(SMP_VERSION) >= version.parse("1.10")
-
-    from .trainer_pt_utils import (
-        smp_forward_backward,
-        smp_forward_only,
-        smp_gather,
-        smp_nested_concat,
-    )
-else:
-    IS_SAGEMAKER_MP_POST_1_10 = False
-
 from functools import partial
 from itertools import chain
-from typing import Any, Dict, Union
+
+import torch
+from datasets import load_dataset
+from peft import LoraConfig, get_peft_model
+from peft.tuners.lora import LoraLayer
+from transformers import AutoModelForCausalLM
 
 
 def group_texts(examples, block_size):
@@ -181,41 +160,6 @@ def create_and_prepare_model(args):
         model.print_trainable_parameters()
 
     return model
-
-
-def training_step(
-    self, model: torch.nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
-) -> torch.Tensor:
-    """
-    Perform a training step on a batch of inputs.
-    Subclass and override to inject custom behavior.
-    Args:
-        model (`nn.Module`):
-            The model to train.
-        inputs (`Dict[str, Union[torch.Tensor, Any]]`):
-            The inputs and targets of the model.
-            The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
-            argument `labels`. Check your model's documentation for all accepted arguments.
-    Return:
-        `torch.Tensor`: The tensor with training loss on this batch.
-    """
-    model.train()
-    inputs = self._prepare_inputs(inputs)
-    if is_sagemaker_mp_enabled():
-        loss_mb = smp_forward_backward(
-            model, inputs, self.args.gradient_accumulation_steps
-        )
-        return loss_mb.reduce_mean().detach().to(self.args.device)
-    with self.compute_loss_context_manager():
-        loss = self.compute_loss(model, inputs)
-    if self.args.n_gpu > 1:
-        loss = loss.mean()  # mean() to average on multi-gpu parallel training
-    if self.use_apex:
-        with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-            scaled_loss.backward()
-    else:
-        self.accelerator.backward(loss)
-    return loss.detach() / self.args.gradient_accumulation_steps
 
 
 def peft_module_casting_to_bf16(model, args):

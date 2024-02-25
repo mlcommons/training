@@ -13,14 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import functools
 from dataclasses import dataclass, field
 from typing import Optional
 
 from datasets import load_dataset
 from mlperf_logging_utils import LoraLogger, MLPerfCallback
 from transformers import HfArgumentParser, Trainer, TrainingArguments
-from utils import create_and_prepare_model, peft_module_casting_to_bf16, training_step
+from utils import create_and_prepare_model, peft_module_casting_to_bf16
 
 
 @dataclass
@@ -95,9 +94,9 @@ class ScriptArguments:
     save_steps: int = field(
         default=10, metadata={"help": "Save checkpoint every X updates steps."}
     )
-    eval_steps: int = field(default=24, metadata={"help": "Eval model every X steps."})
+    eval_steps: int = field(default=22, metadata={"help": "Eval model every X steps."})
     logging_steps: int = field(
-        default=6, metadata={"help": "Log every X updates steps."}
+        default=10, metadata={"help": "Log every X updates steps."}
     )
     target_eval_loss: float = field(
         default=0.92, metadata={"help": "target eval loss - NOT FINAL."}
@@ -114,11 +113,8 @@ class ScriptArguments:
         metadata={"help": "Enables PEFT LoRA for training."},
     )
     use_gradient_checkpointing: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={"help": "Enables Gradient Checkpointing."},
-    )
-    dataset_text_field: str = field(
-        default="text", metadata={"help": "Dataset field to use as input text."}
     )
     push_to_hub: Optional[bool] = field(
         default=False,
@@ -190,7 +186,6 @@ def main(args):
         eval_dataset=eval_dataset,
         callbacks=[MLPerfCallback(loralogger, len(train_dataset), len(eval_dataset))],
     )
-    trainer.training_step = functools.partial(training_step, trainer)
     trainer.accelerator.print(f"{trainer.model}")
     if args.use_peft_lora:
         trainer.model.print_trainable_parameters()
