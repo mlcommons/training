@@ -38,8 +38,8 @@ class ScriptArguments:
     max_grad_norm: Optional[float] = field(default=0.0)
     weight_decay: Optional[float] = field(default=0.001)
     lora_alpha: Optional[int] = field(default=32)
-    lora_dropout: Optional[float] = field(default=0.1)
-    lora_r: Optional[int] = field(default=16)
+    lora_dropout: Optional[float] = field(default=0.1, metadata={"lora dropout is a fixed to 0.1 in closed submission"})
+    lora_r: Optional[int] = field(default=16, metadata={"lora rank is a fixed to 16 in closed submission"})
     lora_target_modules: Optional[str] = field(
         default=None,
         metadata={

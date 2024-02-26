@@ -77,7 +77,7 @@ class MLPerfCallback(TrainerCallback):
         super().__init__()
         self.mllogger = logger
         self.submission_info = {
-            "submission_benchmark": "llm-finetuning",
+            "submission_benchmark": "llama2_70b_lora",
             "submission_division": "Closed",
             "submission_org": "referece",
             "submission_platform": "referece",
@@ -134,6 +134,8 @@ class MLPerfCallback(TrainerCallback):
         self.mllogger.event(key=constants.OPT_LR_WARMUP_FACTOR, value=args.warmup_ratio)
         self.mllogger.event(key=constants.OPT_LR_TRAINING_STEPS, value=args.max_steps)
         self.mllogger.event(key=constants.OPT_BASE_LR, value=args.learning_rate)
+        self.mllogger.event(key=constants.LORA_ALPHA, value=args.lora_alpha)
+        self.mllogger.event(key=constants.GRADIENT_ACCUMULATION_STEPS, value=args.gradient_accumulation_steps)
         self.mllogger.start(constants.RUN_START, value="")
 
     def on_step_begin(
