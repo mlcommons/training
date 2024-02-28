@@ -61,7 +61,7 @@ def evaluate(model, dataloader, current_device, rank, world_size, epoch_num):
           key=mllog_constants.EVAL_STOP,
           metadata={mllog_constants.EPOCH_NUM: epoch_num},
       )
-    return acc.item(), global_acc
+    return acc, global_acc
 
 def run_training_proc(rank, world_size,
     hidden_channels, num_classes, num_layers, model_type, num_heads, fan_out,

@@ -63,7 +63,7 @@ def evaluate(model, dataloader, current_device, use_fp16, with_gpu,
           key=mllog_constants.EVAL_STOP,
           metadata={mllog_constants.EPOCH_NUM: epoch_num},
       )
-    return acc.item(), global_acc
+    return acc, global_acc
 
 def run_training_proc(local_proc_rank, num_nodes, node_rank, num_training_procs,
     split_training_sampling, hidden_channels, num_classes, num_layers, 
