@@ -146,6 +146,7 @@ def main(args):
         fp16=args.fp16,
         bf16=args.bf16,
         max_grad_norm=args.max_grad_norm,
+        weight_decay=args.weight_decay,
         warmup_ratio=args.warmup_ratio,
         lr_scheduler_type=args.lr_scheduler_type,
         num_train_epochs=args.num_train_epochs,
