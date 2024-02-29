@@ -1,0 +1,16 @@
+FROM tensorflow/tensorflow:2.4.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends git libcurl4 wget unzip
+
+# Install python dependencies
+COPY requirements.txt /
+RUN pip install --no-cache-dir -r /requirements.txt
+
+# Copy code
+COPY . /workspace/bert
+
+RUN chmod +x /workspace/bert/cleanup_scripts/*.sh
+RUN chmod +x /workspace/bert/*.sh
+
+# Set working directory
+WORKDIR /workspace/bert
