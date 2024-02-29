@@ -1,0 +1,60 @@
+name: stable_diffusion
+description: Stable Diffusion benchmark
+authors:
+  - { name: "MLCommons Best Practices Working Group" }
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: dfjbtest/stable_diffusion:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile"
+  # GPU arguments
+  gpu_args: "--gpus=all"
+
+tasks:
+  download_data:
+    entrypoint: ./scripts/datasets/mlcube_data.sh -a
+    parameters:
+      outputs:
+        laion_output_dir: data_laion/
+        coco_output_dir: data_coco/
+  download_demo:
+    entrypoint: ./scripts/datasets/mlcube_demo_data.sh -a
+    parameters:
+      outputs:
+        demo_output_dir: demo_data/
+  download_models:
+    entrypoint: ./scripts/checkpoints/download_all.sh -a
+    parameters:
+      outputs:
+        output_sd: checkpoints/sd/
+        output_inception: checkpoints/inception/
+        output_clip: checkpoints/clip/
+  demo:
+    entrypoint: ./run_demo.sh --gpus-per-node=1
+    parameters:
+      inputs:
+        checkpoint_sd: checkpoints/sd/512-base-ema.ckpt
+        checkpoint_clip: checkpoints/clip/
+        checkpoint_inception: checkpoints/inception/
+        coco_dir: demo_data/data_coco/
+        laion_dir: demo_data/data_laion/
+      outputs:
+        results_dir: results/
+  train:
+    entrypoint: ./run_train_mlcube.sh --gpus-per-node=1
+    parameters:
+      inputs:
+        checkpoint_sd: checkpoints/sd/512-base-ema.ckpt
+        checkpoint_clip: checkpoints/clip/
+        checkpoint_inception: checkpoints/inception/
+        coco_dir: coco2014/
+        laion_dir: laion-400m/moments-webdataset-filtered/
+      outputs:
+        results_dir: results/
+
