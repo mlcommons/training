@@ -90,7 +90,7 @@ class MLPerfCallback(TrainerCallback):
         }
 
     def on_train_begin(self, args, state, control, **kwargs):
-        self.gbs=args.per_device_train_batch_size * args.gradient_accumulation_steps * os.getenv("WORLD_SIZE", 1)
+        self.gbs=int(args.per_device_train_batch_size * args.gradient_accumulation_steps * os.getenv("WORLD_SIZE", 1))
         self.mllogger.event(
             key=constants.CACHE_CLEAR, value="True",
         )
