@@ -73,22 +73,27 @@ class LoraLogger:
 class MLPerfCallback(TrainerCallback):
     "A callback that prints a message at the beginning of training"
 
-    def __init__(self, logger, train_dataset_length, eval_dataset_length):
+    def __init__(self, logger, train_dataset_length, eval_dataset_length,lora_alpha):
         super().__init__()
         self.mllogger = logger
         self.submission_info = {
             "submission_benchmark": "llama2_70b_lora",
-            "submission_division": "Closed",
+            "submission_division": "closed",
             "submission_org": "referece",
             "submission_platform": "referece",
             "submission_poc_name": "referece",
             "submission_poc_email": "referece",
-            "submission_status": "referece",
+            "submission_status": "onprem",
             "train_dataset_length": train_dataset_length,
             "eval_dataset_length": eval_dataset_length,
+            "lora_alpha": lora_alpha
         }
 
     def on_train_begin(self, args, state, control, **kwargs):
+        self.gbs=args.per_device_train_batch_size * args.gradient_accumulation_steps * os.getenv("WORLD_SIZE", 1)
+        self.mllogger.event(
+            key=constants.CACHE_CLEAR, value="True",
+        )
         self.mllogger.event(
             key=constants.SUBMISSION_BENCHMARK,
             value=self.submission_info["submission_benchmark"],
@@ -133,9 +138,15 @@ class MLPerfCallback(TrainerCallback):
         self.mllogger.event(key=constants.SEED, value=args.seed)
         self.mllogger.event(key=constants.OPT_LR_WARMUP_FACTOR, value=args.warmup_ratio)
         self.mllogger.event(key=constants.OPT_LR_TRAINING_STEPS, value=args.max_steps)
+        self.mllogger.event(key=constants.OPT_ADAMW_WEIGHT_DECAY, value=args.weight_decay)
+        self.mllogger.event(key=constants.OPT_GRADIENT_CLIP_NORM, value=args.max_grad_norm)
         self.mllogger.event(key=constants.OPT_BASE_LR, value=args.learning_rate)
-        self.mllogger.event(key=constants.LORA_ALPHA, value=args.lora_alpha)
+        self.mllogger.event(key=constants.LORA_ALPHA, value=self.submission_info["lora_alpha"])
+        self.mllogger.event(key='lora_rank', value=16)
         self.mllogger.event(key=constants.GRADIENT_ACCUMULATION_STEPS, value=args.gradient_accumulation_steps)
+        self.mllogger.start(key=constants.INIT_START, value="")
+        # device warmup should be done here
+        self.mllogger.end(key=constants.INIT_STOP, value="")
         self.mllogger.start(constants.RUN_START, value="")
 
     def on_step_begin(
@@ -168,9 +179,9 @@ class MLPerfCallback(TrainerCallback):
                 metadata={"step_num": state.log_history[-1]["step"]},
             )
             self.mllogger.event(
-                "eval_loss",
+                constants.EVAL_ACCURACY,
                 value=state.log_history[-1]["eval_loss"],
-                metadata={"step_num": state.log_history[-1]["step"]},
+                metadata={"samples_num": state.log_history[-1]["step"]*self.gbs},
             )
             self.mllogger.start(
                 constants.BLOCK_START,
@@ -187,7 +198,7 @@ class MLPerfCallback(TrainerCallback):
                 constants.RUN_STOP,
                 value=eval_loss_list[-1],
                 metadata={
-                    "step_num": state.log_history[-1]["step"],
+                    "samples_num": state.log_history[-1]["step"]*self.gbs,
                     "status": "success",
                 },
             )

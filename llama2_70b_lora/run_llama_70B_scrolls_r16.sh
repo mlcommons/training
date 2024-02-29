@@ -1,16 +1,13 @@
 accelerate launch --config_file configs/default_config.yaml scripts/train.py \
---model_name meta-llama/Llama-2-70b-hf \
 --dataset_path "./dataset" \
---model_path "./llama-v2-fused-qkv" \
+--model_path "/software/users/ihubara/lora_clean/llama-v2-fused-qkv" \
 --max_seq_len 8192 \
 --bf16 True \
---logging_steps 2 \
---eval_steps 6 \
---save_steps 999 \
+--logging_steps 32 \
+--eval_steps 64 \
 --output_dir "./results/llama-70b_scrolls_gov_report_r16_$1" \
 --per_device_train_batch_size 1 \
 --gradient_accumulation_steps 1 \
---dataset_text_field "input" \
 --lr_scheduler_type "cosine" \
 --learning_rate 5e-4 \
 --warmup_ratio 0 \
