@@ -610,7 +610,7 @@ if __name__ == "__main__":
         # Create a data module based on the configuration file
         data = instantiate_from_config(config.data)
         # We can't get number of samples without reading the data (which we can't inside the init block), so we hard code them
-        mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=1) # TODO(ahmadki): a placeholder until a dataset is picked
+        mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=6513144)
         mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=30000)
 
         # Configure gradient accumulation
