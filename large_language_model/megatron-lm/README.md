@@ -164,17 +164,31 @@ Evaluation on the validation subset that consists of 24567 examples.
 # 6. Other
 
 ### S3 artifacts download
-The dataset and the checkpoints are available to download from an S3 bucket.
-To achieve the best download bandwidth (currently no more than 25MB/s is expected) it's necessary to set up a third-party client capable of downloading the artifacts.
-[Here are the instructions](https://help.lyvecloud.seagate.com/en/connecting-s3-clients-to-lyve-cloud.html).
-The read-only access credentials are provided below.
+The dataset and the checkpoints are available to download from an S3 bucket. You can download this data from the bucket using Rclone as follows:
 
-#### Access details
-- Bucket name: `mlcommons-training-wg-s3`
-- Endpoint URL: https://s3.us-east-1.lyvecloud.seagate.com
-- Access Key: `3ZC41B4Z2WHM5DT2`
-- Secret Key: `AK4NQQZV0NKFEJWJUZVPX5XQ0QNTXCGW`
+To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
+To install Rclone on Linux/macOS/BSD systems, run:
+```
+sudo -v ; curl https://rclone.org/install.sh | sudo bash
+```
+Once Rclone is installed, run the following command to authenticate with the bucket:
+```
+rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
+```
+You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints:
 
+**`dataset_c4_spm.tar`**
+```
+rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/dataset_c4_spm.tar ./ -P
+```
+**`checkpoint_megatron_fp32.tar`**
+```
+rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/checkpoint_megatron_fp32.tar ./ -P
+```
+**`checkpoint_nemo_bf16`**
+```
+rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/checkpoint_nemo_bf16.tar ./ -P
+```
 
 ### Model conversion from Paxml checkpoints
 Alternatively to downloading the checkpoint in Megatron ready format, it can be obtained by converting a Paxml checkpoint.

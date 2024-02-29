@@ -1,8 +1,8 @@
 # V1.0 Dataset and Training
 
-# Location of the input files 
+## Location of the input files 
 
-This [Google Drive location](https://drive.google.com/drive/folders/1oQF4diVHNPCclykwdvQJw8n_VIWwV0PT) contains the following.
+The following files are available for download in a Cloudflare R2 bucket.
 * tf1_ckpt folder: contains checkpoint files 
   - model.ckpt-28252.data-00000-of-00001
   - model.ckpt-28252.index
@@ -18,6 +18,27 @@ This [Google Drive location](https://drive.google.com/drive/folders/1oQF4diVHNPC
 * License.txt
 * vocab.txt: Contains WordPiece to id mapping
 
+### Download from bucket
+
+You can access the bucket and download the files with Rclone
+
+To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
+To install Rclone on Linux/macOS/BSD systems, run:
+```
+sudo -v ; curl https://rclone.org/install.sh | sudo bash
+```
+Once Rclone is installed, run the following command to authenticate with the bucket:
+```
+rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
+```
+You can then navigate in the terminal to your desired download directory and run the following command to download the input files:
+
+```
+rclone copy mlc-training:mlcommons-training-wg-public/wikipedia_for_bert/input_files ./input_files -P
+```
+
+### Alternatively generate the checkpoints
+
 Alternatively, TF2 checkpoint can also be generated using [tf2_encoder_checkpoint_converter.py](https://github.com/tensorflow/models/blob/master/official/nlp/bert/tf2_encoder_checkpoint_converter.py) and TF1 checkpoint
 
 ```shell
@@ -30,11 +51,30 @@ python3 tf2_encoder_checkpoint_converter.py \
 Note that the checkpoint converter removes optimizer slot variables, so the resulting TF2 checkpoint is only about 1/3 size of the TF1 checkpoint.
 
 
-# Download and preprocess datasets
+## Download and preprocess datasets
 
 The dataset was prepared using Python 3.7.6, nltk 3.4.5 and the [tensorflow/tensorflow:1.15.2-gpu](https://hub.docker.com/layers/tensorflow/tensorflow/1.15.2-gpu/images/sha256-da7b6c8a63bdafa77864e7e874664acfe939fdc140cb99940610c34b8c461cd0?context=explore) docker image.
 
-Files after the download, uncompress, extract, clean up and dataset seperation steps are providedat a [Google Drive location](https://drive.google.com/corp/drive/u/0/folders/1cywmDnAsrP5-2vsr8GDc6QUc7VWe-M3v). The main reason is that, WikiExtractor.py replaces some of the tags present in XML such as {CURRENTDAY}, {CURRENTMONTHNAMEGEN} with the current values obtained from time.strftime ([code](https://github.com/attardi/wikiextractor/blob/e4abb4cbd019b0257824ee47c23dd163919b731b/WikiExtractor.py#L632)). Hence, one might see slighly different preprocessed files after the WikiExtractor.py file is invoked. This means the md5sum hashes of these files will also be different each time WikiExtractor is called.
+Files after the download, uncompress, extract, clean up and dataset seperation steps are available for download in a Cloudflare R2 bucket. The main reason is that, WikiExtractor.py replaces some of the tags present in XML such as {CURRENTDAY}, {CURRENTMONTHNAMEGEN} with the current values obtained from time.strftime ([code](https://github.com/attardi/wikiextractor/blob/e4abb4cbd019b0257824ee47c23dd163919b731b/WikiExtractor.py#L632)). Hence, one might see slighly different preprocessed files after the WikiExtractor.py file is invoked. This means the md5sum hashes of these files will also be different each time WikiExtractor is called.
+
+### Download from bucket
+
+You can access the bucket and download the files with Rclone
+
+To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
+To install Rclone on Linux/macOS/BSD systems, run:
+```
+sudo -v ; curl https://rclone.org/install.sh | sudo bash
+```
+Once Rclone is installed, run the following command to authenticate with the bucket:
+```
+rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
+```
+You can then navigate in the terminal to your desired download directory and run the following command to download the dataset:
+
+```
+rclone copy mlc-training:mlcommons-training-wg-public/wikipedia_for_bert/processed_dataset ./processed_dataset -P
+```
 
 ### Files in ./results directory:
 
@@ -130,7 +170,7 @@ The examples in the TFRecords have the following key/values in its features dict
 | part-00XXX-of-00500 | 391,434,110,129 | 
 
 
-# Stopping criteria
+## Stopping criteria
 A valid submission will evaluate a masked lm accuracy >= 0.720. 
 
 The evaluation will be on the 10,000 samples in the evaluation set. The evalution frequency in terms of number of samples trained is determined by the following formular based on the global batch size, starting from 0 samples. Evaluation with 0 samples trained could be skipped, but that's a good place to verify the initial checkpoint was loaded correctly for debugging purpose; the masked lm accuracy after loading the initial checkpint and before any training should be very close to 0.34085. The evaluation can be either offline or online for v1.0. More details please refer to the training policy.
@@ -155,9 +195,9 @@ The purpose of this formular is to make the eval interval 1) not too large to ma
 
 The generation of the evaluation set shard should follow the exact command shown above, using create_pretraining_data.py. **_In particular the seed (12345) must be set to ensure everyone evaluates on the same data._**
 
-# Running the model
+## Running the model
 
-## On GPU-V100-8
+### On GPU-V100-8
 
 To run this model with batch size 24 on GPUs, use the following command.
 
@@ -221,7 +261,7 @@ The model has been tested using the following stack:
 - NVIDIA Docker 2.5.0-1 + Docker 19.03.13
 - docker image tensorflow/tensorflow:2.4.0-gpu
 
-## On TPU-v3-128
+### On TPU-v3-128
 
 To run the training workload for batch size 8k on [Cloud TPUs](https://cloud.google.com/tpu), follow these steps:
 
@@ -388,7 +428,7 @@ for step_num in 0 $(seq 600 -3 3); do
 done
 ```
 
-## Gradient Accumulation
+### Gradient Accumulation
 
 The GradientAggregationOptimizer can accumulate gradients across multiple steps, on each accelerators, before actually applying the gradients. To use this feature, please note the following:
 
