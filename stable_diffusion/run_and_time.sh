@@ -4,7 +4,7 @@
 : "${GPUS_PER_NODE:=8}"
 : "${CHECKPOINT:=/checkpoints/sd/512-base-ema.ckpt}"
 : "${RESULTS_DIR:=}"
-: "${CONFIG:=./configs/train_512_latents.yaml}"
+: "${CONFIG:=./configs/train_01x08x08.yaml}"
 
 while [ "$1" != "" ]; do
     case $1 in
