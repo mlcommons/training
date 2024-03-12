@@ -15,8 +15,10 @@ mkdir -p ${OUTPUT_DIR}
 cd ${OUTPUT_DIR}
 
 
-for i in {00000..00831}; do wget -O ${OUTPUT_DIR}/${i}.tar -c "https://cloud.mlcommons.org/index.php/s/training_stable_diffusion/download?path=/datasets/laion-400m/moments-webdataset-filtered&files=${i}.tar"; done
+rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
 
-wget -O ${OUTPUT_DIR}/sha512sums.txt -c "https://cloud.mlcommons.org/index.php/s/training_stable_diffusion/download?path=/datasets/laion-400m/moments-webdataset-filtered&files=sha512sums.txt"
+rclone copy mlc-training:mlcommons-training-wg-public/stable_diffusion/datasets/laion-400m/moments-webdataset-filtered/ ${OUTPUT_DIR} --include="*.tar" -P
+
+rclone copy mlc-training:mlcommons-training-wg-public/stable_diffusion/datasets/laion-400m/moments-webdataset-filtered/sha512sums.txt ${OUTPUT_DIR} -P
 
 sha512sum --quiet -c sha512sums.txt
