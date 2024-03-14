@@ -257,7 +257,7 @@ def run_training_proc(local_proc_rank, num_nodes, node_rank, num_training_procs,
           torch.cuda.synchronize()
         torch.distributed.barrier()
         if rank == 0:
-          epoch_num = epoch + idx / batch_num
+          epoch_num = round((epoch + idx / batch_num), 2)
           glt.utils.common.save_ckpt(idx + epoch * batch_num, 
                                      ckpt_dir, model.module, optimizer, epoch_num)
         torch.distributed.barrier()
@@ -266,7 +266,7 @@ def run_training_proc(local_proc_rank, num_nodes, node_rank, num_training_procs,
         if with_gpu:
           torch.cuda.synchronize()
         torch.distributed.barrier()
-        epoch_num = epoch + idx / batch_num
+        epoch_num = round((epoch + idx / batch_num), 2)
         model.eval()
         rank_val_acc, global_acc = evaluate(model, val_loader, current_device, 
                                             use_fp16, with_gpu, rank, 
@@ -415,7 +415,10 @@ if __name__ == '__main__':
   if args.node_rank == 0:
     world_size = args.num_nodes * args.num_training_procs
     submission_info(mllogger, 'GNN', 'reference_implementation')
+    
     mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=world_size*args.train_batch_size)
+    mllogger.event(key=mllog_constants.GRADIENT_ACCUMULATION_STEPS, value=1)
+    mllogger.event(key=mllog_constants.OPT_NAME, value='Adam')
     mllogger.event(key=mllog_constants.OPT_BASE_LR, value=args.learning_rate)
     mllogger.event(key=mllog_constants.SEED,value=args.random_seed)
     mllogger.end(key=mllog_constants.INIT_STOP)
