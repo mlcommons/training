@@ -53,7 +53,7 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 | Stable Diffusionv2 | [image generation](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered
 | BERT-large | [language/nlp](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01
 | GPT3 | [language/llm](https://github.com/mlcommons/training/tree/master/large_language_model) | paxml,megatron-lm | C4
-| LLama2 70B-LoRA | language/LLM fine-tuning | |
+| LLama2 70B-LoRA | language/LLM fine-tuning | pytorch | SCROLLS govtReport
 | DLRMv2 | [recommendation](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 4TB multi-hot
-| RGAT | GNN | |
+| RGAT | GNN | pytorch | IGBFull
 
