@@ -1,0 +1,50 @@
+name: 3d_unet
+description: Image Segmentation benchmark
+authors:
+  - { name: "MLCommons Best Practices Working Group" }
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/3d_unet:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile"
+  # GPU arguments
+  gpu_args: "--shm-size=1g --gpus=all"
+
+tasks:
+  download_data:
+    entrypoint: ./download_data.sh -a
+    parameters:
+      outputs:
+        data_dir: data/
+  process_data:
+    entrypoint: ./process_data.sh -a
+    parameters:
+      inputs:
+        data_dir: data/
+      outputs:
+        processed_data: processed_data/
+  train:
+    entrypoint: ./run_mlcube.sh -a
+    parameters:
+      inputs:
+        dataset_dir: processed_data/
+      outputs:
+        log_dir: logs/
+  download_demo:
+    entrypoint: ./download_demo.sh -a
+    parameters:
+      outputs:
+        data_dir: demo_data/
+  demo:
+    entrypoint: ./run_demo.sh -a
+    parameters:
+      inputs:
+        dataset_dir: demo_data/
+      outputs:
+        log_dir: demo_logs/
