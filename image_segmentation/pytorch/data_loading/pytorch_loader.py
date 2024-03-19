@@ -141,12 +141,13 @@ class PytTrain(Dataset):
         patch_size, oversampling = kwargs["patch_size"], kwargs["oversampling"]
         self.patch_size = patch_size
         self.rand_crop = RandBalancedCrop(patch_size=patch_size, oversampling=oversampling)
+        self.real_len = len(self.images)
 
     def __len__(self):
-        return len(self.images)
+        return int(168*10000) #len(self.images)
 
     def __getitem__(self, idx):
-        data = {"image": np.load(self.images[idx]), "label": np.load(self.labels[idx])}
+        data = {"image": np.load(self.images[idx % self.real_len]), "label": np.load(self.labels[idx % self.real_len])}
         data = self.rand_crop(data)
         data = self.train_transforms(data)
         return data["image"], data["label"]

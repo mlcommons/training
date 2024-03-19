@@ -90,7 +90,7 @@ def get_data_loaders(flags, num_shards, global_rank):
         raise ValueError(f"Loader {flags.loader} unknown. Valid loaders are: synthetic, pytorch")
 
     # The DistributedSampler seed should be the same for all workers
-    train_sampler = DistributedSampler(train_dataset, seed=flags.shuffling_seed, drop_last=True) if num_shards > 1 else None
+    train_sampler = None#, DistributedSampler(train_dataset, seed=flags.shuffling_seed, drop_last=True) if num_shards > 1 else None
     val_sampler = None
 
     train_dataloader = DataLoader(train_dataset,

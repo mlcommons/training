@@ -33,15 +33,13 @@ mllog_event(key=constants.CACHE_CLEAR, value=True)"
 
   python main.py --data_dir ${DATASET_DIR} \
     --epochs ${MAX_EPOCHS} \
-    --evaluate_every ${EVALUATE_EVERY} \
-    --start_eval_at ${START_EVAL_AT} \
     --quality_threshold ${QUALITY_THRESHOLD} \
     --batch_size ${BATCH_SIZE} \
     --optimizer sgd \
     --ga_steps ${GRADIENT_ACCUMULATION_STEPS} \
     --learning_rate ${LEARNING_RATE} \
     --seed ${SEED} \
-    --lr_warmup_epochs ${LR_WARMUP_EPOCHS}
+    --lr_warmup_samples ${LR_WARMUP_SAMPLES}
 
 	# end timing
 	end=$(date +%s)

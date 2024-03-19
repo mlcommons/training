@@ -97,7 +97,7 @@ def get_world_size():
 def reduce_tensor(tensor, num_gpus):
     if num_gpus > 1:
         rt = tensor.clone()
-        dist.all_reduce(rt, op=dist.reduce_op.SUM)
+        dist.all_reduce(rt, op=dist.ReduceOp.SUM)
         if rt.is_floating_point():
             rt = rt / num_gpus
         else:

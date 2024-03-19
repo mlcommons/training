@@ -165,8 +165,6 @@ The complete list of the available parameters for the main.py script contains:
 * `--batch_size`: Size of each minibatch per GPU (default: `2`).
 * `--ga_steps`: Number of steps for gradient accumulation (default: `1`).
 * `--epochs`: Maximum number of epochs for training (default: `1`).
-* `--evaluate_every`: Epoch interval for evaluation (default: `20`).
-* `--start_eval_at`: First epoch to start running evaluation at (default: `1000`).
 * `--layout`: Data layout (default: `NCDHW`. `NDHWC` is not implemented).
 * `--input_shape`: Input shape for images during training (default: `[128, 128, 128]`).
 * `--val_input_shape`: Input shape for images during evaluation (default: `[128, 128, 128]`).
