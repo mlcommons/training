@@ -30,7 +30,8 @@ def lr_warmup(optimizer, init_lr, lr, current_epoch, warmup_epochs):
         param_group['lr'] = init_lr + (lr - init_lr) * scale
 
 
-def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks, is_distributed):
+def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, callbacks,
+          is_distributed, samples_per_epoch):
     rank = get_rank()
     world_size = get_world_size()
     torch.backends.cudnn.benchmark = flags.cudnn_benchmark
@@ -52,6 +53,7 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
 
     is_successful = False
     diverged = False
+    epoch = 1
     next_eval_at = flags.start_eval_at
     model.train()
     for callback in callbacks:
@@ -61,8 +63,9 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         if epoch <= flags.lr_warmup_epochs and flags.lr_warmup_epochs > 0:
             lr_warmup(optimizer, flags.init_learning_rate, flags.learning_rate, epoch, flags.lr_warmup_epochs)
         mllog_start(key=CONSTANTS.BLOCK_START, sync=False,
-                    metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
-        mllog_start(key=CONSTANTS.EPOCH_START, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
+                    metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch * samples_per_epoch,
+                              CONSTANTS.EPOCH_COUNT: samples_per_epoch})
+        mllog_start(key=CONSTANTS.EPOCH_START, metadata={CONSTANTS.EPOCH_NUM: epoch * samples_per_epoch}, sync=False)
 
         if is_distributed:
             train_loader.sampler.set_epoch(epoch)
@@ -98,7 +101,8 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
             cumulative_loss.append(loss_value)
 
         mllog_end(key=CONSTANTS.EPOCH_STOP, sync=False,
-                  metadata={CONSTANTS.EPOCH_NUM: epoch, 'current_lr': optimizer.param_groups[0]['lr']})
+                  metadata={CONSTANTS.EPOCH_NUM: epoch * samples_per_epoch,
+                            'current_lr': optimizer.param_groups[0]['lr']})
 
         if flags.lr_decay_epochs:
             scheduler.step()
@@ -106,16 +110,17 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
         if epoch == next_eval_at:
             next_eval_at += flags.evaluate_every
             del output
-            mllog_start(key=CONSTANTS.EVAL_START, value=epoch, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
+            mllog_start(key=CONSTANTS.EVAL_START, value=epoch * samples_per_epoch,
+                        metadata={CONSTANTS.EPOCH_NUM: epoch * samples_per_epoch}, sync=False)
 
             eval_metrics = evaluate(flags, model, val_loader, loss_fn, score_fn, device, epoch)
             eval_metrics["train_loss"] = sum(cumulative_loss) / len(cumulative_loss)
 
             mllog_event(key=CONSTANTS.EVAL_ACCURACY,
                         value=eval_metrics["mean_dice"],
-                        metadata={CONSTANTS.EPOCH_NUM: epoch},
+                        metadata={CONSTANTS.EPOCH_NUM: epoch * samples_per_epoch},
                         sync=False)
-            mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: epoch}, sync=False)
+            mllog_end(key=CONSTANTS.EVAL_STOP, metadata={CONSTANTS.EPOCH_NUM: epoch * samples_per_epoch}, sync=False)
 
             for callback in callbacks:
                 callback.on_epoch_end(epoch=epoch, metrics=eval_metrics, model=model, optimizer=optimizer)
@@ -127,12 +132,14 @@ def train(flags, model, train_loader, val_loader, loss_fn, score_fn, device, cal
                 diverged = True
 
         mllog_end(key=CONSTANTS.BLOCK_STOP, sync=False,
-                  metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch, CONSTANTS.EPOCH_COUNT: 1})
+                  metadata={CONSTANTS.FIRST_EPOCH_NUM: epoch * samples_per_epoch,
+                            CONSTANTS.EPOCH_COUNT: samples_per_epoch})
 
         if is_successful or diverged:
             break
 
     mllog_end(key=CONSTANTS.RUN_STOP, sync=True,
-              metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if is_successful else CONSTANTS.ABORTED})
+              metadata={CONSTANTS.STATUS: CONSTANTS.SUCCESS if is_successful else CONSTANTS.ABORTED,
+                        CONSTANTS.EPOCH_COUNT: epoch * samples_per_epoch})
     for callback in callbacks:
         callback.on_fit_end()

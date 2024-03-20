@@ -64,7 +64,7 @@ def main():
 
     if flags.exec_mode == 'train':
         train(flags, model, train_dataloader, val_dataloader, loss_fn, score_fn,
-              device=device, callbacks=callbacks, is_distributed=is_distributed)
+              device=device, callbacks=callbacks, is_distributed=is_distributed, samples_per_epoch=samples_per_epoch)
 
     elif flags.exec_mode == 'evaluate':
         eval_metrics = evaluate(flags, model, val_dataloader, loss_fn, score_fn,
