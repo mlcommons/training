@@ -54,6 +54,13 @@ export OMP_NUM_THREADS=1
 : ${WEIGHTS_INIT_SCALE=0.5}
 : ${CLIP_NORM:=1}
 
+# Copy librispeech model to expected path defined in pytorch/configs/baseline_v3-1023sp.yaml
+if [ ! -d "/datasets/LibriSpeech/" ]
+then
+    mkdir -p /datasets/LibriSpeech/sentencepieces/
+    cp ${DATA_DIR}/sentencepieces/librispeech1023.* /datasets/LibriSpeech/sentencepieces/
+fi
+
 BATCH_SIZE=$(( $GLOBAL_BATCH_SIZE / $NUM_GPUS ))
 
 mkdir -p "$OUTPUT_DIR"

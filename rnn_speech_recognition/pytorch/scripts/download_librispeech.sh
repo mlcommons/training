@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,11 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-#!/usr/bin/env bash
-
 DATA_SET="LibriSpeech"
-DATA_ROOT_DIR="/datasets"
+DATA_ROOT_DIR="${DATA_ROOT_DIR:-/datasets}"
 DATA_DIR="${DATA_ROOT_DIR}/${DATA_SET}"
 if [ ! -d "$DATA_DIR" ]
 then

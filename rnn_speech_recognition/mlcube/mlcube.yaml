@@ -1,0 +1,37 @@
+name: RNN Speech Recognition
+description: MLCommons RNN Speech Recognition Training Reference Benchmark
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  # Edit this according to your system specs
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/rnn_speech_recognition:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../pytorch"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile.mlcube"
+
+tasks:
+  # Download LibriSpeech dataset
+  download_data:
+    parameters:
+      # Directory for uncompressed datasets. Total size is ~ 65G.
+      outputs: {data_dir: data/}
+  preprocess_data:
+  # Preprocess dataset
+    parameters:
+      # Same directory location where dataset was downloaded
+      # When finished total size is ~ 112G
+      outputs: {data_dir: data/}
+  train:
+  # Train RNN Speech Recognition model
+    parameters:
+      # data_dir: see Download::data_dir, it takes the processes subfolder
+      # parameters_file: Yaml file with training parameters.
+      inputs: {data_dir: data/, parameters_file: {type: file, default: parameters.yaml}}
+      # Model output folder
+      outpus: {output_dir: output/}

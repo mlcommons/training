@@ -8,3 +8,4 @@ librosa==0.8.0
 sox==1.4.1
 sentencepiece==0.1.94
 pandas==1.1.5
+typer==0.3.2
