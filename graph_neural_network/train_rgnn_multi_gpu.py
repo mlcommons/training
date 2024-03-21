@@ -314,7 +314,7 @@ if __name__ == '__main__':
   submission_info(mllogger, 'GNN', 'reference_implementation')
   mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=world_size*args.train_batch_size)
   mllogger.event(key=mllog_constants.GRADIENT_ACCUMULATION_STEPS, value=1)
-  mllogger.event(key=mllog_constants.OPT_NAME, value='Adam')
+  mllogger.event(key=mllog_constants.OPT_NAME, value='adam')
   mllogger.event(key=mllog_constants.OPT_BASE_LR, value=args.learning_rate)
   mllogger.event(key=mllog_constants.SEED,value=args.random_seed)
   mllogger.end(key=mllog_constants.INIT_STOP)
