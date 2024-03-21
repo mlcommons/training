@@ -1,0 +1,6 @@
+git+https://github.com/mlcommons/logging.git
+transformers==4.38.1
+accelerate==0.27.2
+peft==0.8.2
+datasets==2.17.1
+deepspeed==0.13.2
