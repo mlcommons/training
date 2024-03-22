@@ -1,0 +1,4 @@
+fbgemm-gpu==0.3.2
+git+https://github.com/mlperf/logging.git
+torchmetrics==0.11.0
+torchrec==0.3.2

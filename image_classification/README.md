@@ -2,7 +2,7 @@ This is the README for v1.0 using the TensorFlow2 model. The pre-v1.0 README usi
 
 # 1. Problem
 This benchmark uses resnet v1.5 to classify images with a fork from
-https://github.com/tensorflow/models/tree/master/official/vision/image_classification/resnet .
+https://github.com/tensorflow/models/tree/master/official/vision/configs/experiments/image_classification .
 
 # 2. Dataset/Environment
 ## Publication/Attribution
@@ -37,7 +37,8 @@ the .tar files downloaded from image-net.org.
 **Stage 2**
 
 The second stage takes place as part of training and includes cropping, apply
-bounding boxes, and some basic color augmentation. The [reference model](https://github.com/mlperf/training/blob/master/image_classification/tensorflow/official/resnet/imagenet_preprocessing.py)
+bounding boxes, and some basic color augmentation. The [reference model]
+(https://github.com/mlcommons/training/blob/master/image_classification/tensorflow2/imagenet_preprocessing.py)
 is to be followed.
 
 

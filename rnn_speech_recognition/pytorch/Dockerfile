@@ -15,7 +15,9 @@
 ARG FROM_IMAGE_NAME=pytorch/pytorch:1.7.0-cuda11.0-cudnn8-devel
 FROM ${FROM_IMAGE_NAME}
 
-ENV PYTORCH_VERSION=1.7.0a0+7036e91 
+ENV PYTORCH_VERSION=1.7.0a0+7036e91
+
+RUN rm -rf /etc/apt/sources.list.d/*  # Nvidia repository not supported for Ubuntu 18, but it's not needed here anyway
 
 RUN apt-get update && \
     apt-get install -y libsndfile1 sox git cmake jq && \
@@ -52,5 +54,7 @@ RUN pip install --global-option="--cpp_ext" --global-option="--cuda_ext" https:/
 
 COPY requirements.txt .
 RUN pip install --no-cache --disable-pip-version-check -U -r requirements.txt
+
+ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
 COPY . .

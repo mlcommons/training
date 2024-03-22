@@ -1,798 +1,319 @@
-import torch
-import torchvision
-import torchvision.transforms as transforms
-import torch.utils.data as data
-from PIL import Image
-from xml.etree import ElementTree
+from collections import defaultdict, deque
+import datetime
+import errno
 import os
-import glob
-from pathlib import Path
-import numpy as np
-import random
-import itertools
-import torch.nn.functional as F
-import json
 import time
-import bz2
-import pickle
-from math import sqrt, ceil
-from mlperf_logger import ssd_print
-from mlperf_logging.mllog import constants as mllog_const
+
+import torch
+import torch.distributed as dist
 
 
-# This function is from https://github.com/kuangliu/pytorch-ssd.
-def calc_iou_tensor(box1, box2):
-    """ Calculation of IoU based on two boxes tensor,
-        Reference to https://github.com/kuangliu/pytorch-ssd
-        input:
-            box1 (N, 4)
-            box2 (M, 4)
-        output:
-            IoU (N, M)
-    """
-    N = box1.size(0)
-    M = box2.size(0)
-
-    be1 = box1.unsqueeze(1).expand(-1, M, -1)
-    be2 = box2.unsqueeze(0).expand(N, -1, -1)
-
-    # Left Top & Right Bottom
-    lt = torch.max(be1[:, :, :2], be2[:, :, :2])
-    # mask1 = (be1[:,:, 0] < be2[:,:, 0]) ^ (be1[:,:, 1] < be2[:,:, 1])
-    # mask1 = ~mask1
-    rb = torch.min(be1[:, :, 2:], be2[:, :, 2:])
-    # mask2 = (be1[:,:, 2] < be2[:,:, 2]) ^ (be1[:,:, 3] < be2[:,:, 3])
-    # mask2 = ~mask2
-
-    delta = rb - lt
-    delta[delta < 0] = 0
-    intersect = delta[:, :, 0] * delta[:, :, 1]
-    # *mask1.float()*mask2.float()
-
-    delta1 = be1[:, :, 2:] - be1[:, :, :2]
-    area1 = delta1[:, :, 0] * delta1[:, :, 1]
-    delta2 = be2[:, :, 2:] - be2[:, :, :2]
-    area2 = delta2[:, :, 0] * delta2[:, :, 1]
-
-    iou = intersect / (area1 + area2 - intersect)
-    return iou
-
-
-# This function is from https://github.com/kuangliu/pytorch-ssd.
-class Encoder(object):
-    """
-        Inspired by https://github.com/kuangliu/pytorch-ssd
-        Transform between (bboxes, lables) <-> SSD output
-
-        dboxes: default boxes in size 8732 x 4,
-            encoder: input ltrb format, output xywh format
-            decoder: input xywh format, output ltrb format
-
-        encode:
-            input  : bboxes_in (Tensor nboxes x 4), labels_in (Tensor nboxes)
-            output : bboxes_out (Tensor 8732 x 4), labels_out (Tensor 8732)
-            criteria : IoU threshold of bboexes
-
-        decode:
-            input  : bboxes_in (Tensor 8732 x 4), scores_in (Tensor 8732 x nitems)
-            output : bboxes_out (Tensor nboxes x 4), labels_out (Tensor nboxes)
-            criteria : IoU threshold of bboexes
-            max_output : maximum number of output bboxes
+class SmoothedValue(object):
+    """Track a series of values and provide access to smoothed values over a
+    window or the global series average.
     """
 
-    def __init__(self, dboxes):
-        self.dboxes = dboxes(order="ltrb")
-        self.dboxes_xywh = dboxes(order="xywh").unsqueeze(dim=0)
-        self.nboxes = self.dboxes.size(0)
-        # print("# Bounding boxes: {}".format(self.nboxes))
-        self.scale_xy = dboxes.scale_xy
-        self.scale_wh = dboxes.scale_wh
+    def __init__(self, window_size=20, fmt=None):
+        if fmt is None:
+            fmt = "{median:.4f} ({global_avg:.4f})"
+        self.deque = deque(maxlen=window_size)
+        self.total = 0.0
+        self.count = 0
+        self.fmt = fmt
 
-    def encode(self, bboxes_in, labels_in, criteria=0.5):
+    def update(self, value, n=1):
+        self.deque.append(value)
+        self.count += n
+        self.total += value * n
 
-        ious = calc_iou_tensor(bboxes_in, self.dboxes)
-        best_dbox_ious, best_dbox_idx = ious.max(dim=0)
-        best_bbox_ious, best_bbox_idx = ious.max(dim=1)
-
-        # set best ious 2.0
-        best_dbox_ious.index_fill_(0, best_bbox_idx, 2.0)
-
-        idx = torch.arange(0, best_bbox_idx.size(0), dtype=torch.int64)
-        best_dbox_idx[best_bbox_idx[idx]] = idx
-
-        # filter IoU > 0.5
-        masks = best_dbox_ious > criteria
-        labels_out = torch.zeros(self.nboxes, dtype=torch.long)
-        # print(maxloc.shape, labels_in.shape, labels_out.shape)
-        labels_out[masks] = labels_in[best_dbox_idx[masks]]
-        bboxes_out = self.dboxes.clone()
-        bboxes_out[masks, :] = bboxes_in[best_dbox_idx[masks], :]
-        # Transform format to xywh format
-        x, y, w, h = 0.5 * (bboxes_out[:, 0] + bboxes_out[:, 2]), \
-                     0.5 * (bboxes_out[:, 1] + bboxes_out[:, 3]), \
-                     -bboxes_out[:, 0] + bboxes_out[:, 2], \
-                     -bboxes_out[:, 1] + bboxes_out[:, 3]
-        bboxes_out[:, 0] = x
-        bboxes_out[:, 1] = y
-        bboxes_out[:, 2] = w
-        bboxes_out[:, 3] = h
-        return bboxes_out, labels_out
-
-    def scale_back_batch(self, bboxes_in, scores_in):
+    def synchronize_between_processes(self):
         """
-            Do scale and transform from xywh to ltrb
-            suppose input Nx4xnum_bbox Nxlabel_numxnum_bbox
+        Warning: does not synchronize the deque!
         """
-        if bboxes_in.device == torch.device("cpu"):
-            self.dboxes = self.dboxes.cpu()
-            self.dboxes_xywh = self.dboxes_xywh.cpu()
-        else:
-            self.dboxes = self.dboxes.cuda()
-            self.dboxes_xywh = self.dboxes_xywh.cuda()
-
-        bboxes_in = bboxes_in.permute(0, 2, 1)
-        scores_in = scores_in.permute(0, 2, 1)
-        # print(bboxes_in.device, scores_in.device, self.dboxes_xywh.device)
-
-        bboxes_in[:, :, :2] = self.scale_xy * bboxes_in[:, :, :2]
-        bboxes_in[:, :, 2:] = self.scale_wh * bboxes_in[:, :, 2:]
-
-        bboxes_in[:, :, :2] = bboxes_in[:, :, :2] * self.dboxes_xywh[:, :,
-                                                    2:] + self.dboxes_xywh[:, :,
-                                                          :2]
-        bboxes_in[:, :, 2:] = bboxes_in[:, :, 2:].exp() * self.dboxes_xywh[:, :,
-                                                          2:]
-
-        # Transform format to ltrb
-        l, t, r, b = bboxes_in[:, :, 0] - 0.5 * bboxes_in[:, :, 2], \
-                     bboxes_in[:, :, 1] - 0.5 * bboxes_in[:, :, 3], \
-                     bboxes_in[:, :, 0] + 0.5 * bboxes_in[:, :, 2], \
-                     bboxes_in[:, :, 1] + 0.5 * bboxes_in[:, :, 3]
-
-        bboxes_in[:, :, 0] = l
-        bboxes_in[:, :, 1] = t
-        bboxes_in[:, :, 2] = r
-        bboxes_in[:, :, 3] = b
-
-        return bboxes_in, F.softmax(scores_in, dim=-1)
-
-    def decode_batch(self, bboxes_in, scores_in, criteria=0.45, max_output=200, nms_valid_thresh=0.05):
-        bboxes, probs = self.scale_back_batch(bboxes_in, scores_in)
-
-        output = []
-        for bbox, prob in zip(bboxes.split(1, 0), probs.split(1, 0)):
-            bbox = bbox.squeeze(0)
-            prob = prob.squeeze(0)
-            output.append(self.decode_single(bbox, prob, criteria, max_output,
-					     nms_valid_thresh=nms_valid_thresh))
-            # print(output[-1])
-        return output
-
-    # perform non-maximum suppression
-    def decode_single(self, bboxes_in, scores_in, criteria, max_output,
-                      max_num=200, nms_valid_thresh=0.05):
-        # Reference to https://github.com/amdegroot/ssd.pytorch
-
-        bboxes_out = []
-        scores_out = []
-        labels_out = []
-
-        for i, score in enumerate(scores_in.split(1, 1)):
-            # skip background
-            # print(score[score>0.90])
-            if i == 0: continue
-            # print(i)
-
-            score = score.squeeze(1)
-            mask = score > nms_valid_thresh
-
-            bboxes, score = bboxes_in[mask, :], score[mask]
-            if score.size(0) == 0: continue
-
-            score_sorted, score_idx_sorted = score.sort(dim=0)
-
-            # select max_output indices
-            score_idx_sorted = score_idx_sorted[-max_num:]
-            candidates = []
-            # maxdata, maxloc = scores_in.sort()
-
-            while score_idx_sorted.numel() > 0:
-                idx = score_idx_sorted[-1].item()
-                bboxes_sorted = bboxes[score_idx_sorted, :]
-                bboxes_idx = bboxes[idx, :].unsqueeze(dim=0)
-                iou_sorted = calc_iou_tensor(bboxes_sorted,
-                                             bboxes_idx).squeeze()
-                # we only need iou < criteria
-                score_idx_sorted = score_idx_sorted[iou_sorted < criteria]
-                candidates.append(idx)
-
-            bboxes_out.append(bboxes[candidates, :])
-            scores_out.append(score[candidates])
-            labels_out.extend([i] * len(candidates))
-
-        bboxes_out, labels_out, scores_out = torch.cat(bboxes_out, dim=0), \
-                                             torch.tensor(labels_out,
-                                                          dtype=torch.long), \
-                                             torch.cat(scores_out, dim=0)
-
-        _, max_ids = scores_out.sort(dim=0)
-        max_ids = max_ids[-max_output:]
-        return bboxes_out[max_ids, :], labels_out[max_ids], scores_out[max_ids]
-
-
-class DefaultBoxes(object):
-    def __init__(self, fig_size, feat_size, steps, scales, aspect_ratios, \
-                 scale_xy=0.1, scale_wh=0.2):
-
-        self.feat_size = feat_size
-        self.fig_size = fig_size
-
-        self.scale_xy_ = scale_xy
-        self.scale_wh_ = scale_wh
-
-        # According to https://github.com/weiliu89/caffe
-        # Calculation method slightly different from paper
-        self.steps = steps
-        self.scales = scales
-
-        fk = fig_size / np.array(steps)
-        self.aspect_ratios = aspect_ratios
-
-        self.default_boxes = []
-        # size of feature and number of feature
-        for idx, sfeat in enumerate(self.feat_size):
-
-            sk1 = scales[idx] / fig_size
-            sk2 = scales[idx + 1] / fig_size
-            sk3 = sqrt(sk1 * sk2)
-            all_sizes = [(sk1, sk1), (sk3, sk3)]
-
-            for alpha in aspect_ratios[idx]:
-                w, h = sk1 * sqrt(alpha), sk1 / sqrt(alpha)
-                all_sizes.append((w, h))
-                all_sizes.append((h, w))
-            for w, h in all_sizes:
-                for i, j in itertools.product(range(sfeat), repeat=2):
-                    cx, cy = (j + 0.5) / fk[idx], (i + 0.5) / fk[idx]
-                    self.default_boxes.append((cx, cy, w, h))
-
-        self.dboxes = torch.tensor(self.default_boxes, dtype=torch.float)
-        self.dboxes.clamp_(min=0, max=1)
-        # For IoU calculation
-        self.dboxes_ltrb = self.dboxes.clone()
-        self.dboxes_ltrb[:, 0] = self.dboxes[:, 0] - 0.5 * self.dboxes[:, 2]
-        self.dboxes_ltrb[:, 1] = self.dboxes[:, 1] - 0.5 * self.dboxes[:, 3]
-        self.dboxes_ltrb[:, 2] = self.dboxes[:, 0] + 0.5 * self.dboxes[:, 2]
-        self.dboxes_ltrb[:, 3] = self.dboxes[:, 1] + 0.5 * self.dboxes[:, 3]
+        if not is_dist_avail_and_initialized():
+            return
+        t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
+        dist.barrier()
+        dist.all_reduce(t)
+        t = t.tolist()
+        self.count = int(t[0])
+        self.total = t[1]
 
     @property
-    def scale_xy(self):
-        return self.scale_xy_
+    def median(self):
+        d = torch.tensor(list(self.deque))
+        return d.median().item()
 
     @property
-    def scale_wh(self):
-        return self.scale_wh_
-
-    def __call__(self, order="ltrb"):
-        if order == "ltrb": return self.dboxes_ltrb
-        if order == "xywh": return self.dboxes
-
-
-# This function is from https://github.com/chauhan-utk/ssd.DomainAdaptation.
-class SSDCropping(object):
-    """ Cropping for SSD, according to original paper
-        Choose between following 3 conditions:
-        1. Preserve the original image
-        2. Random crop minimum IoU is among 0.1, 0.3, 0.5, 0.7, 0.9
-        3. Random crop
-        Reference to https://github.com/chauhan-utk/ssd.DomainAdaptation
-    """
-
-    def __init__(self, num_cropping_iterations=1):
-
-        self.sample_options = (
-            # Do nothing
-            None,
-            # min IoU, max IoU
-            (0.1, None),
-            (0.3, None),
-            (0.5, None),
-            (0.7, None),
-            (0.9, None),
-            # no IoU requirements
-            (None, None),
-        )
-        # Implementation uses 1 iteration to find a possible candidate, this
-        # was shown to produce the same mAP as using more iterations.
-        self.num_cropping_iterations = num_cropping_iterations
-        ssd_print(key=mllog_const.MAX_SAMPLES, value=self.num_cropping_iterations, sync=False)
-
-    def __call__(self, img, img_size, bboxes, labels):
-
-        # Ensure always return cropped image
-        while True:
-            mode = random.choice(self.sample_options)
-
-            if mode is None:
-                return img, img_size, bboxes, labels
-
-            htot, wtot = img_size
-
-            min_iou, max_iou = mode
-            min_iou = float("-inf") if min_iou is None else min_iou
-            max_iou = float("+inf") if max_iou is None else max_iou
-
-            for _ in range(self.num_cropping_iterations):
-                # suze of each sampled path in [0.1, 1] 0.3*0.3 approx. 0.1
-                w = random.uniform(0.3, 1.0)
-                h = random.uniform(0.3, 1.0)
-
-                if w / h < 0.5 or w / h > 2:
-                    continue
-
-                # left 0 ~ wtot - w, top 0 ~ htot - h
-                left = random.uniform(0, 1.0 - w)
-                top = random.uniform(0, 1.0 - h)
-
-                right = left + w
-                bottom = top + h
-
-                ious = calc_iou_tensor(bboxes, torch.tensor(
-                    [[left, top, right, bottom]]))
-
-                # tailor all the bboxes and return
-                if not ((ious > min_iou) & (ious < max_iou)).all():
-                    continue
-
-                # discard any bboxes whose center not in the cropped image
-                xc = 0.5 * (bboxes[:, 0] + bboxes[:, 2])
-                yc = 0.5 * (bboxes[:, 1] + bboxes[:, 3])
-
-                masks = (xc > left) & (xc < right) & (yc > top) & (yc < bottom)
-
-                # if no such boxes, continue searching again
-                if not masks.any():
-                    continue
-
-                bboxes[bboxes[:, 0] < left, 0] = left
-                bboxes[bboxes[:, 1] < top, 1] = top
-                bboxes[bboxes[:, 2] > right, 2] = right
-                bboxes[bboxes[:, 3] > bottom, 3] = bottom
-
-                # print(left, top, right, bottom)
-                # print(labels, bboxes, masks)
-                bboxes = bboxes[masks, :]
-                labels = labels[masks]
-
-                left_idx = int(left * wtot)
-                top_idx = int(top * htot)
-                right_idx = int(right * wtot)
-                bottom_idx = int(bottom * htot)
-                # print(left_idx,top_idx,right_idx,bottom_idx)
-                # img = img[:, top_idx:bottom_idx, left_idx:right_idx]
-                img = img.crop((left_idx, top_idx, right_idx, bottom_idx))
-
-                bboxes[:, 0] = (bboxes[:, 0] - left) / w
-                bboxes[:, 1] = (bboxes[:, 1] - top) / h
-                bboxes[:, 2] = (bboxes[:, 2] - left) / w
-                bboxes[:, 3] = (bboxes[:, 3] - top) / h
-
-                htot = bottom_idx - top_idx
-                wtot = right_idx - left_idx
-                return img, (htot, wtot), bboxes, labels
-
-
-class ToTensor(object):
-    def __init__(self):
-        pass
-
-    def __call__(self, img):
-        img = torch.Tensor(np.array(img))
-        # Transform from HWC to CHW
-        img = img.permute(2, 0, 1)
-        return img
-
-
-class LightingNoice(object):
-    """
-        See this question, AlexNet data augumentation:
-        https://stackoverflow.com/questions/43328600
-    """
-
-    def __init__(self):
-        self.eigval = torch.tensor([55.46, 4.794, 1.148])
-        self.eigvec = torch.tensor([
-            [-0.5675, 0.7192, 0.4009],
-            [-0.5808, -0.0045, -0.8140],
-            [-0.5836, -0.6948, 0.4203]])
-
-    def __call__(self, img):
-        img = torch.Tensor(np.array(img))
-        # Transform from HWC to CHW
-        img = img.permute(2, 0, 1)
-        return img
-        alpha0 = random.gauss(sigma=0.1, mu=0)
-        alpha1 = random.gauss(sigma=0.1, mu=0)
-        alpha2 = random.gauss(sigma=0.1, mu=0)
-
-        channels = alpha0 * self.eigval[0] * self.eigvec[0, :] + \
-                   alpha1 * self.eigval[1] * self.eigvec[1, :] + \
-                   alpha2 * self.eigval[2] * self.eigvec[2, :]
-        channels = channels.view(3, 1, 1)
-        img += channels
-
-        return img
-
-
-class RandomHorizontalFlip(object):
-    def __init__(self, p=0.5):
-        self.p = p
-
-    def __call__(self, image, bboxes):
-        if random.random() < self.p:
-            bboxes[:, 0], bboxes[:, 2] = 1.0 - bboxes[:, 2], 1.0 - bboxes[:, 0]
-            return image.transpose(Image.FLIP_LEFT_RIGHT), bboxes
-        return image, bboxes
-
-
-# Do data augumentation
-class SSDTransformer(object):
-    """ SSD Data Augumentation, according to original paper
-        Composed by several steps:
-        Cropping
-        Resize
-        Flipping
-        Jittering
-    """
-
-    def __init__(self, dboxes, size=(300, 300), val=False, num_cropping_iterations=1):
-        # define vgg16 mean
-        self.size = size
-        self.val = val
-
-        self.dboxes_ = dboxes  # DefaultBoxes300()
-        self.encoder = Encoder(self.dboxes_)
-
-        self.crop = SSDCropping(num_cropping_iterations=num_cropping_iterations)
-        self.img_trans = transforms.Compose([
-            transforms.Resize(self.size),
-            # transforms.Resize((300, 300)),
-            # transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.125, contrast=0.5,
-                                   saturation=0.5, hue=0.05
-                                   ),
-            transforms.ToTensor()
-            # LightingNoice(),
-        ])
-        self.hflip = RandomHorizontalFlip()
-
-        # All Pytorch Tensor will be normalized
-        # https://discuss.pytorch.org/t/how-to-preprocess-input-for-pre-trained-networks/683
-        normalization_mean = [0.485, 0.456, 0.406]
-        normalization_std = [0.229, 0.224, 0.225]
-        self.normalize = transforms.Normalize(mean=normalization_mean,
-                                              std=normalization_std)
-        # self.normalize = transforms.Normalize(mean = [104.0, 117.0, 123.0],
-        #                                      std = [1.0, 1.0, 1.0])
-
-        self.trans_val = transforms.Compose([
-            transforms.Resize(self.size),
-            transforms.ToTensor(),
-            # ToTensor(),
-            self.normalize, ])
+    def avg(self):
+        d = torch.tensor(list(self.deque), dtype=torch.float32)
+        return d.mean().item()
 
     @property
-    def dboxes(self):
-        return self.dboxes_
+    def global_avg(self):
+        return self.total / self.count
 
-    def __call__(self, img, img_size, bbox=None, label=None, max_num=200):
-        # img = torch.tensor(img)
-        if self.val:
-            bbox_out = torch.zeros(max_num, 4)
-            label_out = torch.zeros(max_num, dtype=torch.long)
-            bbox_out[:bbox.size(0), :] = bbox
-            label_out[:label.size(0)] = label
-            return self.trans_val(img), img_size, bbox_out, label_out
+    @property
+    def max(self):
+        return max(self.deque)
 
-        # print("before", img.size, bbox)
-        img, img_size, bbox, label = self.crop(img, img_size, bbox, label)
-        # print("after", img.size, bbox)
-        img, bbox = self.hflip(img, bbox)
+    @property
+    def value(self):
+        return self.deque[-1]
 
-        img = self.img_trans(img).contiguous()
-        # img = img.contiguous().div(255)
-        img = self.normalize(img)
-
-        bbox, label = self.encoder.encode(bbox, label)
-
-        return img, img_size, bbox, label
+    def __str__(self):
+        return self.fmt.format(
+            median=self.median,
+            avg=self.avg,
+            global_avg=self.global_avg,
+            max=self.max,
+            value=self.value)
 
 
-# Implement a datareader for COCO dataset
-class COCODetection(data.Dataset):
-    def __init__(self, img_folder, annotate_file, transform=None):
-        self.img_folder = img_folder
-        self.annotate_file = annotate_file
+def all_gather(data):
+    """
+    Run all_gather on arbitrary picklable data (not necessarily tensors)
+    Args:
+        data: any picklable object
+    Returns:
+        list[data]: list of data gathered from each rank
+    """
+    world_size = get_world_size()
+    if world_size == 1:
+        return [data]
+    data_list = [None] * world_size
+    dist.all_gather_object(data_list, data)
+    return data_list
 
-        # Start processing annotation
-        with open(annotate_file) as fin:
-            self.data = json.load(fin)
 
-        self.images = {}
+def broadcast(data, src):
+    """
+    Run broadcast on arbitrary picklable data (not necessarily tensors)
+    Args:
+        data: any picklable object
+        src: Source rank from which to broadcast data
+    Returns:
+        list[data]: list of data gathered from each rank
+    """
+    world_size = get_world_size()
+    if world_size == 1:
+        return data
+    data_list = data if isinstance(data, list) else [data]
+    dist.broadcast_object_list(data_list, src=src)
+    return data_list if isinstance(data, list) else data_list[0]
 
-        self.label_map = {}
-        self.label_info = {}
-        # print("Parsing COCO data...")
+
+def reduce_dict(input_dict, average=True):
+    """
+    Args:
+        input_dict (dict): all the values will be reduced
+        average (bool): whether to do average or sum
+    Reduce the values in the dictionary from all processes so that all processes
+    have the averaged results. Returns a dict with the same fields as
+    input_dict, after reduction.
+    """
+    world_size = get_world_size()
+    if world_size < 2:
+        return input_dict
+    with torch.no_grad():
+        names = []
+        values = []
+        # sort the keys so that they are consistent across processes
+        for k in sorted(input_dict.keys()):
+            names.append(k)
+            values.append(input_dict[k])
+        values = torch.stack(values, dim=0)
+        dist.all_reduce(values)
+        if average:
+            values /= world_size
+        reduced_dict = {k: v for k, v in zip(names, values)}
+    return reduced_dict
+
+
+class MetricLogger(object):
+    def __init__(self, delimiter="\t"):
+        self.meters = defaultdict(SmoothedValue)
+        self.delimiter = delimiter
+
+    def update(self, **kwargs):
+        for k, v in kwargs.items():
+            if isinstance(v, torch.Tensor):
+                v = v.item()
+            assert isinstance(v, (float, int))
+            self.meters[k].update(v)
+
+    def __getattr__(self, attr):
+        if attr in self.meters:
+            return self.meters[attr]
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+        raise AttributeError("'{}' object has no attribute '{}'".format(
+            type(self).__name__, attr))
+
+    def __str__(self):
+        loss_str = []
+        for name, meter in self.meters.items():
+            loss_str.append(
+                "{}: {}".format(name, str(meter))
+            )
+        return self.delimiter.join(loss_str)
+
+    def synchronize_between_processes(self):
+        for meter in self.meters.values():
+            meter.synchronize_between_processes()
+
+    def add_meter(self, name, meter):
+        self.meters[name] = meter
+
+    def log_every(self, iterable, print_freq, header=None):
+        i = 0
+        if not header:
+            header = ''
         start_time = time.time()
-        # 0 stand for the background
-        cnt = 0
-        self.label_info[cnt] = "background"
-        for cat in self.data["categories"]:
-            cnt += 1
-            self.label_map[cat["id"]] = cnt
-            self.label_info[cnt] = cat["name"]
-
-        # build inference for images
-        for img in self.data["images"]:
-            img_id = img["id"]
-            img_name = img["file_name"]
-            img_size = (img["height"], img["width"])
-            # print(img_name)
-            if img_id in self.images: raise Exception("dulpicated image record")
-            self.images[img_id] = (img_name, img_size, [])
-
-        # read bboxes
-        for bboxes in self.data["annotations"]:
-            img_id = bboxes["image_id"]
-            category_id = bboxes["category_id"]
-            bbox = bboxes["bbox"]
-            bbox_label = self.label_map[bboxes["category_id"]]
-            self.images[img_id][2].append((bbox, bbox_label))
-
-        for k, v in list(self.images.items()):
-            if len(v[2]) == 0:
-                # print("empty image: {}".format(k))
-                self.images.pop(k)
-
-        self.img_keys = list(self.images.keys())
-        self.transform = transform
-        # print("End parsing COCO data, total time {}".format(time.time()-start_time))
-
-    @property
-    def labelnum(self):
-        return len(self.label_info)
-
-    @staticmethod
-    def load(pklfile):
-        # print("Loading from {}".format(pklfile))
-        with bz2.open(pklfile, "rb") as fin:
-            ret = pickle.load(fin)
-        return ret
-
-    def save(self, pklfile):
-        # print("Saving to {}".format(pklfile))
-        with bz2.open(pklfile, "wb") as fout:
-            pickle.dump(self, fout)
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, idx):
-        img_id = self.img_keys[idx]
-        img_data = self.images[img_id]
-        fn = img_data[0]
-        img_path = os.path.join(self.img_folder, fn)
-        img = Image.open(img_path).convert("RGB")
-
-        htot, wtot = img_data[1]
-        bbox_sizes = []
-        bbox_labels = []
-
-        # for (xc, yc, w, h), bbox_label in img_data[2]:
-        for (l, t, w, h), bbox_label in img_data[2]:
-            r = l + w
-            b = t + h
-            # l, t, r, b = xc - 0.5*w, yc - 0.5*h, xc + 0.5*w, yc + 0.5*h
-            bbox_size = (l / wtot, t / htot, r / wtot, b / htot)
-            bbox_sizes.append(bbox_size)
-            bbox_labels.append(bbox_label)
-
-        bbox_sizes = torch.tensor(bbox_sizes)
-        bbox_labels = torch.tensor(bbox_labels)
-
-        if self.transform != None:
-            img, (htot, wtot), bbox_sizes, bbox_labels = \
-                self.transform(img, (htot, wtot), bbox_sizes, bbox_labels)
+        end = time.time()
+        iter_time = SmoothedValue(fmt='{avg:.4f}')
+        data_time = SmoothedValue(fmt='{avg:.4f}')
+        space_fmt = ':' + str(len(str(len(iterable)))) + 'd'
+        if torch.cuda.is_available():
+            log_msg = self.delimiter.join([
+                header,
+                '[{0' + space_fmt + '}/{1}]',
+                'eta: {eta}',
+                '{meters}',
+                'time: {time}',
+                'data: {data}',
+                'max mem: {memory:.0f}'
+            ])
         else:
-            pass
+            log_msg = self.delimiter.join([
+                header,
+                '[{0' + space_fmt + '}/{1}]',
+                'eta: {eta}',
+                '{meters}',
+                'time: {time}',
+                'data: {data}'
+            ])
+        MB = 1024.0 * 1024.0
+        for obj in iterable:
+            data_time.update(time.time() - end)
+            yield obj
+            iter_time.update(time.time() - end)
+            if i % print_freq == 0 or i == len(iterable) - 1:
+                eta_seconds = iter_time.global_avg * (len(iterable) - i)
+                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+                if torch.cuda.is_available():
+                    print(log_msg.format(
+                        i, len(iterable), eta=eta_string,
+                        meters=str(self),
+                        time=str(iter_time), data=str(data_time),
+                        memory=torch.cuda.max_memory_allocated() / MB))
+                else:
+                    print(log_msg.format(
+                        i, len(iterable), eta=eta_string,
+                        meters=str(self),
+                        time=str(iter_time), data=str(data_time)))
+            i += 1
+            end = time.time()
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print('{} Total time: {} ({:.4f} s / it)'.format(
+            header, total_time_str, total_time / len(iterable)))
 
-        return img, img_id, (htot, wtot), bbox_sizes, bbox_labels
 
-    # Implement a datareader for VOC dataset
+def collate_fn(batch):
+    return tuple(zip(*batch))
 
 
-class VOCDetection(data.Dataset):
-    """  VOC PASCAL 07/12 DataReader
-         params:
-            img:        image folder
-            annotate:   annotation folder (xml)
+def warmup_lr_scheduler(optimizer, start_iter, warmup_iters, warmup_factor):
+
+    def f(x):
+        x = x + start_iter
+        if x >= warmup_iters:
+            return 1
+        alpha = float(x) / warmup_iters
+        return warmup_factor * (1 - alpha) + alpha
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, f)
+
+
+def mkdir(path):
+    try:
+        os.makedirs(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+
+
+def setup_for_distributed(is_master):
     """
+    This function disables printing when not in master process
+    """
+    import builtins as __builtin__
+    builtin_print = __builtin__.print
 
-    def __init__(self, img_folder, annotate_folder, file_filter, transform=None,
-                 label_map={}, difficult=True):
-        # print("Reading data informations")
+    def print(*args, **kwargs):
+        force = kwargs.pop('force', False)
+        if is_master or force:
+            builtin_print(*args, **kwargs)
 
-        self.img_folder = img_folder
-        self.annotate_folder = annotate_folder
-        self.transform = transform
-        self.difficult = difficult
-        self.file_filter = file_filter
-
-        # Read file filter to filter out files
-        with open(file_filter, "r") as fin:
-            self.filter = fin.read().strip().split("\n")
-
-        self.images = []
-        self.label_num = 0
-        self.label_map = {v: k for k, v in label_map.items()}
-
-        for xml_file in glob.glob(os.path.join(annotate_folder, "*.xml")):
-            ret = self._parse_xml(xml_file)
-            if ret:
-                self.images.append(ret)
-
-        self.label_map = {v: k for k, v in self.label_map.items()}
-        # Add background label
-        self.label_map[0] = "background"
-        self.label_num += 1
-        # print("Finished Reading")
-
-    def _parse_xml(self, xml_file):
-        # print(xml_file)
-        root = ElementTree.ElementTree(file=xml_file)
-        img_name = root.find("filename").text
-        # Get basename
-        base_name = Path(img_name).resolve().stem
-        if base_name not in self.filter:
-            return []
-
-        img_size = (
-            int(root.find("size").find("height").text),
-            int(root.find("size").find("width").text),
-            int(root.find("size").find("depth").text),)
-
-        tmp_data = []
-        for obj in root.findall("object"):
-            # extract xmin, ymin, xmax, ymax
-            difficult = obj.find("difficult").text
-            if difficult == "1" and not self.difficult:
-                continue
-            bbox = (
-                int(obj.find("bndbox").find("xmin").text),
-                int(obj.find("bndbox").find("ymin").text),
-                int(obj.find("bndbox").find("xmax").text),
-                int(obj.find("bndbox").find("ymax").text),)
-            bbox_label = obj.find("name").text
-            if bbox_label in self.label_map:
-                bbox_label = self.label_map[bbox_label]
-            else:
-                self.label_num += 1
-                self.label_map[bbox_label] = self.label_num
-                bbox_label = self.label_num
-            tmp_data.append((bbox, bbox_label))
-
-        return (img_name, img_size, tmp_data)
-
-    def __getitem__(self, idx):
-
-        image_info = self.images[idx]
-        # print(self.images)
-        # print(image_info)
-        img_path = os.path.join(self.img_folder, image_info[0])
-        # img = np.array(Image.open(img_path).convert('RGB'))
-        img = Image.open(img_path)
-
-        # Assert the record in xml and image matches
-        # assert img.size == image_info[1], "Image Size Does Not Match!"
-
-        htot, wtot, _ = image_info[1]
-
-        bbox_sizes = []
-        bbox_labels = []
-
-        for (xmin, ymin, xmax, ymax), bbox_label in image_info[2]:
-            # cx, cy, w, h = (xmin + xmax)/2, (ymin + ymax)/2, xmax - xmin, ymax - ymin
-            # bbox_size = (cx, cy, w, h)
-            # print(cx, cy, w, h)
-            # bbox_size = (cx/wtot, cy/htot, w/wtot, h/htot)
-            l, t, r, b = xmin, ymin, xmax, ymax
-            bbox_size = (l / wtot, t / htot, r / wtot, b / htot)
-            bbox_sizes.append(bbox_size)
-            # bbox_labels.append(self.label_map[bbox_label])
-            bbox_labels.append(bbox_label)
-
-        bbox_sizes = torch.tensor(bbox_sizes)
-        bbox_labels = torch.tensor(bbox_labels)
-        # bbox_size = (xmin, ymin, xmax, ymax)
-        # bbox_label = bbox_info[3]
-
-        # Perform image transformation
-        if self.transform != None:
-            img, (htot, wtot), bbox_sizes, bbox_labels = \
-                self.transform(img, (htot, wtot), bbox_sizes, bbox_labels)
-        else:
-            pass
-
-        # print(img.shape, bbox_sizes.shape, bbox_labels.shape)
-        # print(idx, "non_bg:", (bbox_labels > 0).sum().item())
-        # print(img.shape)
-        return img, (htot, wtot), bbox_sizes, bbox_labels
-
-    def __len__(self):
-        return len(self.images)
+    __builtin__.print = print
 
 
-def draw_patches(img, bboxes, labels, order="xywh", label_map={}):
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    # Suppose bboxes in fractional coordinate:
-    # cx, cy, w, h
-    # img = img.numpy()
-    img = np.array(img)
-    labels = np.array(labels)
-    bboxes = bboxes.numpy()
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
 
-    if label_map:
-        labels = [label_map.get(l) for l in labels]
 
-    if order == "ltrb":
-        xmin, ymin, xmax, ymax = bboxes[:, 0], bboxes[:, 1], bboxes[:,
-                                                             2], bboxes[:, 3]
-        cx, cy, w, h = (xmin + xmax) / 2, (
-                    ymin + ymax) / 2, xmax - xmin, ymax - ymin
+def get_world_size():
+    if not is_dist_avail_and_initialized():
+        return 1
+    return dist.get_world_size()
+
+
+def get_rank():
+    if not is_dist_avail_and_initialized():
+        return 0
+    return dist.get_rank()
+
+
+def is_main_process():
+    return get_rank() == 0
+
+
+def save_on_master(*args, **kwargs):
+    if is_main_process():
+        torch.save(*args, **kwargs)
+
+
+def barrier():
+    if not is_dist_avail_and_initialized():
+        return
+    torch.distributed.barrier()
+
+
+def init_distributed_mode(args):
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        args.rank = int(os.environ["RANK"])
+        args.world_size = int(os.environ['WORLD_SIZE'])
+        args.gpu = int(os.environ['LOCAL_RANK'])
+    elif 'SLURM_PROCID' in os.environ:
+        args.rank = int(os.environ['SLURM_PROCID'])
+        args.gpu = args.rank % torch.cuda.device_count()
     else:
-        cx, cy, w, h = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2], bboxes[:, 3]
+        print('Not using distributed mode')
+        args.distributed = False
+        return
 
-    htot, wtot, _ = img.shape
-    cx *= wtot
-    cy *= htot
-    w *= wtot
-    h *= htot
+    args.distributed = True
 
-    bboxes = zip(cx, cy, w, h)
+    torch.cuda.set_device(args.gpu)
+    args.dist_backend = 'nccl'
+    print(f'| distributed init (rank {args.rank}): {args.dist_url}')
+    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
+                                         world_size=args.world_size, rank=args.rank)
+    torch.distributed.barrier()
+    setup_for_distributed(args.rank == 0)
 
-    plt.imshow(img)
-    ax = plt.gca()
-    for (cx, cy, w, h), label in zip(bboxes, labels):
-        if label == "background": continue
-        ax.add_patch(patches.Rectangle((cx - 0.5 * w, cy - 0.5 * h),
-                                       w, h, fill=False, color="r"))
-        bbox_props = dict(boxstyle="round", fc="y", ec="0.5", alpha=0.3)
-        ax.text(cx - 0.5 * w, cy - 0.5 * h, label, ha="center", va="center",
-                size=15, bbox=bbox_props)
-    plt.show()
-
-
-if __name__ == "__main__":
-    # trans = SSDTransformer()
-    # vd = VOCDetection("../../VOCdevkit/VOC2007/JPEGImages",
-    #                  "../../VOCdevkit/VOC2007/Annotations",
-    #                  "../../VOCdevkit/VOC2007/ImageSets/Main/trainval.txt",
-    #                  transform = trans)
-
-    # imgs, img_size, bbox, label = vd[0]
-    # img = imgs[:, :, :]
-    # img *= torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-    # img += torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-    # img = img.permute(1, 2, 0)
-    # print(bbox[label>0], label[label>0])
-    # draw_patches(img, bbox[label>0], label[label>0], order="xywh", label_map=vd.label_map)
-
-    annotate = "../../coco_ssd/instances_valminusminival2014.json"
-    coco_root = "../../coco_data/val2014"
-
-    coco = COCODetection(coco_root, annotate)
-    # coco.save("save.pb2")
-    print(len(coco))
-    # img, img_size, bbox, label = coco[2]
-    # draw_patches(img, bbox, label, order="ltrb", label_map=coco.label_info)
