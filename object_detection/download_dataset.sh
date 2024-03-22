@@ -29,11 +29,24 @@ echo "Extracting train2017.zip:"
 n_files=`unzip -l  train2017.zip| grep .jpg | wc -l`
 unzip train2017.zip  | { I=-1; while read; do printf "Progress: $((++I*100/$n_files))%%\r"; done; echo ""; }
 
-# TBD: MD5 verification
-# $md5sum *.zip *.tgz
-#f4bbac642086de4f52a3fdda2de5fa2c  annotations_trainval2017.zip
-#cced6f7f71b7629ddf16f17bbcfab6b2  train2017.zip
-#442b8da7639aecaf257c1dceb8ba8c80  val2017.zip
-#2d2b9d2283adb5e3b8d25eec88e65064  coco_annotations_minival.tgz
+# MD5 verification
+echo "Running MD5 verification ... this might take a while"
+checkMD5 () {
+    if [ $(pv -f $1| md5sum | cut -d' ' -f1) = $2 ];
+    then
+        echo "$1 MD5 is valid"
+    else 
+        echo "*ERROR* $1 MD5 is NOT valid"
+    fi
+}
+
+echo "validating annotations_trainval2017.zip:"
+checkMD5 "annotations_trainval2017.zip" "f4bbac642086de4f52a3fdda2de5fa2c"
+echo "validating coco_annotations_minival.tgz:"
+checkMD5 "coco_annotations_minival.tgz" "2d2b9d2283adb5e3b8d25eec88e65064"
+echo "validating val2017.zip:"
+checkMD5 "val2017.zip" "442b8da7639aecaf257c1dceb8ba8c80"
+echo "validating train2017.zip:"
+checkMD5 "train2017.zip" "cced6f7f71b7629ddf16f17bbcfab6b2"
 
 popd
