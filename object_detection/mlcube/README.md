@@ -37,10 +37,10 @@ Parameters are defined at these files:
 ```
 
 # Download COCO dataset. Default path = /workspace/data
-python mlcube_cli.py run --task download_data --platform docker
+mlcube run --task download_data --platform docker
 
 # Run benchmark. Default paths = ./workspace/data
-python mlcube_cli.py run --task train --platform docker
+mlcube run --task train --platform docker
 ```
 
 Parameters defined at **mculbe/mlcube.yaml** could be overridden using: `--param=input`
