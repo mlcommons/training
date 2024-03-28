@@ -1,0 +1,19 @@
+FROM pytorch/pytorch:1.7.1-cuda11.0-cudnn8-runtime
+
+ADD . /workspace/unet3d
+WORKDIR /workspace/unet3d
+
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y git vim
+
+RUN pip install --upgrade pip
+RUN pip install --disable-pip-version-check -r requirements.txt
+
+COPY . .
+RUN chmod +x ./download_dataset.sh ./preprocess_dataset.sh ./run_and_time.sh 
+
+ENV LC_ALL C.UTF-8
+ENV LANG C.UTF-8
+
+ENTRYPOINT ["python", "/workspace/unet3d/mlcube.py"]

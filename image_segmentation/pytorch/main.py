@@ -20,13 +20,14 @@ DATASET_SIZE = 168
 
 
 def main():
+    flags = PARSER.parse_args()
+    result_dir = flags.result_dir
     mllog.config(filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unet3d.log'))
-    mllog.config(filename=os.path.join("/results", 'unet3d.log'))
+    mllog.config(filename=os.path.join(result_dir, 'unet3d.log'))
     mllogger = mllog.get_mllogger()
     mllogger.logger.propagate = False
     mllog_start(key=constants.INIT_START)
 
-    flags = PARSER.parse_args()
     dllogger = get_dllogger(flags)
     local_rank = flags.local_rank
     device = get_device(local_rank)

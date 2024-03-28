@@ -1,0 +1,38 @@
+name: Image Segmentation
+description: MLCommons Image Segmentation Training Reference Benchmark
+authors: 
+ - {name: "MLCommons Best Practices Working Group"}
+
+platform:
+  # Edit this according to your system specs
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/image_segmentation:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../pytorch"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile.mlcube"
+
+tasks:
+  # Download KiTS19 dataset
+  download_data:
+    parameters:
+      # Directory for uncompressed datasets. Total size is ~ 29G.
+      outputs: {data_dir: data/}
+  preprocess_data:
+  # Preprocess dataset
+    parameters:
+      # Same directory location where dataset was downloaded
+      inputs: {data_dir: data/kits19/data/}
+      # When finished total size of the processed data is ~ 31G
+      outputs: {processed_dir: processed_data/}
+  train:
+  # Train image segmentation model
+    parameters:
+      # processed_data: Same path from task preprocess_data::processed_dir
+      # parameters_file: Yaml file with training parameters.
+      inputs: {data_dir: processed_data/, parameters_file: {type: file, default: parameters.yaml}}
+      # Output folder
+      outpus: {output_dir: output/}

@@ -1,0 +1,6 @@
+pytorch/raw-data-dir/
+mlcube/workspace/data
+mlcube/workspace/processed_data
+mlcube/workspace/output
+mlcube/run
+mlcube/tasks
