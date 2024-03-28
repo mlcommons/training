@@ -1,0 +1,5 @@
+SAVE_CHECKPOINTS: "" # Instead of False use empty value
+SOLVER_MAX_ITER: "100"
+
+# Other user parameters are defined at ../../pytorch/configs/e2e_mask_rcnn_R_50_FPN_1x.yaml
+# Default parameters are defined at ../../pytorch/maskrcnn_benchmark/config/defaults.py
