@@ -168,7 +168,7 @@ class MLPerfCallback(TrainerCallback):
             self.mllogger.event(
                 "train_loss",
                 value=state.log_history[-1]["loss"],
-                metadata={"step_num": state.log_history[-1]["step"]},
+                metadata={"samples_count": state.log_history[-1]["step"]*self.gbs},
             )
             control.should_log = True
 
@@ -176,17 +176,17 @@ class MLPerfCallback(TrainerCallback):
             self.mllogger.end(
                 constants.BLOCK_STOP,
                 value="",
-                metadata={"step_num": state.log_history[-1]["step"]},
+                metadata={"samples_count": state.log_history[-1]["step"]*self.gbs},
             )
             self.mllogger.event(
                 constants.EVAL_ACCURACY,
                 value=state.log_history[-1]["eval_loss"],
-                metadata={"samples_num": state.log_history[-1]["step"]*self.gbs},
+                metadata={"samples_count": state.log_history[-1]["step"]*self.gbs},
             )
             self.mllogger.start(
                 constants.BLOCK_START,
                 value="",
-                metadata={"step_num": state.log_history[-1]["step"]},
+                metadata={"samples_count": state.log_history[-1]["step"]},
             )            
             control.should_log = True
         eval_loss_list = [
@@ -198,7 +198,7 @@ class MLPerfCallback(TrainerCallback):
                 constants.RUN_STOP,
                 value=eval_loss_list[-1],
                 metadata={
-                    "samples_num": state.log_history[-1]["step"]*self.gbs,
+                    "samples_count": state.log_history[-1]["step"]*self.gbs,
                     "status": "success",
                 },
             )
@@ -207,7 +207,7 @@ class MLPerfCallback(TrainerCallback):
             self.mllogger.end(
                 constants.RUN_STOP,
                 value=eval_loss_list[-1],
-                metadata={"step_num": state.log_history[-1]["step"], "status": "fail"},
+                metadata={"samples_count": state.log_history[-1]["step"]*self.gbs, "status": "fail"},
             )
 
         return control
