@@ -123,9 +123,7 @@ class MLPerfCallback(TrainerCallback):
         )
         self.mllogger.event(
             key=constants.GLOBAL_BATCH_SIZE,
-            value=args.per_device_train_batch_size
-            * args.gradient_accumulation_steps
-            * os.getenv("WORLD_SIZE", 1),
+            value=self.gbs,
         )
         self.mllogger.event(
             key=constants.TRAIN_SAMPLES,
