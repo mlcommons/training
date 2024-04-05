@@ -16,7 +16,7 @@ pip install -r requirements.txt
 
 You will also need to run the following to install flash attention:
 ```
-pip install flash-attn --no-build-isolation
+pip install flash-attn==2.1.0 --no-build-isolation
 ```
 
 > For flash attention, make sure that the following command returns 0:
@@ -52,27 +52,30 @@ As defaults the scripts assume the model is under at ```./llama-v2-fused-qkv``` 
 Run:
 ```bash
 accelerate launch --config_file configs/default_config.yaml scripts/train.py \
---model_name meta-llama/Llama-2-70b-hf \
---dataset_name "tau/scrolls" --dataset_config_name "gov_report" \
+--dataset_path "./dataset" \
+--model_path "/software/users/ihubara/lora_clean/llama-v2-fused-qkv" \
 --max_seq_len 8192 \
 --bf16 True \
---logging_steps 1 \
---eval_steps 22 \
---output_dir "/tmp/llama-70b" \
+--logging_steps 24 \
+--eval_steps 48 \
+--output_dir "./results/llama-70b_scrolls_gov_report_r16_$1" \
 --per_device_train_batch_size 1 \
 --gradient_accumulation_steps 1 \
---dataset_text_field "input" \
 --lr_scheduler_type "cosine" \
---learning_rate 1e-3 \
---warmup_ratio 0.03 \
+--learning_rate 4e-4 \
+--weight_decay 0.0001 \
+--warmup_ratio 0 \
+--max_grad_norm 0.3 \
 --use_gradient_checkpointing True \
+--target_eval_loss 0.925 \
 --use_peft_lora True \
 --lora_r 16 \
 --lora_alpha 32 \
 --lora_dropout 0.1 \
---max_steps 440 \
+--max_steps 1024 \
 --use_flash_attn \
---lora_target_modules "q_proj,v_proj,k_proj,o_proj"
+--seed 1234 \
+--lora_target_modules "qkv_proj,o_proj"
 ```
 where the Accelerate config file is [this one](https://github.com/regisss/lora/blob/main/configs/default_config.yaml).
 
