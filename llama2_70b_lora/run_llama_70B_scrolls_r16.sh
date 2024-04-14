@@ -1,6 +1,6 @@
 accelerate launch --config_file configs/default_config.yaml scripts/train.py \
 --dataset_path "./dataset" \
---model_path "/software/users/ihubara/lora_clean/llama-v2-fused-qkv" \
+--model_path "./models/llama-v2-fused-qkv" \
 --max_seq_len 8192 \
 --bf16 True \
 --logging_steps 24 \

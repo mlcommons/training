@@ -90,7 +90,7 @@ class MLPerfCallback(TrainerCallback):
         }
 
     def on_train_begin(self, args, state, control, **kwargs):
-        self.gbs=int(args.per_device_train_batch_size * args.gradient_accumulation_steps * os.getenv("WORLD_SIZE", 1))
+        self.gbs=int(args.per_device_train_batch_size * args.gradient_accumulation_steps * int(os.getenv("WORLD_SIZE", 1)))
         self.mllogger.event(
             key=constants.CACHE_CLEAR, value="True",
         )
@@ -170,7 +170,7 @@ class MLPerfCallback(TrainerCallback):
             )
             control.should_log = True
 
-        if state.global_step % (state.eval_steps) == 0 and state.global_step > 0:
+        if state.global_step % (state.eval_steps) == 0 and state.global_step > args.eval_delay:
             self.mllogger.end(
                 constants.BLOCK_STOP,
                 value="",

@@ -41,11 +41,18 @@ git clone https://github.com/mlperf/logging.git mlperf-logging
 pip install -e mlperf-logging
 ```
 ## Download Data and Model
-data can be downloaded from:
-[mlperf drive - train data](https://drive.google.com/file/d/1-JgY1mEafcJ7qhggt6UR3OEKAciIPd5s/view?usp=sharing)
-[mlperf drive - validation data](https://drive.google.com/file/d/1jrm6Lacrq49AYv0uB_Qy22xRmfPixQvs/view?usp=sharing)
-[mlperf drive - llama-v2 model](https://drive.google.com/drive/folders/1sTeuxkPhwkNPKIPFnOLIYCcK53oB3Ypc?usp=sharing)
-As defaults the scripts assume the model is under at ```./llama-v2-fused-qkv``` and the both train and validation are under ```dataset``` folder.
+MLCommons hosts the model for download exclusively by MLCommons Members. You must first agree to the [confidentiality notice](https://docs.google.com/forms/d/e/1FAIpQLSc_8VIvRmXM3I8KQaYnKf7gy27Z63BBoI_I1u02f4lw6rBp3g/viewform), then follow the [link[(https://drive.google.com/drive/folders/11tBZvvrh0FCm3XuR5E849K42TqftYdUF)] to a directory containing [Rclone download instructions](https://docs.google.com/document/d/1Yp2T_TsVfg8uEoEv0wa-dGP4R7r1EOHucTvDNWznWzE/edit#heading=h.at8a3matgbrk). Follow steps 1-3 to install and activate Rclone. Finally, download the model to the desired download directory (default ./models):
+```
+mkdir models
+cd models
+rclone copy mlc-llama2:Llama2-70b-fused-qkv-mlperf ./Llama2-70b-fused-qkv-mlperf -P
+```
+Similarly download the data to the desired download directory (default ./dataset):
+```
+mkdir dataset
+cd dataset
+rclone copy mlc-llama2:training/scrolls_gov_report_8k ./scrolls_gov_report_8k -P
+```
 
 ## Llama2-70B on 8 devices
 
@@ -53,7 +60,7 @@ Run:
 ```bash
 accelerate launch --config_file configs/default_config.yaml scripts/train.py \
 --dataset_path "./dataset" \
---model_path "/software/users/ihubara/lora_clean/llama-v2-fused-qkv" \
+--model_path "/models/llama-v2-fused-qkv" \
 --max_seq_len 8192 \
 --bf16 True \
 --logging_steps 24 \
