@@ -151,6 +151,11 @@ def run_training_proc(rank, world_size,
 
   training_start = time.time()
   for epoch in tqdm.tqdm(range(epochs)):
+    if rank == 0:
+      mllogger.start(
+        key=mllog_constants.EPOCH_START,
+        metadata={mllog_constants.EPOCH_NUM: epoch},
+      )
     model.train()
     total_loss = 0
     train_acc = 0
@@ -207,6 +212,12 @@ def run_training_proc(rank, world_size,
     if with_gpu:
       torch.cuda.synchronize()
     dist.barrier()
+
+    if rank == 0:
+      mllogger.end(
+        key=mllog_constants.EPOCH_STOP,
+        metadata={mllog_constants.EPOCH_NUM: epoch},
+      )
 
     #checkpoint at the end of epoch
     if checkpoint_on_epoch_end:
@@ -341,6 +352,9 @@ if __name__ == '__main__':
 
   train_idx = igbh_dataset.train_idx.clone().share_memory_()
   val_idx = igbh_dataset.val_idx.clone().share_memory_()
+
+  mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=train_idx.size(0))
+  mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=val_idx.size(0))
 
   print('--- Launching training processes ...\n')
   torch.multiprocessing.spawn(
