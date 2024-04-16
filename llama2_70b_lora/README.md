@@ -88,23 +88,5 @@ where the Accelerate config file is [this one](https://github.com/regisss/lora/b
 
 > Using flash attention with `--use_flash_attn` is necessary for training on 8k-token sequences.
 
-Learning curves of such a run can be found here: https://huggingface.co/regisss/test_5/tensorboard
-
-
-## Evaluation
-
-To run evaluation for summarizing texts, you can run:
-- Without LoRA adapter weights:
-   ```
-   python scripts/eval.py --model_name meta-llama/Llama-2-70b-hf --max_new_tokens 900 --seq_length 8192 --do_sample --dataset_name "tau/scrolls" --dataset_config_name "gov_report"
-   ```
-- With LoRA adapter weights:
-   ```
-   python scripts/eval.py --peft_model_name path_to_my_lora_model --max_new_tokens 900 --seq_length 8192 --do_sample --dataset_name "tau/scrolls" --dataset_config_name "gov_report"
-   ```
-## expected outcome
-
-A clean output (train and eval loss) of a singel run with 440 steps can be found under 
-```
-   convergence_example.txt
-```
+## Reference code running time
+On 8xA100 cards the reference $\textcolor{red}{\textbf{UNOPTIMIZED}}$ code the TTT on average is 120-140 minutes.
