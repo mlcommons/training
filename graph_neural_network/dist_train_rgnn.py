@@ -218,6 +218,11 @@ def run_training_proc(local_proc_rank, num_nodes, node_rank, num_training_procs,
 
   training_start = time.time()
   for epoch in range(epochs):
+    if rank == 0:
+      mllogger.start(
+        key=mllog_constants.EPOCH_START,
+        metadata={mllog_constants.EPOCH_NUM: epoch},
+      )
     model.train()
     total_loss = 0
     train_acc = 0
@@ -282,6 +287,12 @@ def run_training_proc(local_proc_rank, num_nodes, node_rank, num_training_procs,
     if with_gpu:
       torch.cuda.synchronize()
     torch.distributed.barrier()
+
+    if rank == 0:
+      mllogger.end(
+        key=mllog_constants.EPOCH_STOP,
+        metadata={mllog_constants.EPOCH_NUM: epoch},
+      )
     
     #checkpoint at the end of epoch
     if checkpoint_on_epoch_end:
@@ -412,10 +423,9 @@ if __name__ == '__main__':
     if args.split_training_sampling:
       assert(not args.num_training_procs > torch.cuda.device_count() // 2)
   
+  world_size = args.num_nodes * args.num_training_procs
   if args.node_rank == 0:
-    world_size = args.num_nodes * args.num_training_procs
-    submission_info(mllogger, 'GNN', 'reference_implementation')
-    
+    submission_info(mllogger, mllog_constants.GNN, 'reference_implementation')
     mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=world_size*args.train_batch_size)
     mllogger.event(key=mllog_constants.GRADIENT_ACCUMULATION_STEPS, value=1)
     mllogger.event(key=mllog_constants.OPT_NAME, value='adam')
@@ -443,6 +453,10 @@ if __name__ == '__main__':
   )
   train_idx.share_memory_()
   val_idx.share_memory_()
+
+  if args.node_rank == 0:
+    mllogger.event(key=mllog_constants.TRAIN_SAMPLES, value=train_idx.size(0) * world_size)
+    mllogger.event(key=mllog_constants.EVAL_SAMPLES, value=val_idx.size(0) * world_size)
   
   print('--- Launching training processes ...\n')
   torch.multiprocessing.spawn(

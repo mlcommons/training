@@ -15,7 +15,7 @@ or
 ```bash
 git clone https://github.com/mlcommons/training.git
 ```
-once `GNN node classification` is merged into `mlcommons/training`.
+
 
 #### 2. Build the docker image:
 
