@@ -15,7 +15,7 @@
 
 from dataclasses import dataclass, field
 from typing import Optional
-
+import os
 from datasets import load_dataset
 from mlperf_logging_utils import LoraLogger, MLPerfCallback
 from transformers import HfArgumentParser, Trainer, TrainingArguments
@@ -136,6 +136,7 @@ class ScriptArguments:
 
 def main(args):
     loralogger = LoraLogger(target_eval_loss=args.target_eval_loss)
+    gbs=args.per_device_train_batch_size * args.gradient_accumulation_steps * int(os.getenv("WORLD_SIZE", 1))
     training_arguments = TrainingArguments(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,
@@ -154,6 +155,7 @@ def main(args):
         save_strategy="no",
         max_steps=args.max_steps,
         eval_steps=args.eval_steps,
+        eval_delay=int(0.125*gbs+2)*args.eval_steps,
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         push_to_hub=args.push_to_hub,
