@@ -322,7 +322,7 @@ if __name__ == '__main__':
 
   glt.utils.common.seed_everything(args.random_seed)
   world_size = torch.cuda.device_count()
-  submission_info(mllogger, 'GNN', 'reference_implementation')
+  submission_info(mllogger, mllog_constants.GNN, 'reference_implementation')
   mllogger.event(key=mllog_constants.GLOBAL_BATCH_SIZE, value=world_size*args.train_batch_size)
   mllogger.event(key=mllog_constants.GRADIENT_ACCUMULATION_STEPS, value=1)
   mllogger.event(key=mllog_constants.OPT_NAME, value='adam')
