@@ -30,5 +30,3 @@ COPY . .
 RUN chmod +x ./run_and_time.sh ./download_dataset.sh
 
 ENV PYTHONPATH /workspace/pytorch
-
-ENTRYPOINT ["python", "/workspace/mlcube.py"]

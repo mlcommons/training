@@ -1,7 +1,18 @@
 #!/bin/bash
+: "${DATA_ROOT_DIR:=./pytorch/datasets/coco}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --data_dir=*)
+    DATA_ROOT_DIR="${1#*=}"
+    ;;
+  *) ;;
+  esac
+  shift
+done
+
 
 # Get COCO 2017 data sets
-DATA_ROOT_DIR="${DATA_ROOT_DIR:-./pytorch/datasets/coco}"
 echo "Downloaading to folder: $DATA_ROOT_DIR"
 mkdir -p $DATA_ROOT_DIR
 pushd $DATA_ROOT_DIR

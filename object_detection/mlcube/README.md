@@ -1,9 +1,5 @@
 # Benchmark execution with MLCube
 
-## Current implementation
-
-We'll be updating this section as we merge MLCube PRs and make new MLCube releases.
-
 ### Project setup
 ```Python
 # Create Python environment and install MLCube Docker runner 
@@ -34,14 +30,33 @@ Parameters are defined at these files:
 * Project user parameters: pytorch/configs/e2e_mask_rcnn_R_50_FPN_1x.yaml
 * Project default parameters: pytorch/maskrcnn_benchmark/config/defaults.py
 
-```
-
+```bash
 # Download COCO dataset. Default path = /workspace/data
-mlcube run --task download_data --platform docker
+mlcube run --task=download_data -Pdocker.build_strategy=always
 
 # Run benchmark. Default paths = ./workspace/data
-mlcube run --task train --platform docker
+mlcube run --task=train -Pdocker.build_strategy=always
 ```
+
+### Demo execution
+
+These tasks will use a demo dataset (39M) to execute a faster training workload for a quick demo (~12 min):
+
+```bash
+# Download subsampled dataset. Default path = /workspace/demo
+mlcube run --task=download_data -Pdocker.build_strategy=always
+
+# Run benchmark. Default paths = ./workspace/demo and ./workspace/demo_output
+mlcube run --task=demo -Pdocker.build_strategy=always
+```
+
+It's also possible to execute the two tasks in one single instruction:
+
+```bash
+mlcube run --task=download_demo,demo -Pdocker.build_strategy=always
+```
+
+### Aditonal options
 
 Parameters defined at **mculbe/mlcube.yaml** could be overridden using: `--param=input`
 
