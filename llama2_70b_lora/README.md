@@ -41,7 +41,7 @@ git clone https://github.com/mlperf/logging.git mlperf-logging
 pip install -e mlperf-logging
 ```
 ## Download Data and Model
-MLCommons hosts the model for download exclusively by MLCommons Members. You must first agree to the [confidentiality notice](https://docs.google.com/forms/d/e/1FAIpQLSc_8VIvRmXM3I8KQaYnKf7gy27Z63BBoI_I1u02f4lw6rBp3g/viewform), then follow the [link[(https://drive.google.com/drive/folders/11tBZvvrh0FCm3XuR5E849K42TqftYdUF)] to a directory containing [Rclone download instructions](https://docs.google.com/document/d/1Yp2T_TsVfg8uEoEv0wa-dGP4R7r1EOHucTvDNWznWzE/edit#heading=h.at8a3matgbrk). Follow steps 1-3 to install and activate Rclone. Finally, download the model to the desired download directory (default ./models):
+MLCommons hosts the model for download exclusively by MLCommons Members. You must first agree to the [confidentiality notice](https://docs.google.com/forms/d/e/1FAIpQLSc_8VIvRmXM3I8KQaYnKf7gy27Z63BBoI_I1u02f4lw6rBp3g/viewform), then follow the provided link to a directory containing [Rclone download instructions. Follow steps 1-3 to install and activate Rclone. Finally, download the model to the desired download directory (default ./models):
 ```
 mkdir models
 cd models
