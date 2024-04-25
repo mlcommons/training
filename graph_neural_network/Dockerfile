@@ -15,5 +15,5 @@ RUN pip install git+https://github.com/mlcommons/logging.git
 # TF32 instead of FP32 for faster compute
 ENV NVIDIA_TF32_OVERRIDE=1
 
-RUN git clone https://github.com/alibaba/graphlearn-for-pytorch.git
-WORKDIR /workspace/repository/graphlearn-for-pytorch/examples/igbh
+COPY . .
+WORKDIR /workspace/repository
