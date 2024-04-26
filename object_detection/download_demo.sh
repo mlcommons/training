@@ -11,7 +11,6 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-
 echo "Downloaading demo to folder: $DATA_ROOT_DIR"
 mkdir -p $DATA_ROOT_DIR
 pushd $DATA_ROOT_DIR
@@ -24,13 +23,12 @@ echo "Done!"
 
 # MD5 verification
 echo "Running MD5 verification ..."
-checkMD5 () {
-    if [ $(pv -f $1| md5sum | cut -d' ' -f1) = $2 ];
-    then
-        echo "$1 MD5 is valid"
-    else 
-        echo "*ERROR* $1 MD5 is NOT valid"
-    fi
+checkMD5() {
+  if [ $(pv -f $1 | md5sum | cut -d' ' -f1) = $2 ]; then
+    echo "$1 MD5 is valid"
+  else
+    echo "*ERROR* $1 MD5 is NOT valid"
+  fi
 }
 
 echo "validating demo_data.zip:"

@@ -11,7 +11,6 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-
 # Get COCO 2017 data sets
 echo "Downloaading to folder: $DATA_ROOT_DIR"
 mkdir -p $DATA_ROOT_DIR
@@ -25,30 +24,41 @@ tar -xzf coco_annotations_minival.tgz &>/dev/null
 echo "Downloading annotations_trainval2017.zip:"
 curl -O http://images.cocodataset.org/annotations/annotations_trainval2017.zip
 echo "Extracting annotations_trainval2017.zip:"
-n_files=`unzip -l  annotations_trainval2017.zip| grep .json | wc -l`
-unzip annotations_trainval2017.zip  | { I=-1; while read; do printf "Progress: $((++I*100/$n_files))%%\r"; done; echo ""; }
+n_files=$(unzip -l annotations_trainval2017.zip | grep .json | wc -l)
+unzip annotations_trainval2017.zip | {
+  I=-1
+  while read; do printf "Progress: $((++I * 100 / $n_files))%%\r"; done
+  echo ""
+}
 
 echo "Downloading val2017.zip:"
 curl -O http://images.cocodataset.org/zips/val2017.zip
 echo "Extracting val2017.zip:"
-n_files=`unzip -l  val2017.zip| grep .jpg | wc -l`
-unzip val2017.zip  | { I=-1; while read; do printf "Progress: $((++I*100/$n_files))%%\r"; done; echo ""; }
+n_files=$(unzip -l val2017.zip | grep .jpg | wc -l)
+unzip val2017.zip | {
+  I=-1
+  while read; do printf "Progress: $((++I * 100 / $n_files))%%\r"; done
+  echo ""
+}
 
 echo "Downloading train2017.zip:"
 curl -O http://images.cocodataset.org/zips/train2017.zip
 echo "Extracting train2017.zip:"
-n_files=`unzip -l  train2017.zip| grep .jpg | wc -l`
-unzip train2017.zip  | { I=-1; while read; do printf "Progress: $((++I*100/$n_files))%%\r"; done; echo ""; }
+n_files=$(unzip -l train2017.zip | grep .jpg | wc -l)
+unzip train2017.zip | {
+  I=-1
+  while read; do printf "Progress: $((++I * 100 / $n_files))%%\r"; done
+  echo ""
+}
 
 # MD5 verification
 echo "Running MD5 verification ... this might take a while"
-checkMD5 () {
-    if [ $(pv -f $1| md5sum | cut -d' ' -f1) = $2 ];
-    then
-        echo "$1 MD5 is valid"
-    else 
-        echo "*ERROR* $1 MD5 is NOT valid"
-    fi
+checkMD5() {
+  if [ $(pv -f $1 | md5sum | cut -d' ' -f1) = $2 ]; then
+    echo "$1 MD5 is valid"
+  else
+    echo "*ERROR* $1 MD5 is NOT valid"
+  fi
 }
 
 echo "validating annotations_trainval2017.zip:"
