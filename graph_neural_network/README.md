@@ -31,6 +31,32 @@ cd training/gnn_node_classification/
 docker build -f Dockerfile -t training_gnn:latest .
 ```
 
+##### 2.1 Building on NVIDIA H100
+
+The official Dockerfile supports only NVIDIA A100 GPUs, and `Dockerfile.h100` helps build and run GNN reference on NVIDIA H100 machines. To build the image: 
+
+```bash
+cd training/graph_neural_network
+docker build -f Dockerfile.h100 -t training_gnn:h100 .
+```
+
+Once the image is built, we need to run this image **on H100 machines with at least 1 GPU mounted in the container**: 
+
+```bash
+docker run -it --rm --network=host --ipc=host --gpus all training_gnn:h100
+```
+
+Inside the container, we follow the same build process detailed in [GraphLearn-Torch's README](https://github.com/alibaba/graphlearn-for-pytorch): 
+
+```bash
+# inside the current container image with H100 mounted: 
+bash install_dependencies.sh
+
+python3 setup.py bdist_wheel
+pip install dist/* --force-reinstall
+```
+
+The container can now be used on H100 machines once the above installation steps are done. To verify, we can run `import graphlearn_torch as glt` in Python REPL. GLT is successfully installed for H100 if the import statement ends successfully without raising any error, and we can subsequently export the container with `docker commit` to save the container for future uses. 
 
 ### Steps to download and verify data
 Download the dataset:
