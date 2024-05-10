@@ -19,14 +19,14 @@ def decide_download(url):
 
 dataset_urls = {
   'homogeneous' : {
-    'tiny' : 'https://igb-public.s3.us-east-2.amazonaws.com/igb-homogeneous/igb_homogeneous_tiny.tar.gz',
-    'small' : 'https://igb-public.s3.us-east-2.amazonaws.com/igb-homogeneous/igb_homogeneous_small.tar.gz',
-    'medium' : 'https://igb-public.s3.us-east-2.amazonaws.com/igb-homogeneous/igb_homogeneous_medium.tar.gz'
+    'tiny' : 'https://igb-public-awsopen.s3.amazonaws.com/igb-homogeneous/igb_homogeneous_tiny.tar.gz',
+    'small' : 'https://igb-public-awsopen.s3.amazonaws.com/igb-homogeneous/igb_homogeneous_small.tar.gz',
+    'medium' : 'https://igb-public-awsopen.s3.amazonaws.com/igb-homogeneous/igb_homogeneous_medium.tar.gz'
   },
   'heterogeneous' : {
-    'tiny' : 'https://igb-public.s3.us-east-2.amazonaws.com/igb-heterogeneous/igb_heterogeneous_tiny.tar.gz',
-    'small' : 'https://igb-public.s3.us-east-2.amazonaws.com/igb-heterogeneous/igb_heterogeneous_small.tar.gz',
-    'medium' : 'https://igb-public.s3.us-east-2.amazonaws.com/igb-heterogeneous/igb_heterogeneous_medium.tar.gz'
+    'tiny' : 'https://igb-public-awsopen.s3.amazonaws.com/igb-heterogeneous/igb_heterogeneous_tiny.tar.gz',
+    'small' : 'https://igb-public-awsopen.s3.amazonaws.com/igb-heterogeneous/igb_heterogeneous_small.tar.gz',
+    'medium' : 'https://igb-public-awsopen.s3.amazonaws.com/igb-heterogeneous/igb_heterogeneous_medium.tar.gz'
   }
 }
 
