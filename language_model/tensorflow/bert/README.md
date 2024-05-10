@@ -1,6 +1,10 @@
 # V1.0 Dataset and Training
 
-## Location of the input files 
+Reproduce using [MLCube](mlcube/README.md).
+
+## Location of the input files
+
+# Location of the input files 
 
 The following files are available for download in a Cloudflare R2 bucket.
 * tf1_ckpt folder: contains checkpoint files 
