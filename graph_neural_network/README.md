@@ -58,6 +58,8 @@ pip install dist/* --force-reinstall
 
 The container can now be used on H100 machines once the above installation steps are done. To verify, we can run `import graphlearn_torch as glt` in Python REPL. GLT is successfully installed for H100 if the import statement ends successfully without raising any error, and we can subsequently export the container with `docker commit` to save the container for future uses. 
 
+Once this is done, we should `cd /workspace/repository` and follow the same training workflow from there. 
+
 ### Steps to download and verify data
 Download the dataset:
 ```bash
