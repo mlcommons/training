@@ -95,6 +95,9 @@ def pretrain(train_valid_test_dataset_provider,
         args_defaults: a dictionary from argument-name to argument-value. It
             to set already parse arguments.
     """
+    # The reference implementation does not clear the cache currently
+    # but the submissions are required to do so
+    mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
     mllogger.start(key=mllogger.constants.INIT_START, sync=False)
 
     # Initalize and get arguments, timers, and Tensorboard writer.
@@ -230,6 +233,9 @@ def pretrain(train_valid_test_dataset_provider,
     status = 'aborted'
     mllogger.log_run_stop(status)
     mllogger.event(key="trained_samples",
+                    value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
+                    sync=False)
+    mllogger.event(key="train_samples",
                     value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                     sync=False)
     mllogger.end(key=mllogger.constants.BLOCK_STOP,
@@ -811,6 +817,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 status = 'aborted'
                 mllogger.log_run_stop(status)
                 mllogger.event(key="trained_samples",
+                                value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
+                                sync=False)
+                mllogger.event(key="train_samples",
                                 value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                                 sync=False)
                 if not saved_checkpoint:
