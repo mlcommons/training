@@ -22,4 +22,4 @@ diffusers==0.14.0
 cloudpathlib==0.13.0
 xformers==0.0.24
 bitsandbytes==0.37.2
-git+https://github.com/ahmadki/logging.git@6328dfcd04a1bda8ae5b3e4f1f586e9037d42ddf
+git+https://github.com/mlcommons/logging.git@4.0.0-rc2
