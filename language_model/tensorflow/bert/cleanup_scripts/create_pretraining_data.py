@@ -128,8 +128,8 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
     total_written += 1
 
     if inst_index < 20:
-      tf.logging.info("*** Example ***")
-      tf.logging.info("tokens: %s" % " ".join(
+      tf.compat.v1.logging.INFO("*** Example ***")
+      tf.compat.v1.logging.INFO("tokens: %s" % " ".join(
           [tokenization.printable_text(x) for x in instance.tokens]))
 
       for feature_name in features.keys():
@@ -139,13 +139,13 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
           values = feature.int64_list.value
         elif feature.float_list.value:
           values = feature.float_list.value
-        tf.logging.info(
+        tf.compat.v1.logging.INFO(
             "%s: %s" % (feature_name, " ".join([str(x) for x in values])))
 
   for writer in writers:
     writer.close()
 
-  tf.logging.info("Wrote %d total instances", total_written)
+  tf.compat.v1.logging.INFO("Wrote %d total instances", total_written)
 
 
 def create_int_feature(values):
@@ -393,18 +393,18 @@ def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens, rng):
 
 
 def main(_):
-  tf.logging.set_verbosity(tf.logging.INFO)
+  tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
   tokenizer = tokenization.FullTokenizer(
       vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
 
   input_files = []
   for input_pattern in FLAGS.input_file.split(","):
-    input_files.extend(tf.gfile.Glob(input_pattern))
+    input_files.extend(tf.io.gfile.glob(input_pattern))
 
-  tf.logging.info("*** Reading from input files ***")
+  tf.compat.v1.logging.INFO("*** Reading from input files ***")
   for input_file in input_files:
-    tf.logging.info("  %s", input_file)
+    tf.compat.v1.logging.INFO("  %s", input_file)
 
   rng = random.Random(FLAGS.random_seed)
   instances = create_training_instances(
@@ -413,9 +413,9 @@ def main(_):
       rng)
 
   output_files = FLAGS.output_file.split(",")
-  tf.logging.info("*** Writing to output files ***")
+  tf.compat.v1.logging.INFO("*** Writing to output files ***")
   for output_file in output_files:
-    tf.logging.info("  %s", output_file)
+    tf.compat.v1.logging.INFO("  %s", output_file)
 
   write_instance_to_example_files(instances, tokenizer, FLAGS.max_seq_length,
                                   FLAGS.max_predictions_per_seq, output_files)
