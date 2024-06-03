@@ -128,8 +128,8 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
     total_written += 1
 
     if inst_index < 20:
-      tf.compat.v1.logging.INFO("*** Example ***")
-      tf.compat.v1.logging.INFO("tokens: %s" % " ".join(
+      tf.compat.v1.logging.info("*** Example ***")
+      tf.compat.v1.logging.info("tokens: %s" % " ".join(
           [tokenization.printable_text(x) for x in instance.tokens]))
 
       for feature_name in features.keys():
@@ -139,13 +139,13 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
           values = feature.int64_list.value
         elif feature.float_list.value:
           values = feature.float_list.value
-        tf.compat.v1.logging.INFO(
+        tf.compat.v1.logging.info(
             "%s: %s" % (feature_name, " ".join([str(x) for x in values])))
 
   for writer in writers:
     writer.close()
 
-  tf.compat.v1.logging.INFO("Wrote %d total instances", total_written)
+  tf.compat.v1.logging.info("Wrote %d total instances", total_written)
 
 
 def create_int_feature(values):
@@ -402,9 +402,9 @@ def main(_):
   for input_pattern in FLAGS.input_file.split(","):
     input_files.extend(tf.io.gfile.glob(input_pattern))
 
-  tf.compat.v1.logging.INFO("*** Reading from input files ***")
+  tf.compat.v1.logging.info("*** Reading from input files ***")
   for input_file in input_files:
-    tf.compat.v1.logging.INFO("  %s", input_file)
+    tf.compat.v1.logging.info("  %s", input_file)
 
   rng = random.Random(FLAGS.random_seed)
   instances = create_training_instances(
@@ -413,9 +413,9 @@ def main(_):
       rng)
 
   output_files = FLAGS.output_file.split(",")
-  tf.compat.v1.logging.INFO("*** Writing to output files ***")
+  tf.compat.v1.logging.info("*** Writing to output files ***")
   for output_file in output_files:
-    tf.compat.v1.logging.INFO("  %s", output_file)
+    tf.compat.v1.logging.info("  %s", output_file)
 
   write_instance_to_example_files(instances, tokenizer, FLAGS.max_seq_length,
                                   FLAGS.max_predictions_per_seq, output_files)
@@ -425,4 +425,4 @@ if __name__ == "__main__":
   flags.mark_flag_as_required("input_file")
   flags.mark_flag_as_required("output_file")
   flags.mark_flag_as_required("vocab_file")
-  tf.app.run()
+  tf.compat.v1.app.run()
