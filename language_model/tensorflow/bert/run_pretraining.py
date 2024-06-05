@@ -564,9 +564,9 @@ def main(_):
         allow_soft_placement=True)
 
     distribution_strategy = distribution_utils.get_distribution_strategy(
-        distribution_strategy=flags.distribution_strategy,
+        distribution_strategy=FLAGS.distribution_strategy,
         num_gpus=FLAGS.num_gpus,
-        all_reduce_alg=flags.all_reduce_alg,
+        all_reduce_alg=FLAGS.all_reduce_alg,
         num_packs=0)
 
     dist_gpu_config = tf.estimator.RunConfig(
