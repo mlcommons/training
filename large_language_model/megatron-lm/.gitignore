@@ -1,0 +1,8 @@
+megatron/__pycache__/
+megatron/data/__pycache__/
+megatron/model/__pycache__/
+megatron/mpu/__pycache__/
+megatron/optimizer/__pycache__/
+megatron/tokenizer/__pycache__/
+megatron/fused_kernels/__pycache__/
+megatron/fused_kernels/build/
