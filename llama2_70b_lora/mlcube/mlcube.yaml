@@ -1,0 +1,37 @@
+name: llama2
+description: llama2 70b lora
+authors:
+  - { name: "MLCommons Best Practices Working Group" }
+
+platform:
+  accelerator_count: 1
+
+docker:
+  # Image name.
+  image: mlcommons/llama2_70b_lora:0.0.1
+  # Docker build context relative to $MLCUBE_ROOT. Default is `build`.
+  build_context: "../"
+  # Docker file name within docker build context, default is `Dockerfile`.
+  build_file: "Dockerfile_mlcube"
+  # GPU arguments
+  gpu_args: "--gpus=all"
+
+tasks:
+  download_data:
+    entrypoint: ./scripts/download_data.sh -a
+    parameters:
+      outputs:
+        data_dir: data/
+        model_dir: model/
+  train:
+    entrypoint: ./run_and_time.sh -a
+    parameters:
+      inputs:
+        data_dir: data/
+        model_dir: model/
+        config_path:
+          type: file
+          default: ../../configs/default_config.yaml
+      outputs:
+        log_dir: logs/
+        result_dir: result/
