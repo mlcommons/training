@@ -42,6 +42,19 @@ Each benchmark will run until the target quality is reached and then stop, print
 
 Some these benchmarks are rather slow or take a long time to run on the reference hardware. We expect to see significant performance improvements with more hardware and optimized implementations. 
 
+# MLPerf Training v4.1 (Submission Deadline Oct 11, 2024)
+*Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
+
+| model | reference implementation | framework | dataset
+| ---- | ---- | ---- | ---- |
+| RetinaNet | [vision/object detection](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages
+| Stable Diffusionv2 | [image generation](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered
+| BERT-large | [language/nlp](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01
+| GPT3 | [language/llm](https://github.com/mlcommons/training/tree/master/large_language_model) | paxml,megatron-lm | C4
+| LLama2 70B-LoRA | [language/LLM fine-tuning](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport
+| DLRMv2 | [recommendation](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot
+| RGAT | [GNN](https://github.com/mlcommons/training/tree/master/graph_neural_network) | pytorch | IGBFull
+
 # MLPerf Training v4.0 (Submission Deadline May 10, 2024)
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
 
@@ -53,7 +66,8 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 | Stable Diffusionv2 | [image generation](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered
 | BERT-large | [language/nlp](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01
 | GPT3 | [language/llm](https://github.com/mlcommons/training/tree/master/large_language_model) | paxml,megatron-lm | C4
-| LLama2 70B-LoRA | [language/LLM fine-tuning](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS govtReport
-| DLRMv2 | [recommendation](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 4TB multi-hot
+| LLama2 70B-LoRA | [language/LLM fine-tuning](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport
+| DLRMv2 | [recommendation](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot
 | RGAT | [GNN](https://github.com/mlcommons/training/tree/master/graph_neural_network) | pytorch | IGBFull
+
 
