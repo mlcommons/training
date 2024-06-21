@@ -1,1 +1,2 @@
-workspace/
+workspace/*
+!workspace/README.md
