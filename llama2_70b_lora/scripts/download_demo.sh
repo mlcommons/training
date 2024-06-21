@@ -36,4 +36,4 @@ mkdir -p $MODEL_DIR
 
 cd $MODEL_DIR
 
-rclone copy mlc-llama2:Llama2-70b-fused-qkv-mlperf ./Llama2-70b-fused-qkv-mlperf -P
+rclone copy mlc-llama2:Llama-2-7b-chat-hf ./Llama-2-7b-chat-hf -P

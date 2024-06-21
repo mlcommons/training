@@ -10,7 +10,7 @@ echo "STARTING TIMING RUN AT $start_fmt"
 
 # Set variables
 : "${DATA_DIR:=./dataset}"
-: "${MODEL_DIR:=./models/llama-v2-fused-qkv}"
+: "${MODEL_DIR:=./models/Llama-2-7b-chat-hf}"
 : "${RESULT_DIR:=./workspace/results}"
 : "${CONFIG_PATH:=./configs/default_config.yaml}"
 : "${LOG_DIR:=./workspace/logs}"
@@ -43,11 +43,11 @@ echo "running benchmark"
 
 accelerate launch --config_file $CONFIG_PATH scripts/train.py \
     --dataset_path $DATA_DIR/scrolls_gov_report_8k \
-    --model_path $MODEL_DIR/Llama2-70b-fused-qkv-mlperf \
+    --model_path $MODEL_DIR/Llama-2-7b-chat-hf \
     --max_seq_len 8192 \
     --bf16 True \
-    --logging_steps 24 \
-    --eval_steps 48 \
+    --logging_steps 1 \
+    --eval_steps 1 \
     --output_dir $RESULT_DIR/llama-70b_scrolls_gov_report_r16_$1 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 1 \
@@ -62,9 +62,7 @@ accelerate launch --config_file $CONFIG_PATH scripts/train.py \
     --lora_r 16 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --max_steps 1024 \
-    --use_flash_attn \
-    --seed 1234 \
+    --max_steps 2 \
     --lora_target_modules "qkv_proj,o_proj" |& tee "$LOG_DIR/train_console.log"
 
 # end timing

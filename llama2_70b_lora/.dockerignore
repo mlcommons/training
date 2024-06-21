@@ -1,0 +1,2 @@
+mlcube/workspace/*
+!mlcube/workspace/rclone.conf
