@@ -76,11 +76,11 @@ You can execute the complete pipeline with one single command.
 * Core pipeline:
 
 ```shell
-mlcube run --task=download_data,download_models,train -Pdocker.build_strategy=always
+mlcube run --task=download_data,train -Pdocker.build_strategy=always
 ```
 
 * Demo pipeline:
 
 ```shell
-mlcube run --task=download_demo,download_models,demo -Pdocker.build_strategy=always
+mlcube run --task=download_demo,demo -Pdocker.build_strategy=always
 ```
