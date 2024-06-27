@@ -73,7 +73,7 @@ def pretrain(train_valid_test_dataset_provider,
         1) initialize Megatron.
         2) setup model, optimizer and lr schedule using the model_provider.
         3) call train_val_test_data_provider to get train/val/test datasets.
-        4) train the modle using the forward_step_func.
+        4) train the model using the forward_step_func.
 
     Arguments:
         train_valid_test_dataset_provider: a function that takes the size of
@@ -95,9 +95,6 @@ def pretrain(train_valid_test_dataset_provider,
         args_defaults: a dictionary from argument-name to argument-value. It
             to set already parse arguments.
     """
-    # The reference implementation does not clear the cache currently
-    # but the submissions are required to do so
-    mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
     mllogger.start(key=mllogger.constants.INIT_START, sync=False)
 
     # Initalize and get arguments, timers, and Tensorboard writer.
@@ -200,10 +197,6 @@ def pretrain(train_valid_test_dataset_provider,
     iteration = 0
     mllogger.start(key=mllogger.constants.EPOCH_START,
                         metadata={'epoch_num': 0}, sync=False)
-    mllogger.start(key=mllogger.constants.BLOCK_START,
-                            metadata={'first_epoch_num': 0,
-                                        'epoch_count': args.eval_interval * args.global_batch_size * args.seq_length},
-                            sync=False)
 
     if args.do_train and args.train_iters > 0:
         iteration = train(forward_step_func,
@@ -230,19 +223,13 @@ def pretrain(train_valid_test_dataset_provider,
                                    0, process_non_loss_data_func,
                                    True)
 
-    status = 'aborted'
-    mllogger.log_run_stop(status)
     mllogger.event(key="trained_samples",
                     value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                     sync=False)
-    mllogger.event(key="train_samples",
-                    value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
-                    sync=False)
-    mllogger.end(key=mllogger.constants.BLOCK_STOP,
-                    metadata={'first_epoch_num': 0},
-                    sync=False)
     mllogger.end(key=mllogger.constants.EPOCH_STOP,
                     metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
+    status = 'aborted'
+    mllogger.log_run_stop(status)
 
 def update_train_iters(args):
 
@@ -732,6 +719,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     args = get_args()
     timers = get_timers()
 
+    # log block start
+    mllogger.start(key=mllogger.constants.BLOCK_START,
+                    metadata={'first_epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length, 'epoch_count': args.tokens_per_batch}, 
+                    sync=False)
+
     # Write args to tensorboard
     write_args_to_tensorboard()
 
@@ -788,6 +780,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                        valid_data_iterator, model,
                                        iteration, process_non_loss_data_func,
                                        False)
+            # log block start
+            mllogger.start(key=mllogger.constants.BLOCK_START,
+                            metadata={'first_epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length, 'epoch_count': args.tokens_per_batch},
+                            sync=False)
 
         # Checkpointing
         saved_checkpoint = False
@@ -819,16 +815,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 mllogger.event(key="trained_samples",
                                 value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
                                 sync=False)
-                mllogger.event(key="train_samples",
-                                value=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length,
-                                sync=False)
                 if not saved_checkpoint:
                     save_checkpoint_and_time(iteration, model, optimizer,
                                              opt_param_scheduler)
                 print_datetime('exiting program after {} minutes'.format(train_time))
-                mllogger.end(key=mllogger.constants.BLOCK_STOP,
-                            metadata={'first_epoch_num': 0},
-                            sync=False)
                 mllogger.end(key=mllogger.constants.EPOCH_STOP,
                             metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
                 sys.exit()
@@ -925,8 +915,12 @@ def evaluate_and_print_results(prefix, forward_step_func,
                                verbose=False):
     """Helper function to evaluate and dump results on screen."""
     args = get_args()
-    mllogger.start(key=mllogger.constants.EVAL_START,
-                        metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
+    if iteration > 0:
+        mllogger.end(key=mllogger.constants.BLOCK_STOP,
+                            metadata={'first_epoch_num': ((args.consumed_train_samples - args.ext_lr_steps) * args.seq_length) - args.tokens_per_batch, 'epoch_count': args.tokens_per_batch}, 
+                            sync=False)
+        mllogger.start(key=mllogger.constants.EVAL_START,
+                            metadata={'epoch_num': (args.consumed_train_samples - args.ext_lr_steps) * args.seq_length}, sync=False)
 
     writer = get_tensorboard_writer()
 
@@ -962,8 +956,14 @@ def evaluate_and_print_results(prefix, forward_step_func,
     print_rank_last('-' * length)
     print_rank_last(string)
     print_rank_last('-' * length)
-    mllogger.end(key=mllogger.constants.EVAL_STOP,
-                    metadata=dict(epoch_num=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length), sync=False)
+    if iteration > 0:
+        mllogger.end(key=mllogger.constants.EVAL_STOP,
+                        metadata=dict(epoch_num=(args.consumed_train_samples - args.ext_lr_steps) * args.seq_length), sync=False)
+
+        if total_loss_dict and 'lm loss' in total_loss_dict.keys() and total_loss_dict['lm loss'].item() < 2.69:
+            print_rank_0('Target accuracy reached')
+            status = 'success'
+            mllogger.log_run_stop(status)
 
 
 def cyclic_iter(iter):
