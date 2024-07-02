@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # apt dependencies
 RUN apt-get update
-RUN apt-get install -y ffmpeg libsm6 libxext6
+RUN apt-get install -y ffmpeg libsm6 libxext6 rclone
 
 # Remove the opencv version shipped with the base image
 # https://github.com/opencv/opencv-python/issues/884
