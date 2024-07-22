@@ -13,7 +13,7 @@ understand the fundamentals of the Stable Diffusion model.
 > [!NOTE]  
 > The current version of the benchmark has a normalization bug in the input pipeline, as described [here](https://github.com/mlcommons/training/issues/721).
 > Considering that the bug doesn't affect the benchmark results (only the model quality), and that the model will be refreshed in the near future,
-> This bug will not be fixed at this time
+> this bug will not be fixed at this time.
 
 - [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
