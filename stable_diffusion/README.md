@@ -10,6 +10,11 @@ other implementations that might provide an extended range of features,
 our focus is on delivering a clear and reliable base from which to
 understand the fundamentals of the Stable Diffusion model.
 
+> [!NOTE]  
+> The current version of the benchmark has a normalization bug in the input pipeline, as described [here](https://github.com/mlcommons/training/issues/721).
+> Considering that the bug doesn't affect the benchmark results (only the model quality), and that the model will be refreshed in the near future,
+> this bug will not be fixed at this time.
+
 - [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Building the docker image](#building-the-docker-image)
