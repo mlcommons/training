@@ -41,9 +41,6 @@ gdown https://drive.google.com/uc?id=1oVBgtSxkXC9rH2SXJv85RXR9-WrMPy-Q
 cd ..
 
 # Download dummy data in TFRecord format
-wget https://storage.googleapis.com/mlperf_training_demo/bert/sample_data/tf_data.zip
-unzip tf_data.zip
-rm tf_data.zip
-wget https://storage.googleapis.com/mlperf_training_demo/bert/sample_data/tf_eval_data.zip
-unzip tf_eval_data.zip
-rm tf_eval_data.zip
+wget https://mlcube.mlcommons-storage.org/minibenchmarks/bert.zip
+unzip bert.zip
+rm bert.zip
