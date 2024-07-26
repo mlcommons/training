@@ -57,6 +57,10 @@ mlcube run --task=train -Pdocker.build_strategy=always
 
 * Demo tasks:
 
+Here is a video explaining the demo steps:
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/1Y9q-nltI8U/0.jpg)](https://www.youtube.com/watch?v=1Y9q-nltI8U)
+
 Download demo dataset.
 
 ```shell
