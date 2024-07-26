@@ -11,6 +11,6 @@ while [ "$1" != "" ]; do
     shift
 done
 
-wget https://storage.googleapis.com/bert_tf_data/image_net/demo/tfdata.zip -P $DATASET_PATH
-unzip $DATASET_PATH/tfdata.zip -d $DATASET_PATH
-rm $DATASET_PATH/tfdata.zip
+wget https://mlcube.mlcommons-storage.org/minibenchmarks/image_classification.zip -P $DATASET_PATH
+unzip $DATASET_PATH/image_classification.zip -d $DATASET_PATH
+rm $DATASET_PATH/image_classification.zip
