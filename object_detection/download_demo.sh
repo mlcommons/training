@@ -16,9 +16,10 @@ mkdir -p $DATA_ROOT_DIR
 pushd $DATA_ROOT_DIR
 
 echo "Downloading annotations_trainval2017.zip:"
-curl -O https://storage.googleapis.com/mlperf_training_demo/object_detection/demo_data.zip
+curl -O https://mlcube.mlcommons-storage.org/minibenchmarks/object_detection.zip
 echo "Extracting demo_data.zip:"
-unzip -o -q demo_data.zip
+unzip -o -q object_detection.zip
+rm object_detection.zip
 echo "Done!"
 
 # MD5 verification
