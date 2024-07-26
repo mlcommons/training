@@ -12,5 +12,6 @@ while [ "$1" != "" ]; do
     shift
 done
 
-wget https://storage.googleapis.com/mlperf_training_demo/3d_unet/demo_data.zip
-unzip -o demo_data.zip -d $DATASET_PATH
+wget https://mlcube.mlcommons-storage.org/minibenchmarks/3d_unet.zip
+unzip -o 3d_unet.zip -d $DATASET_PATH
+rm 3d_unet.zip
