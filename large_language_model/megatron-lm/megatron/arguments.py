@@ -206,6 +206,7 @@ def validate_args(args, defaults={}):
     # Consumed tokens.
     args.consumed_train_samples = 0
     args.consumed_valid_samples = 0
+    args.tokens_per_batch = args.eval_interval * args.global_batch_size * args.seq_length
 
     # Iteration-based training.
     if args.train_iters:

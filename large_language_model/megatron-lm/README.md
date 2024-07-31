@@ -7,7 +7,7 @@ Our codebase is capable of training large language models with both model and da
 
 ### Steps to configure machine
 
-To use this repository, please install a supported version of PyTorch with GPU support (python 3.8, pytorch 1.12, cuda 11.6.2, and nccl 2.12.10 and above) and NVIDIA [APEX](https://github.com/NVIDIA/apex#quick-start). We recommend using one of [NGC's PyTorch containers](https://ngc.nvidia.com/catalog/containers/nvidia:pytorch). The latest tested compatible version is `nvcr.io/nvidia/pytorch:22.04-py3`).
+To use this repository, please install a supported version of PyTorch with GPU support (python 3.8, pytorch 1.12, cuda 11.6.2, and nccl 2.12.10 and above) and NVIDIA [APEX](https://github.com/NVIDIA/apex#quick-start). We recommend using one of [NGC's PyTorch containers](https://ngc.nvidia.com/catalog/containers/nvidia:pytorch). The latest tested compatible version is `nvcr.io/nvidia/pytorch:24.04-py3`).
 
 ### Steps to run and time
 
@@ -256,3 +256,7 @@ cd scripts
 sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4> <path to validation json>
 ```
+
+# 4. Model
+### Publication/Attribution
+Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf) and [2](https://arxiv.org/pdf/2104.04473.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.

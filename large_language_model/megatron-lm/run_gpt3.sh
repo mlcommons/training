@@ -1,11 +1,10 @@
 #!/bin/bash
 
-#SBATCH -p luna -A mlperf -t 00:20:00 --nodes=8 --exclusive --mem=0 --overcommit --ntasks-per-node=8 --job-name=mlperf-megatron:megatron
-
 # Vars without defaults
 LOG_DIR=${1:?LOG_DIR not set}
 BPE_DIR=${2:?BPE_DIR not set}
-CONT="${3:?CONT not set}"
+COM_DIR=${3:?COM_DIR not set}
+CONT="${4:?CONT not set}"
 
 # Vars with defaults
 : "${MEGATRON_DIR:=$PWD}"
@@ -27,7 +26,11 @@ mkdir -p ${CHECKPOINT_DIR}
 mkdir -p ${TENSORBOARD_DIR}
 
 # Get the data blend
-. $PWD/gpt3_blend.sh
+C4_6="${COM_DIR}/c4_en_6_c4_spm_text_document"
+C4_7="${COM_DIR}/c4_en_7_c4_spm_text_document"
+DATA_BLEND="0.5 ${C4_6} 0.5 ${C4_7}"
+VALID_C4="${COM_DIR}/c4_en_validation_subset_c4_spm_text_document"
+VALID_DATA_BLEND="1.00 ${VALID_C4}"
 
 ################################################################################
 ### Set exit duration based on variable time allocated for this specific job ###
@@ -91,14 +94,17 @@ options=" \
 --no-seq-len-plus-one-tokens \
 --seed ${RANDOM} "
 
+EXTERNAL_CHECKPOINT_MOUNT=""
 [ ${USE_BF16} = true ] && options+=" --bf16"
 if [ -n "${EXTERNAL_MODEL_CHECKPOINT_DIR}" ]; then
   options+=" \
 		--no-load-rng \
 		--use-ext-ckpt \
+    --use-distributed-checkpointing \
 		--ext-iterations $(( $EXTERNAL_TRAINING_ITERATIONS * $EXTERNAL_GBS / $GBS)) \
 		--ext-lr-steps $(( $EXTERNAL_TRAINING_ITERATIONS * $EXTERNAL_GBS)) \
 		--load ${EXTERNAL_MODEL_CHECKPOINT_DIR}"
+  EXTERNAL_CHECKPOINT_MOUNT=",${EXTERNAL_MODEL_CHECKPOINT_DIR}:${EXTERNAL_MODEL_CHECKPOINT_DIR}"
 else
   options+=" --load ${CHECKPOINT_DIR}"
 fi
@@ -109,7 +115,7 @@ DATETIME=`date +'date_%y-%m-%d_time_%H-%M-%S'`
 
 srun -l \
      --container-image $CONT \
-     --container-mounts "$PWD:$PWD,${COM_DIR}:${COM_DIR},${LOG_DIR}:${LOG_DIR},${BPE_DIR}:${BPE_DIR}" \
+     --container-mounts "$PWD:$PWD,${COM_DIR}:${COM_DIR},${LOG_DIR}:${LOG_DIR},${BPE_DIR}:${BPE_DIR}${EXTERNAL_CHECKPOINT_MOUNT}" \
      --output=$LOG_DIR/GPT3-175B-runlog-$DATETIME.log sh -c "${run_cmd}"
 
 set +x
