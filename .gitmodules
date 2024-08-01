@@ -1,4 +1,4 @@
 [submodule "recommendation/dlrm"]
-	path = recommendation/dlrm
+	path = retired_benchmarks/dlrm/dlrm
 	url = https://github.com/facebookresearch/dlrm.git
         branch = mlperf
