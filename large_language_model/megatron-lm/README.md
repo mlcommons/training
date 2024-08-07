@@ -193,9 +193,6 @@ rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/checkpoin
 ### Model conversion from Paxml checkpoints
 Alternatively to downloading the checkpoint in Megatron ready format, it can be obtained by converting a Paxml checkpoint.
 
-Paxml Checkpoint is available at: `gs://mlperf-llm-public2/gpt3_spmd1x64x24_tpuv4-3072_v84_20221101/checkpoints/checkpoint_00004000`
-To resume training from the above checkpoint on Megatron, it should be converted into a format suitable for Megatron (this step only needs to be done once).
-
 To convert Paxml checkpoint to the Megatron's format, a [script](scripts/convert_paxml_to_megatron_distributed.py) has been provided:
 ```bash
 # Convert model and optimizer parameters to Megatron format (runs in ~40 minutes on DGXA100, requires 1TB of CPU memory):
@@ -206,7 +203,7 @@ python json_to_torch.py -i common_fp32.json -o $EXTERNAL_MODEL_CHECKPOINT_DIR/co
 This should result in the same checkpoint as described in the "Checkpoint download" section above.
 
 ### Dataset preprocessing
-Here are the instructions to prepare the preprocessed dataset from scratch.
+Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in [S3 artifacts download](#s3-artifacts-download) section.
 
 #### Data Download
 Training dataset -
@@ -220,7 +217,7 @@ git lfs pull --include "en/c4-train.009*.json.gz"
 git lfs pull --include "en/c4-train.01*.json.gz"
 ```
 
-Validation dataset needs to be downloaded from `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json` to ${C4_PATH}.
+Validation data subset can be downloaded from `gs://mlperf-llm-public2/c4/en_val_subset_json/c4-validation_24567exp.json` to ${C4_PATH}.
 
 #### Data Preprocessing for Megatron-LM
 
@@ -247,7 +244,7 @@ for shard in {6..7}; do
 done
 ```
 
-After preparing the data folder, download tokenizer model. The tokenizer model should be downloaded from `gs://mlperf-llm-public2/vocab/c4_en_301_5Mexp2_spm.model` and renamed as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`. Make sure an output directory `${C4_PATH}/preprocessed_c4_spm` exists before the next step.
+After preparing the data folder, download tokenizer model. The tokenizer model `c4_en_301_5Mexp2_spm.model` can be downloaded by following instructions in [S3 artifacts download](#s3-artifacts-download) and renamed as `${C4_PATH}/tokenizers/c4_spm/sentencepiece.model`. Make sure an output directory `${C4_PATH}/preprocessed_c4_spm` exists before the next step.
 
 Modify `C4_PATH` in `preprocess.sh` and `preprocess_val.sh` to specify
 the correct input/output paths and run preprocessing as follows
