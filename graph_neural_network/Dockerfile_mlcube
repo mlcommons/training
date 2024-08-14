@@ -9,12 +9,12 @@ RUN pip install --no-index  torch_scatter==2.1.1 torch_sparse==0.6.17 -f https:/
 RUN pip install graphlearn-torch==0.2.2
 
 RUN apt update
-RUN apt install -y git
+RUN apt install -y git wget
 RUN pip install git+https://github.com/mlcommons/logging.git
 
 # TF32 instead of FP32 for faster compute
 ENV NVIDIA_TF32_OVERRIDE=1
 
-COPY ..
+COPY . /workspace/repository
 RUN chmod +x *.sh
 WORKDIR /workspace/repository
