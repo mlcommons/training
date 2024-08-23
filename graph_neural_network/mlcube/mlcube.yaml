@@ -1,4 +1,4 @@
-name: graph_nn
+name: graph_nn9
 description: Graph Neural Network
 authors:
   - { name: "MLCommons Best Practices Working Group" }
@@ -29,6 +29,18 @@ tasks:
         data_dir: data/
   train:
     entrypoint: ./run_and_time.sh -a
+    parameters:
+      inputs:
+        data_dir: data/
+      outputs:
+        log_dir: logs/
+  download_demo:
+    entrypoint: ./download_demo.sh -a
+    parameters:
+      outputs:
+        data_dir: data/
+  demo:
+    entrypoint: ./run_demo.sh -a
     parameters:
       inputs:
         data_dir: data/

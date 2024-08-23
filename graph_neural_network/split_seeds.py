@@ -1,4 +1,5 @@
 import argparse
+import os
 import os.path as osp
 import torch
 
@@ -34,6 +35,7 @@ class SeedSplitter(object):
     val_idx = shuffled_index[n_train : n_train + n_val]
 
     path = osp.join(self.path, self.dataset_size, 'processed')
+    os.makedirs(path, exist_ok=True)
     torch.save(train_idx, osp.join(path, 'train_idx.pt'))
     torch.save(val_idx, osp.join(path, 'val_idx.pt'))
 
