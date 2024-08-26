@@ -15,8 +15,8 @@ done
 
 #https://github.com/IllinoisGraphBenchmark/IGB-Datasets/blob/main/igb/download_igbh600m.sh
 echo "IGBH600M download starting"
-mkdir -p $DATA_DIR
-cd $DATA_DIR
+mkdir -p $DATA_DIR/full/processed
+cd $DATA_DIR/full/processed
 
 # paper
 mkdir paper

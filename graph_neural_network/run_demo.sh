@@ -31,7 +31,7 @@ echo "running benchmark"
 
 python compress_graph_demo.py --path $DATA_DIR \
     --dataset_size='tiny' \
-    --layout='CSC' |& tee "$LOG_DIR/train_console.log"
+    --layout='CSC' |& tee "$LOG_DIR/demo_console.log"
 
 # end timing
 end=$(date +%s)
