@@ -84,7 +84,7 @@ accelerate launch --config_file configs/default_config.yaml scripts/train.py \
 --seed 1234 \
 --lora_target_modules "qkv_proj,o_proj"
 ```
-where the Accelerate config file is [this one](https://github.com/regisss/lora/blob/main/configs/default_config.yaml).
+where the Accelerate config file is [this one](https://github.com/mlcommons/training/blob/master/llama2_70b_lora/configs/default_config.yaml).
 
 > Using flash attention with `--use_flash_attn` is necessary for training on 8k-token sequences.
 
