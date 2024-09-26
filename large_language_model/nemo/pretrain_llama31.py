@@ -136,12 +136,6 @@ def get_data(
         micro_batch_size=mbs,
         index_mapping_dir="/npy_index",
         seed=1234, # TODO: make seed configurable here
-
-        # The following options are not set in e2e_example but are present in pretrain_llama3
-        # reset_position_ids=False,
-        # reset_attention_mask=False,
-        # eod_mask_loss=False,
-        # rampup_batch_size=None,
     )
 
 def get_parser() -> argparse.ArgumentParser:
