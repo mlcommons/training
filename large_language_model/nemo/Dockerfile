@@ -15,6 +15,10 @@
 ARG NEMO_BASE_IMAGE=nvcr.io/nvidia/nemo:dev
 FROM ${NEMO_BASE_IMAGE} AS nemo-base-image
 
+RUN pip uninstall transformers -y
+RUN pip install transformers blobfile
+RUN pip install prettytable
+
 # setup workspace
 WORKDIR /workspace/llama31
 COPY . .

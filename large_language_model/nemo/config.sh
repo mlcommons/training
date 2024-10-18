@@ -34,17 +34,29 @@ export JOB_DIR=""
 export IMAGE=""
 # Dataset: C4 dataset location that contains the dataset after preprocessing
 export PREPROCESSED_DATA=""
-# Dataset: Trained SentencePieceModel checkpoint path
-export SPM_CKPT=""
-
-# Optional
-# Numpy index working directory
+# Dataset: Numpy index working directory
 export TMP_NPY_INDEX=""
+# Dataset: Tokenizer path
+export TOKENIZER=""
 
-# Fixed
+# Model: checkpoint and tokenizer path
+export MODEL_CKPT=""
+# Model: Whether we want to restore from checkpoint
+export USE_CKPT=0
+
+
+# Training Configs: 
 # Model: size, to choose from 8b, 70b, 405b
 export SIZE=""
 # Dataloader: Global batch size
 export GBS=0
 # Dataloader: Micro batch size
 export MBS=0
+# Dataloader: Evaluate every N batches, optional
+export EVAL_EVERY=""
+# Dataloader: Evaluate using N batches, optional
+export EVAL_BATCHES=""
+# Dataloader: Max run N batches, optional
+export MAX_STEPS=""
+# Experiment manager: Number of experiments to launch
+export NEXP=1

@@ -31,8 +31,11 @@ git config --global --add safe.directory /workspace/llama31
 
 #     Dataset settings
 : "${PREPROCESSED_DATA:?PREPROCESSED_DATA not set}"
-: "${SPM_CKPT:?SPM_CKPT not set}"
+: "${TOKENIZER:?TOKENIZER not set}"
 
+#     Model settings
+: "${MODEL_CKPT:?MODEL_CKPT not set}"
+: "${USE_CKPT:?USE_CKPT not set}"
 
 # Vars with defaults
 #     Slurm settings
@@ -50,10 +53,26 @@ git config --global --add safe.directory /workspace/llama31
 : "${GBS:=288}"
 : "${MBS:=1}"
 
+#     Dataloader settings
+: "${EVAL_EVERY:=""}"
+: "${EVAL_BATCHES:=""}"
+: "${MAX_STEPS:=""}"
+
+#     Experiment settings
+: "${SEED:=$RANDOM}"
+: "${NEXP:=1}"
 
 # Run
 
-MOUNTS="${JOB_DIR}:/output,${PREPROCESSED_DATA}:/preproc_data,${SPM_CKPT}:/workspace/llm/tokenizer.model"
+MOUNTS="${JOB_DIR}:/output,${PREPROCESSED_DATA}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER}:/tokenizer"
+
+CKPT_OPTION=""
+
+CMD_SUFFIX=""
+
+if [ $USE_CKPT -gt 0 ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --use_ckpt"
+fi
 
 if [ ! $NEMO_DIR = "" ]; then
     MOUNTS="${MOUNTS},${NEMO_DIR}:/opt/NeMo"
@@ -64,7 +83,19 @@ if [ ! $TMP_NPY_INDEX = "" ]; then
 fi
 
 if [ ! $DEPENDENCIES = "" ]; then 
-    DEPENDENCIES="--dependencies ${DEPENDENCIES}"
+    CMD_SUFFIX="${CMD_SUFFIX} --dependencies ${DEPENDENCIES}"
+fi
+
+if [ ! $EVAL_EVERY = "" ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --eval_every ${EVAL_EVERY}"
+fi
+
+if [ ! $EVAL_BATCHES = "" ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --eval_batches ${EVAL_BATCHES}"
+fi
+
+if [ ! $MAX_STEPS = "" ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --max_steps ${MAX_STEPS}"
 fi
 
 set -x
@@ -74,9 +105,13 @@ python3 pretrain_llama31.py \
 --job_dir $JOB_DIR \
 --account $ACCOUNT --partition $PARTITION \
 --nodes $NNODES --gpus_per_node $GPUS_PER_NODE \
-$DEPENDENCIES \
 --time $TIME \
 --mounts $MOUNTS \
 --image $IMAGE \
 --size $SIZE \
---gbs $GBS --mbs $MBS
+--gbs $GBS --mbs $MBS \
+--seed $SEED \
+--num_exps $NEXP \
+--ckpt_path /checkpoint \
+--tokenizer_path /tokenizer \
+$CMD_SUFFIX

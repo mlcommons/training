@@ -15,8 +15,17 @@
 import argparse
 from typing import Optional
 from nemo.collections import llm
-from nemo.collections.common.tokenizers import SentencePieceTokenizer
+from nemo.collections.common.tokenizers import AutoTokenizer
+from nemo import lightning as nl
+from megatron.core.distributed import DistributedDataParallelConfig
+from nemo.collections.llm.recipes.precision.mixed_precision import bf16_mixed
+from nemo.collections.llm.gpt.data.mock import MockDataModule
+from nemo.collections.llm.recipes.log.default import default_log, default_resume
+from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_cosine_annealing
 import nemo_run as run
+from nemo.utils.exp_manager import TimingCallback
+import torch
+import os
 
 def slurm_executor(
     user: str,
@@ -84,45 +93,87 @@ def get_pretrain(
     size: str, 
     nnodes: int, 
     ngpus_per_node: int,
+    data_module: run.Config,
+    ckpt: Optional[str]=None,
+    eval_every: Optional[int]=None, 
+    eval_batches: Optional[int]=None,
+    max_steps: Optional[int]=None,
 ) -> run.Partial:
     
+    exp_name = size
+    
     if size == "8b":
-        exp_name = "llama3-8b"
-        pretrain_fn = llm.llama3_8b.pretrain_recipe
-    elif size == "70b":
-        exp_name = "llama3-70b"
-        pretrain_fn = llm.llama3_70b.pretrain_recipe
-    elif size == "405b":
-        exp_name = "llama31-405b"
-        pretrain_fn = llm.llama31_405b.pretrain_recipe
+        pretrain = llm.llama3_8b.pretrain_recipe(
+            dir="/outputs",
+            name=exp_name,
+            num_nodes=nnodes,
+            num_gpus_per_node=ngpus_per_node
+        )
 
-    pretrain = pretrain_fn(
-        dir="/outputs",
-        name=exp_name,
-        num_nodes=nnodes, 
-        num_gpus_per_node=ngpus_per_node
-    )
+        llama31_config = run.Config(llm.gpt.model.llama.Llama31Config8B)
+        llama31_config.seq_length = 8192
+        pretrain.model.config = llama31_config
+        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=3e-4)
+    elif size == "70b":
+        pretrain = llm.llama3_70b.pretrain_recipe(
+            dir="/outputs",
+            name=exp_name,
+            num_nodes=nnodes,
+            num_gpus_per_node=ngpus_per_node
+        )
+
+        llama31_config = run.Config(llm.gpt.model.llama.Llama31Config70B)
+        llama31_config.seq_length = 8192
+        pretrain.model.config = llama31_config
+        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=1.5e-4)
+    elif size == "405b":
+        pretrain = llm.llama31_405b.pretrain_recipe(
+            dir="/outputs",
+            name=exp_name,
+            num_nodes=nnodes,
+            num_gpus_per_node=ngpus_per_node
+        )
+
+        pretrain.trainer.strategy.ddp = run.Config(
+            DistributedDataParallelConfig,
+            check_for_nan_in_grad=True,
+            grad_reduce_in_fp32=True,
+            overlap_grad_reduce=True,
+            overlap_param_gather=True,
+        )
+
+        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=8e-5)
+
+    # sets up everything else
+    pretrain.data = data_module
+    pretrain.trainer.val_check_interval = eval_every
+    pretrain.trainer.limit_val_batches = eval_batches
+    pretrain.trainer.limit_test_batches = eval_batches
+    if max_steps is not None:
+        pretrain.trainer.max_steps = max_steps
+
+    if ckpt is not None:
+        pretrain.resume = run.Config(nl.AutoResume, restore_config=run.Config(nl.RestoreConfig, path=ckpt))
 
     return exp_name, pretrain
 
 def get_data(
     gbs: int = 288,
     mbs: int = 4,
-    seq_length: int = 8192,
+    seq_length: Optional[int] = 8192,
+    tokenizer_path: Optional[str] = "",
+    seed: Optional[int] = 1234,
 ) -> run.Config:
-    tokenizer = run.Config(SentencePieceTokenizer, model_path="/workspace/llm/tokenizer.model")
+    tokenizer = run.Config(AutoTokenizer, pretrained_model_name=tokenizer_path)
+
+    train_datasets = sum([["12.5", f"/preproc_data/c4-train.en_{idx}_text_document"] for idx in range(8)], [])
     data_paths = {
-        "train": [
-            0.5,
-            "/preproc_data/c4_en_6_c4_spm_text_document",
-            0.5,
-            "/preproc_data/c4_en_7_c4_spm_text_document",
-        ],
+        "train": train_datasets,
         "validation": [
-            "/preproc_data/c4_en_validation_subset_c4_spm_text_document"
+            "/preproc_data/c4-validation.en_text_document"
         ],
         "test": [
-            "/preproc_data/c4_en_validation_subset_c4_spm_text_document"
+            "/preproc_data/c4-validation.en_text_document"
         ],
     }
 
@@ -135,7 +186,16 @@ def get_data(
         global_batch_size=gbs,
         micro_batch_size=mbs,
         index_mapping_dir="/npy_index",
-        seed=1234, # TODO: make seed configurable here
+        seed=seed,
+
+        # Option to reset the position IDs in the dataset at an interval.
+        reset_position_ids=False,
+        # Option to reset the attention mask from the dataset.
+        reset_attention_mask=False,
+        # Option to enable the EOD mask loss.
+        eod_mask_loss=False,
+        # Rampup batch size, should be in format of [start_global_batch_size, batch_size_increment, ramup_samples].
+        rampup_batch_size=None,
     )
 
 def get_parser() -> argparse.ArgumentParser:
@@ -180,15 +240,23 @@ def get_parser() -> argparse.ArgumentParser:
             "70b", # Llama 3 70B config for debugging
             "405b", # Llama 3.1 405B config
         ])
+
+    model_group.add_argument("--ckpt_path", type=str, default=None)
+    model_group.add_argument("--use_ckpt", action="store_true")
     
     data_group = parser.add_argument_group("Dataset arguments")
     
     data_group.add_argument("--gbs", type=int, default=288, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
+    data_group.add_argument("--eval_every", type=int, default=10)
+    data_group.add_argument("--eval_batches", type=int, default=None)
+    data_group.add_argument('--max_steps', type=int, default=None)
+    data_group.add_argument("--tokenizer_path", type=str, help="Tokenizer path that's used to tokenize the dataset")
 
     experiment_group = parser.add_argument_group("Experiment management arguments")
     experiment_group.add_argument("--dryrun", action="store_true", help="Whether we are launching dryrun or actual runs")
     experiment_group.add_argument("--seed", type=int, default=1234, help="random seed")
+    experiment_group.add_argument("--num_exps", type=int, default=1)
 
     # TODO: add a checkpoint loading path here
     return parser
@@ -214,22 +282,28 @@ if __name__ == "__main__":
         dependencies=args.dependencies,
     )
 
-    exp_name, pretrain = get_pretrain(
-        size=args.size,
-        nnodes=args.nodes, 
-        ngpus_per_node=args.gpus_per_node,
-    )
-
-    assert args.gbs % pretrain.trainer.strategy.pipeline_model_parallel_size == 0, "GBS should be divisible by PP"
-    seq_length = pretrain.model.config.seq_length
+    seq_length = 8192
 
     data = get_data(
         gbs=args.gbs,
         mbs=args.mbs,
         seq_length=seq_length,
+        tokenizer_path=args.tokenizer_path,
+        seed=args.seed,
     )
 
-    pretrain.data = data
+    exp_prefix, pretrain = get_pretrain(
+        size=args.size,
+        nnodes=args.nodes, 
+        ngpus_per_node=args.gpus_per_node,
+        data_module=data,
+        ckpt=args.ckpt_path if args.use_ckpt else None,
+        eval_every=args.eval_every,
+        eval_batches=args.eval_batches,
+        max_steps=args.max_steps,
+    )
+
+    assert args.gbs % pretrain.trainer.strategy.pipeline_model_parallel_size == 0, "GBS should be divisible by PP"
 
     # Override config for MLPerf
     pretrain.trainer.num_sanity_val_steps = 0
@@ -237,17 +311,18 @@ if __name__ == "__main__":
     # insert plugins and callbacks here
     # pretrain.trainer.callbacks.append(...)
 
-    with run.Experiment(f"{exp_name}{args.tag}") as exp:
-        for i in range(1):
+    exp_prefix = f"{exp_prefix}{args.tag}"
+
+    for i in range(args.num_exps):
+        exp_name = f"{exp_prefix}_{i}"
+        with run.Experiment(exp_name) as exp:
             exp.add(
-                pretrain, 
-                executor=executor,
+                pretrain, executor=executor, 
                 name=exp_name,
                 plugins=[]
             )
 
-        if args.dryrun: 
-            exp.dryrun()
-        else:
-            exp.run(sequential=True, detach=True)
-    
+            if args.dryrun:
+                exp.dryrun()
+            else:
+                exp.run(sequential=True, detach=True)

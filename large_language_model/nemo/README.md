@@ -53,7 +53,32 @@ We use the c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co
 
 ### Data preprocessing
 
-To be filled. For now, please refer to [GPT3 data preprocessing instructions](https://github.com/mlcommons/training/tree/master/large_language_model/megatron-lm#dataset-preprocessing). 
+Run the following commands to merge all 1024 training files into 8 `json.gz` files and all 8 validation files into a single `json.gz` file. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`). 
+
+```bash
+export C4_PATH=""
+export MERGED_C4_PATH=""
+
+bash consolidate_data.sh
+```
+
+After preparing the data folder, refer to the Model preprocessing part to prepare the models (and its associated tokenizers). After the model is preprocessed and converted, there should be a `nemo_tokenizer` folder under the preprocessed NeMo checkpoint, and this folder will be used to preprocess the dataset. 
+
+We have provided a [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
+
+```bash
+# fill in the built container path here
+export CONT_IMAGE_URL=""
+# pass in the folder path that contains tokenizer.json here
+# please refer to checkpoint conversion for more details
+export NEMO_MODEL_PATH=""
+# pass in the merged file path here
+export MERGED_C4_PATH=""
+# this path is used for storing the preprocessed .bin and .idx files
+export PREPROCESSED_PATH=""
+
+sbatch preprocess.sh
+```
 
 ### Training and test data separation
 
@@ -88,6 +113,39 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 | Tokenizer | TokTokenizer |
 | Vocab size | 128,000 |  
 | Context Length | 8192 |
+
+
+### Checkpoint download and conversion
+
+To experiment with a given checkpoint, we have added a `--ckpt` argument that loads the pretrained checkpoint from a **NeMo checkpoint path**, which requires some checkpoint format conversion if the original checkpoint is in LlamaStack or HuggingFace format. 
+
+#### Converting LlamaStack to HuggingFace
+
+To convert models form LlamaStack to HuggingFace, we follow the [HF conversion script](https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/convert_llama_weights_to_hf.py). An example command is: 
+
+```bash
+TRANSFORMER_PATH=""
+INPUT_DIR=""
+OUTPUT_DIR=""
+MODEL_SIZE="405B" # For MP16 checkpoint, MODEL_SIZE should be 405B-MP16
+python3 $TRANSFORMER_PATH/models/llama/convert_llama_weights_to_hf.py \
+    --input_dir $INPUT_DIR --output_dir $OUTPUT_DIR \
+    --model_size $MODEL_SIZE --llama_version 3.1
+```
+
+#### Converting HuggingFace to NeMo
+
+To convert HuggingFace checkpoints to NeMo formats, we have provided a [conversion script](./utils/nemo_convert.py). Example command to launch this conversion: 
+
+```bash
+INPUT_DIR=""
+OUTPUT_DIR=""
+python3 /workspace/llama31/utils/nemo_convert.py --source $INPUT_DIR --destination $OUTPUT_DIR
+```
+
+#### Loading the NeMo checkpoint
+
+After the checkpoint is converted, we can now load them by setting the `MODEL_CKPT` environment variable to the folder that contains the NeMo checkpoint. Setting the `MODEL_CKPT=""` will not load any checkpoints. 
 
 ### Optimizer
 
