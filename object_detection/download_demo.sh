@@ -19,7 +19,6 @@ echo "Downloading annotations_trainval2017.zip:"
 curl -O https://mlcube.mlcommons-storage.org/minibenchmarks/object_detection.zip
 echo "Extracting demo_data.zip:"
 unzip -o -q object_detection.zip
-rm object_detection.zip
 echo "Done!"
 
 # MD5 verification
@@ -33,6 +32,7 @@ checkMD5() {
 }
 
 echo "validating demo_data.zip:"
-checkMD5 "demo_data.zip" "1b50202a21b0d8c3235d0a6f39b6f40c"
+checkMD5 "object_detection.zip" "1b50202a21b0d8c3235d0a6f39b6f40c"
+rm object_detection.zip
 
 popd
