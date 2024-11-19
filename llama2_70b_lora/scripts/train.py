@@ -20,6 +20,8 @@ from datasets import load_dataset
 from mlperf_logging_utils import LoraLogger, MLPerfCallback
 from transformers import HfArgumentParser, Trainer, TrainingArguments
 from utils import create_and_prepare_model, peft_module_casting_to_bf16
+import glob
+from datasets import load_dataset
 
 
 @dataclass
@@ -173,11 +175,22 @@ def main(args):
     # train_url = "https://drive.google.com/file/d/1-JgY1mEafcJ7qhggt6UR3OEKAciIPd5s/view?usp=sharing"
     # eval_url =  "https://drive.google.com/file/d/1jrm6Lacrq49AYv0uB_Qy22xRmfPixQvs/view?usp=sharing"
     # dataset = load_dataset("parquet", data_files={'train': train_url, 'validation': eval_url})
+    # dataset = load_dataset(
+    #     "parquet",
+    #     data_files={
+    #         "train": f"{args.dataset_path}/train-00000-of-00001.parquet",
+    #         "validation": f"{args.dataset_path}/validation-00000-of-00001.parquet",
+    #     },
+    # )
+    # Read chunks of a dataset
+    train_files = glob.glob(f"{args.dataset_path}/train*.parquet")
+    validation_files = glob.glob(f"{args.dataset_path}/validation*.parquet")
+    
     dataset = load_dataset(
         "parquet",
         data_files={
-            "train": f"{args.dataset_path}/train-00000-of-00001.parquet",
-            "validation": f"{args.dataset_path}/validation-00000-of-00001.parquet",
+            "train": train_files,
+            "validation": validation_files,
         },
     )
     train_dataset, eval_dataset = dataset["train"], dataset["validation"]
