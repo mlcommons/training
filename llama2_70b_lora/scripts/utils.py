@@ -141,19 +141,19 @@ def create_and_prepare_model(args):
             max_position_embeddings=8192,
         )
     else:
+        print("start generating initial weights")
         model = AutoModelForCausalLM.from_config(
             AutoConfig.from_pretrained(
-                AutoConfig.from_pretrained(
-                    args.model_config_path, rust_remote_code=True
-                ),
+                args.model_config_path,
+                trust_remote_code=True,
                 device_map=device_map,
                 use_cache=not args.use_gradient_checkpointing,
-                trust_remote_code=True,
-                attn_implementation="flash_attention_2",
-                torch_dtype=torch.bfloat16,
             ),
+            attn_implementation="flash_attention_2",
+            torch_dtype=torch.bfloat16,
             trust_remote_code=True,
         )
+        print("weights have been generated")
 
     peft_config = None
     if args.use_peft_lora:
