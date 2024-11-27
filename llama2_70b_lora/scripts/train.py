@@ -53,6 +53,10 @@ class ScriptArguments:
         default="./llama-v2-fused-qkv",
         metadata={"help": "Path to the model directory."},
     )
+    model_config_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to the model's config directory."},
+    )
     dataset_path: Optional[str] = field(
         default="./dataset.npy",
         metadata={"help": "The path to the downloaded dataset."},

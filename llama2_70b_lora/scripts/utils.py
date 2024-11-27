@@ -130,27 +130,30 @@ def create_datasets(tokenizer, args):
 def create_and_prepare_model(args):
     device_map = None
 
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     args.model_path,
-    #     device_map=device_map,
-    #     use_cache=not args.use_gradient_checkpointing,
-    #     trust_remote_code=True,
-    #     attn_implementation="flash_attention_2",
-    #     torch_dtype=torch.bfloat16,
-    #     max_position_embeddings=8192,
-    # )
-
-    model = AutoModelForCausalLM.from_config(
-        AutoConfig.from_pretrained(
-            AutoConfig.from_pretrained(args.model_path, rust_remote_code=True),
+    if args.model_config_path is None:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
             device_map=device_map,
             use_cache=not args.use_gradient_checkpointing,
             trust_remote_code=True,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16,
-        ),
-        trust_remote_code=True,
-    )
+            max_position_embeddings=8192,
+        )
+    else:
+        model = AutoModelForCausalLM.from_config(
+            AutoConfig.from_pretrained(
+                AutoConfig.from_pretrained(
+                    args.model_config_path, rust_remote_code=True
+                ),
+                device_map=device_map,
+                use_cache=not args.use_gradient_checkpointing,
+                trust_remote_code=True,
+                attn_implementation="flash_attention_2",
+                torch_dtype=torch.bfloat16,
+            ),
+            trust_remote_code=True,
+        )
 
     peft_config = None
     if args.use_peft_lora:
