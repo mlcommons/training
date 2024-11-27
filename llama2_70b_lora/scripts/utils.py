@@ -5,7 +5,7 @@ import torch
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
 from peft.tuners.lora import LoraLayer
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoConfig
 
 
 def group_texts(examples, block_size):
@@ -130,14 +130,26 @@ def create_datasets(tokenizer, args):
 def create_and_prepare_model(args):
     device_map = None
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_path,
-        device_map=device_map,
-        use_cache=not args.use_gradient_checkpointing,
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     args.model_path,
+    #     device_map=device_map,
+    #     use_cache=not args.use_gradient_checkpointing,
+    #     trust_remote_code=True,
+    #     attn_implementation="flash_attention_2",
+    #     torch_dtype=torch.bfloat16,
+    #     max_position_embeddings=8192,
+    # )
+
+    model = AutoModelForCausalLM.from_config(
+        AutoConfig.from_pretrained(
+            AutoConfig.from_pretrained(args.model_path, rust_remote_code=True),
+            device_map=device_map,
+            use_cache=not args.use_gradient_checkpointing,
+            trust_remote_code=True,
+            attn_implementation="flash_attention_2",
+            torch_dtype=torch.bfloat16,
+        ),
         trust_remote_code=True,
-        attn_implementation="flash_attention_2",
-        torch_dtype=torch.bfloat16,
-        max_position_embeddings=8192,
     )
 
     peft_config = None
