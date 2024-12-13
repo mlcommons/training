@@ -26,6 +26,8 @@ export TIME=""
 export NNODES=0
 # Slurm: --gpus_per_node and --ntasks_per_node argument
 export GPUS_PER_NODE=0
+# Slurm: max job retries for transient job failures
+export MAX_RETRIES=0
 
 # Folder mapping:
 # Output directory that holds logs
@@ -39,10 +41,26 @@ export TMP_NPY_INDEX=""
 # Dataset: Tokenizer path
 export TOKENIZER=""
 
+# Environment: NeMo remount
+export NEMO_DIR=""
+
 # Model: checkpoint and tokenizer path
+#     This is the checkpoint that we want to start with. 
+#     Each checkpoint should be a folder containing two sub-folders: context and weights. 
+#     And we need to pass this folder's path (the folder containing these two sub-folders) here.  
 export MODEL_CKPT=""
-# Model: Whether we want to restore from checkpoint
+# Model: Continual checkpoint directory to write and resume
+#     This is the directory to hold all intermediate checkpoints. 
+#     Once a run is complete and we specify to save checkpoints, 
+#     we should see a checkpoint written in this folder
+#     with name `checkpoint-par-x-y-steps`
+#     Inside this directory, there should be a `checkpoint` directory that holds context and weights
+#     which is the "actual checkpoint"
+export CONTINUAL_CKPT=""
+# Model: Whether we want to restore from MODEL_CKPT path. If 0, then we are not restoring. 
 export USE_CKPT=0
+# Model: Whether we want to save a checkpoint. Must be true if NPAR > 1
+export SAVE_CKPT=0
 
 
 # Training Configs: 
@@ -58,5 +76,13 @@ export EVAL_EVERY=""
 export EVAL_BATCHES=""
 # Dataloader: Max run N batches, optional
 export MAX_STEPS=""
+
+# Experiment: starting steps
+#     This is the starting "offset" step from the checkpoint. 
+#     For instance, if you are resuming from a checkpoint folder `checkpoint-par-x-y-steps/checkpoint`, 
+#     then the value y is needed here. 
+export START_STEPS=""
 # Experiment manager: Number of experiments to launch
-export NEXP=1
+export NEXP=0
+# Experiment manager: how many consecutive jobs we want for each experiment
+export NPAR=0

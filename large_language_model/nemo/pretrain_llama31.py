@@ -18,14 +18,11 @@ from nemo.collections import llm
 from nemo.collections.common.tokenizers import AutoTokenizer
 from nemo import lightning as nl
 from megatron.core.distributed import DistributedDataParallelConfig
-from nemo.collections.llm.recipes.precision.mixed_precision import bf16_mixed
-from nemo.collections.llm.gpt.data.mock import MockDataModule
-from nemo.collections.llm.recipes.log.default import default_log, default_resume
 from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_cosine_annealing
 import nemo_run as run
-from nemo.utils.exp_manager import TimingCallback
-import torch
-import os
+from nemo.lightning.run import plugins
+from nemo.collections.llm.gpt.data import build_pretraining_datamodule
+from callbacks import PreemptiveStop
 
 def slurm_executor(
     user: str,
@@ -58,6 +55,7 @@ def slurm_executor(
         "NVTE_DP_AMAX_REDUCE_INTERVAL": "0",
         "NVTE_ASYNC_AMAX_REDUCTION": "1",
         "NVTE_FUSED_ATTN": "0",
+        "TOKENIZERS_PARALLELISM": "false",
     }
     if custom_env_vars:
         env_vars |= custom_env_vars
@@ -94,10 +92,8 @@ def get_pretrain(
     nnodes: int, 
     ngpus_per_node: int,
     data_module: run.Config,
-    ckpt: Optional[str]=None,
     eval_every: Optional[int]=None, 
     eval_batches: Optional[int]=None,
-    max_steps: Optional[int]=None,
 ) -> run.Partial:
     
     exp_name = size
@@ -142,18 +138,49 @@ def get_pretrain(
             overlap_param_gather=True,
         )
 
-        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=8e-5)
+        pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 7
+
+        pretrain.optim = distributed_fused_adam_with_cosine_annealing(
+            max_lr=8e-5, 
+            warmup_steps=8000,
+            min_lr=8e-7
+        )
+
+        from nemo.collections.llm.recipes.tp_overlap_configs.userbuffers import (
+            userbuffers_bf16_h100_h16384_tp8_cp2_mbs1_seqlen8192,
+        )
+        from nemo.lightning.pytorch.callbacks.megatron_comm_overlap import MegatronCommOverlapCallback
+
+        pretrain.trainer.callbacks.append(
+            run.Config(
+                MegatronCommOverlapCallback,
+                tp_comm_overlap=True,
+                tp_comm_overlap_cfg=userbuffers_bf16_h100_h16384_tp8_cp2_mbs1_seqlen8192,
+                defer_embedding_wgrad_compute=True,
+                wgrad_deferral_limit=50,
+                overlap_param_gather_with_optimizer_step=False, 
+                align_param_gather=True,
+            )
+        )
 
     # sets up everything else
+    pretrain.trainer.max_steps = 1_200_000 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+
     pretrain.data = data_module
     pretrain.trainer.val_check_interval = eval_every
     pretrain.trainer.limit_val_batches = eval_batches
     pretrain.trainer.limit_test_batches = eval_batches
-    if max_steps is not None:
-        pretrain.trainer.max_steps = max_steps
 
-    if ckpt is not None:
-        pretrain.resume = run.Config(nl.AutoResume, restore_config=run.Config(nl.RestoreConfig, path=ckpt))
+    pretrain.log.tensorboard = None
+    pretrain.log.ckpt.every_n_train_steps = None
+    pretrain.log.ckpt.save_top_k = 1
+    pretrain.log.ckpt.save_last = False
+    pretrain.log.ckpt.always_save_context = True
+    pretrain.log.ckpt.save_weights_only = False
+    pretrain.log.ckpt.save_optim_on_train_end = True
+    pretrain.log.ckpt.save_on_train_epoch_end = True
+    pretrain.log.ckpt.monitor = "consumed_samples"
+    pretrain.log.ckpt.mode = "max"
 
     return exp_name, pretrain
 
@@ -214,6 +241,7 @@ def get_parser() -> argparse.ArgumentParser:
     slurm_group.add_argument("--gpus_per_node", type=int, required=True, help="Number of GPUs per node")
     slurm_group.add_argument("--time", type=str, required=True, help="Time limit for the job")
     slurm_group.add_argument("--dependencies", nargs="*", help="list of dependencies for the job, dependency type as 'afterok'") # not useful for now
+    slurm_group.add_argument("--max_retries", type=int, default=0)
 
     slurm_group.add_argument(
         "--mounts", 
@@ -241,8 +269,11 @@ def get_parser() -> argparse.ArgumentParser:
             "405b", # Llama 3.1 405B config
         ])
 
-    model_group.add_argument("--ckpt_path", type=str, default=None)
+    model_group.add_argument("--initial_ckpt_path", type=str, default=None)
     model_group.add_argument("--use_ckpt", action="store_true")
+    model_group.add_argument("--ckpt_start_step", type=int, default=0)
+    model_group.add_argument("--continual_ckpt_path", type=str, default=None)
+    model_group.add_argument("--save_ckpt", action="store_true")
     
     data_group = parser.add_argument_group("Dataset arguments")
     
@@ -257,8 +288,8 @@ def get_parser() -> argparse.ArgumentParser:
     experiment_group.add_argument("--dryrun", action="store_true", help="Whether we are launching dryrun or actual runs")
     experiment_group.add_argument("--seed", type=int, default=1234, help="random seed")
     experiment_group.add_argument("--num_exps", type=int, default=1)
+    experiment_group.add_argument("--num_pars", type=int, default=1)
 
-    # TODO: add a checkpoint loading path here
     return parser
 
 
@@ -266,6 +297,9 @@ if __name__ == "__main__":
     args = get_parser().parse_args()
     if args.tag and not args.tag.startswith("-"):
         args.tag = "-" + args.tag
+
+    assert not (args.num_pars == 1 and args.continual_ckpt_path is None), "NPar > 1 but a shared checkpoint path is not found"
+    assert not (not args.save_ckpt and args.num_pars > 1), "multiple experiments are specified but checkpoint is not saved"
 
     executor = slurm_executor(
         user=args.user, 
@@ -280,6 +314,7 @@ if __name__ == "__main__":
         custom_env_vars=({envvar.split("=")[0]: envvar.split("=")[1] for envvar in args.envvars.split(",")} if args.envvars is not None else None),
         container_image=args.image,
         dependencies=args.dependencies,
+        retries = args.max_retries,
     )
 
     seq_length = 8192
@@ -297,10 +332,8 @@ if __name__ == "__main__":
         nnodes=args.nodes, 
         ngpus_per_node=args.gpus_per_node,
         data_module=data,
-        ckpt=args.ckpt_path if args.use_ckpt else None,
         eval_every=args.eval_every,
         eval_batches=args.eval_batches,
-        max_steps=args.max_steps,
     )
 
     assert args.gbs % pretrain.trainer.strategy.pipeline_model_parallel_size == 0, "GBS should be divisible by PP"
@@ -311,16 +344,83 @@ if __name__ == "__main__":
     # insert plugins and callbacks here
     # pretrain.trainer.callbacks.append(...)
 
+    run_plugins = [
+        plugins.PerfEnvPlugin(),
+    ]
+
     exp_prefix = f"{exp_prefix}{args.tag}"
+
+    # Pretrain data index builder
+    # max steps
+    pretrain.data.num_train_samples = pretrain.trainer.max_steps * pretrain.data.global_batch_size
+    datamodule = pretrain.data.clone()
+    datamodule.num_dataset_builder_threads = 8
+    build_data_index = run.Partial(
+        build_pretraining_datamodule,
+        datamodule=datamodule,
+        trainer_max_steps=pretrain.trainer.max_steps,
+        trainer_val_check_interval=pretrain.trainer.val_check_interval,
+        trainer_limit_val_batches=pretrain.trainer.limit_val_batches,
+        trainer_limit_test_batches=pretrain.trainer.limit_test_batches,
+    )
+    data_index_executor = executor.clone()
+    data_index_executor.launcher = None
+    data_index_executor.nodes = 1
+    data_index_executor.ntasks_per_node = 1
+    data_index_executor.retries = 1
+
+    static_read_from_path = args.initial_ckpt_path if args.use_ckpt else None
+    static_write_to_path = args.continual_ckpt_path
+    static_max_steps = args.max_steps if args.max_steps is not None else None
+
+    if not args.save_ckpt:
+        pretrain.trainer.enable_checkpointing = False
+
+    original_callbacks = pretrain.trainer.callbacks
 
     for i in range(args.num_exps):
         exp_name = f"{exp_prefix}_{i}"
+        experiment_read_from_path = static_read_from_path
+        experiment_write_to_path = static_write_to_path
+        experiment_max_steps = args.ckpt_start_step
+
         with run.Experiment(exp_name) as exp:
-            exp.add(
-                pretrain, executor=executor, 
-                name=exp_name,
-                plugins=[]
-            )
+            exp.add(build_data_index, executor=data_index_executor, name="build_data_index")
+
+            for j in range(args.num_pars):
+                ending_steps = ""
+                starting_steps = f"{experiment_max_steps}"
+                if static_max_steps is not None:
+                    ending_steps = f"-{experiment_max_steps + static_max_steps}-steps"
+
+                checkpoint_name = "checkpoint" + f"-par-{j}{ending_steps}"
+                experiment_write_to_path = static_write_to_path + "/" + checkpoint_name
+                
+                pretrain.resume.resume_from_directory = experiment_read_from_path
+                pretrain.resume.resume_from_path = experiment_read_from_path
+                pretrain.log.ckpt.train_time_interval = None
+
+                if args.save_ckpt:
+                    pretrain.log.ckpt.dirpath = experiment_write_to_path
+                    pretrain.log.ckpt.filename = "checkpoint"
+
+                if static_max_steps is not None:
+                    experiment_max_steps += static_max_steps
+                    pretrain.trainer.callbacks = (
+                        original_callbacks + 
+                        [run.Config(PreemptiveStop, stop_on_step=experiment_max_steps)]
+                    )
+                    if args.save_ckpt:
+                        pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
+                        pretrain.log.ckpt.save_on_train_epoch_end = False
+
+                experiment_read_from_path = experiment_write_to_path + "/checkpoint"
+
+                exp.add(
+                    pretrain, executor=executor, 
+                    name=f"{exp_name}_{j}_{starting_steps}{ending_steps}",
+                    plugins=run_plugins
+                )
 
             if args.dryrun:
                 exp.dryrun()

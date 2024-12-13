@@ -8,11 +8,11 @@ Large Language Model pretraining - Llama 3.1 405B
 
 To use this repository, please install a supported version of PyTorch with GPU support (python 3.10, pytorch 2.4, cuda 12.5, and nccl 2.22.3 and above) and NVIDIA APEX. **Slurm-based clusters are required to run the reference**. 
 
-We recommend using the latest NeMo FW container. The latest tested compatible version is `nvcr.io/nvidia/nemo:dev`).
+We recommend using the latest NeMo FW container. The latest tested compatible version is `nvcr.io/nvidia/nemo:24.12-rc0`).
 
 #### Container Setup
 
-All of the following codes are assumed to be run within a container. A [Dockerfile](./Dockerfile) is available for building containers on top of `nvcr.io/nvidia/nemo:dev`. 
+All of the following codes are assumed to be run within a container. A [Dockerfile](./Dockerfile) is available for building containers on top of `nvcr.io/nvidia/nemo:24.12-rc0`. 
 
 To build the container: 
 
@@ -33,7 +33,7 @@ Note: it's recommended to map your `.ssh` folder to inside the container, so tha
 
 ### Steps to download and verify data
 
-The current codebase is still using GPT3's train/val datasets and SentencePieceModel tokenizer. Please refer to [GPT3 instructions](https://github.com/mlcommons/training/tree/master/large_language_model/megatron-lm#preprocessed-data-download) to download preprocessed datasets and SPM checkpoints. 
+The current codebase is still using GPT3's train/val datasets and SentencePieceModel tokenizer. Please refer to [GPT3 instructions](https://github.com/mlcommons/training/tree/master/large_language_model/megatron-lm#preprocessed-data-download) to download **the raw C4 dataset** that we can preprocess later. 
 
 ### Steps to run and time
 
@@ -51,6 +51,12 @@ bash run_llama31.sh
 
 We use the c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4). 
 
+We use the Mixtral 8x22B tokenizer from [HuggingFace/MistralAI](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1). 
+
+### Tokenizer
+
+We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
+
 ### Data preprocessing
 
 Run the following commands to merge all 1024 training files into 8 `json.gz` files and all 8 validation files into a single `json.gz` file. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`). 
@@ -62,16 +68,14 @@ export MERGED_C4_PATH=""
 bash consolidate_data.sh
 ```
 
-After preparing the data folder, refer to the Model preprocessing part to prepare the models (and its associated tokenizers). After the model is preprocessed and converted, there should be a `nemo_tokenizer` folder under the preprocessed NeMo checkpoint, and this folder will be used to preprocess the dataset. 
-
-We have provided a [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
+After the data consolidation is done, we can run this [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
 
 ```bash
 # fill in the built container path here
 export CONT_IMAGE_URL=""
-# pass in the folder path that contains tokenizer.json here
-# please refer to checkpoint conversion for more details
-export NEMO_MODEL_PATH=""
+# pass in the folder path that contains the Mixtral tokenizer here
+# please refer to the tokenizer section above for more details
+export TOKENIZER_PATH=""
 # pass in the merged file path here
 export MERGED_C4_PATH=""
 # this path is used for storing the preprocessed .bin and .idx files
@@ -86,7 +90,7 @@ To be determined. For now, we are using the default split from the C4 dataset.
 
 ### Training data order
 
-To be determined. 
+To be determined. Current plan is to use the last 256 of 1024 files (shards 6 and 7) for the benchmarked area. 
 
 ### Test data order
 
@@ -110,42 +114,20 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 | Hidden Dimension | 53248 |
 | Activation | SwiGLU | 
 | Normalization | RMSNorm |  
-| Tokenizer | TokTokenizer |
+| Tokenizer | TikTokenizer |
 | Vocab size | 128,000 |  
 | Context Length | 8192 |
 
 
 ### Checkpoint download and conversion
 
-To experiment with a given checkpoint, we have added a `--ckpt` argument that loads the pretrained checkpoint from a **NeMo checkpoint path**, which requires some checkpoint format conversion if the original checkpoint is in LlamaStack or HuggingFace format. 
+To be determined. For now, we are not using Llama 3.1 default checkpoint. 
 
-#### Converting LlamaStack to HuggingFace
+~~To experiment with a given checkpoint, we have added a `--ckpt` argument that loads the pretrained checkpoint from a **NeMo checkpoint path**, which requires some checkpoint format conversion if the original checkpoint is in LlamaStack or HuggingFace format.~~
 
-To convert models form LlamaStack to HuggingFace, we follow the [HF conversion script](https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/convert_llama_weights_to_hf.py). An example command is: 
+#### Saving and restoring a checkpoint
 
-```bash
-TRANSFORMER_PATH=""
-INPUT_DIR=""
-OUTPUT_DIR=""
-MODEL_SIZE="405B" # For MP16 checkpoint, MODEL_SIZE should be 405B-MP16
-python3 $TRANSFORMER_PATH/models/llama/convert_llama_weights_to_hf.py \
-    --input_dir $INPUT_DIR --output_dir $OUTPUT_DIR \
-    --model_size $MODEL_SIZE --llama_version 3.1
-```
-
-#### Converting HuggingFace to NeMo
-
-To convert HuggingFace checkpoints to NeMo formats, we have provided a [conversion script](./utils/nemo_convert.py). Example command to launch this conversion: 
-
-```bash
-INPUT_DIR=""
-OUTPUT_DIR=""
-python3 /workspace/llama31/utils/nemo_convert.py --source $INPUT_DIR --destination $OUTPUT_DIR
-```
-
-#### Loading the NeMo checkpoint
-
-After the checkpoint is converted, we can now load them by setting the `MODEL_CKPT` environment variable to the folder that contains the NeMo checkpoint. Setting the `MODEL_CKPT=""` will not load any checkpoints. 
+Large runs might need to span across multiple Slurm jobs, and we need to save and load checkpoints with contexts so that training can resume between jobs. To support this, we have added some environment variables. Please refer to `config.sh` for more details. 
 
 ### Optimizer
 

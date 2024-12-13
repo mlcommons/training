@@ -7,11 +7,11 @@
 set -e
 
 : "${CONT_IMAGE_URL:?CONT_IMAGE_URL not set}"
-: "${NEMO_MODEL_PATH:?NEMO_MODEL_PATH not set}"
+: "${TOKENIZER_PATH:?TOKENIZER_PATH not set}"
 : "${MERGED_C4_PATH:?MERGED_C4_PATH not set}"
 : "${PREPROCESSED_PATH:?PREPROCESSED_PATH not set}"
 
-container_maps="${NEMO_MODEL_PATH}/nemo_tokenizer:/llama3.1-tokenizer,${MERGED_C4_PATH}:/dataset,${PREPROCESSED_PATH}:/outputs"
+container_maps="${TOKENIZER_PATH}:/tokenizer,${MERGED_C4_PATH}:/dataset,${PREPROCESSED_PATH}:/outputs"
 
 for index in {0..7}; do
     srun --nodes=1 --ntasks-per-node=1 \
@@ -19,7 +19,7 @@ for index in {0..7}; do
     python3 /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \
     --input "/dataset/c4-train.en_${index}.json.gz" \
     --output-prefix "/outputs/c4-train.en_${index}" \
-    --tokenizer-library huggingface --tokenizer-type /llama3.1-tokenizer \
+    --tokenizer-library huggingface --tokenizer-type /tokenizer \
     --dataset-impl mmap --workers 128 &
 done
 
@@ -29,6 +29,6 @@ srun --nodes=1 --ntasks-per-node=1 \
     python3 /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \
     --input "/dataset/c4-validation.en.json.gz" \
     --output-prefix "/outputs/c4-validation.en" \
-    --tokenizer-library huggingface --tokenizer-type /llama3.1-tokenizer \
+    --tokenizer-library huggingface --tokenizer-type /tokenizer \
     --dataset-impl mmap --workers 128 & 
 wait

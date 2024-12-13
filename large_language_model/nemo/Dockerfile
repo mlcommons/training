@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG NEMO_BASE_IMAGE=nvcr.io/nvidia/nemo:dev
+ARG NEMO_BASE_IMAGE=nvcr.io/nvidia/nemo:24.12-rc0
 FROM ${NEMO_BASE_IMAGE} AS nemo-base-image
 
 RUN pip uninstall transformers -y

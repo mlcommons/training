@@ -36,6 +36,7 @@ git config --global --add safe.directory /workspace/llama31
 #     Model settings
 : "${MODEL_CKPT:?MODEL_CKPT not set}"
 : "${USE_CKPT:?USE_CKPT not set}"
+: "${CONTINUAL_CKPT:?CONTINUAL_CKPT not set}"
 
 # Vars with defaults
 #     Slurm settings
@@ -46,12 +47,15 @@ git config --global --add safe.directory /workspace/llama31
 
 #     Job settings
 : "${NEMO_DIR:=""}" # Provide customized NeMo path here
+: "${NEMO_RUN_DIR:=""}" # Provide customized NeMo-Run path here
 : "${TMP_NPY_INDEX:=""}" # Provide temporary NNumpy Index saving directory
+: "${MAX_RETRIES:=0}"
 
 #     Model settings
 : "${SIZE:="405b"}"
-: "${GBS:=288}"
+: "${GBS:=1152}"
 : "${MBS:=1}"
+: "${START_STEPS:=0}"
 
 #     Dataloader settings
 : "${EVAL_EVERY:=""}"
@@ -61,10 +65,13 @@ git config --global --add safe.directory /workspace/llama31
 #     Experiment settings
 : "${SEED:=$RANDOM}"
 : "${NEXP:=1}"
+: "${NPAR:=1}"
+: "${SAVE_CKPT:=1}"
+: "${TAG:=""}"
 
 # Run
 
-MOUNTS="${JOB_DIR}:/output,${PREPROCESSED_DATA}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER}:/tokenizer"
+MOUNTS="${JOB_DIR}:/output,${PREPROCESSED_DATA}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER}:/tokenizer,${CONTINUAL_CKPT}:/continual"
 
 CKPT_OPTION=""
 
@@ -74,8 +81,16 @@ if [ $USE_CKPT -gt 0 ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --use_ckpt"
 fi
 
+if [ $SAVE_CKPT -gt 0 ]; then 
+    CMD_SUFFIX="${CMD_SUFFIX} --save_ckpt"
+fi
+
 if [ ! $NEMO_DIR = "" ]; then
     MOUNTS="${MOUNTS},${NEMO_DIR}:/opt/NeMo"
+fi
+
+if [ ! $NEMO_RUN_DIR = "" ]; then
+    MOUNTS="${MOUNTS},${NEMO_RUN_DIR}:/opt/NeMo-Run"
 fi
 
 if [ ! $TMP_NPY_INDEX = "" ]; then
@@ -98,6 +113,10 @@ if [ ! $MAX_STEPS = "" ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --max_steps ${MAX_STEPS}"
 fi
 
+if [ ! $TAG = "" ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --tag ${TAG}"
+fi
+
 set -x
 
 python3 pretrain_llama31.py \
@@ -112,6 +131,10 @@ python3 pretrain_llama31.py \
 --gbs $GBS --mbs $MBS \
 --seed $SEED \
 --num_exps $NEXP \
---ckpt_path /checkpoint \
+--num_pars $NPAR \
+--initial_ckpt_path /checkpoint \
+--continual_ckpt_path /continual \
 --tokenizer_path /tokenizer \
+--ckpt_start_step $START_STEPS \
+--max_retries $MAX_RETRIES \
 $CMD_SUFFIX
