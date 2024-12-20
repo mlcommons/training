@@ -71,7 +71,7 @@ git config --global --add safe.directory /workspace/llama31
 
 # Run
 
-MOUNTS="${JOB_DIR}:/output,${PREPROCESSED_DATA}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER}:/tokenizer,${CONTINUAL_CKPT}:/continual"
+MOUNTS="${JOB_DIR}:/output,${JOB_DIR}:/mlperf-outputs,${PREPROCESSED_DATA}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER}:/tokenizer,${CONTINUAL_CKPT}:/continual"
 
 CKPT_OPTION=""
 

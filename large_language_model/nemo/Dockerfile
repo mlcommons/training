@@ -18,6 +18,7 @@ FROM ${NEMO_BASE_IMAGE} AS nemo-base-image
 RUN pip uninstall transformers -y
 RUN pip install transformers blobfile
 RUN pip install prettytable
+RUN pip install git+https://github.com/mlcommons/logging.git@4.1.0-rc3
 
 # setup workspace
 WORKDIR /workspace/llama31

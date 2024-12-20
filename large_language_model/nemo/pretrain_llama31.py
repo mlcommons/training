@@ -22,7 +22,7 @@ from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_
 import nemo_run as run
 from nemo.lightning.run import plugins
 from nemo.collections.llm.gpt.data import build_pretraining_datamodule
-from callbacks import PreemptiveStop
+from callbacks import PreemptiveStop, MLPerfCallback, MetricsLogger
 
 def slurm_executor(
     user: str,
@@ -289,6 +289,7 @@ def get_parser() -> argparse.ArgumentParser:
     experiment_group.add_argument("--seed", type=int, default=1234, help="random seed")
     experiment_group.add_argument("--num_exps", type=int, default=1)
     experiment_group.add_argument("--num_pars", type=int, default=1)
+    experiment_group.add_argument("--target_log_ppl", type=float, default=1)
 
     return parser
 
@@ -337,12 +338,45 @@ if __name__ == "__main__":
     )
 
     assert args.gbs % pretrain.trainer.strategy.pipeline_model_parallel_size == 0, "GBS should be divisible by PP"
+    
+    # Collect all HP configs
+    from mlperf_logging.mllog import constants
+    
+    tp = pretrain.trainer.strategy.tensor_model_parallel_size
+    pp = pretrain.trainer.strategy.pipeline_model_parallel_size
+    cp = pretrain.trainer.strategy.context_parallel_size
+    dp = (pretrain.trainer.num_nodes * pretrain.trainer.devices) // (tp * pp * cp)
+    mini_batch_size = (args.gbs // dp)
+    grad_accumulation_steps = mini_batch_size // args.mbs
+
+    configs = {
+        # seeds
+        constants.SEED: args.seed,
+
+        # HPs
+        constants.GLOBAL_BATCH_SIZE: args.gbs,
+        constants.GRADIENT_ACCUMULATION_STEPS: grad_accumulation_steps,
+        constants.MAX_SEQUENCE_LENGTH: 8192,
+        constants.EVAL_SAMPLES: "to be determined",
+
+        # Optimizers
+        constants.OPT_NAME: pretrain.optim.config.optimizer,
+        constants.OPT_BASE_LR: pretrain.optim.config.lr,
+        constants.OPT_ADAM_BETA_1: pretrain.optim.config.adam_beta1,
+        constants.OPT_ADAM_BETA_2: pretrain.optim.config.adam_beta2,
+        constants.OPT_ADAM_EPSILON: pretrain.optim.config.adam_eps,
+        constants.OPT_WEIGHT_DECAY: pretrain.optim.config.weight_decay,
+        constants.OPT_GRADIENT_CLIP_NORM: pretrain.optim.config.clip_grad,
+
+        # Schedulers
+        constants.OPT_END_LR: pretrain.optim.lr_scheduler.min_lr,
+        constants.OPT_LR_WARMUP_STEPS: pretrain.optim.lr_scheduler.warmup_steps,
+        constants.OPT_LR_DECAY_STEPS: pretrain.trainer.max_steps - pretrain.optim.lr_scheduler.warmup_steps,
+        constants.OPT_LR_DECAY_SCHEDULE: "cosine with linear warmups",
+    }
 
     # Override config for MLPerf
     pretrain.trainer.num_sanity_val_steps = 0
-
-    # insert plugins and callbacks here
-    # pretrain.trainer.callbacks.append(...)
 
     run_plugins = [
         plugins.PerfEnvPlugin(),
@@ -386,7 +420,7 @@ if __name__ == "__main__":
 
         with run.Experiment(exp_name) as exp:
             exp.add(build_data_index, executor=data_index_executor, name="build_data_index")
-
+            
             for j in range(args.num_pars):
                 ending_steps = ""
                 starting_steps = f"{experiment_max_steps}"
@@ -405,11 +439,33 @@ if __name__ == "__main__":
                     pretrain.log.ckpt.filename = "checkpoint"
 
                 if static_max_steps is not None:
+                    start_step = experiment_max_steps
                     experiment_max_steps += static_max_steps
+                    configs[constants.INIT_CHECKPOINT_STEP] = start_step
                     pretrain.trainer.callbacks = (
-                        original_callbacks + 
-                        [run.Config(PreemptiveStop, stop_on_step=experiment_max_steps)]
+                        original_callbacks + [
+                            run.Config(PreemptiveStop, stop_on_step=experiment_max_steps),
+                            run.Config(
+                                MLPerfCallback, 
+                                global_batch_size=args.gbs,
+                                micro_batch_size=args.mbs, 
+                                sequence_length=8192,
+                                init_global_step=start_step,
+                                configs=configs,
+                            ),
+                        ]
                     )
+
+                    pretrain.log.extra_loggers = [
+                        run.Config(
+                            MetricsLogger, 
+                            init_global_step=start_step,
+                            global_batch_size=args.gbs,
+                            seq_length=8192,
+                            target_log_ppl=args.target_log_ppl
+                        ), 
+                    ]
+
                     if args.save_ckpt:
                         pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
                         pretrain.log.ckpt.save_on_train_epoch_end = False
