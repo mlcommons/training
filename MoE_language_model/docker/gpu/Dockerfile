@@ -19,11 +19,10 @@ RUN pip install git+https://github.com/NVIDIA/dllogger#egg=dllogger
 RUN pip install datasets==2.20.0 hydra-core sentencepiece
 RUN pip install "git+https://github.com/mlperf/logging.git"
 
-# clone current repo
-ARG GIT_REF=main
-RUN git clone https://github.com/ZhiyuLi-goog/MoE_study.git && \
-    cd MoE_study && \
-    echo GIT_REF=${GIT_REF} && \
-    git checkout ${GIT_REF}
+# TODO change to mlcommon git
+RUN git clone  -b lizhiyu/moe --filter=blob:none --sparse https://github.com/ZhiyuLi-goog/training.git training
 
-RUN patch --directory=/opt/megatron-lm -p1 < MoE_study/clm/docker/gpu/megatron_core.patch
+WORKDIR /app/training
+
+RUN git sparse-checkout set MoE_language_model
+RUN patch --directory=/opt/megatron-lm -p1 < MoE_language_model/docker/gpu/megatron_core.patch

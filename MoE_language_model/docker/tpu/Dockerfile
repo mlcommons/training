@@ -44,10 +44,9 @@ RUN pip install nemo_toolkit pytorch-lightning huggingface-hub==0.23.2
 
 WORKDIR /app
 
+# TODO change to mlcommon git
+RUN git clone  -b lizhiyu/moe --filter=blob:none --sparse https://github.com/ZhiyuLi-goog/training.git training
 
-# clone current repo
-ARG GIT_REF=main
-RUN git clone https://github.com/ZhiyuLi-goog/MoE_study.git && \
-    cd MoE_study && \
-    echo GIT_REF=${GIT_REF} && \
-    git checkout ${GIT_REF}
+WORKDIR /app/training
+
+RUN git sparse-checkout set MoE_language_model
