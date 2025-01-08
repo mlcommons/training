@@ -86,3 +86,6 @@ export START_STEPS=""
 export NEXP=0
 # Experiment manager: how many consecutive jobs we want for each experiment
 export NPAR=0
+# Experiment manager: provides seeds to the launched experiments, use space as delimiter, such as "1234 1235 1236"
+# The training script will discard all excessive seeds, and generate seeds if given seeds < NEXP. 
+export SEEDS=""

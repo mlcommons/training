@@ -23,3 +23,6 @@ RUN pip install git+https://github.com/mlcommons/logging.git@4.1.0-rc3
 # setup workspace
 WORKDIR /workspace/llama31
 COPY . .
+
+# Fixes the validation dataset order
+RUN patch --directory=/opt/megatron-lm -p1 < mcore.patch

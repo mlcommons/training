@@ -190,10 +190,17 @@ def get_data(
     seq_length: Optional[int] = 8192,
     tokenizer_path: Optional[str] = "",
     seed: Optional[int] = 1234,
+    use_full_dataset: Optional[bool] = False,
 ) -> run.Config:
     tokenizer = run.Config(AutoTokenizer, pretrained_model_name=tokenizer_path)
 
-    train_datasets = sum([["12.5", f"/preproc_data/c4-train.en_{idx}_text_document"] for idx in range(8)], [])
+    train_datasets = None
+
+    if use_full_dataset:
+        train_datasets = sum([["12.5", f"/preproc_data/c4-train.en_{idx}_text_document"] for idx in range(8)], [])
+    else:
+        train_datasets = sum([["50", f"/preproc_data/c4-train.en_{idx}_text_document"] for idx in range(6, 8)], [])
+
     data_paths = {
         "train": train_datasets,
         "validation": [
@@ -208,7 +215,7 @@ def get_data(
         llm.PreTrainingDataModule,
         tokenizer=tokenizer,
         paths=data_paths,
-        num_workers=2, # TODO: make it configurable
+        num_workers=8, # TODO: make it configurable
         seq_length=seq_length,
         global_batch_size=gbs,
         micro_batch_size=mbs,
@@ -282,11 +289,12 @@ def get_parser() -> argparse.ArgumentParser:
     data_group.add_argument("--eval_every", type=int, default=10)
     data_group.add_argument("--eval_batches", type=int, default=None)
     data_group.add_argument('--max_steps', type=int, default=None)
+    data_group.add_argument("--use_full_dataset", action="store_true", help="Whether we use the full dataset or use the last 256/1024 dataset")
     data_group.add_argument("--tokenizer_path", type=str, help="Tokenizer path that's used to tokenize the dataset")
 
     experiment_group = parser.add_argument_group("Experiment management arguments")
     experiment_group.add_argument("--dryrun", action="store_true", help="Whether we are launching dryrun or actual runs")
-    experiment_group.add_argument("--seed", type=int, default=1234, help="random seed")
+    experiment_group.add_argument("--seeds", type=int, nargs="*", default=[], help="random seeds")
     experiment_group.add_argument("--num_exps", type=int, default=1)
     experiment_group.add_argument("--num_pars", type=int, default=1)
     experiment_group.add_argument("--target_log_ppl", type=float, default=1)
@@ -325,7 +333,8 @@ if __name__ == "__main__":
         mbs=args.mbs,
         seq_length=seq_length,
         tokenizer_path=args.tokenizer_path,
-        seed=args.seed,
+        seed=1234, # overwritten in each experiments
+        use_full_dataset=args.use_full_dataset,
     )
 
     exp_prefix, pretrain = get_pretrain(
@@ -350,9 +359,6 @@ if __name__ == "__main__":
     grad_accumulation_steps = mini_batch_size // args.mbs
 
     configs = {
-        # seeds
-        constants.SEED: args.seed,
-
         # HPs
         constants.GLOBAL_BATCH_SIZE: args.gbs,
         constants.GRADIENT_ACCUMULATION_STEPS: grad_accumulation_steps,
@@ -402,6 +408,7 @@ if __name__ == "__main__":
     data_index_executor.nodes = 1
     data_index_executor.ntasks_per_node = 1
     data_index_executor.retries = 1
+    data_index_executor.time = "02:00:00"
 
     static_read_from_path = args.initial_ckpt_path if args.use_ckpt else None
     static_write_to_path = args.continual_ckpt_path
@@ -412,8 +419,21 @@ if __name__ == "__main__":
 
     original_callbacks = pretrain.trainer.callbacks
 
-    for i in range(args.num_exps):
-        exp_name = f"{exp_prefix}_{i}"
+    random_seeds = args.seeds
+    if len(random_seeds) < args.num_exps:
+        import random
+        random_seeds = random_seeds + [random.randint(0, 32767) for _ in range(args.num_exps - len(random_seeds))]
+        print(f"Missing {args.num_exps - len(random_seeds)} seeds, padding the random seeds to {random_seeds}")
+
+    random_seeds = random_seeds[:args.num_exps]
+
+    for index, seed in enumerate(random_seeds):
+        # sets the seeds
+        pretrain.data.seed = seed
+        build_data_index.datamodule.seed = seed
+        configs[constants.SEED] = seed
+
+        exp_name = f"{exp_prefix}_{index}_seed_{seed}"
         experiment_read_from_path = static_read_from_path
         experiment_write_to_path = static_write_to_path
         experiment_max_steps = args.ckpt_start_step

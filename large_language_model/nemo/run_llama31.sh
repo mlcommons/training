@@ -63,7 +63,8 @@ git config --global --add safe.directory /workspace/llama31
 : "${MAX_STEPS:=""}"
 
 #     Experiment settings
-: "${SEED:=$RANDOM}"
+: "${SEEDS:=""}"
+IFS=" " read -ra seeds <<< $SEEDS
 : "${NEXP:=1}"
 : "${NPAR:=1}"
 : "${SAVE_CKPT:=1}"
@@ -117,6 +118,9 @@ if [ ! $TAG = "" ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --tag ${TAG}"
 fi
 
+# Allows MLLogger objects to be constructed locally
+if [ ! -d /mlperf-outputs ]; then mkdir /mlperf-outputs; fi
+
 set -x
 
 python3 pretrain_llama31.py \
@@ -129,7 +133,7 @@ python3 pretrain_llama31.py \
 --image $IMAGE \
 --size $SIZE \
 --gbs $GBS --mbs $MBS \
---seed $SEED \
+--seeds ${seeds[@]} \
 --num_exps $NEXP \
 --num_pars $NPAR \
 --initial_ckpt_path /checkpoint \
