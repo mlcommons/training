@@ -1,0 +1,265 @@
+name: megatron_mixtral_8x7b_sft
+run:
+  name: megatron_mixtral_8x7b_sft
+  results_dir: /app
+  time_limit: 01:00:00
+  dependency: singleton
+trainer:
+  devices: 8
+  accelerator: gpu
+  precision: bf16
+
+  sft:
+    max_epochs: 1
+    max_steps: 50
+
+    val_check_interval: 100
+    save_interval: ${.val_check_interval}
+    limit_train_batches: 1.0
+
+    limit_val_batches: 1.0
+    gradient_clip_val: 1.0
+
+    # can be used to register any custom metrics that require token-by-token generation
+    # inference_metrics:
+    #   my_metric_name1:
+    #     _target_: <metric class>
+    #   my_metric_name2:
+    #     _target_: <metric class>
+    #     <any required arguments>
+
+  # do not change these
+  logger: False # logger provided by exp_manager
+  enable_checkpointing: False
+  use_distributed_sampler: False
+  max_time: null
+  max_epochs: ${.sft.max_epochs}
+  max_steps: ${.sft.max_steps}
+
+exp_manager:
+  explicit_log_dir: null
+  exp_dir: null
+  name: ${name}
+  create_wandb_logger: False
+  wandb_logger_kwargs:
+    project: null
+    name: null
+  resume_if_exists: True
+  resume_ignore_no_checkpoint: True
+  create_checkpoint_callback: True
+  checkpoint_callback_params:
+    monitor: val_loss
+    save_top_k: 5
+    mode: min
+    save_nemo_on_train_end: False 
+    filename: 'megatron_gpt_sft--{${.monitor}:.3f}-{step}-{consumed_samples}-{epoch}'
+    model_parallel_size: ${model.tensor_model_parallel_size}
+    save_best_model: False   # need to keep this false otherwise it will create multiple last.ckpt files because restore reset the previous best model
+
+pretrained_checkpoint:
+  restore_from_path: ./checkpoints/mixtral-8x7b.nemo
+
+model:
+  name_or_path: mistralai/Mixtral-8x7B-v0.1
+  seed: 1234
+  tensor_model_parallel_size: 4 # intra-layer model parallelism
+  pipeline_model_parallel_size: 4 # inter-layer model parallelism
+  expert_model_parallel_size: 1
+  virtual_pipeline_model_parallel_size: 1
+  restore_from_path: ./checkpoints/mixtral-8x7b.nemo # Path to an existing p-tuned/prompt tuned .nemo model you wish to add new tasks to or run inference with
+  resume_from_checkpoint: null # The path to a checkpoint file to continue the training, restores the whole state including the epoch, step, LR schedulers, apex, etc.
+  save_nemo_on_validation_end: True # Saves an inference ready .nemo file every time a checkpoint is saved during training.
+  sync_batch_comm: False
+  megatron_amp_O2: False
+  encoder_seq_length: 32768  # the sequence length of the encoder model, it will be overwriten by loaded GPT model
+
+  ## Sequence Parallelism
+  # Makes tensor parallelism more memory efficient for LLMs (20B+) by parallelizing layer norms and dropout sequentially
+  # See Reducing Activation Recomputation in Large Transformer Models: https://arxiv.org/abs/2205.05198 for more details.
+  sequence_parallel: True
+
+  ## Activation Checkpoint
+  activations_checkpoint_granularity: null # 'selective' or 'full'
+  activations_checkpoint_method: null # 'uniform', 'block', not used with 'selective'
+  # 'uniform' divides the total number of transformer layers and checkpoints the input activation
+  # of each chunk at the specified granularity
+  # 'block' checkpoints the specified number of layers per pipeline stage at the specified granularity
+  activations_checkpoint_num_layers: null # not used with 'selective'
+  activations_checkpoint_layers_per_pipeline: null
+  # This feature is valid only when used with pipeline-model-parallelism. More details in megatron_gpt_config.yaml.
+  answer_only_loss: False # not used right now
+  gradient_as_bucket_view: False
+  seq_len_interpolation_factor: null # if not None, seq_len_interpolation_factor will match the base model's value
+  use_flash_attention: null # if not None, will match the base model's value
+
+  hidden_dropout: 0.0
+  attention_dropout: 0.0
+  ffn_dropout: 0.0
+
+  steerlm2:
+    forward_micro_batch_size:  1  # the micro batch size for the forward pass, used to compute the weights
+    micro_batch_size:  1 # the steerlm2 training micro batch size
+
+  # can be used to customize behavior of model.generate for inference metrics
+  # note that you have to specify all parameters explicitly even if they match defaults
+  # as long as you change at least one parameter
+  #
+  # inference:
+  #   sampling_params:
+  #     use_greedy: False
+  #     temperature: 0.7
+  #     top_k: 0
+  #     top_p: 0.95
+  #     repetition_penalty: 1.0
+  #     add_BOS: True
+  #     all_probs: False
+  #     compute_logprob: False
+  #     end_strings: ["<|endoftext|>", "<extra_id_1>"]
+  #   length_params:
+  #     min_length: 0
+  #     max_length: 512
+  #   strategy:
+  #     _target_: <custom strategy class>
+  #     <any required arguments>
+
+
+  peft:
+    peft_scheme: "none"  # ["lora", "none"]
+    restore_from_path: null
+
+    lora_tuning:
+      target_modules: ['attention_qkv'] # this can either be 'attention_qkv','attention_dense','mlp_fc1','mlp_fc2', 'attention' (qkv & dense), 'mlp' (fc1 & fc2), 'all'
+      adapter_dim: 32
+      adapter_dropout: 0.0
+      column_init_method: 'xavier' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+      row_init_method: 'zero' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+      layer_selection:  null  # selects in which layers to add lora adapters. e.g. [1,12] will add lora to layer 1 (lowest) and 12. null will apply adapters to all layers
+      weight_tying: False
+      position_embedding_strategy: null # used only when weight_tying is True
+
+    
+  data:
+    data_impl: "custom"
+    dataloader_type: "single"
+    chat: False # whether use chatbot data or not
+    chat_prompt_tokens:  # special tokens for the chat prompts, a dictionary of {token_type: token}. note that some tokenizer may combine the characters at the junction between {end_of_turn}{turn_start}. e.g. '<im end><im start>', the '><' sometimes is merged to be a single token. This is not supported, try to avoid
+      system_turn_start: "\x00"
+      turn_start: "\x11"
+      label_start: "\x12"
+      end_of_turn: "\x0A"  # \0x0A is '\n'
+      end_of_name: "\x0A"  # \0x0A is '\n'
+    sample: False # create the index mapping files for the sample data, so max_steps * global_batch_size can be larger than the dataset size
+    num_workers: 0
+    train_ds:
+      # Example of how to specify paths to multiple datasets
+      # file_names:
+      #   - /path/to/squad.jsonl
+      #   - /path/to/mnli.jsonl
+      #   - /path/to/boolq.jsonl
+      # Example of how each dataset is formatted
+      # {'input': 'John von Neumann\nVon Neumann made fundamental contributions .... Q: What did the math of artificial viscosity do?', 'output': 'smoothed the shock transition without sacrificing basic physics'}
+      file_path: "wikitext" # Path to a JSONL file corresponding to the source data. Data format is identical to validation_ds.
+      global_batch_size: 128
+      micro_batch_size: 1
+      shuffle: True
+      memmap_workers: null
+      max_seq_length: ${model.encoder_seq_length}
+      min_seq_length: 1
+      drop_last: True  # note that `False` is not currently supported
+      # Example of how to specify concat_sampling_probabilities
+      # concat_sampling_probabilities:
+      #   - 0.5
+      #   - 0.25
+      #   - 0.25
+      label_key: 'output'
+      add_eos: True
+      add_sep: False
+      add_bos: False
+      truncation_field: "input" # # Can be multiple keys separated with ',' Options: keys in prompt_template
+      index_mapping_dir: null # Path to a directory to write index mapping files.
+      prompt_template: "{input} {output}" # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
+      hf_dataset: False # Whether to load the json file with the HuggingFace dataset. otherwise, will load the jsonl file with the JSONLMemMapDataset.
+      truncation_method: 'right' # Truncation from which position, Options: ['left', 'right']
+
+    validation_ds:
+      file_path: "wikitext" # Path to a JSONL file corresponding to the source data. Data format is identical to validation_ds.
+      global_batch_size: ${model.data.train_ds.global_batch_size}
+      micro_batch_size: ${model.data.train_ds.micro_batch_size}
+      shuffle: False
+      memmap_workers: ${model.data.train_ds.memmap_workers}
+      max_seq_length: ${model.data.train_ds.max_seq_length}
+      min_seq_length: 1
+      drop_last: True  #  note that `False` is not currently supported
+      label_key: ${model.data.train_ds.label_key}
+      add_eos: ${model.data.train_ds.add_eos}
+      add_sep: ${model.data.train_ds.add_sep}
+      add_bos: ${model.data.train_ds.add_bos}
+      truncation_field: ${model.data.train_ds.truncation_field} # Options: keys in prompt_template
+      index_mapping_dir: null # Path to a directory to write index mapping files.
+      prompt_template: ${model.data.train_ds.prompt_template} # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
+      hf_dataset: False # Whether to load the json file with the HuggingFace dataset. otherwise, will load the jsonl file with the JSONLMemMapDataset.
+      truncation_method: 'right' # Truncation from which position, Options: ['left', 'right']
+      output_original_text: True  # needed for the proper metrics support
+
+  optim:
+    name: distributed_fused_adam # Supports distributed optimizer for memory savings. To enable, set to 'distributed_fused_adam'. Needs Apex to be built with specific args to work.
+    lr: 3e-5
+    weight_decay: 0.01
+    betas:
+    - 0.9
+    - 0.98
+    sched:
+      name: CosineAnnealing
+      warmup_steps: 10
+      constant_steps: 1000
+      min_lr: 9e-7
+
+# an OmegaConf resolver that returns the local run directory, calling a function in utils.py
+run_dir: ""
+
+# the batch size for training; for FSDP, the batch size per GPU is batch_size / (grad_accumulation_steps * num_gpus)
+per_device_train_batch_size: 1
+
+# the batch size during evaluation and sampling, if enabled
+per_device_eval_batch_size: ${per_device_train_batch_size}
+
+# number of steps to accumulate over for each batch
+gradient_accumulation_steps: 1
+
+precision: ${trainer.precision}
+seed: ${model.seed}
+vocab_size: 32000
+max_steps: ${trainer.max_steps}
+
+global_train_batch_size: ${model.data.train_ds.global_batch_size}
+
+max_grad_norm: 0.
+
+# whether to eval at the very beginning of training
+do_first_eval: false
+
+# evaluate and save model every eval_every steps
+eval_frequency: 3
+
+# combine forward
+concatenated_forward: True
+
+# report frequency of train step
+report_metrics_freq: 1
+
+# the maximum allowed length for an input
+max_length: 512
+
+# cache of models
+cache_local_dir: null
+
+dataset:
+  dataset_name: wikitext
+  dataset_config_name: wikitext-2-raw-v1
+  streaming: False
+
+  # num of process in data processing
+  num_proc: 1
+
+  # whether to load dataset from cache
+  load_from_cache_file: True

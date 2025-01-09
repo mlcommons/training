@@ -1,0 +1,11 @@
+config_path: null
+name_or_path: mistralai/Mixtral-8x7B-v0.1
+dtype: bfloat16
+flash_attention: True
+capacity_factor: 0  # dropped implementation with a positive number
+max_sequence_length: ${max_length}
+
+fsdp_config: 
+  fsdp_transformer_layer_cls_to_wrap: ["MixtralDecoderLayer"]
+  min_num_params: 0
+  xla_fsdp_grad_ckpt: true

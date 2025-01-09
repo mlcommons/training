@@ -1,0 +1,12 @@
+dataset_name: c4_mlperf
+train_dataset_path: gs://mlperf-llm-public2/c4/en_json/3.0.1
+eval_dataset_path: gs://mlperf-llm-public2/c4/en_val_subset_json
+streaming: True
+
+# num of process in data processing
+num_proc: 1
+
+# whether to load dataset from cache
+load_from_cache_file: True
+
+shuffle_buffer_size: 256
