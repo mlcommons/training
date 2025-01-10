@@ -148,7 +148,8 @@ def process_datasets(raw_datasets, tokenizer, config, use_cuda: bool = True):
         tgt_datasets = {}
         for key in src_datasets.keys():
             # use validation batch_size to avoid dropping remainders in group_text
-            batch_size = 24567 if key == "validation" else 4096
+            # 2x max_sequence_length is a good batch_size to avoid too many paddings
+            batch_size = 24567 if key == "validation" else 65536
             # only apply streaming in train dataset
             if key == "train" and config.dataset.streaming:
                 tgt_datasets[key] = src_datasets[key].map(
