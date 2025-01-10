@@ -164,6 +164,8 @@ class MLPerfCallback(TrainerCallback):
         )
         # device warmup should be done here
         self.mllogger.end(key=constants.INIT_STOP, value="")
+
+        barrier()
         self.mllogger.start(constants.RUN_START, value="")
         self.mllogger.start(
             constants.BLOCK_START,
