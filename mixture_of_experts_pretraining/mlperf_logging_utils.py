@@ -165,6 +165,7 @@ class MLPerfCallback(TrainerCallback):
         # device warmup should be done here
         self.mllogger.end(key=constants.INIT_STOP, value="")
 
+        # run on all ranks to allow sync
         barrier()
         self.mllogger.start(constants.RUN_START, value="")
         self.mllogger.start(
@@ -219,6 +220,9 @@ class MLPerfCallback(TrainerCallback):
                 latest_eval_loss = state.log_history[-1]["eval/loss"]
             if latest_eval_loss <= self.mllogger.target_eval_loss:
                 control.should_training_stop = True
+
+                # run on all ranks to allow sync
+                barrier()
                 self.mllogger.end(
                     constants.RUN_STOP,
                     value=latest_eval_loss,
