@@ -107,7 +107,9 @@ The script will do the following steps, which usually take less than 1 hour to c
 2) model weight sharding according to the assigned strategy
 3) save the distributed state_dict to disks.
 
-Note only the model weights is part of checkpoint. There are no optimizer states and we create empty optimizer states in training.
+Model conversion is feasible when 
+* the total accelerator HBM across all devices can accommodate the model's size: This is because we distribute the model's shards equally among the available devices in either FSDP or 2D FSDP & TP sharding
+* each host have enough CPU to accomodate the full model size since we need to load full model weights to CPU as the first step
 
 ## Capacity Needed
 To train the Mixtral 8x22B model with a 32,768 token sequence length:
