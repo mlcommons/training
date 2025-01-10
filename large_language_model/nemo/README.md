@@ -53,36 +53,50 @@ We use the c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co
 
 We use the Mixtral 8x22B tokenizer from [HuggingFace/MistralAI](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1). 
 
-### Tokenizer
+### Preprocessed data download
 
-We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
+The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using RClone as follows: 
 
-### Data preprocessing
+To run Rclone on Windows, you can download the executable here. To install Rclone on Linux/macOS/BSD systems, run:
 
-Run the following commands to merge all 1024 training files into 8 `json.gz` files and all 8 validation files into a single `json.gz` file. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`). 
-
-```bash
-export C4_PATH=""
-export MERGED_C4_PATH=""
-
-bash consolidate_data.sh
+```
+sudo -v ; curl https://rclone.org/install.sh | sudo bash
 ```
 
-After the data consolidation is done, we can run this [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
+Once Rclone is installed, run the following command to authenticate with the bucket:
 
-```bash
-# fill in the built container path here
-export CONT_IMAGE_URL=""
-# pass in the folder path that contains the Mixtral tokenizer here
-# please refer to the tokenizer section above for more details
-export TOKENIZER_PATH=""
-# pass in the merged file path here
-export MERGED_C4_PATH=""
-# this path is used for storing the preprocessed .bin and .idx files
-export PREPROCESSED_PATH=""
-
-sbatch preprocess.sh
 ```
+to be filled with access keys
+```
+
+You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints: 
+
+#### Dataset
+
+```
+# Replace this path with your desired path on the machine
+export PREPROCESSED_PATH="./"
+rclone copy mlc-training-write:mlcommons-training-wg-public/llama3_1/datasets/c4 $PREPROCESSED_PATH -P
+```
+
+After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`: 
+- Training partitions: `c4-train.en_<number>_text_document`
+- Validation partitions: `c4-validation.en_text_document`
+
+#### Tokenizer
+
+```
+# Replace this path with your desired path on the machine
+export TOKENIZER_PATH="./"
+rclone copy mlc-training-write:mlcommons-training-wg-public/llama3_1/datasets/tokenizer $TOKENIZER_PATH -P
+```
+
+After the download is complete, you should see five files under `TOKENIZER_PATH`: 
+- `special_tokens_map.json`
+- `tokenizer.json`
+- `tokenizer.model`
+- `tokenizer.model.v1`
+- `tokenizer_config.json`
 
 ### Training and test data separation
 
@@ -149,3 +163,41 @@ To be determined.
 ### Evaluation thoroughness
 
 To be determined. 
+
+
+# 6. Other
+
+### Data Preprocessing
+
+Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in the [Preprocessed data download]() section. 
+
+#### Tokenizer
+
+We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
+
+#### Run Data preprocessing
+
+Run the following commands to merge all 1024 training files into 8 `json.gz` files and all 8 validation files into a single `json.gz` file. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`). 
+
+```bash
+export C4_PATH=""
+export MERGED_C4_PATH=""
+
+bash consolidate_data.sh
+```
+
+After the data consolidation is done, we can run this [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
+
+```bash
+# fill in the built container path here
+export CONT_IMAGE_URL=""
+# pass in the folder path that contains the Mixtral tokenizer here
+# please refer to the tokenizer section above for more details
+export TOKENIZER_PATH=""
+# pass in the merged file path here
+export MERGED_C4_PATH=""
+# this path is used for storing the preprocessed .bin and .idx files
+export PREPROCESSED_PATH=""
+
+sbatch preprocess.sh
+```

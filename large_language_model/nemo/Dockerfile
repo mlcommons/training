@@ -16,8 +16,8 @@ ARG NEMO_BASE_IMAGE=nvcr.io/nvidia/nemo:24.12-rc0
 FROM ${NEMO_BASE_IMAGE} AS nemo-base-image
 
 RUN pip uninstall transformers -y
-RUN pip install transformers blobfile
-RUN pip install prettytable
+RUN pip install transformers==4.47.1 blobfile==3.0.0
+RUN pip install prettytable==3.12.0
 RUN pip install git+https://github.com/mlcommons/logging.git@4.1.0-rc3
 
 # setup workspace

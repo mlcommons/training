@@ -98,6 +98,8 @@ def get_pretrain(
     
     exp_name = size
     
+    # Providing 8B and 70B here for debugging purpose
+    # Actual benchmark should use 405B
     if size == "8b":
         pretrain = llm.llama3_8b.pretrain_recipe(
             dir="/outputs",
@@ -268,7 +270,7 @@ def get_parser() -> argparse.ArgumentParser:
     model_group.add_argument(
         "--size", 
         type=str, 
-        default="8b", 
+        default="405b", 
         help="Choose the model to be trained", 
         choices=[
             "8b", # Llama 3 8B config for debugging

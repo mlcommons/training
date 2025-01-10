@@ -35,11 +35,11 @@ export JOB_DIR=""
 # Image path, either local cache file or remote URL
 export IMAGE=""
 # Dataset: C4 dataset location that contains the dataset after preprocessing
-export PREPROCESSED_DATA=""
+export PREPROCESSED_PATH=""
 # Dataset: Numpy index working directory
 export TMP_NPY_INDEX=""
 # Dataset: Tokenizer path
-export TOKENIZER=""
+export TOKENIZER_PATH=""
 
 # Environment: NeMo remount
 export NEMO_DIR=""

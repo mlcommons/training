@@ -72,7 +72,7 @@ IFS=" " read -ra seeds <<< $SEEDS
 
 # Run
 
-MOUNTS="${JOB_DIR}:/output,${JOB_DIR}:/mlperf-outputs,${PREPROCESSED_DATA}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER}:/tokenizer,${CONTINUAL_CKPT}:/continual"
+MOUNTS="${JOB_DIR}:/output,${JOB_DIR}:/mlperf-outputs,${PREPROCESSED_PATH}:/preproc_data,${MODEL_CKPT}:/checkpoint,${TOKENIZER_PATH}:/tokenizer,${CONTINUAL_CKPT}:/continual"
 
 CKPT_OPTION=""
 

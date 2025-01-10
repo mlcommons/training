@@ -33,7 +33,7 @@ def barrier():
     dist.barrier()
 
 class MLLogger:
-    def __init__(self, filepath="/mlperf-outputs/mlperf_llama31.log", default_stack_offset=2):
+    def __init__(self, filepath="/mlperf-outputs/mlperf_llama31_405b.log", default_stack_offset=2):
         self.logger = mllog.get_mllogger()
         mllog.config(default_stack_offset=default_stack_offset, filename=filepath)
 
@@ -50,7 +50,7 @@ class MLLogger:
             self.logger.event(**kwargs)
 
     def submission_info(self):
-        self.event(key=constants.SUBMISSION_BENCHMARK, value="llama31")
+        self.event(key=constants.SUBMISSION_BENCHMARK, value="llama31_405b")
         self.event(key=constants.SUBMISSION_ORG, value="reference_implementation")
         self.event(key=constants.SUBMISSION_DIVISION, value=constants.CLOSED)
         self.event(key=constants.SUBMISSION_STATUS, value=constants.ONPREM)
