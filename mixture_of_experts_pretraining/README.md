@@ -210,6 +210,13 @@ python ~/xpk/xpk.py workload create \
 --num-slices=<num_slices> \
 --command="bash script.sh"
 ```
+Note that the dataset path defaults as follows in [`dataset/c4_mlperf.yaml`](config/dataset/c4_mlperf.yaml)
+```
+train_dataset_path: gs://mlperf-llm-public2/c4/en_json/3.0.1
+eval_dataset_path: gs://mlperf-llm-public2/c4/en_val_subset_json
+```
+You can freely overwrite the workload command by adding
+`dataset.train_dataset_path=/path/to/train/dir dataset.eval_dataset_path=/path/to/eval/dir`, and the path should support both local directory and gcs buckets.
 
 ## Run Experiments in GCE
 
@@ -325,6 +332,14 @@ python run_clm.py model.config_path=mixtral822.json per_device_train_batch_size=
 EOF
 "
 ```
+
+Note that the dataset path defaults as follows in [`dataset/c4_mlperf.yaml`](config/dataset/c4_mlperf.yaml)
+```
+train_dataset_path: gs://mlperf-llm-public2/c4/en_json/3.0.1
+eval_dataset_path: gs://mlperf-llm-public2/c4/en_val_subset_json
+```
+You can freely overwrite the workload command by adding
+`dataset.train_dataset_path=/path/to/train/dir dataset.eval_dataset_path=/path/to/eval/dir`, and the path should support both local directory and gcs buckets.
 
 #### Logging
 The workload starts only after all worker SSH connections are established, then it is safe and recommended to manually exit.
