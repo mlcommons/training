@@ -19,12 +19,7 @@ The benchmark uses a different split than the original C4/en/3.0.1:
 | train2 | last 256 of 1024 files of C4/en/3.0.1:train | training dataset of the benchmark | 91,217,223 |
 | validation\_24567exp | 1/20th of C4/en/3.0.1:validation | validation datset of the benchmark | 24,567 |
 
-The resplit dataset uses 3.0.4 as its version to differenciate from the original
-3.0.1 version, and it's available on
-[GCS](https://console.cloud.google.com/storage/browser/mlperf-llm-public2/c4/en/3.0.4)
-
-The dataset is also availabe as s3 artifacts. See [the guide](#9-s3-artifacts-download) for downloading.
-
+The dataset is availabe as s3 artifacts. See [the guide](#9-s3-artifacts-download) for downloading.
 
 Note this benchmark uses the same dataset as gpt3-175b benchmark see [dataset in gpt3-175b benchmark for reference](https://github.com/mlcommons/training/blob/master/large_language_model/paxml/README.md#2-dataset).
 
@@ -60,10 +55,10 @@ Note, we should use `use_fast=False` to avoid using the wrong tokenizer implment
 ## Evaluation loss metric
 Negative log likelihood loss for next token prediction
 
-## Target Evaluation Loss
+## [TBD] Target Evaluation Loss
 1.8
 
-## Evaluation frequency
+## [TBD] Evaluation frequency
 24 * 1024 * 2048 tokens
 
 # 5.Training with [torch_xla](https://github.com/pytorch/xla/tree/master) on TPU Device
@@ -91,11 +86,8 @@ For now, we have uploaded docker image tar ball to s3 bucket. See [the guide](#9
 
 Once downloaded, we can use the following command to extract:
 ```
-docker load -i pytorch-xla-moe-20241031.tar
 docker load -i pytorch-xla-moe-20250101.tar
 ```
-
-Both docker images are tested, either one should be suitable for our needs.
 
 ## Checkpoint
 We provided 2 pre-converted checkpoint for full FSDP and 2D FSDP TP sharding respectively:
@@ -105,6 +97,17 @@ We provided 2 pre-converted checkpoint for full FSDP and 2D FSDP TP sharding res
 See [the guide](#9-s3-artifacts-download) for downloading.
 
 These above checkpoint conversion is done by using [distributed_checkpoint_saving.py](scripts/tpu/distributed_checkpoint_saving.py).
+
+See the following detail guides:
+* [Checkpoint Conversion in GKE](#checkpoint-conversion-in-gke)
+* [Checkpoint Conversion in GCE](#checkpoint-conversion-in-gce)
+
+The script will do the following steps, which usually take less than 1 hour to complete
+1) downloading [Mixtral-8x22B-v0.1](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1) from Hugging face,
+2) model weight sharding according to the assigned strategy
+3) save the distributed state_dict to disks.
+
+Note only the model weights is part of checkpoint. There are no optimizer states and we create empty optimizer states in training.
 
 ## Capacity Needed
 To train the Mixtral 8x22B model with a 32,768 token sequence length:
@@ -119,6 +122,51 @@ To train the Mixtral 8x22B model with a 32,768 token sequence length:
 pip install xpk
 python ~/xpk/xpk.py cluster create --cluster <cluster_name> --tpu-type=<tpu_type> --num-slices=<num_slices>
 ```
+
+### Checkpoint Conversion in GKE
+
+```bash
+# login token required since
+# the mixtral model is a restricted model
+# that requires users e-signed agreement in place before accessing it
+export HF_TOKEN=<your_hf_token>
+
+cat << EOS > script.sh
+# Setup envs
+export HF_HOME=/tmp
+export HYDRA_FULL_ERROR=1
+export WANDB_MODE=offline
+
+export PJRT_DEVICE=TPU
+export XLA_USE_SPMD=1
+
+# Debug info
+export XLA_IR_DEBUG=1
+export XLA_HLO_DEBUG=1
+
+# Avoid circular import
+export USE_JAX=false
+
+cd /app
+git pull
+huggingface-cli login --token ${HF_TOKEN}
+
+# conversion script for Mixtral-8x22B-v0.1-fsdp
+python -m mixture_of_experts_pretraining.scripts.tpu.distributed_checkpoint_saving model.name_or_path=mistralai/Mixtral-8x22B-v0.1 checkpoint_manager_path=/tmp/checkpoints
+
+gsutil -m cp -r /tmp/checkpoints gs://bucket/path/to/checkpoints
+EOF
+
+python ~/xpk/xpk.py workload create \
+--cluster <cluster_name> \
+--base-docker-image ${IMAGE} \
+--workload ${USER}-run \
+--tpu-type=<tpu_type> \
+--num-slices=<num_slices> \
+--command="bash script.sh"
+```
+
+Add a valid `tensor_parallelism` bigger than 1 like `tensor_parallelism=2` to conversion command for `Mixtral-8x22B-v0.1-2d-fsdp-tp` conversion.
 
 ### Run workload in GKE
 ```bash
@@ -182,8 +230,7 @@ export TPU_NAME=${USER}-mlperf
 gcloud compute tpus tpu-vm create ${TPU_NAME} --zone=${ZONE} --accelerator-type='v4-8' --version=${RUNTIME_VERSION}
 ```
 
-
-### ssh to TPU VMs and Run Workloads
+### Docker Authorization
 Pull docker image, say a pre-built image `gcr.io/cloud-tpu-multipod-dev/lizhiyu-pytorch-xla-moe-20241031`
 ```bash
 # change to a valid docker image
@@ -197,7 +244,49 @@ sudo docker pull ${IMAGE}
 "
 ```
 
-Run workloads
+### Checkpoint Conversion in GCE
+
+```bash
+# login token required since
+# the mixtral model is a restricted model
+# that requires users e-signed agreement in place before accessing it
+export HF_TOKEN=<your_hf_token>
+
+gcloud compute tpus tpu-vm ssh ${TPU_NAME} \
+--worker=all \
+--command="
+sudo docker run --privileged --net host --shm-size=16G --interactive -v /tmp:/tmp ${IMAGE} bash -s <<EOF
+
+# Setup envs
+export HF_HOME=/tmp
+export HYDRA_FULL_ERROR=1
+export WANDB_MODE=offline
+
+export PJRT_DEVICE=TPU
+export XLA_USE_SPMD=1
+
+# Debug info
+export XLA_IR_DEBUG=1
+export XLA_HLO_DEBUG=1
+
+# Avoid circular import
+export USE_JAX=false
+
+cd /app
+git pull
+huggingface-cli login --token ${HF_TOKEN}
+
+# conversion script for Mixtral-8x22B-v0.1-fsdp
+python -m mixture_of_experts_pretraining.scripts.tpu.distributed_checkpoint_saving model.name_or_path=mistralai/Mixtral-8x22B-v0.1 checkpoint_manager_path=/tmp/checkpoints
+
+gsutil -m cp -r /tmp/checkpoints gs://bucket/path/to/checkpoints
+EOF
+"
+```
+
+Add a valid `tensor_parallelism` bigger than 1 like `tensor_parallelism=2` to conversion command for `Mixtral-8x22B-v0.1-2d-fsdp-tp` conversion.
+
+### Run workloads in GCE
 ```bash
 # login token required since 
 # the mixtral model is a restricted model 
@@ -314,7 +403,7 @@ kubectl logs "<pod_name>"
 # 8. Lint
 
 ```
-black clm/
+black mixture_of_experts_pretraining/
 ```
 
 # 9. S3 artifacts download
