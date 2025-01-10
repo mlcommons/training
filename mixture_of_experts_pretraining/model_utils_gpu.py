@@ -22,7 +22,6 @@ from nemo import lightning as nl
 from nemo.collections import llm
 from nemo.collections.common.tokenizers import AutoTokenizer
 from nemo.utils import logging
-from transformers import TrainingArguments
 
 
 def setup_distributed(config):
@@ -70,6 +69,7 @@ def setup_model_and_trainer(
     vpp_size: int,
     cp_size: int,
     learning_rate: float,
+    weight_decay: float,
     optimizer_name: str,
     tokenizer_name_or_path: str,
     scheduler,
@@ -119,7 +119,9 @@ def setup_model_and_trainer(
     opt_config = OptimizerConfig(
         optimizer=optimizer_name,
         lr=learning_rate,
+        weight_decay=weight_decay,
         bf16=True,
+        fp16=False,
         params_dtype=torch.bfloat16,
         clip_grad=max_grad_norm,
     )
@@ -149,7 +151,7 @@ def setup_model_and_trainer(
 
     opt = nl.MegatronOptimizerModule(config=opt_config, lr_scheduler=opt_sched)
     trainer = nl.Trainer(
-        devices=8,
+        devices=torch.cuda.device_count(),
         num_nodes=nodes,
         max_steps=max_steps,
         accelerator="gpu",

@@ -17,12 +17,10 @@ import argparse
 import os
 import pathlib
 import subprocess
-import tempfile
 
 from huggingface_hub import snapshot_download
 
-training_files = [f"en/c4-train.{i:05d}-of-01024.json.gz" for i in range(768, 1024)]
-validation_files = [f"en/c4-validation.{i:05d}-of-00008.json.gz" for i in range(8)]
+training_files = [f"en/c4-train.{i:05d}-of-01024.json.gz" for i in range(1024)]
 
 file_mapping_train = [
     (f"c4-train.en_{i}.json.gz", f"c4_train.en_{i}") for i in range(6, 8)
@@ -52,14 +50,11 @@ def merge_into_consolidated(
                     file_content = input_file.read()
                 output_file.write(file_content)
 
-    for i in range(8):
+    for i in range(6, 8):
         file_chunks = [
             source_directory / training_files[j] for j in range(i * 128, (i + 1) * 128)
         ]
         merge_files(output_directory / f"c4-train.en_{i}.json.gz", file_chunks)
-
-    file_chunks = [source_directory / x for x in validation_files]
-    merge_files(output_directory / "c4-validation.en.json.gz", file_chunks)
 
 
 def run_conversion(
@@ -69,7 +64,7 @@ def run_conversion(
 ):
     print(f"Converting {input_file} into {output_file} using {tokenizer_path}")
 
-    output = subprocess.run(
+    with subprocess.Popen(
         [
             "python",
             "/opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py",
@@ -78,35 +73,37 @@ def run_conversion(
             "--output",
             str(output_file),
             "--tokenizer-library",
-            "sentencepiece",
-            "--tokenizer-model",
+            "huggingface",
+            "--tokenizer-type",
             str(tokenizer_path),
             "--dataset-impl",
             "mmap",
             "--workers",
-            "128",
+            "8",
         ],
-        capture_output=True,
-    )
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    ) as process:
+        for line in process.stdout:
+            print(line.strip())
 
-    print(f"Exited with code={output.returncode}")
-    print(f"> Output:\n{str(output.stdout)}")
-    print(f"> Error:\n{str(output.stderr)}")
+    print(f"Exited with code={process.returncode}")
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--output-path",
-        type=pathlib.Path,
-        required=True,
-        help="Path to store output dataset",
-    )
-    parser.add_argument(
         "--input-tokenizer",
         type=pathlib.Path,
         required=True,
         help="Path for stored tokenizer",
+    )
+    parser.add_argument(
+        "--workdir",
+        type=pathlib.Path,
+        require=True,
+        help="Workdir for script",
     )
 
     return parser.parse_args()
@@ -115,23 +112,24 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = pathlib.Path("/cache")
+    workdir_path = args.workdir
+    workdir_path.mkdir(exist_ok=True)
 
-        os.makedirs(tmpdir_path / "raw", exist_ok=True)
-        os.makedirs(tmpdir_path / "merged", exist_ok=True)
+    os.makedirs(workdir_path / "raw", exist_ok=True)
+    os.makedirs(workdir_path / "merged", exist_ok=True)
+    os.makedirs(workdir_path / "output", exist_ok=True)
 
-        download_dataset(tmpdir_path / "raw")
-        merge_into_consolidated(tmpdir_path / "raw", tmpdir_path / "merged")
+    download_dataset(workdir_path / "raw")
+    merge_into_consolidated(workdir_path / "raw", workdir_path / "merged")
 
-        for source, target in file_mapping_train:
-            run_conversion(
-                tmpdir_path / "merged" / source,
-                args.output_path / target,
-                args.input_tokenizer,
-            )
+    for source, target in file_mapping_train:
         run_conversion(
-            tmpdir_path / "raw" / "en/c4-validation_24567exp.json",
-            args.output_path / "c4-validation-small.en",
+            workdir_path / "merged" / source,
+            workdir_path / "output" / target,
             args.input_tokenizer,
         )
+    run_conversion(
+        workdir_path / "raw" / "en/c4-validation_24567exp.json",
+        workdir_path / "output" / "c4-validation-small.en",
+        args.input_tokenizer,
+    )

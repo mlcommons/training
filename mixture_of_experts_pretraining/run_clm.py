@@ -194,6 +194,7 @@ def main(config: DictConfig):
             vpp_size=None,  # config.virtual_pipeline_parallelism,
             cp_size=config.context_parallelism,
             learning_rate=config.lr,
+            weight_decay=config.weight_decay,
             optimizer_name=optimizer_name,
             tokenizer_name_or_path=config.model.name_or_path,
             scheduler=config.sched,
