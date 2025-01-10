@@ -143,7 +143,7 @@ export XLA_HLO_DEBUG=1
 # Avoid circular import
 export USE_JAX=false
 
-cd /app/MoE_language_model
+cd /app/mixture_of_experts_pretraining
 git pull
 huggingface-cli login --token ${HF_TOKEN}
 # workload script
@@ -224,7 +224,7 @@ export XLA_HLO_DEBUG=1
 # Avoid circular import
 export USE_JAX=false
 
-cd /app/MoE_language_model
+cd /app/mixture_of_experts_pretraining
 git pull
 huggingface-cli login --token ${HF_TOKEN}
 # workload script

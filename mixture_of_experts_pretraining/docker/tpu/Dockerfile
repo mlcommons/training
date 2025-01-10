@@ -49,4 +49,4 @@ RUN git clone  -b lizhiyu/moe --filter=blob:none --sparse https://github.com/Zhi
 
 WORKDIR /app/training
 
-RUN git sparse-checkout set MoE_language_model
+RUN git sparse-checkout set mixture_of_experts_pretraining

@@ -24,5 +24,5 @@ RUN git clone  -b lizhiyu/moe --filter=blob:none --sparse https://github.com/Zhi
 
 WORKDIR /app/training
 
-RUN git sparse-checkout set MoE_language_model
-RUN patch --directory=/opt/megatron-lm -p1 < MoE_language_model/docker/gpu/megatron_core.patch
+RUN git sparse-checkout set mixture_of_experts_pretraining
+RUN patch --directory=/opt/megatron-lm -p1 < mixture_of_experts_pretraining/docker/gpu/megatron_core.patch
