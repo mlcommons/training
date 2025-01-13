@@ -76,7 +76,7 @@ You can then navigate in the terminal to your desired download directory and run
 ```
 # Replace this path with your desired path on the machine
 export PREPROCESSED_PATH="./"
-rclone copy mlc-training:mlcommons-training-wg-public/llama3_1/datasets/c4 $PREPROCESSED_PATH -P
+rclone copy mlc-training:mlcommons-training-wg-public/llama3_1/datasets/preprocessed_c4 $PREPROCESSED_PATH -P
 ```
 
 After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`: 
