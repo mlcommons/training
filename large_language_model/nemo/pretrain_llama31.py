@@ -288,7 +288,7 @@ def get_parser() -> argparse.ArgumentParser:
     
     data_group.add_argument("--gbs", type=int, default=288, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    data_group.add_argument("--eval_every", type=int, default=10)
+    data_group.add_argument("--eval_every", type=int, default=20)
     data_group.add_argument("--eval_batches", type=int, default=None)
     data_group.add_argument('--max_steps', type=int, default=None)
     data_group.add_argument("--use_full_dataset", action="store_true", help="Whether we use the full dataset or use the last 256/1024 dataset")

@@ -30,8 +30,8 @@ git config --global --add safe.directory /workspace/llama31
 : "${IMAGE:?IMAGE not set}"
 
 #     Dataset settings
-: "${PREPROCESSED_DATA:?PREPROCESSED_DATA not set}"
-: "${TOKENIZER:?TOKENIZER not set}"
+: "${PREPROCESSED_PATH:?PREPROCESSED_PATH not set}"
+: "${TOKENIZER_PATH:?TOKENIZER_PATH not set}"
 
 #     Model settings
 : "${MODEL_CKPT:?MODEL_CKPT not set}"

@@ -66,7 +66,7 @@ sudo -v ; curl https://rclone.org/install.sh | sudo bash
 Once Rclone is installed, run the following command to authenticate with the bucket:
 
 ```
-to be filled with access keys
+rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
 ```
 
 You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints: 
@@ -76,7 +76,7 @@ You can then navigate in the terminal to your desired download directory and run
 ```
 # Replace this path with your desired path on the machine
 export PREPROCESSED_PATH="./"
-rclone copy mlc-training-write:mlcommons-training-wg-public/llama3_1/datasets/c4 $PREPROCESSED_PATH -P
+rclone copy mlc-training:mlcommons-training-wg-public/llama3_1/datasets/c4 $PREPROCESSED_PATH -P
 ```
 
 After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`: 
@@ -88,7 +88,7 @@ After the download is complete, you should see files with the following naming c
 ```
 # Replace this path with your desired path on the machine
 export TOKENIZER_PATH="./"
-rclone copy mlc-training-write:mlcommons-training-wg-public/llama3_1/datasets/tokenizer $TOKENIZER_PATH -P
+rclone copy mlc-training:mlcommons-training-wg-public/llama3_1/datasets/tokenizer $TOKENIZER_PATH -P
 ```
 
 After the download is complete, you should see five files under `TOKENIZER_PATH`: 

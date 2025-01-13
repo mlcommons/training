@@ -20,34 +20,34 @@ export HOST=""
 export ACCOUNT=""
 # Slurm: partition for job submission
 export PARTITION=""
-# Slurm: job time limit
-export TIME=""
-# Slurm: --nodes arguments 
-export NNODES=0
-# Slurm: --gpus_per_node and --ntasks_per_node argument
-export GPUS_PER_NODE=0
-# Slurm: max job retries for transient job failures
-export MAX_RETRIES=0
+# Slurm: job time limit, defaults to 4 hours
+export TIME="04:00:00"
+# Slurm: --nodes arguments, default to use 288 nodes
+export NNODES=288
+# Slurm: --gpus_per_node and --ntasks_per_node argument, defaults to 8 GPUs per node
+export GPUS_PER_NODE=8
+# Slurm: max job retries for transient job failures, defaults to retry 3 times
+export MAX_RETRIES=3
 
 # Folder mapping:
-# Output directory that holds logs
+# Output directory that holds logs, any path that you like. 
 export JOB_DIR=""
-# Image path, either local cache file or remote URL
+# Image / container path, either local cache file or remote URL
 export IMAGE=""
 # Dataset: C4 dataset location that contains the dataset after preprocessing
+# This corresponds to the PREPROCESSED_PATH in README section 3's dataset download part
 export PREPROCESSED_PATH=""
-# Dataset: Numpy index working directory
+# Dataset: Numpy index working directory, contains shuffled dataset
+# This path must be able to hold >400GB data
 export TMP_NPY_INDEX=""
 # Dataset: Tokenizer path
+# This corresponds to the TOKENIZER_PATH in README section 3's tokenizer download part
 export TOKENIZER_PATH=""
-
-# Environment: NeMo remount
-export NEMO_DIR=""
 
 # Model: checkpoint and tokenizer path
 #     This is the checkpoint that we want to start with. 
 #     Each checkpoint should be a folder containing two sub-folders: context and weights. 
-#     And we need to pass this folder's path (the folder containing these two sub-folders) here.  
+#     And we need to pass this folder's path (the folder containing context and weights) here.  
 export MODEL_CKPT=""
 # Model: Continual checkpoint directory to write and resume
 #     This is the directory to hold all intermediate checkpoints. 
@@ -55,37 +55,46 @@ export MODEL_CKPT=""
 #     we should see a checkpoint written in this folder
 #     with name `checkpoint-par-x-y-steps`
 #     Inside this directory, there should be a `checkpoint` directory that holds context and weights
-#     which is the "actual checkpoint"
+#     which is the "actual checkpoint". 
+#     Notice that this path must be able to hold at least 5.2TB data since each checkpoint is 5.2TB. 
 export CONTINUAL_CKPT=""
 # Model: Whether we want to restore from MODEL_CKPT path. If 0, then we are not restoring. 
 export USE_CKPT=0
-# Model: Whether we want to save a checkpoint. Must be true if NPAR > 1
+# Model: Whether we want to save a checkpoint. Must be 1 if NPAR > 1. If 1, then we save a checkpoint at the end.
 export SAVE_CKPT=0
 
 
 # Training Configs: 
 # Model: size, to choose from 8b, 70b, 405b
-export SIZE=""
+export SIZE="405b"
 # Dataloader: Global batch size
-export GBS=0
+export GBS=1152
 # Dataloader: Micro batch size
-export MBS=0
+export MBS=1
 # Dataloader: Evaluate every N batches, optional
-export EVAL_EVERY=""
+#     defaults to evaluate every 20 batches, or 188_743_680 tokens
+export EVAL_EVERY="20"
 # Dataloader: Evaluate using N batches, optional
-export EVAL_BATCHES=""
+#     defaults to use 10 batches for evaluation, or 94_371_840 tokens
+#     If an empty string is provided (""), then we use full validation dataset for evaluation
+export EVAL_BATCHES="10"
 # Dataloader: Max run N batches, optional
-export MAX_STEPS=""
+#     defaults to train 425 steps, or 4_010_803_200 tokens
+#     If an empty string is provided (""), then the training will continue until time limit
+#     If we want to save a checkpoint, then this value must be set
+export MAX_STEPS="425"
 
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
-#     For instance, if you are resuming from a checkpoint folder `checkpoint-par-x-y-steps/checkpoint`, 
-#     then the value y is needed here. 
-export START_STEPS=""
+#     For instance, if you are resuming from a checkpoint folder `checkpoint-par-0-20-steps/checkpoint`, 
+#     which means that the model is trained for 20 steps to generate the checkpoint, 
+#     then the value 20 is needed here. 
+export START_STEPS="0"
 # Experiment manager: Number of experiments to launch
-export NEXP=0
+export NEXP=1
 # Experiment manager: how many consecutive jobs we want for each experiment
-export NPAR=0
+export NPAR=1
 # Experiment manager: provides seeds to the launched experiments, use space as delimiter, such as "1234 1235 1236"
-# The training script will discard all excessive seeds, and generate seeds if given seeds < NEXP. 
+#     The training script will discard all excessive seeds, and generate seeds if given seeds < NEXP. 
+#     To preserve randomness, we recommend not to set this value so that each time seeds can be randomly generated. 
 export SEEDS=""
