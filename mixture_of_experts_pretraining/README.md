@@ -366,18 +366,23 @@ python run_clm.py model.config_path=mixtral80.json eval_frequency=3 n_eval_examp
 python run_clm.py model.name_or_path=gpt2 eval_frequency=3 n_eval_examples=100 per_device_train_batch_size=4 gradient_accumulation_steps=2 sched.warmup_ratio=0. max_steps=30
 ```
 
-# 6. Training Mixtral 8x7B with NeMo on GPU Device
+# 6. Training Mixtral 8x22B with NeMo on GPU Device
+
+** IMPORTANT ** GPU implementation is a supplementary reference and it is not used for RCP
+generation. There is convergence gap between GPU and TPU reference and GPU code cannot be used as a
+inplace substitute of TPU code.
 
 ## Docker Image
 
 Build and push docker image:
 
 ```shell
-docker build -t <regristry_path_image_name>:<image_tag> -f nemo_example.Dockerfile .
+docker build -t <registry_path_image_name>:<image_tag> -f docker/gpu/Dockerfile .
 docker push <registry_path_image_name>:<image_tag>
 ```
 
-## Run workflow
+## Kubernetes workflow
+### Run workflow
 
 In order for this workflow to function, in the ```helm-context``` directory, there must exist a **_select-configuration.yaml_** file.
 
@@ -388,7 +393,7 @@ Package and schedule job. An example job name could be "nemo-gpt3-175b-nemo-16gp
 helm install <username_workload_job_name> helm-context/
 ```
 
-## Monitor workflow
+### Monitor workflow
 
 Check pod status (use this to find the name of the pod you want logs from)
 
@@ -411,6 +416,52 @@ Get logs (Using pod name from earlier)
 
 ```shell
 kubectl logs "<pod_name>"
+```
+
+## Slurm/Pyxis workflow
+
+### Preprocessing
+
+For GPU implementation both dataset and checkpoint has to be preprocessed. This can be done once,
+before experimentation and saved. **IMPORTANT** saved checkpoint and dataset has to be accessible by
+all nodes in the system.
+
+To get preprocessed checkpoint, run checkpoint_download.py script
+```shell
+python scripts/gpu/checkpoint_download.py --checkpoint_id mistralal/Mixtral-8x22B-v0.1 \
+    --output_dir <path to save checkpoint> --hf_token <your token to HF repository>
+```
+
+This script will download specified checkpoint from huggingface repository, preprocess it and save
+into specified directory
+
+To preprocess dataset, use dataset_preprocessing.py script
+```shell
+python scripts/gpu/dataset_preprocessing.py --input-tokenizer <path to tokenizer from checkpoint> \
+    --workdir <working directory>
+```
+
+After preprocessing, dataset will be saved into <working directory>/output
+
+### Running
+
+Slurm workflow by default loads config /config/config.yaml. Make sure correct config is specified or
+modify the script to mount correct config into /app/training/config/config.yaml
+
+To run the job specify required input environmental variables:
+
+```shell
+export CONT=<registry_path_image_name>:<image_tag>
+export DATA=<path to preprocessed dataset>
+export CKPT=<path to preprocessed checkpoint>
+export NODES=<number of nodes to run on>
+export OUTPUT=<output directory>
+```
+
+After that run sbatch command using scripts/gpu/run.sub:
+```shell
+
+sbatch -N${NODES} <vendor specific informations> scripts/gpu/run.sub
 ```
 
 # 7. Reference
