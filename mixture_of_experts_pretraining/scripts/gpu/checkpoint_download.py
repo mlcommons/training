@@ -35,9 +35,9 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         "--checkpoint_id",
-        type=Model,
-        default=Model.MIXTRAL_8x7B_BASE,
-        choices=list(Model),
+        type=str,
+        default=Model.MIXTRAL_8x7B_BASE.value,
+        choices=list(Model) + ["path"],
     )
 
     parser.add_argument(
@@ -57,17 +57,19 @@ def parse_arguments() -> argparse.Namespace:
 
 def main(args: argparse.Namespace) -> None:
     assert (
-        args.hf_token != None
+        args.hf_token != None and args.checkpoint_id in list(Model)
     ), "You must provide HF Token as either command line argument or HF_TOKEN env variable"
 
-    snapshot_download(
-        repo_id=str(args.checkpoint_id),
-        repo_type="model",
-        local_dir=args.output_dir / "hf",
-        token=args.hf_token,
-    )
-
-    importer = HFMixtralImporter(args.output_dir / "hf")
+    if args.checkpoint_id in list(Model):
+        snapshot_download(
+            repo_id=str(args.checkpoint_id),
+            repo_type="model",
+            local_dir=args.output_dir / "hf",
+            token=args.hf_token,
+        )
+        importer = HFMixtralImporter(args.output_dir / "hf")
+    else:
+        importer = HFMixtralImporter(args.checkpoint_id)
     importer.apply(args.output_dir / "nemo")
 
 

@@ -431,16 +431,18 @@ To get preprocessed checkpoint, run checkpoint_download.py script
 python scripts/gpu/checkpoint_download.py --checkpoint_id mistralal/Mixtral-8x22B-v0.1 \
     --output_dir <path to save checkpoint> --hf_token <your token to HF repository>
 ```
-
-This script will download specified checkpoint from huggingface repository, preprocess it and save
+This script will download specified checkpoint directly from huggingface repository, preprocess it and save
 into specified directory
 
-To preprocess dataset, use dataset_preprocessing.py script
+Preprocessed dataset can be downloaded from mlcommons S3 bucket, follow S3 artifacts download
+section for more information. Preprocessed dataset is located in `preprocessed_c4` directory. 
+This option is highly recommended. 
+
+For manual downloading and preprocessing the dataset the dataset_preprocessing.py script can be used
 ```shell
 python scripts/gpu/dataset_preprocessing.py --input-tokenizer <path to tokenizer from checkpoint> \
     --workdir <working directory>
 ```
-
 After preprocessing, dataset will be saved into <working directory>/output
 
 ### Running
@@ -492,6 +494,7 @@ You can then navigate in the terminal to your desired download directory and run
 **Dataset**
 * Train Dataset`c4/en_json/3.0.1`
 * Eval Dataset `c4/en_val_subset_json`
+* Preprocessed GPU dataset `preprocessed_c4`
 ```
 mkdir -p datasets
 rclone copy mlc-training:mlcommons-training-wg-public/mixtral_8x22b/datasets ./datasets -P
