@@ -32,22 +32,17 @@ RUN pip uninstall -y megatron-core && \
      git clone https://github.com/NVIDIA/Megatron-LM.git && \
      cd Megatron-LM && \
      git checkout ${MCORE_REVISION} && \
-     #sed -i 's/tensorstore==0.1.45/tensorstore/g' requirements/pytorch:24.07/requirements.txt && \
      echo MCORE_COMMIT_HASH=$(git rev-parse HEAD) && \
      pip install . && \
      cd megatron/core/datasets && \
      make
-ENV PYTHONPATH "${PYTHONPATH}:/workspace/Megatron-LM"
+ENV PYTHONPATH "${PYTHONPATH}:/app/Megatron-LM"
 
 RUN pip install git+https://github.com/NVIDIA/dllogger#egg=dllogger
 RUN pip install datasets==2.20.0 hydra-core sentencepiece
 RUN pip install "git+https://github.com/mlperf/logging.git"
 
-# TODO change to mlcommon git
-RUN git clone  -b lizhiyu/moe --filter=blob:none --sparse https://github.com/ZhiyuLi-goog/training.git training
-
 WORKDIR /app/training
-
-RUN git sparse-checkout set mixture_of_experts_pretraining
-RUN patch --directory=/app/Megatron-LM -p1 < mixture_of_experts_pretraining/docker/gpu/megatron_core.patch
+ADD . /app/training
+RUN patch --directory=/app/Megatron-LM -p1 < docker/gpu/megatron_core.patch
 

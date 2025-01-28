@@ -37,7 +37,7 @@ def parse_arguments() -> argparse.Namespace:
         "--checkpoint_id",
         type=str,
         default=Model.MIXTRAL_8x7B_BASE.value,
-        choices=list(Model) + ["path"],
+        choices=list(x.value for x in Model) + ["path"],
     )
 
     parser.add_argument(
@@ -56,11 +56,7 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace) -> None:
-    assert (
-        args.hf_token != None and args.checkpoint_id in list(Model)
-    ), "You must provide HF Token as either command line argument or HF_TOKEN env variable"
-
-    if args.checkpoint_id in list(Model):
+    if args.checkpoint_id in list(x.value for x in Model):
         snapshot_download(
             repo_id=str(args.checkpoint_id),
             repo_type="model",
