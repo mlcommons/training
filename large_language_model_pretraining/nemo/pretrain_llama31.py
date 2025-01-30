@@ -146,10 +146,12 @@ def get_pretrain(
 
         pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 7
 
+        warmup_tokens = 8000 * 1152 * 8192
+
         pretrain.optim = distributed_fused_adam_with_cosine_annealing(
-            max_lr=max_lr, 
-            warmup_steps=8000,
-            min_lr=8e-7
+            max_lr = max_lr, 
+            warmup_steps = math.ceil(warmup_tokens / 8192 / data_module.global_batch_size),
+            min_lr = 8e-7
         )
 
         from nemo.collections.llm.recipes.tp_overlap_configs.userbuffers import (
@@ -170,7 +172,8 @@ def get_pretrain(
         )
 
     # sets up everything else
-    pretrain.trainer.max_steps = 1_200_000 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+    max_tokens = 1_200_000 * 8192 * 1152 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+    pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / data_module.global_batch_size)
 
     pretrain.data = data_module
     pretrain.trainer.val_check_interval = eval_every
@@ -445,13 +448,13 @@ if __name__ == "__main__":
         build_data_index.datamodule.seed = seed
         configs[constants.SEED] = seed
 
-        exp_name = f"{exp_prefix}"
+        exp_name = f"{exp_prefix}_{index}_seed_{seed}"
         experiment_read_from_path = static_read_from_path
         experiment_write_to_path = static_write_to_path
         experiment_max_steps = args.ckpt_start_step
 
         with run.Experiment(exp_name) as exp:
-            exp.add(build_data_index, executor=data_index_executor, name="build_data_index")
+            exp.add(build_data_index, executor=data_index_executor, name=f"build_data_index")
             
             for j in range(args.num_pars):
                 ending_steps = ""
@@ -509,7 +512,7 @@ if __name__ == "__main__":
 
                 exp.add(
                     pretrain, executor=executor, 
-                    name=f"{exp_name}_{index}_seed_{seed}_{j}_{starting_steps}{ending_steps}",
+                    name=f"{exp_name}_{j}_{starting_steps}{ending_steps}",
                     plugins=run_plugins
                 )
 
