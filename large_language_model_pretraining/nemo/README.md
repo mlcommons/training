@@ -33,7 +33,10 @@ Note: it's recommended to map your `.ssh` folder to inside the container, so tha
 
 ### Steps to download and verify data
 
-The current codebase is still using GPT3's train/val datasets and SentencePieceModel tokenizer. Please refer to [GPT3 instructions](https://github.com/mlcommons/training/tree/master/large_language_model/megatron-lm#preprocessed-data-download) to download **the raw C4 dataset** that we can preprocess later. 
+The current codebase is using C4 dataset for train and evaluation. Please refer to [Section 3](#preprocessed-data-download) for downloading the preprocessed dataset and [Section 6](#data-preprocessing) if you would like to perform manual tokenization. 
+
+
+### Steps to download the checkpoint
 
 ### Steps to run and time
 
@@ -100,15 +103,15 @@ After the download is complete, you should see five files under `TOKENIZER_PATH`
 
 ### Training and test data separation
 
-To be determined. For now, we are using the default split from the C4 dataset. 
+We use the default split from the C4 dataset. This means that we use `c4-train.<x>-of-01024.json.gz` files for training and `c4-validation.<x>-of-00008.json.gz` files for evaluation. 
 
 ### Training data order
 
-To be determined. Current plan is to use the last 256 of 1024 files (shards 6 and 7) for the benchmarked area. 
+We randomly shuffle the **last 256 of 1024 shards** for the benchmarking area.
 
 ### Test data order
 
-To be determined. 
+We use the first 47M tokens in the validation dataset for validation. We do not shuffle the validation dataset. 
 
 # 4. Model
 ### Publication/Attribution
@@ -133,7 +136,7 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 | Context Length | 8192 |
 
 
-### Checkpoint download and conversion
+### Checkpoint download
 
 To be determined. For now, we are not using Llama 3.1 default checkpoint. 
 
@@ -158,18 +161,18 @@ To be determined.
 
 ### Evaluation frequency
 
-To be determined. 
+We perform evaluation every **377_487_360** tokens. 
 
 ### Evaluation thoroughness
 
-To be determined. 
+We evaluate using **47_185_920** tokens from the validation dataset. 
 
 
 # 6. Other
 
 ### Data Preprocessing
 
-Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in the [Preprocessed data download]() section. 
+Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in the [Preprocessed data download](#preprocessed-data-download) section. 
 
 #### Tokenizer
 
@@ -199,5 +202,34 @@ export MERGED_C4_PATH=""
 # this path is used for storing the preprocessed .bin and .idx files
 export PREPROCESSED_PATH=""
 
+# Extra Slurm-related arguments can be provided here
 sbatch preprocess.sh
 ```
+
+### HuggingFace checkpoint preprocessing
+
+Here are the instructions to prepare the NeMo-formatted checkpoint from scratch. Checkpoint conversion is already done and the converted checkpoint can be accessed by following instructions in the [Checkpoint download](#checkpoint-download) section. 
+
+#### HuggingFace checkpoint downloading
+
+We use the HuggingFace Llama 3.1 405B checkpoint as the initial checkpoint in this benchmark. Original HuggingFace checkpoint can be downloaded [here](https://huggingface.co/meta-llama/Llama-3.1-405B). **Notice that we are downloading the BF16 not the FP8 version of the model**. 
+
+#### Run model conversion
+
+Assuming that we have downloaded the HuggingFace checkpoint to a `<SRC_PATH>` directory, we can run [this script](./utils/launch_nemo_convert.sh) (which calls [this python script](./utils/nemo_convert.py)) to perform checkpoint format conversion. After such conversion is done, you should be able to find the converted checkpoint under `<DST_PATH>` directory, and there should be two subfolders inside this directory - `context` and `weights`. 
+
+```bash
+# fill in the built container path here
+export CONT_IMAGE_URL=""
+# fill in the folder that holds the HF checkpoint here
+# under this folder, you should see a lot of safetensors
+export SRC_PATH=""
+# fill in the destination folder of your choice here
+# after conversion is done, you can find context and weights under this path
+export DST_PATH=""
+
+# Extra Slurm-related arguments can be provided here
+sbatch launch_nemo_convert.sh
+```
+
+After the model conversion is done, we can then set `MODEL_CKPT=$DST_PATH` together with `FROM_HF=1` when launching our job, so that we can resume training from the converted HF checkpoint. 

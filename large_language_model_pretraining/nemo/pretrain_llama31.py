@@ -14,6 +14,7 @@
 
 import argparse
 from typing import Optional
+import math
 from nemo.collections import llm
 from nemo.collections.common.tokenizers import AutoTokenizer
 from nemo import lightning as nl
@@ -70,13 +71,15 @@ def slurm_executor(
         ),
         nodes=nodes,
         ntasks_per_node=devices,
-        gpus_per_node=devices,
         mem="0",
         exclusive=True,
-        gres="gpu:8",
         packager=run.GitArchivePackager(),
         dependencies=dependencies,
     )
+
+    if devices != 0:
+        executor.gpus_per_node=devices
+        executor.gres = "gpu:8"
 
     executor.launcher = None
     executor.container_image = container_image
@@ -94,6 +97,7 @@ def get_pretrain(
     data_module: run.Config,
     eval_every: Optional[int]=None, 
     eval_batches: Optional[int]=None,
+    max_lr: Optional[float]=8e-5,
 ) -> run.Partial:
     
     exp_name = size
@@ -143,7 +147,7 @@ def get_pretrain(
         pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 7
 
         pretrain.optim = distributed_fused_adam_with_cosine_annealing(
-            max_lr=8e-5, 
+            max_lr=max_lr, 
             warmup_steps=8000,
             min_lr=8e-7
         )
@@ -279,19 +283,21 @@ def get_parser() -> argparse.ArgumentParser:
         ])
 
     model_group.add_argument("--initial_ckpt_path", type=str, default=None)
-    model_group.add_argument("--use_ckpt", action="store_true")
-    model_group.add_argument("--ckpt_start_step", type=int, default=0)
-    model_group.add_argument("--continual_ckpt_path", type=str, default=None)
-    model_group.add_argument("--save_ckpt", action="store_true")
+    model_group.add_argument("--use_ckpt", action="store_true", help="If set, then resume from the initial checkpoint path")
+    model_group.add_argument("--resume_from_hf", action="store_true", help="Setting this knob indicates that we are resuming from a weight-only checkpoint")
+    model_group.add_argument("--ckpt_start_step", type=int, default=0, help="Sets this value to how many steps the resumed checkpoint is already trained on")
+    model_group.add_argument("--continual_ckpt_path", type=str, default=None, help="Sets this to the path that saves the checkpoint")
+    model_group.add_argument("--save_ckpt", action="store_true", help="If set, then we save the checkpoint at the end of the experiment")
     
     data_group = parser.add_argument_group("Dataset arguments")
     
-    data_group.add_argument("--gbs", type=int, default=288, help="Global batch size, should be divisible by PP")
+    data_group.add_argument("--gbs", type=int, default=1152, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    data_group.add_argument("--eval_every", type=int, default=20)
-    data_group.add_argument("--eval_batches", type=int, default=None)
-    data_group.add_argument('--max_steps', type=int, default=None)
-    data_group.add_argument("--use_full_dataset", action="store_true", help="Whether we use the full dataset or use the last 256/1024 dataset")
+    data_group.add_argument("--max_lr", type=float, default=8e-5, help="Optimizer learning rate")
+    data_group.add_argument("--eval_every", type=int, default=377_487_360, help="Evaluate at least every N training tokens")
+    data_group.add_argument("--eval_tokens", type=int, default=47_185_920, help="Evaluate using at least N evaluation tokens")
+    data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
+    data_group.add_argument("--use_full_dataset", action="store_true", help="If set, then we use the full dataset, instead of the last 256/1024 shards")
     data_group.add_argument("--tokenizer_path", type=str, help="Tokenizer path that's used to tokenize the dataset")
 
     experiment_group = parser.add_argument_group("Experiment management arguments")
@@ -299,7 +305,7 @@ def get_parser() -> argparse.ArgumentParser:
     experiment_group.add_argument("--seeds", type=int, nargs="*", default=[], help="random seeds")
     experiment_group.add_argument("--num_exps", type=int, default=1)
     experiment_group.add_argument("--num_pars", type=int, default=1)
-    experiment_group.add_argument("--target_log_ppl", type=float, default=1)
+    experiment_group.add_argument("--target_log_ppl", type=float, default=5)
 
     return parser
 
@@ -339,13 +345,17 @@ if __name__ == "__main__":
         use_full_dataset=args.use_full_dataset,
     )
 
+    eval_every_n_batches = math.ceil(args.eval_every / (args.gbs * 8192))
+    eval_batches = math.ceil(args.eval_tokens / (args.gbs * 8192))
+
     exp_prefix, pretrain = get_pretrain(
         size=args.size,
         nnodes=args.nodes, 
         ngpus_per_node=args.gpus_per_node,
         data_module=data,
-        eval_every=args.eval_every,
-        eval_batches=args.eval_batches,
+        eval_every=eval_every_n_batches,
+        eval_batches=eval_batches,
+        max_lr=args.max_lr,
     )
 
     assert args.gbs % pretrain.trainer.strategy.pipeline_model_parallel_size == 0, "GBS should be divisible by PP"
@@ -410,7 +420,7 @@ if __name__ == "__main__":
     data_index_executor.nodes = 1
     data_index_executor.ntasks_per_node = 1
     data_index_executor.retries = 1
-    data_index_executor.time = "02:00:00"
+    data_index_executor.time = "04:00:00"
 
     static_read_from_path = args.initial_ckpt_path if args.use_ckpt else None
     static_write_to_path = args.continual_ckpt_path
@@ -435,7 +445,7 @@ if __name__ == "__main__":
         build_data_index.datamodule.seed = seed
         configs[constants.SEED] = seed
 
-        exp_name = f"{exp_prefix}_{index}_seed_{seed}"
+        exp_name = f"{exp_prefix}"
         experiment_read_from_path = static_read_from_path
         experiment_write_to_path = static_write_to_path
         experiment_max_steps = args.ckpt_start_step
@@ -449,11 +459,14 @@ if __name__ == "__main__":
                 if static_max_steps is not None:
                     ending_steps = f"-{experiment_max_steps + static_max_steps}-steps"
 
-                checkpoint_name = "checkpoint" + f"-par-{j}{ending_steps}"
+                checkpoint_name = "checkpoint" + f"-seed-{seed}-par-{j}{ending_steps}"
                 experiment_write_to_path = static_write_to_path + "/" + checkpoint_name
                 
-                pretrain.resume.resume_from_directory = experiment_read_from_path
-                pretrain.resume.resume_from_path = experiment_read_from_path
+                if not args.resume_from_hf:
+                    pretrain.resume.resume_from_directory = experiment_read_from_path
+                    pretrain.resume.resume_from_path = experiment_read_from_path
+                else:
+                    pretrain.resume = run.Config(nl.AutoResume, restore_config = run.Config(nl.RestoreConfig, path=experiment_read_from_path))
                 pretrain.log.ckpt.train_time_interval = None
 
                 if args.save_ckpt:
@@ -496,7 +509,7 @@ if __name__ == "__main__":
 
                 exp.add(
                     pretrain, executor=executor, 
-                    name=f"{exp_name}_{j}_{starting_steps}{ending_steps}",
+                    name=f"{exp_name}_{index}_seed_{seed}_{j}_{starting_steps}{ending_steps}",
                     plugins=run_plugins
                 )
 
