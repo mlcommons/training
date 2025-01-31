@@ -138,9 +138,7 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 
 ### Checkpoint download
 
-To be determined. For now, we are not using Llama 3.1 default checkpoint. 
-
-~~To experiment with a given checkpoint, we have added a `--ckpt` argument that loads the pretrained checkpoint from a **NeMo checkpoint path**, which requires some checkpoint format conversion if the original checkpoint is in LlamaStack or HuggingFace format.~~
+MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. You must first agree to the [confidentiality notice](https://llama3-1.mlcommons.org) using your organizational email address, then you will receive a link to a directory containing Rclone download instructions. _If you cannot access the form but you are part of a MLCommons Member organization, submit the [MLCommons subscription form](https://mlcommons.org/community/subscribe/) with your organizational email address and [associate a Google account](https://accounts.google.com/SignUpWithoutGmail) with your organizational email address. You should then be able to access the confidentiality form using that Google account._
 
 #### Saving and restoring a checkpoint
 
