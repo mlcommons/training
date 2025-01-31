@@ -56,7 +56,6 @@ git config --global --add safe.directory /workspace/llama31
 : "${SIZE:="405b"}"
 : "${GBS:=1152}"
 : "${MBS:=1}"
-: "${LR:="8e-5"}"
 : "${START_STEPS:=0}"
 
 #     Dataloader settings
@@ -71,7 +70,7 @@ IFS=" " read -ra seeds <<< $SEEDS
 : "${NPAR:=1}"
 : "${SAVE_CKPT:=1}"
 : "${TAG:=""}"
-: "${TARGET:="1"}"
+: "${TARGET:="5.6"}"
 
 # Run
 
@@ -138,7 +137,7 @@ python3 pretrain_llama31.py \
 --mounts $MOUNTS \
 --image $IMAGE \
 --size $SIZE \
---gbs $GBS --mbs $MBS --max_lr $LR \
+--gbs $GBS --mbs $MBS \
 --seeds ${seeds[@]} \
 --num_exps $NEXP \
 --num_pars $NPAR \

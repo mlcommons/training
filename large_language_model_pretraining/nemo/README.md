@@ -10,7 +10,7 @@ To use this repository, please install a supported version of PyTorch with GPU s
 
 We recommend using the latest NeMo FW container. The latest tested compatible version is `nvcr.io/nvidia/nemo:24.12-rc0`).
 
-#### Container Setup
+#### Container setup
 
 All of the following codes are assumed to be run within a container. A [Dockerfile](./Dockerfile) is available for building containers on top of `nvcr.io/nvidia/nemo:24.12-rc0`. 
 
@@ -111,12 +111,14 @@ We randomly shuffle the **last 256 of 1024 shards** for the benchmarking area.
 
 ### Test data order
 
-We use the first 47M tokens in the validation dataset for validation. We do not shuffle the validation dataset. 
+We use the first 47M tokens in the validation dataset for validation. We **do not shuffle** the validation dataset. 
 
 # 4. Model
 ### Publication/Attribution
 
-The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.21783). The main difference is that the model parameters is *to be determined from experiments*. 
+The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.21783). Two noticeable differences are: 
+1. We replace the paper's TikTokenizer with the **Mixtral 8x22b tokenizer** in this benchmark. Please refer to the [Tokenizer](#tokenizer) section for more details.  
+1. We replace the paper's AdamW with the **Adam optimizer** in this benchmark. Please refer to the [Optimizer](#optimizer-spec) section for more details. 
 
 ### Model details
 
@@ -131,8 +133,8 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 | Hidden Dimension | 53248 |
 | Activation | SwiGLU | 
 | Normalization | RMSNorm |  
-| Tokenizer | TikTokenizer |
-| Vocab size | 128,000 |  
+| Tokenizer | Mixtral 8x22B tokenizer |
+| Vocab size | 32,000 |  
 | Context Length | 8192 |
 
 
@@ -144,9 +146,11 @@ MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**
 
 Large runs might need to span across multiple Slurm jobs, and we need to save and load checkpoints with contexts so that training can resume between jobs. To support this, we have added some environment variables. Please refer to `config.sh` for more details. 
 
-### Optimizer
+### Optimizer spec
 
-Adam
+1. Optimizer type: **Adam**
+2. Warmup steps computed as $8000 \times \lceil {1152 \over GBS} \rceil$.
+3. LR Scheduler's maximum number of steps computed as $1,200,000 \times \lceil {1152 \over GBS} \rceil$
 
 # 5. Quality
 ### Quality metric
@@ -155,28 +159,28 @@ Log Perplexity
 
 ### Quality target
 
-To be determined. 
+Validation log perplexity = 5.6
 
 ### Evaluation frequency
 
-We perform evaluation every **377_487_360** tokens. 
+We perform evaluation every **377,487,360** tokens. 
 
 ### Evaluation thoroughness
 
-We evaluate using **47_185_920** tokens from the validation dataset. 
+We evaluate using **47,185,920** tokens from the validation dataset. 
 
 
 # 6. Other
 
-### Data Preprocessing
+### Data preprocessing
 
 Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in the [Preprocessed data download](#preprocessed-data-download) section. 
 
-#### Tokenizer
+#### Prepare tokenizer
 
 We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
 
-#### Run Data preprocessing
+#### Run data preprocessing
 
 Run the following commands to merge all 1024 training files into 8 `json.gz` files and all 8 validation files into a single `json.gz` file. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`). 
 
@@ -204,7 +208,7 @@ export PREPROCESSED_PATH=""
 sbatch preprocess.sh
 ```
 
-### HuggingFace checkpoint preprocessing
+### HuggingFace Checkpoint Preprocessing
 
 Here are the instructions to prepare the NeMo-formatted checkpoint from scratch. Checkpoint conversion is already done and the converted checkpoint can be accessed by following instructions in the [Checkpoint download](#checkpoint-download) section. 
 

@@ -74,14 +74,6 @@ export SIZE="405b"
 export GBS=1152
 # Dataloader: Micro batch size
 export MBS=1
-# Model: Optimizer learning rate, float, optional
-export LR="8e-5"
-# Dataloader: Evaluate every N tokens, optional
-#     defaults to evaluate every 377_487_360 tokens
-export EVAL_EVERY=""
-# Dataloader: Evaluate using N batches, optional
-#     defaults to use 47_185_920 tokens for evaluation
-export EVAL_TOKENS=""
 # Dataloader: Max run N batches, optional
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set

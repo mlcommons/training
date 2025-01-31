@@ -97,10 +97,11 @@ def get_pretrain(
     data_module: run.Config,
     eval_every: Optional[int]=None, 
     eval_batches: Optional[int]=None,
-    max_lr: Optional[float]=8e-5,
 ) -> run.Partial:
     
     exp_name = size
+    base_gbs = 1152
+    gbs = data_module.global_batch_size
     
     # Providing 8B and 70B here for debugging purpose
     # Actual benchmark should use 405B
@@ -146,11 +147,14 @@ def get_pretrain(
 
         pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 7
 
-        warmup_tokens = 8000 * 1152 * 8192
+        base_lr = 8e-5
+        warmup_tokens = 8000 * base_gbs * 8192
+
+        max_lr = (gbs / base_gbs) * base_lr
 
         pretrain.optim = distributed_fused_adam_with_cosine_annealing(
             max_lr = max_lr, 
-            warmup_steps = math.ceil(warmup_tokens / 8192 / data_module.global_batch_size),
+            warmup_steps = math.ceil(warmup_tokens / 8192 / gbs),
             min_lr = 8e-7
         )
 
@@ -172,8 +176,8 @@ def get_pretrain(
         )
 
     # sets up everything else
-    max_tokens = 1_200_000 * 8192 * 1152 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
-    pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / data_module.global_batch_size)
+    max_tokens = 1_200_000 * 8192 * base_lr # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+    pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
 
     pretrain.data = data_module
     pretrain.trainer.val_check_interval = eval_every
@@ -296,7 +300,6 @@ def get_parser() -> argparse.ArgumentParser:
     
     data_group.add_argument("--gbs", type=int, default=1152, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    data_group.add_argument("--max_lr", type=float, default=8e-5, help="Optimizer learning rate")
     data_group.add_argument("--eval_every", type=int, default=377_487_360, help="Evaluate at least every N training tokens")
     data_group.add_argument("--eval_tokens", type=int, default=47_185_920, help="Evaluate using at least N evaluation tokens")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
@@ -308,7 +311,7 @@ def get_parser() -> argparse.ArgumentParser:
     experiment_group.add_argument("--seeds", type=int, nargs="*", default=[], help="random seeds")
     experiment_group.add_argument("--num_exps", type=int, default=1)
     experiment_group.add_argument("--num_pars", type=int, default=1)
-    experiment_group.add_argument("--target_log_ppl", type=float, default=5)
+    experiment_group.add_argument("--target_log_ppl", type=float, default=5.6)
 
     return parser
 
@@ -358,7 +361,6 @@ if __name__ == "__main__":
         data_module=data,
         eval_every=eval_every_n_batches,
         eval_batches=eval_batches,
-        max_lr=args.max_lr,
     )
 
     assert args.gbs % pretrain.trainer.strategy.pipeline_model_parallel_size == 0, "GBS should be divisible by PP"
@@ -378,7 +380,7 @@ if __name__ == "__main__":
         constants.GLOBAL_BATCH_SIZE: args.gbs,
         constants.GRADIENT_ACCUMULATION_STEPS: grad_accumulation_steps,
         constants.MAX_SEQUENCE_LENGTH: 8192,
-        constants.EVAL_SAMPLES: "to be determined",
+        constants.EVAL_SAMPLES: args.eval_tokens,
 
         # Optimizers
         constants.OPT_NAME: pretrain.optim.config.optimizer,
@@ -409,7 +411,7 @@ if __name__ == "__main__":
     # max steps
     pretrain.data.num_train_samples = pretrain.trainer.max_steps * pretrain.data.global_batch_size
     datamodule = pretrain.data.clone()
-    datamodule.num_dataset_builder_threads = 8
+    datamodule.num_dataset_builder_threads = 32
     build_data_index = run.Partial(
         build_pretraining_datamodule,
         datamodule=datamodule,
@@ -423,7 +425,7 @@ if __name__ == "__main__":
     data_index_executor.nodes = 1
     data_index_executor.ntasks_per_node = 1
     data_index_executor.retries = 1
-    data_index_executor.time = "04:00:00"
+    data_index_executor.time = "01:00:00"
 
     static_read_from_path = args.initial_ckpt_path if args.use_ckpt else None
     static_write_to_path = args.continual_ckpt_path
