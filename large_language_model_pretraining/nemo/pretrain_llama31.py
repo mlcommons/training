@@ -176,7 +176,7 @@ def get_pretrain(
         )
 
     # sets up everything else
-    max_tokens = 1_200_000 * 8192 * base_lr # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+    max_tokens = 1_200_000 * 8192 * base_gbs # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
     pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
 
     pretrain.data = data_module
