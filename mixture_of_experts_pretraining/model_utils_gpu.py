@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import os
 
 import torch
 from megatron.core.optimizer import OptimizerConfig
@@ -26,37 +25,9 @@ from nemo.utils import logging
 
 def setup_distributed(config):
     """Initialize torch.distributed."""
-    # Get rank and world size.
-    local_rank = int(os.getenv("LOCAL_RANK", 0))
-    rank = int(os.getenv("RANK", "0"))
-    world_size = int(os.getenv("WORLD_SIZE", "1"))
-
-    logging.info(
-        f"Initializing torch.distributed with local_rank: {local_rank}, rank: {rank}, world_size: {world_size}"
-    )
-
-    # Set the device id.
-    device = rank % torch.cuda.device_count()
-    if local_rank is not None:
-        device = local_rank
-    torch.cuda.set_device(device)
-
-    # Call the init process.
-    init_method = "tcp://"
-    master_ip = os.getenv("MASTER_ADDR", "localhost")
-    master_port = os.getenv("MASTER_PORT", "6000")
-    import datetime
-
-    DEFAULT_TIMEOUT = datetime.timedelta(minutes=60)
-    init_method += master_ip + ":" + master_port
     torch.distributed.init_process_group(
         backend="nccl",
-        timeout=DEFAULT_TIMEOUT,
-        world_size=world_size,
-        rank=rank,
-        init_method=init_method,
     )
-    return local_rank, rank, world_size
 
 
 def setup_model_and_trainer(
@@ -124,6 +95,7 @@ def setup_model_and_trainer(
         fp16=False,
         params_dtype=torch.bfloat16,
         clip_grad=max_grad_norm,
+        use_distributed_optimizer=True,
     )
 
     if scheduler.name == "CosineAnnealing":

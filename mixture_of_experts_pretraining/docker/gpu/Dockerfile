@@ -41,6 +41,7 @@ ENV PYTHONPATH "${PYTHONPATH}:/app/Megatron-LM"
 RUN pip install git+https://github.com/NVIDIA/dllogger#egg=dllogger
 RUN pip install datasets==2.20.0 hydra-core sentencepiece
 RUN pip install "git+https://github.com/mlperf/logging.git"
+RUN pip install git+https://github.com/NVIDIA/NeMo-Run.git
 
 WORKDIR /app/training
 ADD . /app/training

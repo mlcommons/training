@@ -85,16 +85,16 @@ def main(config: DictConfig):
         )
     logger.info(f"{config.eval_frequency=}")
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.model.name_or_path,
-        add_eos_token=False,
-        add_bos_token=False,
-        use_fast=False,
-    )
-
     clmlogger = ClmLogger(config, filename="output.txt")
 
     if not USE_CUDA:
+        tokenizer = AutoTokenizer.from_pretrained(
+            config.model.name_or_path,
+            add_eos_token=False,
+            add_bos_token=False,
+            use_fast=False,
+        )
+
         config_path = os.path.join(config.run_dir, "config.yaml")
         with get_file(config_path, "w") as f:
             OmegaConf.save(config, f)
