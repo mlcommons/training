@@ -1,0 +1,6 @@
+apiVersion: v2
+name: megatron_moe_benchmark
+description: megatron_moe_benchmark
+type: application
+version: 0.1.0
+appVersion: "1.16.0"

@@ -1,0 +1,5 @@
+name: WarmupHoldPolicy
+warmup_ratio: 0.25
+# warmup_steps: 150
+hold_steps: 10000000000000 # Incredibly large value to hold the lr as constant
+max_steps: ${max_steps}

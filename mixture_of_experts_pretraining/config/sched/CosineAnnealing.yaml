@@ -1,0 +1,5 @@
+name: CosineAnnealing
+warmup_ratio: 0.25
+# warmup_steps: 150
+min_lr: ${multiply:0.1,${lr}}
+max_steps: ${max_steps}

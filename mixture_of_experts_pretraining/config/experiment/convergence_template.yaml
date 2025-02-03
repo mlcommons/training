@@ -1,0 +1,52 @@
+# @package _global_
+exp_name: convergence_exp
+config_path: null
+seed: 4321
+per_device_train_batch_size: 1
+global_train_batch_size: ${get_global_batch_size:${per_device_train_batch_size}}
+per_device_eval_batch_size: 1
+global_eval_batch_size: ${get_global_batch_size:${per_device_eval_batch_size}}
+max_grad_norm: 1.0
+max_steps: 250
+pad_token_id: -100
+output_dir: /tmp
+do_first_eval: true
+run_dir: ${path_join:${output_dir},${exp_name}}
+lr: 2.0e-05
+gradient_accumulation_steps: 1
+max_length: 32768
+n_eval_examples: null
+optimizer: ADAMW_TORCH_XLA
+weight_decay: 0.1
+eval_frequency: -1
+checkpoint_manager_path: null 
+dry_run: false
+shuffle: true
+full_precision: false
+local_compile_cache_dir: ${run_dir}
+tensor_parallelism: 1
+cache_local_dir: null
+model:
+  config_path: mixtral822.json
+  name_or_path: mistralai/Mixtral-8x22B-v0.1
+  dtype: bfloat16
+  flash_attention: true
+  capacity_factor: 1.25
+  fsdp_config:
+    fsdp_transformer_layer_cls_to_wrap:
+    - MixtralDecoderLayer
+    min_num_params: 0
+    xla_fsdp_grad_ckpt: true
+sched:
+  name: WarmupHoldPolicy
+  warmup_ratio: 0.25
+  hold_steps: 10000000000000
+  max_steps: 250
+dataset:
+  dataset_name: c4_mlperf
+  train_dataset_path: gs://mlperf-llm-public2/c4/en_json/3.0.1
+  eval_dataset_path: gs://mlperf-llm-public2/c4/en_val_subset_json
+  streaming: true
+  num_proc: 1
+  load_from_cache_file: true
+  shuffle_buffer_size: 256

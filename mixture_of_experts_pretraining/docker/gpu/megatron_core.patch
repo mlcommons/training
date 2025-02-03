@@ -1,0 +1,89 @@
+diff --git a/megatron/core/datasets/gpt_dataset.py b/megatron/core/datasets/gpt_dataset.py
+index 2eb7702b..d1f0b9a9 100644
+--- a/megatron/core/datasets/gpt_dataset.py
++++ b/megatron/core/datasets/gpt_dataset.py
+@@ -407,9 +407,10 @@ class GPTDataset(MegatronDataset):
+ 
+             numpy_random_state = numpy.random.RandomState(self.config.random_seed)
+ 
++            shuffle = self.index_split == Split.train
+             # Build the document index
+             document_index = _build_document_index(
+-                self.indices, num_epochs, numpy_random_state, separate_final_epoch
++                self.indices, num_epochs, numpy_random_state, separate_final_epoch, shuffle
+             )
+ 
+             drop_last_partial_sequence = True
+@@ -450,11 +451,11 @@ class GPTDataset(MegatronDataset):
+             # Build the shuffle index
+             if separate_final_epoch:
+                 shuffle_index = _build_shuffle_index(
+-                    num_samples_sans_final_epoch, sample_index.shape[0] - 1, numpy_random_state
++                    num_samples_sans_final_epoch, sample_index.shape[0] - 1, numpy_random_state, shuffle
+                 )
+             else:
+                 shuffle_index = _build_shuffle_index(
+-                    sample_index.shape[0] - 1, sample_index.shape[0] - 1, numpy_random_state
++                    sample_index.shape[0] - 1, sample_index.shape[0] - 1, numpy_random_state, shuffle
+                 )
+ 
+             if path_to_cache:
+@@ -558,6 +559,7 @@ def _build_document_index(
+     num_epochs: int,
+     numpy_random_state: numpy.random.RandomState,
+     separate_final_epoch: bool,
++    shuffle: bool = True,
+ ) -> numpy.ndarray:
+     """Build an array with length = num epochs * num documents
+ 
+@@ -578,7 +580,8 @@ def _build_document_index(
+         document_index[:] = documents
+         document_index = document_index.reshape(-1)
+         document_index = document_index.astype(numpy.int32)
+-        numpy_random_state.shuffle(document_index)
++        if shuffle:
++            numpy_random_state.shuffle(document_index)
+         return document_index
+ 
+     doc_idx_first = _build_document_index(documents, num_epochs - 1, numpy_random_state, False)
+@@ -587,7 +590,8 @@ def _build_document_index(
+ 
+ 
+ def _build_shuffle_index(
+-    num_samples: int, total_size: int, numpy_random_state: numpy.random.RandomState
++    num_samples: int, total_size: int, numpy_random_state: numpy.random.RandomState, 
++    shuffle: bool = True
+ ) -> numpy.ndarray:
+     """Build the range [0, size) and shuffle
+ 
+@@ -607,12 +611,16 @@ def _build_shuffle_index(
+         dtype_ = numpy.int64
+ 
+     shuffle_idx_first = numpy.arange(start=0, stop=num_samples, step=1, dtype=dtype_)
+-    numpy_random_state.shuffle(shuffle_idx_first)
++
++    if shuffle:
++        numpy_random_state.shuffle(shuffle_idx_first)
+     if num_samples == total_size:
+         return shuffle_idx_first
+ 
+     shuffle_idx_last = numpy.arange(start=num_samples, stop=total_size, step=1, dtype=dtype_)
+-    numpy_random_state.shuffle(shuffle_idx_last)
++    
++    if shuffle:
++        numpy_random_state.shuffle(shuffle_idx_last)
+ 
+     return numpy.concatenate((shuffle_idx_first, shuffle_idx_last))
+ 
+diff --git a/megatron/core/transformer/moe/moe_utils.py b/megatron/core/transformer/moe/moe_utils.py
+index 0c1504d4..71d29629 100644
+--- a/megatron/core/transformer/moe/moe_utils.py
++++ b/megatron/core/transformer/moe/moe_utils.py
+@@ -264,6 +264,7 @@ def topk_softmax_with_capacity(
+         # Pre softmax
+         scores = torch.softmax(logits, dim=-1, dtype=torch.float32).type_as(logits)
+         probs, top_indices = torch.topk(scores, k=topk, dim=1)
++        probs /= probs.sum(dim=-1, keepdim=True)
+     else:
+         # Post softmax
+         if topk == 1:
