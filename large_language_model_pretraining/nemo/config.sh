@@ -60,6 +60,9 @@ export MODEL_CKPT=""
 export CONTINUAL_CKPT=""
 # Model: Whether we want to restore from MODEL_CKPT path. If 0, then we are not restoring. 
 export USE_CKPT=0
+# Model: Whether we are resuming from a NeMo-formatted HuggingFace checkpoint (weights only). 
+#     If set to 1, then checkpoint resuming code will not try to load the optimizer states. 
+export FROM_HF=1
 # Model: Whether we want to save a checkpoint. Must be 1 if NPAR > 1. If 1, then we save a checkpoint at the end.
 export SAVE_CKPT=0
 
@@ -71,18 +74,10 @@ export SIZE="405b"
 export GBS=1152
 # Dataloader: Micro batch size
 export MBS=1
-# Dataloader: Evaluate every N batches, optional
-#     defaults to evaluate every 20 batches, or 188_743_680 tokens
-export EVAL_EVERY="20"
-# Dataloader: Evaluate using N batches, optional
-#     defaults to use 10 batches for evaluation, or 94_371_840 tokens
-#     If an empty string is provided (""), then we use full validation dataset for evaluation
-export EVAL_BATCHES="10"
 # Dataloader: Max run N batches, optional
-#     defaults to train 425 steps, or 4_010_803_200 tokens
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
-export MAX_STEPS="425"
+export MAX_STEPS=""
 
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 

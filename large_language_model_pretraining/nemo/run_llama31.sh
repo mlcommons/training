@@ -36,12 +36,13 @@ git config --global --add safe.directory /workspace/llama31
 #     Model settings
 : "${MODEL_CKPT:?MODEL_CKPT not set}"
 : "${USE_CKPT:?USE_CKPT not set}"
+: "${FROM_HF:?FROM_HF not set}"
 : "${CONTINUAL_CKPT:?CONTINUAL_CKPT not set}"
 
 # Vars with defaults
 #     Slurm settings
-: "${TIME:="00:30:00"}"
-: "${NNODES:=72}"
+: "${TIME:="04:00:00"}"
+: "${NNODES:=288}"
 : "${GPUS_PER_NODE:=8}"
 : "${DEPENDENCIES:=""}"
 
@@ -59,7 +60,7 @@ git config --global --add safe.directory /workspace/llama31
 
 #     Dataloader settings
 : "${EVAL_EVERY:=""}"
-: "${EVAL_BATCHES:=""}"
+: "${EVAL_TOKENS:=""}"
 : "${MAX_STEPS:=""}"
 
 #     Experiment settings
@@ -69,6 +70,7 @@ IFS=" " read -ra seeds <<< $SEEDS
 : "${NPAR:=1}"
 : "${SAVE_CKPT:=1}"
 : "${TAG:=""}"
+: "${TARGET:="5.6"}"
 
 # Run
 
@@ -80,6 +82,9 @@ CMD_SUFFIX=""
 
 if [ $USE_CKPT -gt 0 ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --use_ckpt"
+    if [ $FROM_HF -gt 0 ]; then
+        CMD_SUFFIX="${CMD_SUFFIX} --resume_from_hf"
+    fi
 fi
 
 if [ $SAVE_CKPT -gt 0 ]; then 
@@ -106,8 +111,8 @@ if [ ! $EVAL_EVERY = "" ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --eval_every ${EVAL_EVERY}"
 fi
 
-if [ ! $EVAL_BATCHES = "" ]; then
-    CMD_SUFFIX="${CMD_SUFFIX} --eval_batches ${EVAL_BATCHES}"
+if [ ! $EVAL_TOKENS = "" ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --eval_tokens ${EVAL_TOKENS}"
 fi
 
 if [ ! $MAX_STEPS = "" ]; then
@@ -139,6 +144,7 @@ python3 pretrain_llama31.py \
 --initial_ckpt_path /checkpoint \
 --continual_ckpt_path /continual \
 --tokenizer_path /tokenizer \
+--target_log_ppl $TARGET \
 --ckpt_start_step $START_STEPS \
 --max_retries $MAX_RETRIES \
 $CMD_SUFFIX

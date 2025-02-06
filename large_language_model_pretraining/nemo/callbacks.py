@@ -138,7 +138,7 @@ class MetricsLogger(Logger):
 
 ### MLPerf callbacks
 def compute_consumed_mllog_tokens(trainer, init_global_step, global_batch_size, seq_length):
-    steps_since_resume = trainer.global_step - init_global_step
+    steps_since_resume = trainer.global_step + 1 - init_global_step # global steps are 0-indexed
     consumed_samples = (
         steps_since_resume * global_batch_size
     )
@@ -205,6 +205,7 @@ class MLPerfCallback(pl.Callback):
             if isinstance(logger, MetricsLogger):
                 if logger.is_target_reached:
                     trainer.should_stop = True
+                    self.set_success_status()
 
         if not trainer.should_stop:
             mllogger.start(key=constants.BLOCK_START, metadata={"epoch_num": self.consumed_tokens(trainer)})
