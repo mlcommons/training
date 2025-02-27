@@ -57,4 +57,3 @@ tasks:
         laion_dir: laion-400m/moments-webdataset-filtered/
       outputs:
         results_dir: results/
-

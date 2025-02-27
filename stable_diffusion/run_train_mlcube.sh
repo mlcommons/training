@@ -10,7 +10,6 @@
 : "${RESULTS_DIR:=/results}"
 : "${CONFIG:=./configs/train_01x01.yaml}"
 
-
 while [ $# -gt 0 ]; do
   case "$1" in
   --num-nodes=*)
@@ -75,13 +74,13 @@ from mlperf_logging_utils import mllogger
 mllogger.event(key=constants.CACHE_CLEAR, value=True)"
 
 python main.py \
-    lightning.trainer.num_nodes=${NUM_NODES} \
-    lightning.trainer.devices=${GPUS_PER_NODE} \
-    -m train \
-    --validation False \
-    --ckpt ${CHECKPOINT_SD} \
-    --logdir ${RESULTS_DIR}  \
-    -b ${CONFIG}
+  lightning.trainer.num_nodes=${NUM_NODES} \
+  lightning.trainer.devices=${GPUS_PER_NODE} \
+  -m train \
+  --validation False \
+  --ckpt ${CHECKPOINT_SD} \
+  --logdir ${RESULTS_DIR} \
+  -b ${CONFIG}
 
 # end timing
 end=$(date +%s)
@@ -89,7 +88,7 @@ end_fmt=$(date +%Y-%m-%d\ %r)
 echo "ENDING TIMING RUN AT $end_fmt"
 
 # runtime
-runtime=$(( $end - $start ))
+runtime=$(($end - $start))
 result_name="stable_diffusion"
 
 echo "RESULT,$result_name,$runtime,$USER,$start_fmt"
