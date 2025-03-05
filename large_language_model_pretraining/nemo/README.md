@@ -35,9 +35,6 @@ Note: it's recommended to map your `.ssh` folder to inside the container, so tha
 
 The current codebase is using C4 dataset for train and evaluation. Please refer to [Section 3](#preprocessed-data-download) for downloading the preprocessed dataset and [Section 6](#data-preprocessing) if you would like to perform manual tokenization. 
 
-
-### Steps to download the checkpoint
-
 ### Steps to run and time
 
 To train Llama 3.1 405B, we need to fill out all fields in [config.sh](./config.sh). This file contains all configurations for Slurm cluster access and job submission configurations, directory mappings, containers, and model configurations. 
@@ -79,12 +76,16 @@ You can then navigate in the terminal to your desired download directory and run
 ```
 # Replace this path with your desired path on the machine
 export PREPROCESSED_PATH="./"
-rclone copy mlc-training:mlcommons-training-wg-public/llama3_1/datasets/preprocessed_c4 $PREPROCESSED_PATH -P
+rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/mixtral_8x22b_preprocessed $PREPROCESSED_PATH -P
+
+# There is a typo in the uploaded file names
+mv $PREPROCESSED_PATH/c4-validationn-91205-samples.en_text_document.bin $PREPROCESSED_PATH/c4-validation-91205-samples.en_text_document.bin
+mv $PREPROCESSED_PATH/c4-validationn-91205-samples.en_text_document.idx $PREPROCESSED_PATH/c4-validation-91205-samples.en_text_document.idx
 ```
 
 After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`: 
 - Training partitions: `c4-train.en_<number>_text_document`
-- Validation partitions: `c4-validation.en_text_document`
+- Validation partitions: `c4-validation-91205-samples.en_text_document`
 
 #### Tokenizer
 
@@ -103,7 +104,7 @@ After the download is complete, you should see five files under `TOKENIZER_PATH`
 
 ### Training and test data separation
 
-We use the default split from the C4 dataset. This means that we use `c4-train.<x>-of-01024.json.gz` files for training and `c4-validation.<x>-of-00008.json.gz` files for evaluation. 
+We use the default split from the C4 dataset. This means that we use `c4-train.<x>-of-01024.json.gz` files (where `768 <= x <= 1023`) for training, and we use our customized `c4-validation-91205-samples.en.json.gz`, which contains the first 91205 samples from the unshuffled C4 validation dataset, for evaluation. 
 
 ### Training data order
 
@@ -116,9 +117,8 @@ We use the first 47M tokens in the validation dataset for validation. We **do no
 # 4. Model
 ### Publication/Attribution
 
-The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.21783). Two noticeable differences are: 
-1. We replace the paper's TikTokenizer with the **Mixtral 8x22b tokenizer** in this benchmark. Please refer to the [Tokenizer](#tokenizer) section for more details.  
-1. We replace the paper's AdamW with the **Adam optimizer** in this benchmark. Please refer to the [Optimizer](#optimizer-spec) section for more details. 
+The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.21783). The only difference is: 
+- We replace the paper's TikTokenizer with the **Mixtral 8x22b tokenizer** in this benchmark. Please refer to the [Tokenizer](#tokenizer) section for more details.  
 
 ### Model details
 
@@ -148,7 +148,7 @@ Large runs might need to span across multiple Slurm jobs, and we need to save an
 
 ### Optimizer spec
 
-1. Optimizer type: **Adam**
+1. Optimizer type: **AdamW**
 2. Warmup steps computed as $8000 \times \lceil {1152 \over GBS} \rceil$.
 3. LR Scheduler's maximum number of steps computed as $1,200,000 \times \lceil {1152 \over GBS} \rceil$
 
@@ -163,11 +163,11 @@ Validation log perplexity = 5.6
 
 ### Evaluation frequency
 
-We perform evaluation every **377,487,360** tokens. 
+We perform evaluation every **46080** sequences. 
 
 ### Evaluation thoroughness
 
-We evaluate using **47,185,920** tokens from the validation dataset. 
+We evaluate using **5,760** sequences from our customized validation dataset. 
 
 
 # 6. Other
@@ -176,17 +176,41 @@ We evaluate using **47,185,920** tokens from the validation dataset.
 
 Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in the [Preprocessed data download](#preprocessed-data-download) section. 
 
+#### Raw data downloading
+
+We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this benchmark. The original zipped **`json.gz`** files can be downloaded by following AllenAI C4's instruction, and you can download our zipped customized validation dataset from the MLCommons S3 bucket by running the following command: 
+
+```bash
+export ORIGINAL_C4_PATH=""
+
+# download the customized zipped validation dataset
+rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/c4-validation-91205-samples.en.json.gz $ORIGINAL_C4_PATH -P
+```
+
+Alternatively, we have also hosted the **unzipped C4 `json`** files on MLCommons S3 bucket. You can download them using the following commands: 
+
+```bash
+export ORIGINAL_C4_PATH=""
+
+# download the full C4 files, including all raw train and validations
+rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/en_json/3.0.1 $ORIGINAL_C4_PATH -P
+```
+
+Note that for unzipped JSON files, it is recommended to zip them into `.gz` format before running the data preprocessing. 
+
 #### Prepare tokenizer
 
 We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
 
 #### Run data preprocessing
 
-Run the following commands to merge all 1024 training files into 8 `json.gz` files and all 8 validation files into a single `json.gz` file. Each of the `json.gz` files will be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`). 
+Run the following commands to merge all 1024 training files into 8 `json.gz` files, all 8 validation files into a single `json.gz` file, as well as generate our customized validation dataset. Each of the `json.gz` files will subsequently be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`) by our preprocess.sh script. 
 
 ```bash
 export C4_PATH=""
 export MERGED_C4_PATH=""
+# more information about this knob can be found in consolidate_data.sh
+export N_VALIDATION_SAMPLES=91205
 
 bash consolidate_data.sh
 ```

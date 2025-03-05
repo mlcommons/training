@@ -97,7 +97,9 @@ class MetricsLogger(Logger):
         init_global_step, global_batch_size, seq_length,
         target_log_ppl, 
         train_loss_key = "reduced_train_loss",
-        val_loss_key = "val_loss"
+        val_loss_key = "val_loss", 
+        train_step_time_in_s = "train_step_timing in s",
+        train_step_time_atol=7200,
     ):
         super().__init__()
 
@@ -110,9 +112,16 @@ class MetricsLogger(Logger):
         self.val_loss_key = val_loss_key
         self.is_target_reached = False
 
+        self.train_step_time_in_s = train_step_time_in_s
+        self.train_step_time_atol = train_step_time_atol
+
     def log_metrics(self, metrics, step):
         if self.val_loss_key in metrics:
             self.log_validation_loss(metrics, step)
+
+        if self.train_step_time_in_s in metrics:
+            step_time = metrics[self.train_step_time_in_s]
+            assert step_time <= self.train_step_time_atol, f"Logged train step time ({step_time}) is slower than tolerable ({self.train_step_time_atol}). "
 
     def log_validation_loss(self, metrics, step):
         consumed_tokens = (step - self.init_global_step) * self.gbs * self.seq_len
@@ -138,11 +147,10 @@ class MetricsLogger(Logger):
 
 ### MLPerf callbacks
 def compute_consumed_mllog_tokens(trainer, init_global_step, global_batch_size, seq_length):
-    steps_since_resume = trainer.global_step + 1 - init_global_step # global steps are 0-indexed
     consumed_samples = (
-        steps_since_resume * global_batch_size
+        (trainer.global_step + 1) * global_batch_size # global steps are 0-indexed
     )
-    return int(consumed_samples) * seq_length
+    return int(consumed_samples) # we log the epoch numbers in sequences, not tokens
 
 class MLPerfCallback(pl.Callback):
     def __init__(

@@ -71,15 +71,13 @@ def slurm_executor(
         ),
         nodes=nodes,
         ntasks_per_node=devices,
+        gpus_per_node=devices,
         mem="0",
         exclusive=True,
+        gres="gpu:8",
         packager=run.GitArchivePackager(),
         dependencies=dependencies,
     )
-
-    if devices != 0:
-        executor.gpus_per_node=devices
-        executor.gres = "gpu:8"
 
     executor.launcher = None
     executor.container_image = container_image
@@ -151,7 +149,9 @@ def get_pretrain(
         warmup_tokens = 8000 * base_gbs * 8192
 
         max_lr = (gbs / base_gbs) * base_lr
+        max_lr = round(max_lr, 8) # rounds to the nearest 8th digit.
 
+        # Code tracing shows that this is AdamW
         pretrain.optim = distributed_fused_adam_with_cosine_annealing(
             max_lr = max_lr, 
             warmup_steps = math.ceil(warmup_tokens / 8192 / gbs),
@@ -217,10 +217,10 @@ def get_data(
     data_paths = {
         "train": train_datasets,
         "validation": [
-            "/preproc_data/c4-validation.en_text_document"
+            "/preproc_data/c4-validation-91205-samples.en_text_document"
         ],
         "test": [
-            "/preproc_data/c4-validation.en_text_document"
+            "/preproc_data/c4-validation-91205-samples.en_text_document"
         ],
     }
 
@@ -300,8 +300,8 @@ def get_parser() -> argparse.ArgumentParser:
     
     data_group.add_argument("--gbs", type=int, default=1152, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    data_group.add_argument("--eval_every", type=int, default=377_487_360, help="Evaluate at least every N training tokens")
-    data_group.add_argument("--eval_tokens", type=int, default=47_185_920, help="Evaluate using at least N evaluation tokens")
+    data_group.add_argument("--eval_every", type=int, default=46080, help="Evaluate at least every N training sequences")
+    data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
     data_group.add_argument("--use_full_dataset", action="store_true", help="If set, then we use the full dataset, instead of the last 256/1024 shards")
     data_group.add_argument("--tokenizer_path", type=str, help="Tokenizer path that's used to tokenize the dataset")
@@ -312,6 +312,7 @@ def get_parser() -> argparse.ArgumentParser:
     experiment_group.add_argument("--num_exps", type=int, default=1)
     experiment_group.add_argument("--num_pars", type=int, default=1)
     experiment_group.add_argument("--target_log_ppl", type=float, default=5.6)
+    experiment_group.add_argument("--step_time_atol", type=int, default=1600, help="train step time atol")
 
     return parser
 
@@ -351,8 +352,8 @@ if __name__ == "__main__":
         use_full_dataset=args.use_full_dataset,
     )
 
-    eval_every_n_batches = math.ceil(args.eval_every / (args.gbs * 8192))
-    eval_batches = math.ceil(args.eval_tokens / (args.gbs * 8192))
+    eval_every_n_batches = math.ceil(args.eval_every / (args.gbs))
+    eval_batches = math.ceil(args.eval_tokens / (args.gbs))
 
     exp_prefix, pretrain = get_pretrain(
         size=args.size,
@@ -383,7 +384,7 @@ if __name__ == "__main__":
         constants.EVAL_SAMPLES: args.eval_tokens,
 
         # Optimizers
-        constants.OPT_NAME: pretrain.optim.config.optimizer,
+        constants.OPT_NAME: "adamw", 
         constants.OPT_BASE_LR: pretrain.optim.config.lr,
         constants.OPT_ADAM_BETA_1: pretrain.optim.config.adam_beta1,
         constants.OPT_ADAM_BETA_2: pretrain.optim.config.adam_beta2,
@@ -467,9 +468,14 @@ if __name__ == "__main__":
                 checkpoint_name = "checkpoint" + f"-seed-{seed}-par-{j}{ending_steps}"
                 experiment_write_to_path = static_write_to_path + "/" + checkpoint_name
                 
-                if not args.resume_from_hf:
-                    pretrain.resume.resume_from_directory = experiment_read_from_path
-                    pretrain.resume.resume_from_path = experiment_read_from_path
+                if not (args.resume_from_hf and j == 0):
+                    pretrain.resume = run.Config(
+                        nl.AutoResume,
+                        resume_if_exists=True,
+                        resume_ignore_no_checkpoint=True,
+                        resume_from_path = experiment_read_from_path,
+                        resume_from_directory = experiment_read_from_path,
+                    )
                 else:
                     pretrain.resume = run.Config(nl.AutoResume, restore_config = run.Config(nl.RestoreConfig, path=experiment_read_from_path))
                 pretrain.log.ckpt.train_time_interval = None
@@ -502,7 +508,8 @@ if __name__ == "__main__":
                             init_global_step=start_step,
                             global_batch_size=args.gbs,
                             seq_length=8192,
-                            target_log_ppl=args.target_log_ppl
+                            target_log_ppl=args.target_log_ppl,
+                            train_step_time_atol=args.step_time_atol,
                         ), 
                     ]
 
