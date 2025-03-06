@@ -386,10 +386,10 @@ if __name__ == "__main__":
         # Optimizers
         constants.OPT_NAME: "adamw", 
         constants.OPT_BASE_LR: pretrain.optim.config.lr,
-        constants.OPT_ADAM_BETA_1: pretrain.optim.config.adam_beta1,
-        constants.OPT_ADAM_BETA_2: pretrain.optim.config.adam_beta2,
-        constants.OPT_ADAM_EPSILON: pretrain.optim.config.adam_eps,
-        constants.OPT_WEIGHT_DECAY: pretrain.optim.config.weight_decay,
+        constants.OPT_ADAMW_BETA_1: pretrain.optim.config.adam_beta1,
+        constants.OPT_ADAMW_BETA_2: pretrain.optim.config.adam_beta2,
+        constants.OPT_ADAMW_EPSILON: pretrain.optim.config.adam_eps,
+        constants.OPT_ADAMW_WEIGHT_DECAY: pretrain.optim.config.weight_decay,
         constants.OPT_GRADIENT_CLIP_NORM: pretrain.optim.config.clip_grad,
 
         # Schedulers
