@@ -78,7 +78,6 @@ You can then navigate in the terminal to your desired download directory and run
 export PREPROCESSED_PATH="./"
 rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/mixtral_8x22b_preprocessed $PREPROCESSED_PATH -P
 
-# There is a typo in the uploaded file names
 mv $PREPROCESSED_PATH/c4-validationn-91205-samples.en_text_document.bin $PREPROCESSED_PATH/c4-validation-91205-samples.en_text_document.bin
 mv $PREPROCESSED_PATH/c4-validationn-91205-samples.en_text_document.idx $PREPROCESSED_PATH/c4-validation-91205-samples.en_text_document.idx
 ```
