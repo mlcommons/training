@@ -148,7 +148,7 @@ class MetricsLogger(Logger):
 ### MLPerf callbacks
 def compute_consumed_mllog_tokens(trainer, init_global_step, global_batch_size, seq_length):
     consumed_samples = (
-        (trainer.global_step + 1) * global_batch_size # global steps are 0-indexed
+        trainer.global_step * global_batch_size
     )
     return int(consumed_samples) # we log the epoch numbers in sequences, not tokens
 
