@@ -2,6 +2,11 @@ set -e
 
 : "${C4_PATH:?C4_PATH not set}"
 : "${MERGED_C4_PATH:?MERGED_C4_PATH not set}"
+: "${N_VALIDATION_SAMPLES:=91205}"
+# defaults the N_VALIDATION_SAMPLES to 91205
+# C4 validation dataset: each sample on average tokenizes to 518 tokens
+# thus, to reach 47,185,920 validation tokens, we need to use at least 91205 samples,
+# which, after tokenization, will yield 47,186,855 tokens. 
 
 # create softlinks to store each shard before merging
 mkdir -p softlinks
@@ -27,3 +32,6 @@ for shard in {0..7}; do
 done
 
 cat softlinks/en_validation/*gz > ${MERGED_C4_PATH}/c4-validation.en.json.gz
+
+# select the first N_VALIDATION_SAMPLES number of samples
+zcat ${MERGED_C4_PATH}/c4-validation.en.json.gz | head -n $N_VALIDATION_SAMPLES | gzip > ${MERGED_C4_PATH}/c4-validation-${N_VALIDATION_SAMPLES}-samples.en.json.gz

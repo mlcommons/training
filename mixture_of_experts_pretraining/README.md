@@ -492,12 +492,16 @@ You can then navigate in the terminal to your desired download directory and run
 
 ## Text Datasets
 **Dataset**
-* Train Dataset`c4/en_json/3.0.1`
-* Eval Dataset `c4/en_val_subset_json`
-* Preprocessed GPU dataset `preprocessed_c4`
+* Train Dataset`original/en_json/3.0.1`
+* Eval Dataset `original/en_val_subset_json`
+* Preprocessed GPU dataset `mixtral_8x22b_preprocessed`
 ```
 mkdir -p datasets
-rclone copy mlc-training:mlcommons-training-wg-public/mixtral_8x22b/datasets ./datasets -P
+rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4 ./datasets -P
+
+# moving them to the original naming convention so that it won't break the code
+mv ./datasets/original ./datasets/c4
+mv ./datasets/mixtral_8x22b_preprocessed ./datasets/preprocessed_c4
 ```
 ## Checkpoints
 * Mixtral-8x22B-v0.1-fsdp: use for `tensor_parallelism=1`

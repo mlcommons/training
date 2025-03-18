@@ -59,8 +59,6 @@ git config --global --add safe.directory /workspace/llama31
 : "${START_STEPS:=0}"
 
 #     Dataloader settings
-: "${EVAL_EVERY:=""}"
-: "${EVAL_TOKENS:=""}"
 : "${MAX_STEPS:=""}"
 
 #     Experiment settings
@@ -68,9 +66,10 @@ git config --global --add safe.directory /workspace/llama31
 IFS=" " read -ra seeds <<< $SEEDS
 : "${NEXP:=1}"
 : "${NPAR:=1}"
-: "${SAVE_CKPT:=1}"
+: "${SAVE_CKPT:=0}"
 : "${TAG:=""}"
 : "${TARGET:="5.6"}"
+: "${STEP_TIME_ATOL:="7200"}" # maximum tolerable step time, setting to 2hr by default
 
 # Run
 
@@ -107,14 +106,6 @@ if [ ! $DEPENDENCIES = "" ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --dependencies ${DEPENDENCIES}"
 fi
 
-if [ ! $EVAL_EVERY = "" ]; then
-    CMD_SUFFIX="${CMD_SUFFIX} --eval_every ${EVAL_EVERY}"
-fi
-
-if [ ! $EVAL_TOKENS = "" ]; then
-    CMD_SUFFIX="${CMD_SUFFIX} --eval_tokens ${EVAL_TOKENS}"
-fi
-
 if [ ! $MAX_STEPS = "" ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --max_steps ${MAX_STEPS}"
 fi
@@ -145,6 +136,7 @@ python3 pretrain_llama31.py \
 --continual_ckpt_path /continual \
 --tokenizer_path /tokenizer \
 --target_log_ppl $TARGET \
+--step_time_atol $STEP_TIME_ATOL \
 --ckpt_start_step $START_STEPS \
 --max_retries $MAX_RETRIES \
 $CMD_SUFFIX

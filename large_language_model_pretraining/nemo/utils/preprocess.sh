@@ -27,8 +27,8 @@ srun --nodes=1 --ntasks-per-node=1 \
     --container-image=$CONT_IMAGE_URL --container-mounts $container_maps --no-container-entrypoint \
     --output preprocess_outputs/dataset_preprocess_validation.out \
     python3 /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \
-    --input "/dataset/c4-validation.en.json.gz" \
-    --output-prefix "/outputs/c4-validation.en" \
+    --input "/dataset/c4-validation-91205-samples.en.json.gz" \
+    --output-prefix "/outputs/c4-validation-91205-samples.en" \
     --tokenizer-library huggingface --tokenizer-type /tokenizer \
     --dataset-impl mmap --workers 128 & 
 wait
