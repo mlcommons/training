@@ -42,6 +42,21 @@ Each benchmark will run until the target quality is reached and then stop, print
 
 Some these benchmarks are rather slow or take a long time to run on the reference hardware. We expect to see significant performance improvements with more hardware and optimized implementations. 
 
+# MLPerf Training v5.0 (Submission Deadline May 2, 2025)
+
+* Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark. 
+* Model parameter count is not the same as active parameter that are being trained in the benchmark. 
+
+| Model | reference implementation | framework | dataset | model parameter count
+| ---- | ---- | ---- | ---- | ----
+| retinanet | [single_stage_detector](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages | 37M
+| stable_diffusion | [stable_diffusion](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered | 865M
+| bert | [language_model](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01 | 340M
+| llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/large_language_model_pretraining) | NeMo | C4 | 405B
+| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
+| rgat | [graph_neural_network](https://github.com/mlcommons/training/tree/master/graph_neural_network) | GLT | IGBFull | 25M
+
 # MLPerf Training v4.1 (Submission Deadline Oct 11, 2024)
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
 
