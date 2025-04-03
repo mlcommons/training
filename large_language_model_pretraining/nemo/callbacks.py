@@ -124,11 +124,11 @@ class MetricsLogger(Logger):
             assert step_time <= self.train_step_time_atol, f"Logged train step time ({step_time}) is slower than tolerable ({self.train_step_time_atol}). "
 
     def log_validation_loss(self, metrics, step):
-        consumed_tokens = (step - self.init_global_step) * self.gbs * self.seq_len
+        consumed_tokens = step * self.gbs
 
         loss = metrics[self.val_loss_key]
 
-        mllogger.event(key=constants.EVAL_ACCURACY, value=loss, metadata={'epoch_num': consumed_tokens})
+        mllogger.event(key=constants.EVAL_ACCURACY, value=loss, metadata={constants.SAMPLES_COUNT: consumed_tokens})
 
         if not self.is_target_reached and loss <= self.target:
             self.is_target_reached = True
@@ -183,14 +183,14 @@ class MLPerfCallback(pl.Callback):
 
     @rank_zero_only
     def on_train_epoch_start(self, trainer, pl_module):
-        mllogger.start(key=constants.EPOCH_START, metadata={'epoch_num': self.consumed_tokens(trainer)})
-        mllogger.start(key=constants.BLOCK_START, metadata={"epoch_num": self.consumed_tokens(trainer)})
+        mllogger.start(key=constants.EPOCH_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+        mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
 
         return super().on_train_epoch_start(trainer, pl_module)
     
     @rank_zero_only
     def on_train_epoch_end(self, trainer, pl_module):
-        mllogger.end(key=constants.EPOCH_STOP, metadata={'epoch_num': self.consumed_tokens(trainer)})
+        mllogger.end(key=constants.EPOCH_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
         return super().on_train_epoch_end(trainer, pl_module)
 
     def on_train_end(self, trainer, pl_module):
@@ -202,12 +202,12 @@ class MLPerfCallback(pl.Callback):
     
     @rank_zero_only
     def on_validation_start(self, trainer, pl_module):
-        mllogger.end(key=constants.BLOCK_STOP, metadata={'epoch_num': self.consumed_tokens(trainer)})
-        mllogger.start(key=constants.EVAL_START, metadata={'epoch_num': self.consumed_tokens(trainer)})
+        mllogger.end(key=constants.BLOCK_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+        mllogger.start(key=constants.EVAL_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
         return super().on_validation_start(trainer, pl_module)
 
     def on_validation_end(self, trainer, pl_module):
-        mllogger.end(key=constants.EVAL_STOP, metadata={'epoch_num': self.consumed_tokens(trainer)})
+        mllogger.end(key=constants.EVAL_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
 
         for logger in trainer.loggers:
             if isinstance(logger, MetricsLogger):
@@ -216,7 +216,7 @@ class MLPerfCallback(pl.Callback):
                     self.set_success_status()
 
         if not trainer.should_stop:
-            mllogger.start(key=constants.BLOCK_START, metadata={"epoch_num": self.consumed_tokens(trainer)})
+            mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
 
         return super().on_validation_end(trainer, pl_module)
 
