@@ -396,7 +396,7 @@ if __name__ == "__main__":
         constants.OPT_END_LR: pretrain.optim.lr_scheduler.min_lr,
         constants.OPT_LR_WARMUP_STEPS: pretrain.optim.lr_scheduler.warmup_steps,
         constants.OPT_LR_DECAY_STEPS: pretrain.trainer.max_steps - pretrain.optim.lr_scheduler.warmup_steps,
-        constants.OPT_LR_DECAY_SCHEDULE: "cosine with linear warmups",
+        constants.OPT_LR_DECAY_SCHEDULE: "cosine with linear warmup",
     }
 
     # Override config for MLPerf
