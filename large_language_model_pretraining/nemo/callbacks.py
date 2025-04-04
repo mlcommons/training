@@ -124,11 +124,11 @@ class MetricsLogger(Logger):
             assert step_time <= self.train_step_time_atol, f"Logged train step time ({step_time}) is slower than tolerable ({self.train_step_time_atol}). "
 
     def log_validation_loss(self, metrics, step):
-        consumed_tokens = step * self.gbs
+        consumed_samples = step * self.gbs
 
         loss = metrics[self.val_loss_key]
 
-        mllogger.event(key=constants.EVAL_ACCURACY, value=loss, metadata={constants.SAMPLES_COUNT: consumed_tokens})
+        mllogger.event(key=constants.EVAL_ACCURACY, value=loss, metadata={constants.SAMPLES_COUNT: consumed_samples})
 
         if not self.is_target_reached and loss <= self.target:
             self.is_target_reached = True
@@ -146,7 +146,7 @@ class MetricsLogger(Logger):
         return 1
 
 ### MLPerf callbacks
-def compute_consumed_mllog_tokens(trainer, init_global_step, global_batch_size, seq_length):
+def compute_consumed_mllog_samples(trainer, init_global_step, global_batch_size, seq_length):
     consumed_samples = (
         trainer.global_step * global_batch_size
     )
@@ -174,8 +174,8 @@ class MLPerfCallback(pl.Callback):
         self.status = constants.ABORTED
         self.configs = configs
 
-    def consumed_tokens(self, trainer):
-        return compute_consumed_mllog_tokens(trainer, self.init_global_step, self.gbs, self.seq_len)
+    def consumed_samples(self, trainer):
+        return compute_consumed_mllog_samples(trainer, self.init_global_step, self.gbs, self.seq_len)
 
     def set_success_status(self):
         self.status = constants.SUCCESS
@@ -183,31 +183,31 @@ class MLPerfCallback(pl.Callback):
 
     @rank_zero_only
     def on_train_epoch_start(self, trainer, pl_module):
-        mllogger.start(key=constants.EPOCH_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
-        mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+        mllogger.start(key=constants.EPOCH_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
+        mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
 
         return super().on_train_epoch_start(trainer, pl_module)
     
     @rank_zero_only
     def on_train_epoch_end(self, trainer, pl_module):
-        mllogger.end(key=constants.EPOCH_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+        mllogger.end(key=constants.EPOCH_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
         return super().on_train_epoch_end(trainer, pl_module)
 
     def on_train_end(self, trainer, pl_module):
         # for every occurrences, run on all ranks to allow sync
         barrier()
         mllogger.end(key=constants.RUN_STOP, metadata={"status": self.status})
-        mllogger.event(key="trained_samples", value=self.consumed_tokens(trainer))
+        mllogger.event(key="train_samples", value=self.consumed_samples(trainer))
         return super().on_train_end(trainer, pl_module)
     
     @rank_zero_only
     def on_validation_start(self, trainer, pl_module):
-        mllogger.end(key=constants.BLOCK_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
-        mllogger.start(key=constants.EVAL_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+        mllogger.end(key=constants.BLOCK_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
+        mllogger.start(key=constants.EVAL_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
         return super().on_validation_start(trainer, pl_module)
 
     def on_validation_end(self, trainer, pl_module):
-        mllogger.end(key=constants.EVAL_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+        mllogger.end(key=constants.EVAL_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
 
         for logger in trainer.loggers:
             if isinstance(logger, MetricsLogger):
@@ -216,7 +216,7 @@ class MLPerfCallback(pl.Callback):
                     self.set_success_status()
 
         if not trainer.should_stop:
-            mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_tokens(trainer)})
+            mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
 
         return super().on_validation_end(trainer, pl_module)
 
