@@ -1,5 +1,5 @@
 # 1. Problem 
-This benchmark represents a multi-class node classification task in a heterogenous graph using  the [IGB Heterogeneous Dataset](https://github.com/IllinoisGraphBenchmark/IGB-Datasets) named IGBH-Full. The task is carried out using a [GAT](https://arxiv.org/abs/1710.10903) model based on the [Relational Graph Attention Networks](https://arxiv.org/abs/1904.05811) paper.
+This benchmark represents a multi-class node classification task in a heterogenous graph using  the [IGB Heterogeneous Dataset](https://github.com/IllinoisGraphBenchmark/IGB-Datasets) named IGBH-Full. The task is carried out using a [GAT](https://arxiv.org/abs/1710.10903) model with 25M parameters, based on the [Relational Graph Attention Networks](https://arxiv.org/abs/1904.05811) paper.
 
 The reference implementation is based on [graphlearn-for-pytorch (GLT)](https://github.com/alibaba/graphlearn-for-pytorch).
 
