@@ -21,7 +21,7 @@ RUN pip install prettytable==3.12.0
 RUN pip install git+https://github.com/mlcommons/logging.git@4.1.0-rc3
 
 RUN apt-get update \
-    && apt-get install -y curl
+    && apt-get install -y curl unzip
 
 RUN curl https://rclone.org/install.sh | bash
 

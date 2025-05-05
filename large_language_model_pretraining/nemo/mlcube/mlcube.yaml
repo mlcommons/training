@@ -14,7 +14,7 @@ docker:
   # Docker file name within docker build context, default is `Dockerfile`.
   build_file: "Dockerfile_mlcube"
   # GPU arguments
-  gpu_args: "--gpus=all"
+  gpu_args: "--gpus=all --shm-size=1g --network=host --ipc=host -v ~/.ssh:/root/.ssh"
 
 tasks:
   download_demo:
