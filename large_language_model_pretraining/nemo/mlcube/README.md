@@ -1,4 +1,4 @@
-# MLCube for Llama 3.1
+# MLCube for LLaMA 3.1
 
 MLCube™ GitHub [repository](https://github.com/mlcommons/mlcube). MLCube™ [wiki](https://mlcommons.github.io/mlcube/).
 
@@ -11,7 +11,7 @@ An important requirement is that you must have Docker installed.
 virtualenv -p python3 ./env && source ./env/bin/activate && pip install mlcube-docker
 # Fetch the implementation from GitHub
 git clone https://github.com/mlcommons/training && cd ./training
-git fetch origin pull/xxx/head:feature/mlcube_llama3.1 && git checkout feature/mlcube_llama3.1
+git fetch origin pull/792/head:feature/mlcube_llama3.1 && git checkout feature/mlcube_llama3.1
 cd ./large_language_model_pretraining/nemo/mlcube
 ```
 
@@ -22,6 +22,12 @@ mlcube describe
 ```
 
 ### Extra requirements
+
+#### Nvidia Driver
+
+The base Docker image requires the host machine to have the NVIDIA driver version [560.35.03](https://www.nvidia.com/en-us/drivers/details/231063/) installed.
+
+#### Rclone
 
 Install Rclone in your system, by following [these instructions](https://rclone.org/install/).
 
