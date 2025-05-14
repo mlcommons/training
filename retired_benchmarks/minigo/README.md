@@ -124,7 +124,7 @@ Informally, we have observed that quality should improve roughly linearly with t
 Note that quality does not necessarily monotonically increase. 
 
 ### Evaluation frequency
-Evaluation should be preformed for every model which is trained (regardless if it wins the "model evaluation" round). 
+Evaluation should be performed for every model which is trained (regardless if it wins the "model evaluation" round). 
     
 
 ### Evaluation thoroughness
