@@ -117,6 +117,28 @@ flags.DEFINE_integer("steps_per_update", 1,
 flags.DEFINE_integer("keep_checkpoint_max", 5,
                      "The maximum number of checkpoints to keep.")
 
+flags.DEFINE_string(
+    name="distribution_strategy", short_name="ds", default="mirrored",
+    help="The Distribution Strategy to use for training. "
+         "Accepted values are 'off', 'one_device', "
+         "'mirrored', 'parameter_server', 'collective', "
+         "case insensitive. 'off' means not to use "
+         "Distribution Strategy; 'default' means to choose "
+         "from `MirroredStrategy` or `OneDeviceStrategy` "
+         "according to the number of GPUs.")
+
+flags.DEFINE_string(
+    name="all_reduce_alg", short_name="ara", default="nccl",
+    help="Defines the algorithm to use for performing all-reduce."
+         "When specified with MirroredStrategy for single "
+         "worker, this controls "
+         "tf.contrib.distribute.AllReduceCrossTowerOps.  When "
+         "specified with MultiWorkerMirroredStrategy, this "
+         "controls "
+         "tf.distribute.experimental.CollectiveCommunication; "
+         "valid options are `ring` and `nccl`.")
+
+
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
                      use_one_hot_embeddings, optimizer, poly_power,
@@ -542,9 +564,9 @@ def main(_):
         allow_soft_placement=True)
 
     distribution_strategy = distribution_utils.get_distribution_strategy(
-        distribution_strategy="mirrored",
+        distribution_strategy=FLAGS.distribution_strategy,
         num_gpus=FLAGS.num_gpus,
-        all_reduce_alg="nccl",
+        all_reduce_alg=FLAGS.all_reduce_alg,
         num_packs=0)
 
     dist_gpu_config = tf.estimator.RunConfig(
