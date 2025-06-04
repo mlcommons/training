@@ -39,6 +39,7 @@ LOG_INTERVAL=${LOG_INTERVAL:-20}
 DATASET=${DATASET:-"openimages-mlperf"}
 DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6-mlperf"}
 TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
+DGXNGPU=${DGXNGPU:-1}
 
 # Handle MLCube parameters
 while [ $# -gt 0 ]; do
@@ -77,7 +78,7 @@ if [ -n "${SLURM_LOCALID-}" ]; then
   fi
 else
   # Mode 2: Single-node Docker; need to launch tasks with torchrun
-  CMD=( "torchrun" "--standalone" "--nnodes=1" "--nproc_per_node=1" )
+  CMD=( "torchrun" "--standalone" "--nnodes=1" "--nproc_per_node=${DGXNGPU}" )
   [ "$MEMBIND" = false ] &&  CMD+=( "--no_membind" )
 fi
 
