@@ -36,6 +36,7 @@ BATCHSIZE=${BATCHSIZE:-2}
 EVALBATCHSIZE=${EVALBATCHSIZE:-${BATCHSIZE}}
 NUMEPOCHS=${NUMEPOCHS:-30}
 LOG_INTERVAL=${LOG_INTERVAL:-20}
+DATASET=${DATASET:-"openimages-mlperf"}
 DATASET_DIR=${DATASET_DIR:-"/datasets/open-images-v6-mlperf"}
 TORCH_HOME=${TORCH_HOME:-"$(pwd)/torch-model-cache"}
 
@@ -85,6 +86,7 @@ PARAMS=(
       --eval-batch-size         "${EVALBATCHSIZE}"
       --epochs                  "${NUMEPOCHS}"
       --print-freq              "${LOG_INTERVAL}"
+      --dataset                 "${DATASET}"
       --data-path               "${DATASET_DIR}"
 )
 
