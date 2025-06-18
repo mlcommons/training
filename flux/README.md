@@ -22,13 +22,14 @@ To use this repository, please ensure your system can run docker containers and 
 
 **Make sure to clone the repository with the torchtitan submodule, using `git clone --recurse-submodules`**
 
-**For all instructions that follow, make sure you are in the `flux/torchtitan` directory.**
-
 Without docker, follow the [instructions](https://github.com/pytorch/torchtitan?tab=readme-ov-file#installation) to install torchtitan and additionally install `requirements-mlperf.txt` and `torchtitan/experiments/flux/requirements.txt`.
 
 ### Container setup
 To build the container:
-```docker build -t <tag> -f Dockerfile .```
+```bash
+cd torchtitan
+docker build -t <tag> -f Dockerfile .
+```
 
 Before entering the container, create a directory for the models to be downloaded, and a directory to be used as huggingface cache (necessary for some operations):
 
