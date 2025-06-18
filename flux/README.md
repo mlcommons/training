@@ -20,14 +20,11 @@ These files plug in to the rest of torchtitan.
 ### Steps to configure machine
 To use this repository, please ensure your system can run docker containers and has appropriate GPU support (e.g. for CUDA GPUs, please make sure the appropriate drivers are set up)
 
-**Make sure to clone the repository with the torchtitan submodule, using `git clone --recurse-submodules`**
-
 Without docker, follow the [instructions](https://github.com/pytorch/torchtitan?tab=readme-ov-file#installation) to install torchtitan and additionally install `requirements-mlperf.txt` and `torchtitan/experiments/flux/requirements.txt`.
 
 ### Container setup
 To build the container:
 ```bash
-cd torchtitan
 docker build -t <tag> -f Dockerfile .
 ```
 
@@ -100,6 +97,7 @@ NGPU=1 torchtitan/experiments/flux/scripts/run_preprocessing.sh --training.datas
 ```
 Additionally, this script will generate encodings representing empty encodings which are used for guidance.
 
+(Optional) Remove the intermediate parquet files to reclaim space: `rm -r /dataset/cc12m_preprocessed /dataset/coco_preprocessed`
 
 To make use of the preprocessed data, switch to the config file `flux_schnell_mlperf_preprocessed.toml`.
 This sets `--training.dataset=cc12m-preprocessed` and `--training.dataset_path=/dataset/cc12m_preprocessed/*`
