@@ -66,7 +66,7 @@ python torchtitan/experiments/flux/scripts/clean_cc12m.py --input_dir /dataset/c
 The filter file is included in this repository. It was generated using `torchtitan/experiments/flux/scripts/find_problematic_indices.py`.
 
 #### COCO-2014 subset
-The number of samples is taken from the previous stable diffusion benchmark, but rounded slightly to be divisible by large powers of 2.
+The number of samples is taken from the previous stable diffusion benchmark, but rounded slightly to be divisible by large powers of 2 (29,696).
 
 1. download coco-2014 validation dataset: `DOWNLOAD_PATH=/dataset/coco2014_raw bash torchtitan/experiments/flux/scripts/coco-2014-validation-download.sh`
 2. Create the validation subset, resize to 256x256 and convert to webdataset: `python torchtitan/experiments/flux/scripts/coco_to_webdataset.py --input-images-dir /dataset/coco2014_raw/val2014 --input-captions-file /dataset/coco2014_raw/annotations/captions_val2014.json --output-dir /dataset/coco --num-samples 29696 --width 256 --height 256 --samples-per-shard 1000 --output-tsv-file /dataset/val2014_30k.tsv`
@@ -127,6 +127,10 @@ docker run -it --rm \
 ```
 
 #### Basic run
+Environment variables are passed to the run script (launch script in the case of slurm).
+Variables passed after are passed to torchtitan. These variables override those defined in the config file.
+For a complete list of options, run the train script with `--help`.
+
 `CONFIG=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml NGPU=<number of GPUs> bash torchtitan/experiments/flux/run_train.sh --training.batch_size=1`
 
 #### Longer run
@@ -135,7 +139,6 @@ docker run -it --rm \
 Make sure to edit the headers for the run.sub script to match the requirements of your cluster (in particular the account field).
 
 ```bash
-export DATAROOT=<path_to_data>;
 export DATAROOT=<path_to_data>
 export MODELROOT=<path_to_saved_encoders>
 export LOGDIR=<output directory>
@@ -150,7 +153,7 @@ sbatch -N <number of nodes> -t <time> run.sub
 Any additional parameters may be passed after the run.sub, and will be forwarded to the training script, overriding those in the config.
 e.g. if the datasets were saved with different names from those in the instructions above, you may explicitly set the dataset paths with `--training.dataset_path=/dataset/...` and `--eval.dataset_path=`.
 
-By default, checkpointing is disabled. You may enable it by setting the env var ENABLE_CHECKPOINTING=True. You can set the checkpointing interval
+By default, checkpointing is disabled. You may enable it by setting the env var ENABLE_CHECKPOINTING=True. You can set the checkpointing interval.
 with `--checkpoint.interval=<steps>`.
 
 Additionally, by default, the model will run with HSDP (sharding over gpus in the same node, and using DDP across different nodes).
