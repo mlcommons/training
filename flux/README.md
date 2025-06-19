@@ -25,27 +25,26 @@ Without docker, follow the [instructions](https://github.com/pytorch/torchtitan?
 ### Container setup
 To build the container:
 ```bash
+cd torchtitan
 docker build -t <tag> -f Dockerfile .
 ```
 
 Before entering the container, create a directory for the models to be downloaded, and a directory to be used as huggingface cache (necessary for some operations):
 
 ```bash
-mkdir models
-mkdir hf_cache
+mkdir <models directory>
+mkdir <hf_cache_directory>
 ```
 
 ```
 docker run -it --rm \
 --gpus all --ulimit memlock=-1 --ulimit stack=67108864 \
 --network=host --ipc=host \
--v ~/.ssh:/root/.ssh \
--v hf_cache:/root/.cache \
+-v <hf_cache_directory>:/root/.cache \
 -v <path for dataset storage>:/dataset \
--v <path for model storage>:/models \
+-v <models directory>:/models \
 <tag> bash
 ```
-Note: it's recommended to map your .ssh folder to inside the container, so that it's easier for the code to set up remote cluster access.
 
 ### Steps to download and verify data
 For all steps below, they are assumed to run inside the container
@@ -70,9 +69,7 @@ The filter file is included in this repository. It was generated using `torchtit
 The number of samples is taken from the previous stable diffusion benchmark, but rounded slightly to be divisible by large powers of 2.
 
 1. download coco-2014 validation dataset: `DOWNLOAD_PATH=/dataset/coco2014_raw bash torchtitan/experiments/flux/scripts/coco-2014-validation-download.sh`
-2. create the validation subset, and resize the images to 256x256: `bash torchtitan/experiments/flux/scripts/coco-2014-validation-split-resize.sh --input-images-path /dataset/coco2014_raw/val2014 --input-coco-captions /dataset/coco2014_raw/annotations/captions_val2014.json --output-images-path /dataset/coco2014 --output-tsv-file /dataset/val2014_30k.tsv --num-samples 29696`
-3. convert to webdataset: `python torchtitan/experiments/flux/scripts/coco_to_webdataset.py --tsv_file /dataset/val2014_30k.tsv --image_dir /dataset/coco2014 --output_dir /dataset/coco`
-4. (optional) remove intermediate datasets to reclaim space: `rm -r /dataset/coco2014_raw /dataset/coco2014`
+2. Create the validation subset, resize to 256x256 and convert to webdataset: `python torchtitan/experiments/flux/scripts/coco_to_webdataset.py --input-images-dir /dataset/coco2014_raw/val2014 --input-captions-file /dataset/coco2014_raw/annotations/captions_val2014.json --output-dir /dataset/coco --num-samples 29696 --width 256 --height 256 --samples-per-shard 1000 --output-tsv-file /dataset/val2014_30k.tsv`
 
 #### Download the encoders
 Download the autoencoder, t5 and clip models from HuggingFace. For the autoencoder, you must acquire your own access token from hf
@@ -83,33 +80,39 @@ python torchtitan/experiments/flux/scripts/download_encoders.py --local_dir /mod
 ```
 #### Preprocessing
 Since the encoders are frozen during training, it is possible to do additional preprocessing to avoid having to repeatedly encode data on the fly.
+We reccomend doing this over multiple GPUs. Depending on the GPU memory, you may need to adjust the batch size.
+**Due to the dataset size, using a different number of GPUs or batch size may result in hangs. Please make sure the number of samples is divisible by batch_size x NGPUs**
 To do this, run:
 
 ```bash
-NGPU=8 torchtitan/experiments/flux/scripts/run_preprocessing.sh --training.dataset_path=/dataset/cc12m_disk --training.dataset=cc12m-disk --eval.dataset= --training.batch_size=256 --preprocessing.output_dataset_path=/dataset/cc12m_preprocessed
+NGPU=8 torchtitan/experiments/flux/scripts/run_preprocessing.sh --training.dataset_path=/dataset/cc12m_disk --training.dataset=cc12m_disk --eval.dataset= --training.batch_size=256 --preprocessing.output_dataset_path=/dataset/cc12m_preprocessed
 ```
 
 The above may take a few hours and will require approximately 2.5TB of storage.
 
 For the validation dataset:
 ```bash
-NGPU=1 torchtitan/experiments/flux/scripts/run_preprocessing.sh --training.dataset=coco --training.dataset_path=/dataset/coco --eval.dataset= --training.batch_size=128 --preprocessing.output_dataset_path=/dataset/coco_preprocessed
+NGPU=4 torchtitan/experiments/flux/scripts/run_preprocessing.sh --training.dataset=coco --training.dataset_path=/dataset/coco --eval.dataset= --training.batch_size=128 --preprocessing.output_dataset_path=/dataset/coco_preprocessed
 ```
 Additionally, this script will generate encodings representing empty encodings which are used for guidance.
 
 (Optional) Remove the intermediate parquet files to reclaim space: `rm -r /dataset/cc12m_preprocessed /dataset/coco_preprocessed`
 
 To make use of the preprocessed data, switch to the config file `flux_schnell_mlperf_preprocessed.toml`.
-This sets `--training.dataset=cc12m-preprocessed` and `--training.dataset_path=/dataset/cc12m_preprocessed/*`
-for the training data, and `--eval.dataset=coco-preprocessed`, `--eval.dataset_path=/dataset/coco_preprocessed/*` for the eval data,
+This sets `--training.dataset=cc12m_preprocessed` and `--training.dataset_path=/dataset/cc12m_preprocessed/*`
+for the training data, and `--eval.dataset=coco_preprocessed`, `--eval.dataset_path=/dataset/coco_preprocessed/*` for the eval data,
 while also avoiding loading encoders with `--encoder.autoencoder_path= --encoder.t5_encoder= --encoder.clip_encoder=`.
 
 ### Steps to run and time
 All steps below are assumed to be run inside the container. 
 
-The first time this is executed, checkpoints for the text encoders will automatically be downloaded from HF.
-To prevent this from happening every time, we encourage users to create a directory to be used as the HF cache and mount
-it to the container, as below.
+The training script uses config files to pass parameters. You can find these in `torchtitan/experiments/flux/train_configs`.
+Additionally, parameters can be set or overridden in the cli.
+For example, passing `--optimizer.lr=1e-3` will set the learning rate to `1e-3`.
+An exhaustive list of all these parameters can be seen by running the training by running `CONFIG=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml NGPU=1 bash torchtitan/experiments/flux/run_train.sh --help` with the desired config file.
+
+Finally, the launch scripts rely on environment variables. These are explained below.
+
 
 ```
 docker run -it --rm \
@@ -132,17 +135,29 @@ docker run -it --rm \
 Make sure to edit the headers for the run.sub script to match the requirements of your cluster (in particular the account field).
 
 ```bash
-export DATAROOT=<path_to_data>; export MODELROOT=<path_to_saved_encoders>; export LOGDIR=<output directory>; export CONFIG_FILE=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml; export CONT=<tag>; export DATAROOT=<path for dataset storage>; sbatch -N <number of nodes> -t <time> run.sub <additional parameters here. e.g. --training.dataset_path=/dataset/...>
+export DATAROOT=<path_to_data>;
+export DATAROOT=<path_to_data>
+export MODELROOT=<path_to_saved_encoders>
+export LOGDIR=<output directory>
+export CONFIG_FILE=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml
+export CONT=<tag>;
+sbatch -N <number of nodes> -t <time> run.sub
 ```
 
 `DATAROOT` should be set to the path where data resides. e.g. `${DATAROOT}/cc12m_disk` should point to the CC12M training dataset. This will be mounted under `/dataset/`.
 `MODELROOT` should be set to the point where the previously downloaded encoders reside.
 
-By default, checkpointing is disabled. You may enable it with ENABLE_CHECKPOINTING=True and set the checkpointing interval
+Any additional parameters may be passed after the run.sub, and will be forwarded to the training script, overriding those in the config.
+e.g. if the datasets were saved with different names from those in the instructions above, you may explicitly set the dataset paths with `--training.dataset_path=/dataset/...` and `--eval.dataset_path=`.
+
+By default, checkpointing is disabled. You may enable it by setting the env var ENABLE_CHECKPOINTING=True. You can set the checkpointing interval
 with `--checkpoint.interval=<steps>`.
 
 Additionally, by default, the model will run with HSDP (sharding over gpus in the same node, and using DDP across different nodes).
-You may modify this with `--parallelism.data_parallel_replicate_degree` and `--parallelism.data_parallel_shard_degree`.
+You may modify this by passing `--parallelism.data_parallel_replicate_degree` and `--parallelism.data_parallel_shard_degree`.
+
+Finally, torch.compile is disabled by default. To enable it, pass `--training.compile`.
+
 Given the substantial variability among Slurm clusters, users are encouraged to review and adapt these scripts to fit their specific cluster specifications.
 
 In any case, the dataset and checkpoints are expected to be available to all the nodes.
@@ -220,7 +235,7 @@ The MSE calculated over latents is used for the loss
 ### Optimizer
 AdamW
 ### Precision
-Without FSDP enabled, only FP32 is supported. With FSDP enabled, the default becomes BF16. This can be changed using `--training.mixed_precision_param=float32`.
+The model runs with BF16 by default. This can be changed by setting `--training.mixed_precision_param=float32`.
 ### Weight initialization
 The weight initialization strategy is taken from torchtitan. It consists of a mixture of constant, Xavier and Normal initialization.
 For precise details, we encourage the consultation of the code at `torchtitan/experiments/flux/model/model.py:init_weights`.
