@@ -5,6 +5,7 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import math
 import os
 import absl
 import modeling
@@ -164,8 +165,11 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     initialized_variable_names = {}
     scaffold_fn = None
     if init_checkpoint:
-      (assignment_map, initialized_variable_names
-      ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+      # (assignment_map, initialized_variable_names
+      # ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+      assignment_map = {
+          "bert/": "bert/",
+          "cls/": "cls/",}
 
       tvar_index = {var.name.replace(":0", ""): var for var in tvars}
       assignment_map = collections.OrderedDict([
@@ -392,24 +396,33 @@ def input_fn_builder(input_files,
     # For eval, we want no shuffling and parallel reading doesn't matter.
     if is_training:
       d = tf.data.Dataset.from_tensor_slices(tf.constant(input_files))
+      input_length = len(input_files)
       if input_context:
+        input_length = int(
+            math.ceil(input_length / input_context.num_input_pipelines))
         tf.logging.info(
             'Sharding the dataset: input_pipeline_id=%d num_input_pipelines=%d' % (
             input_context.input_pipeline_id, input_context.num_input_pipelines))
         d = d.shard(input_context.num_input_pipelines,
                     input_context.input_pipeline_id)
-      d = d.shuffle(buffer_size=len(input_files))
+      d = d.shuffle(buffer_size=input_length)
 
       # `cycle_length` is the number of parallel files that get read.
-      cycle_length = min(num_cpu_threads, len(input_files))
+      # cycle_length = min(num_cpu_threads, len(input_files))
+      cycle_length = 10
 
       # `sloppy` mode means that the interleaving is not exact. This adds
       # even more randomness to the training pipeline.
-      d = d.apply(
-          tf.data.experimental.parallel_interleave(
-              tf.data.TFRecordDataset,
-              sloppy=is_training,
-              cycle_length=cycle_length))
+      # d = d.apply(
+      #     tf.data.experimental.parallel_interleave(
+      #         tf.data.TFRecordDataset,
+      #         sloppy=is_training,
+      #         cycle_length=cycle_length))
+      d = d.interleave(
+          tf.data.TFRecordDataset,
+          deterministic=False,
+          cycle_length=cycle_length,
+          num_parallel_calls=tf.data.AUTOTUNE)
       d = d.shuffle(buffer_size=1000)
       d = d.repeat()
     else:
