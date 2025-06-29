@@ -39,8 +39,6 @@ bash run_llama31.sh
 
 We use the c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4). 
 
-We use the Mixtral 8x22B tokenizer from [HuggingFace/MistralAI](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1). 
-
 ### Preprocessed data download
 
 The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using RClone as follows: 
@@ -59,33 +57,73 @@ rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42ead
 
 You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints: 
 
-#### Dataset
+### Raw data downloading
 
-```
-# Replace this path with your desired path on the machine
-export PREPROCESSED_PATH="./"
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/mixtral_8x22b_preprocessed $PREPROCESSED_PATH -P
-```
+We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this benchmark. The original zipped **`json.gz`** files can be downloaded by following AllenAI C4's instruction, and you can download our zipped customized validation dataset from the MLCommons S3 bucket by running the following command: 
 
+
+```bash
+export ORIGINAL_C4_PATH=""
+
+# download the full C4 files, including all raw train and validations
+rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/en_json/3.0.1 $ORIGINAL_C4_PATH -P
+```
 After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`: 
 - Training partitions: `c4-train.en_<number>_text_document`
 - Validation partitions: `c4-validation-91205-samples.en_text_document`
 
-#### Tokenizer
+### Run data preprocessing
+
+After downloading, run the following command to process them to zip them into `.gz` format before running the data preprocessing. 
+
+```
+bash parallel_compress_json_to_gz.sh
+```
+
+
+Run the following commands to merge all 1024 training files into 8 `json.gz` files, all 8 validation files into a single `json.gz` file, as well as generate our customized validation dataset. Each of the `json.gz` files will subsequently be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`) by our preprocess.sh script. 
+
+```bash
+export C4_PATH=""
+export MERGED_C4_PATH=""
+# more information about this knob can be found in consolidate_data.sh
+export N_VALIDATION_SAMPLES=91205
+
+bash consolidate_data.sh
+```
+
+After the data consolidation is done, we can run this [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
+
+```bash
+# fill in the built container path here
+export CONT_IMAGE_URL=""
+# pass in the folder path that contains the Mixtral tokenizer here
+# please refer to the tokenizer section above for more details
+export TOKENIZER_PATH=""
+# pass in the merged file path here
+export MERGED_C4_PATH=""
+# this path is used for storing the preprocessed .bin and .idx files
+export PREPROCESSED_PATH=""
+
+# Extra Slurm-related arguments can be provided here
+sbatch preprocess.sh
+```
+
+### Tokenizer
 
 We are using the Llama 3.1 8B tokenizer. You can run `utils/download_hf_llama3.sh` to download it. 
 
-### Training and test data separation
+#### Training and test data separation
 
 We use the default split from the C4 dataset. This means that we use `c4-train.<x>-of-01024.json.gz` files (where `768 <= x <= 1023`) for training, and we use our customized `c4-validation-91205-samples.en.json.gz`, which contains the first 91205 samples from the unshuffled C4 validation dataset, for evaluation. 
 
 Notice here that we are using the first 5760 sequences (47,185,920 tokens) from the validation dataset to perform the validation. According to our experiments, the first 91205 samples from the unshuffled C4 dataset yields 47,186,855 tokens, which is the smallest amount of samples needed to yield 47,185,920 tokens. Thus, we have chosen the first 91205 samples as our validation dataset. 
 
-### Training data order
+#### Training data order
 
 We randomly shuffle the **last 256 of 1024 shards** for the benchmarking area.
 
-### Test data order
+#### Test data order
 
 We use the first 5,760 sequences (91,205 untokenized samples) in the validation dataset for validation. We **do not shuffle** the validation dataset. 
 
@@ -146,65 +184,11 @@ We evaluate using **5,760** sequences from our customized validation dataset.
 
 # 6. Other
 
-### Data preprocessing
-
-Here are the instructions to prepare the preprocessed dataset from scratch. Data preprocessing is already done and the final dataset can be accessed by following instructions in the [Preprocessed data download](#preprocessed-data-download) section. 
-
-#### Raw data downloading
-
-We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this benchmark. The original zipped **`json.gz`** files can be downloaded by following AllenAI C4's instruction, and you can download our zipped customized validation dataset from the MLCommons S3 bucket by running the following command: 
-
-```bash
-export ORIGINAL_C4_PATH=""
-
-# download the customized zipped validation dataset
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/c4-validation-91205-samples.en.json.gz $ORIGINAL_C4_PATH -P
-```
-
-Alternatively, we have also hosted the **unzipped C4 `json`** files on MLCommons S3 bucket. You can download them using the following commands: 
-
-```bash
-export ORIGINAL_C4_PATH=""
-
-# download the full C4 files, including all raw train and validations
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/en_json/3.0.1 $ORIGINAL_C4_PATH -P
-```
-
-Note that for unzipped JSON files, it is recommended to zip them into `.gz` format before running the data preprocessing. 
-
 #### Prepare tokenizer
 
 We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
 
-#### Run data preprocessing
 
-Run the following commands to merge all 1024 training files into 8 `json.gz` files, all 8 validation files into a single `json.gz` file, as well as generate our customized validation dataset. Each of the `json.gz` files will subsequently be preprocessed into a pair of megatron dataset files (`.bin` and `.idx`) by our preprocess.sh script. 
-
-```bash
-export C4_PATH=""
-export MERGED_C4_PATH=""
-# more information about this knob can be found in consolidate_data.sh
-export N_VALIDATION_SAMPLES=91205
-
-bash consolidate_data.sh
-```
-
-After the data consolidation is done, we can run this [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
-
-```bash
-# fill in the built container path here
-export CONT_IMAGE_URL=""
-# pass in the folder path that contains the Mixtral tokenizer here
-# please refer to the tokenizer section above for more details
-export TOKENIZER_PATH=""
-# pass in the merged file path here
-export MERGED_C4_PATH=""
-# this path is used for storing the preprocessed .bin and .idx files
-export PREPROCESSED_PATH=""
-
-# Extra Slurm-related arguments can be provided here
-sbatch preprocess.sh
-```
 
 ### HuggingFace Checkpoint Preprocessing
 
