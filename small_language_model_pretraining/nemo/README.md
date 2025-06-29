@@ -97,7 +97,7 @@ After the data consolidation is done, we can run this [script](./utils/preproces
 ```bash
 # fill in the built container path here
 export CONT_IMAGE_URL=""
-# pass in the folder path that contains the Mixtral tokenizer here
+# pass in the folder path that contains the Llama tokenizer here
 # please refer to the tokenizer section above for more details
 export TOKENIZER_PATH=""
 # pass in the merged file path here
@@ -137,16 +137,16 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 | Config | Value |
 | :-- | :-- | 
 | Embedding | RoPE + parameter adjustments |
-| # Layers | 126 | 
+| # Layers | 32 | 
 | Attention Type | GQA |
-| # Attn Heads | 128 | 
+| # Attn Heads | 32 | 
 | Key/Value Heads | 8 | 
-| Model Dimension | 16,384 |
-| Hidden Dimension | 53248 |
+| Model Dimension | 4096 |
+| FFN Dimension | 14336 |
 | Activation | SwiGLU | 
 | Normalization | RMSNorm |  
-| Tokenizer | Mixtral 8x22B tokenizer |
-| Vocab size | 32,000 |  
+| Tokenizer | Llama tokenizer |
+| Vocab size | 128,000 |  
 | Context Length | 8192 |
 
 
@@ -171,7 +171,7 @@ Validation loss
 
 ### Quality target
 
-Validation log perplexity = 5.6
+Validation log perplexity = yet to determine 
 
 ### Evaluation frequency
 
@@ -183,10 +183,6 @@ We evaluate using **5,760** sequences from our customized validation dataset.
 
 
 # 6. Other
-
-#### Prepare tokenizer
-
-We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
 
 
 
