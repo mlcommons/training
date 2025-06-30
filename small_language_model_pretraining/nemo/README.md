@@ -130,7 +130,7 @@ We use the first 5,760 sequences (91,205 untokenized samples) in the validation 
 # 4. Model
 ### Publication/Attribution
 
-The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.21783). 
+The model largely follows the Llama 3.1 8B [paper](https://arxiv.org/abs/2407.21783). 
 
 ### Model details
 
@@ -192,7 +192,7 @@ Here are the instructions to prepare the NeMo-formatted checkpoint from scratch.
 
 #### HuggingFace checkpoint downloading
 
-We use the HuggingFace Llama 3.1 405B checkpoint as the initial checkpoint in this benchmark. Original HuggingFace checkpoint can be downloaded [here](https://huggingface.co/meta-llama/Llama-3.1-405B). **Notice that we are downloading the BF16 not the FP8 version of the model**. 
+We use the HuggingFace Llama 3.1 8B BF16 checkpoint as the initial checkpoint in this benchmark. **Notice that we are downloading the BF16 not the FP8 version of the model**. 
 
 #### Run model conversion
 
