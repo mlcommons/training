@@ -89,8 +89,14 @@ export MERGED_C4_PATH=""
 # more information about this knob can be found in consolidate_data.sh
 export N_VALIDATION_SAMPLES=91205
 
-bash consolidate_data.sh
+bash utils/consolidate_data.sh
 ```
+
+
+### Tokenizer
+
+We are using the Llama 3.1 8B tokenizer. You can run `utils/download_hf_llama3.sh` to download it. 
+
 
 After the data consolidation is done, we can run this [script](./utils/preprocess.sh) to perform preprocessing. To run the preprocessing script, we need to use the following commands: 
 
@@ -109,9 +115,8 @@ export PREPROCESSED_PATH=""
 sbatch preprocess.sh
 ```
 
-### Tokenizer
+Warning! If you receive an error message of file not found, look into where `preprocess_data_for_megatron.py` is located in your path. 
 
-We are using the Llama 3.1 8B tokenizer. You can run `utils/download_hf_llama3.sh` to download it. 
 
 #### Training and test data separation
 

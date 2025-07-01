@@ -647,18 +647,17 @@ if __name__ == "__main__":
 
 
                     
-    
-                        pretrain.log.extra_loggers = [
-                            run.Config(
-                                MetricsLogger,
-                                init_global_step=start_step,
-                                global_batch_size=args.gbs,
-                                seq_length=8192,
-                                target_log_ppl=args.target_log_ppl,
-                                train_step_time_atol=args.step_time_atol,
-                            ),
-                        ]
 
+                    pretrain.log.extra_loggers = [
+                        run.Config(
+                            MetricsLogger,
+                            init_global_step=start_step,
+                            global_batch_size=args.gbs,
+                            seq_length=8192,
+                            target_log_ppl=args.target_log_ppl,
+                            train_step_time_atol=args.step_time_atol,
+                        ),
+                    ]
                     if args.save_ckpt:
                         pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
                         pretrain.log.ckpt.save_on_train_epoch_end = False
