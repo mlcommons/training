@@ -77,7 +77,7 @@ After the download is complete, you should see files with the following naming c
 After downloading, run the following command to process them to zip them into `.gz` format before running the data preprocessing. 
 
 ```
-bash parallel_compress_json_to_gz.sh
+bash utils/parallel_compress_json_to_gz.sh
 ```
 
 
