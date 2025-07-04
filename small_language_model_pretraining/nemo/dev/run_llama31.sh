@@ -24,6 +24,7 @@ set -e
 : "${HOST:?HOST not set}"
 : "${ACCOUNT:?ACCOUNT not set}"
 : "${PARTITION:?PARTITION not set}"
+: "${REMOTE:=0}"
 
 #     Job settings
 : "${JOB_DIR:?JOB_DIR not set}"
@@ -114,6 +115,14 @@ if [ ! $TAG = "" ]; then
     CMD_SUFFIX="${CMD_SUFFIX} --tag ${TAG}"
 fi
 
+if [ $REMOTE -gt 0 ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --run_slurm"
+fi
+
+if [ $TENSOR_PARALLEL_SIZE -gt 0 ]; then
+    CMD_SUFFIX="${CMD_SUFFIX} --tensor_parallel_size ${TENSOR_PARALLEL_SIZE}"
+fi
+
 # Allows MLLogger objects to be constructed locally
 if [ ! -d /mlperf-outputs ]; then mkdir /mlperf-outputs; fi
 
@@ -135,7 +144,7 @@ python3 pretrain_llama31.py \
 --num_pars $NPAR \
 --initial_ckpt_path $MODEL_CKPT \
 --continual_ckpt_path $CONTINUAL_CKPT \
---tokenizer_path $TOKENIZER_PATH \
+--tokenizer_path "/tokenizer" \
 --target_log_ppl $TARGET \
 --step_time_atol $STEP_TIME_ATOL \
 --ckpt_start_step $START_STEPS \
