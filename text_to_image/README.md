@@ -50,7 +50,7 @@ docker run -it --rm \
 For all steps below, they are assumed to run inside the container
 
 #### CC12M dataset
-Download the dataset with
+Download the dataset with the following command. This requires ~1TB of storage.
 ```bash
 HF_TRANSFER=1 huggingface-cli download --repo-type dataset pixparse/cc12m-wds --local-dir /dataset/cc12m-wds
 ```
@@ -273,8 +273,8 @@ RETURN validation_loss
 ```
 
 ### Quality target
-0.591
+0.586
 ### Evaluation frequency
-Every 614400 training samples.
+Every 262,144 training samples.
 ### Evaluation thoroughness
 29,696 samples
