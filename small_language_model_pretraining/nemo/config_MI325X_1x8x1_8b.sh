@@ -101,7 +101,7 @@ export NPAR=1
 # Experiment manager: provides seeds to the launched experiments, use space as delimiter, such as "1234 1235 1236"
 #     The training script will discard all excessive seeds, and generate seeds if given seeds < NEXP. 
 #     To preserve randomness, we recommend not to set this value so that each time seeds can be randomly generated. 
-export SEEDS=7963
+# export SEEDS=7963
 # export SEEDS=1234
 
 export DGXSYSTEM=$(basename $(readlink -f ${BASH_SOURCE[0]}) | sed 's/^config_//' | sed 's/\.sh$//' )
