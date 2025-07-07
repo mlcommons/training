@@ -17,7 +17,7 @@ These files plug in to the rest of torchtitan.
 ```
 
 # 2. Directions
-### Steps to configure machine
+## Steps to configure machine
 To use this repository, please ensure your system can run docker containers and has appropriate GPU support (e.g. for CUDA GPUs, please make sure the appropriate drivers are set up)
 
 Without docker, follow the [instructions](https://github.com/pytorch/torchtitan?tab=readme-ov-file#installation) to install torchtitan and additionally install `requirements-mlperf.txt` and `torchtitan/experiments/flux/requirements.txt`.
@@ -36,7 +36,7 @@ mkdir <models directory>
 mkdir <hf_cache_directory>
 ```
 
-```
+```bash
 docker run -it --rm \
 --gpus all --ulimit memlock=-1 --ulimit stack=67108864 \
 --network=host --ipc=host \
@@ -46,10 +46,21 @@ docker run -it --rm \
 <tag> bash
 ```
 
-### Steps to download and verify data
+## Steps to download and verify data
 For all steps below, they are assumed to run inside the container
 
-#### CC12M dataset
+### CC12M dataset
+To download the cleaned and subsetted dataset, run the following:
+
+**Note:** We reccomend training directly on preprocessed embeddings. To do that, skip [here](#preprocessing).
+
+```bash
+cd /dataset
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/flux-1-cc12m-disk.uri
+```
+
+#### Optionally, to generate the data from scratch
+
 Download the dataset with the following command. This requires ~1TB of storage.
 ```bash
 HF_TRANSFER=1 huggingface-cli download --repo-type dataset pixparse/cc12m-wds --local-dir /dataset/cc12m-wds
@@ -65,21 +76,51 @@ python torchtitan/experiments/flux/scripts/clean_cc12m.py --input_dir /dataset/c
 
 The filter file is included in this repository. It was generated using `torchtitan/experiments/flux/scripts/find_problematic_indices.py`.
 
-#### COCO-2014 subset
+### COCO-2014 subset
+
+To download the cleaned data, run the following:
+
+**Note:** We reccomend training directly on preprocessed embeddings. To do that, skip [here](#preprocessing).
+
+```bash
+cd /dataset
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/flux-1-coco.uri
+wget https://training.mlcommons-storage.org/flux_1/datasets/val2014_30k.tsv
+```
+
+#### Optionally, to generate the data from scratch
+
 The number of samples is taken from the previous stable diffusion benchmark, but rounded slightly to be divisible by large powers of 2 (29,696).
 
 1. download coco-2014 validation dataset: `DOWNLOAD_PATH=/dataset/coco2014_raw bash torchtitan/experiments/flux/scripts/coco-2014-validation-download.sh`
 2. Create the validation subset, resize to 256x256 and convert to webdataset: `python torchtitan/experiments/flux/scripts/coco_to_webdataset.py --input-images-dir /dataset/coco2014_raw/val2014 --input-captions-file /dataset/coco2014_raw/annotations/captions_val2014.json --output-dir /dataset/coco --num-samples 29696 --width 256 --height 256 --samples-per-shard 1000 --output-tsv-file /dataset/val2014_30k.tsv`
 
-#### Download the encoders
+##### Download the encoders
 Download the autoencoder, t5 and clip models from HuggingFace. For the autoencoder, you must acquire your own access token from hf
 with access rights to https://huggingface.co/black-forest-labs/FLUX.1-schnell.
+
+**Note:** If training from preprocessed embeddings, this step is not required.
 
 ```bash
 python torchtitan/experiments/flux/scripts/download_encoders.py --local_dir /models --hf_token <your_access_token>
 ```
-#### Preprocessing
+
+### Preprocessing
 Since the encoders are frozen during training, it is possible to do additional preprocessing to avoid having to repeatedly encode data on the fly.
+
+To download this data, run the following:
+
+```bash
+cd /dataset
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/flux-1-cc12m-preprocessed.uri
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/flux-1-coco-preprocessed.uri
+```
+
+The above requires ~2.5TB of storage.
+
+
+#### Optionally, to run the preprocessing yourself
+
 We reccomend doing this over multiple GPUs. Depending on the GPU memory, you may need to adjust the batch size.
 **Due to the dataset size, using a different number of GPUs or batch size may result in hangs. Please make sure the number of samples is divisible by batch_size x NGPUs**
 To do this, run:
@@ -114,7 +155,7 @@ An exhaustive list of all these parameters can be seen by running the training b
 Finally, the launch scripts rely on environment variables. These are explained below.
 
 
-```
+```bash
 docker run -it --rm \
 --gpus all --ipc=host --ulimit memlock=-1 \
 --ulimit stack=67108864 \
