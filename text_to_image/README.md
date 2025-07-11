@@ -172,7 +172,7 @@ Environment variables are passed to the run script (launch script in the case of
 Variables passed after are passed to torchtitan. These variables override those defined in the config file.
 For a complete list of options, run the train script with `--help`.
 
-`CONFIG=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml NGPU=<number of GPUs> bash torchtitan/experiments/flux/run_train.sh --training.batch_size=1`
+`CONFIG=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml NGPU=<number of GPUs> bash torchtitan/experiments/flux/run_train.sh --training.batch_size=1 --training.seed=1234`
 
 #### Longer run
 **For longer runs, we expect a system with a slurm-based cluster.**
@@ -184,12 +184,13 @@ export DATAROOT=<path_to_data>
 export MODELROOT=<path_to_saved_encoders>
 export LOGDIR=<output directory>
 export CONFIG_FILE=torchtitan/experiments/flux/train_configs/flux_schnell_mlperf.toml
-export CONT=<tag>;
+export CONT=<tag>
+export SEED=<seed>
 sbatch -N <number of nodes> -t <time> run.sub
 ```
 
 `DATAROOT` should be set to the path where data resides. e.g. `${DATAROOT}/cc12m_disk` should point to the CC12M training dataset. This will be mounted under `/dataset/`.
-`MODELROOT` should be set to the point where the previously downloaded encoders reside.
+`MODELROOT` should be set to the point where the previously downloaded encoders reside. If `SEED` is not set, a random one will be assigned.
 
 Any additional parameters may be passed after the run.sub, and will be forwarded to the training script, overriding those in the config.
 e.g. if the datasets were saved with different names from those in the instructions above, you may explicitly set the dataset paths with `--training.dataset_path=/dataset/...` and `--eval.dataset_path=`.
