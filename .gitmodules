@@ -2,3 +2,7 @@
 	path = retired_benchmarks/dlrm/dlrm
 	url = https://github.com/facebookresearch/dlrm.git
         branch = mlperf
+[submodule "flux/torchtitan"]
+	path = text_to_image/torchtitan
+	url = https://github.com/pytorch/torchtitan.git
+	branch = mlperf-training-flux.1
