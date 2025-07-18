@@ -372,7 +372,7 @@ if __name__ == "__main__":
     tp = pretrain.trainer.strategy.tensor_model_parallel_size
     pp = pretrain.trainer.strategy.pipeline_model_parallel_size
     cp = pretrain.trainer.strategy.context_parallel_size
-    dp = (pretrain.trainer.num_nodes * pretrain.trainer.devices) // (tp * pp * cp)
+    dp = ((pretrain.trainer.num_nodes * pretrain.trainer.devices) // (tp * pp * cp)) or 1
     mini_batch_size = (args.gbs // dp)
     grad_accumulation_steps = mini_batch_size // args.mbs
 
