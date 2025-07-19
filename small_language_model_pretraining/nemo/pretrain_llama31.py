@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import wandb
 import argparse
 from typing import Optional
 import math
@@ -27,6 +28,7 @@ from nemo.collections.llm.gpt.data import build_pretraining_datamodule
 from callbacks import PreemptiveStop, MLPerfCallback, MetricsLogger
 from lightning.pytorch.loggers import  WandbLogger
 
+log_lr = 0
 def local_executor(
     custom_env_vars: Optional[dict[str, str]] = None,
     devices: int = 8,
@@ -161,6 +163,7 @@ def get_pretrain(
     ngpus_per_node: int,
     max_steps: int, 
     data_module: run.Config,
+    max_lr: float=1e-4, 
     eval_every: Optional[int]=None,
     eval_batches: Optional[int]=None,
 ) -> run.Partial:
@@ -266,19 +269,40 @@ def get_pretrain(
             )
         )
 
-    base_lr = 8e-5
+    # max_tokens = 2000 * 8192 * 128 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+    
+    # pretrain.trainer.max_steps = max_steps
+
+    # pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
     # warmup_tokens = 8000 * base_gbs * 8192
+    # warmup_steps = warmup_tokens / 
 
     # max_lr = (gbs / base_gbs) * base_lr
     # max_lr = round(max_lr, 8) # rounds to the nearest 8th digit.
-    max_lr = base_lr
+    # max_lr = base_lr
+    log_lr = max_lr
 
+
+    # 50k samples
+    max_steps = math.ceil(57600 * 8192 / 8192 / gbs)
+    warmup_steps = math.ceil(57600 * 8192 / 8192 / gbs * 0.1)
+    # # 200k samples
+    # max_steps = math.ceil(256000 * 8192 / 8192 / gbs)
+    # warmup_steps = math.ceil(256000 * 8192 / 8192 / gbs * 0.1)
+    # # 450k samples
+    # max_steps = math.ceil(450000 * 8192 / 8192 / gbs)
+    # warmup_steps = math.ceil(450000 * 8192 / 8192 / gbs * 0.1)
+
+    # max_tokens = 1_200_000 * 8192 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
+    # max_steps = max_tokens / 8192 / gbs 
+    pretrain.trainer.max_steps = max_steps
+    pretrain.trainer.log_every_n_steps = 1
     # Code tracing shows that this is AdamW
     pretrain.optim = distributed_fused_adam_with_cosine_annealing(
         max_lr = max_lr,
         # warmup_steps = math.ceil(warmup_tokens / 8192 / gbs),
-        warmup_steps = math.ceil (max_steps * 0.1), 
-        min_lr = 8e-7
+        warmup_steps = math.ceil (warmup_steps), 
+        min_lr = 0.1*max_lr
     )
 
     precision = run.Config(
@@ -298,9 +322,6 @@ def get_pretrain(
     pretrain.trainer.plugins = precision
 
     # sets up everything else
-    # max_tokens = max_steps * 8192 * ngpus_per_node * nnodes # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
-    # pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
-    pretrain.trainer.max_steps = max_steps
 
     pretrain.data = data_module
     pretrain.trainer.val_check_interval = eval_every
@@ -340,7 +361,7 @@ def get_data(
     if use_full_dataset:
         train_datasets = sum([["12.5", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in range(8)], [])
     else:
-        train_datasets = sum([["10", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in [6]], [])
+        train_datasets = sum([["1", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in [6]], [])
         #  train_datasets = sum([["50", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in range(6,8)], [])
 
     data_paths = {
@@ -429,6 +450,7 @@ def get_parser() -> argparse.ArgumentParser:
 
     data_group.add_argument("--gbs", type=int, default=1152, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
+    data_group.add_argument("--max_lr", type=float, default=1e-4, help="Peak learning rate. Min LR will be 0.1 of max_lr")
     data_group.add_argument("--eval_every", type=int, default=46080, help="Evaluate at least every N training sequences")
     data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
@@ -492,6 +514,7 @@ if __name__ == "__main__":
     eval_batches = math.ceil(args.eval_tokens / (args.gbs))
 
     exp_prefix, pretrain = get_pretrain(
+        max_lr=args.max_lr, 
         size=args.size,
         nnodes=args.nodes,
         ngpus_per_node=args.gpus_per_node,
@@ -553,7 +576,7 @@ if __name__ == "__main__":
     pretrain.data.num_train_samples = pretrain.trainer.max_steps * pretrain.data.global_batch_size
     print (f'{pretrain.trainer.max_steps=}\n{pretrain.data.global_batch_size=}\n{pretrain.data.num_train_samples=}')
     datamodule = pretrain.data.clone()
-    datamodule.num_dataset_builder_threads = 64
+    datamodule.num_dataset_builder_threads = 64*4
     build_data_index = run.Partial(
         build_pretraining_datamodule,
         datamodule=datamodule,
@@ -571,6 +594,10 @@ if __name__ == "__main__":
     static_read_from_path = args.initial_ckpt_path if args.use_ckpt else None
     static_write_to_path = args.continual_ckpt_path
     static_max_steps = args.max_steps if args.max_steps is not None else None
+    # Enable this to make static_max_steps not None to enable PreemptiveStop overwrite PL in Callback 
+    static_max_steps = pretrain.trainer.max_steps if static_max_steps is None else static_max_steps
+
+    print (f'{static_max_steps=}') 
 
     if not args.save_ckpt:
         print (f'Not saving checkpoints')
@@ -608,6 +635,8 @@ if __name__ == "__main__":
                 if static_max_steps is not None:
                     ending_steps = f"-{experiment_max_steps + static_max_steps}-steps"
 
+                print (f'experiment_max_steps: {experiment_max_steps}')
+
                 checkpoint_name = "checkpoint" + f"-seed-{seed}-par-{j}{ending_steps}"
                 experiment_write_to_path = static_write_to_path + "/" + checkpoint_name
 
@@ -630,10 +659,13 @@ if __name__ == "__main__":
                 if static_max_steps is not None:
                     start_step = experiment_max_steps
                     experiment_max_steps += static_max_steps
+                    print (f'static_max_steps: {static_max_steps}')
+                    print (f'stop_on_step=experiment_max_steps={experiment_max_steps}')
                     configs[constants.INIT_CHECKPOINT_STEP] = start_step
                     pretrain.trainer.callbacks = (
                         original_callbacks + [
-                            run.Config(PreemptiveStop, stop_on_step=experiment_max_steps),
+                            # run.Config(PreemptiveStop, stop_on_step=experiment_max_steps),
+                            run.Config(PreemptiveStop, stop_on_step=pretrain.trainer.max_steps),
                             run.Config(
                                 MLPerfCallback,
                                 global_batch_size=args.gbs,
@@ -645,24 +677,36 @@ if __name__ == "__main__":
                         ]
                     )
 
-
-                    
-    
-                        pretrain.log.extra_loggers = [
-                            run.Config(
-                                MetricsLogger,
-                                init_global_step=start_step,
-                                global_batch_size=args.gbs,
-                                seq_length=8192,
-                                target_log_ppl=args.target_log_ppl,
-                                train_step_time_atol=args.step_time_atol,
-                            ),
-                        ]
-
                     if args.save_ckpt:
                         pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
                         pretrain.log.ckpt.save_on_train_epoch_end = False
 
+            
+                try: 
+                    print("WandB is logged in.")
+                    login_info = wandb.login()
+                    pretrain.log.extra_loggers = [
+                        run.Config(
+                            WandbLogger,
+                            project='llama3.1_8b_training', 
+                            name=f'{checkpoint_name}-gbs={args.gbs}-lr={pretrain.optim.config.lr}', 
+
+                        ),
+                    ]
+                except:
+                    print("WandB is NOT logged in.")
+                    
+                    pretrain.log.extra_loggers = [
+                        run.Config(
+                            MetricsLogger,
+                            init_global_step=start_step,
+                            global_batch_size=args.gbs,
+                            seq_length=8192,
+                            target_log_ppl=args.target_log_ppl,
+                            train_step_time_atol=args.step_time_atol,
+                        ),
+                    ]
+                
                 experiment_read_from_path = experiment_write_to_path + "/checkpoint"
 
                 exp.add(
