@@ -38,21 +38,21 @@ export IMAGE="DUMMY"
 # export ORIGINAL_C4_PATH="/data/data/C4"
 
 # This corresponds to the PREPROCESSED_PATH in README section 3's dataset download part
-export PREPROCESSED_PATH="/data/llama3_8b_ref/data/C4_processed"
-export MERGED_C4_PATH="/data/llama3_8b_ref/data/C4_merged"
+export PREPROCESSED_PATH="/data/llama3_8b/data/C4_processed"
+export MERGED_C4_PATH="/data/llama3_8b/data/C4_merged"
 # Dataset: Numpy index working directory, contains shuffled dataset
 # This path must be able to hold >400GB data
 export TMP_NPY_INDEX="/data/npy_indices"
 # Dataset: Tokenizer path
 # This corresponds to the TOKENIZER_PATH in README section 3's tokenizer download part
-export TOKENIZER_PATH="/data/llama3_8b_ref/model/Llama-3.1-8B"
+export TOKENIZER_PATH="/data/llama3_8b/model/Llama-3.1-8B"
 # export TOKENIZER_PATH="/data/llama3_405b_ref/tokenizer"
 
 # Model: checkpoint and tokenizer path
 #     This is the checkpoint that we want to start with. 
 #     Each checkpoint should be a folder containing two sub-folders: context and weights. 
 #     And we need to pass this folder's path (the folder containing context and weights) here.  
-export MODEL_CKPT="/data/llama3_8b_ref/model/Llama-3.1-8B_nemo"
+export MODEL_CKPT="/data/llama3_8b/model/Llama-3.1-8B_nemo"
 # export MODEL_CKPT="None"
 # Model: Continual checkpoint directory to write and resume
 #     This is the directory to hold all intermediate checkpoints. 
@@ -80,9 +80,9 @@ export CONT_IMAGE_URL="rocm/mlperf:llama31_8b_training_5.1_gfx942 "
 # Model: size, to choose from 8b, 70b, 405b
 export SIZE="8b"
 # Dataloader: Global batch size
-export GBS=128
+export GBS=32
 # Dataloader: Micro batch size
-export MBS=4
+export MBS=2
 # Dataloader: Max run N batches, optional
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set

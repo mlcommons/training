@@ -193,108 +193,18 @@ def get_pretrain(
 
         pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=3e-4)
 
-        # max_tokens = 100 * 8192 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
-        # pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
-
-    elif size == "70b":
-        pretrain = llm.llama3_70b.pretrain_recipe(
-            dir="/outputs",
-            name=exp_name,
-            num_nodes=nnodes,
-            num_gpus_per_node=ngpus_per_node
-        )
-
-        llama31_config = run.Config(llm.gpt.model.llama.Llama31Config70B)
-        llama31_config.seq_length = 8192
-        pretrain.model.config = llama31_config
-        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=1.5e-4)
-    elif size == "405b":
-        pretrain = llm.llama31_405b.pretrain_recipe(
-            dir="/outputs",
-            name=exp_name,
-            num_nodes=nnodes,
-            num_gpus_per_node=ngpus_per_node
-        )
-
-        pretrain.trainer.strategy = run.Config(
-            nl.MegatronStrategy,
-            tensor_model_parallel_size=1,
-            pipeline_model_parallel_size=8,
-            context_parallel_size=1,
-            sequence_parallel=0,
-            pipeline_dtype=torch.bfloat16,
-            ckpt_load_directly_on_device=False,
-            ckpt_parallel_load=False,
-            ckpt_load_strictness="log_all",
-            gradient_as_bucket_view=True,
-            use_te_rng_tracker=True,
-            ddp=DistributedDataParallelConfig(
-                overlap_grad_reduce=False,
-                overlap_param_gather=False,
-                fp8_param_gather=False,
-                average_in_collective=False,
-                use_distributed_optimizer=True,
-            ),
-        )
-
-        # pretrain.trainer.strategy.ddp = run.Config(
-        #     DistributedDataParallelConfig,
-        #     check_for_nan_in_grad=True,
-        #     grad_reduce_in_fp32=True,
-        #     overlap_grad_reduce=True,
-        #     overlap_param_gather=True,
-        # )
-
-        pretrain.trainer.strategy.tensor_model_parallel_size = 1
-        pretrain.trainer.strategy.pipeline_model_parallel_size = 8
-        pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 1 # set it back to 7?
-        pretrain.trainer.strategy.context_parallel_size = 1
-
-        
-
-        from nemo.collections.llm.recipes.tp_overlap_configs.userbuffers import (
-            userbuffers_bf16_h100_h16384_tp8_cp2_mbs1_seqlen8192,
-        )
-        from nemo.lightning.pytorch.callbacks.megatron_comm_overlap import MegatronCommOverlapCallback
-
-        pretrain.trainer.callbacks.append(
-            run.Config(
-                MegatronCommOverlapCallback,
-                tp_comm_overlap=False,
-                tp_comm_overlap_cfg=userbuffers_bf16_h100_h16384_tp8_cp2_mbs1_seqlen8192,
-                defer_embedding_wgrad_compute=True,
-                wgrad_deferral_limit=50,
-                overlap_param_gather_with_optimizer_step=False,
-                align_param_gather=True,
-            )
-        )
-
-    # max_tokens = 2000 * 8192 * 128 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
-    
-    # pretrain.trainer.max_steps = max_steps
-
-    # pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
-    # warmup_tokens = 8000 * base_gbs * 8192
-    # warmup_steps = warmup_tokens / 
-
-    # max_lr = (gbs / base_gbs) * base_lr
-    # max_lr = round(max_lr, 8) # rounds to the nearest 8th digit.
-    # max_lr = base_lr
     log_lr = max_lr
 
-
     # 50k samples
-    max_steps = math.ceil(57600 * 8192 / 8192 / gbs)
-    warmup_steps = math.ceil(57600 * 8192 / 8192 / gbs * 0.1)
-    # # 200k samples
-    # max_steps = math.ceil(256000 * 8192 / 8192 / gbs)
-    # warmup_steps = math.ceil(256000 * 8192 / 8192 / gbs * 0.1)
+    # max_steps = math.ceil(57600 * 8192 / 8192 / gbs)
+    # warmup_steps = math.ceil(57600 * 8192 / 8192 / gbs * 0.1)
+    # # 230k samples
+    max_steps = math.ceil(230000 * 8192 / 8192 / gbs)
+    warmup_steps = math.ceil(230000 * 8192 / 8192 / gbs * 0.1)
     # # 450k samples
     # max_steps = math.ceil(450000 * 8192 / 8192 / gbs)
     # warmup_steps = math.ceil(450000 * 8192 / 8192 / gbs * 0.1)
 
-    # max_tokens = 1_200_000 * 8192 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
-    # max_steps = max_tokens / 8192 / gbs 
     pretrain.trainer.max_steps = max_steps
     pretrain.trainer.log_every_n_steps = 1
     # Code tracing shows that this is AdamW
@@ -322,7 +232,6 @@ def get_pretrain(
     pretrain.trainer.plugins = precision
 
     # sets up everything else
-
     pretrain.data = data_module
     pretrain.trainer.val_check_interval = eval_every
     pretrain.trainer.limit_val_batches = eval_batches
@@ -361,8 +270,7 @@ def get_data(
     if use_full_dataset:
         train_datasets = sum([["12.5", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in range(8)], [])
     else:
-        train_datasets = sum([["1", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in [6]], [])
-        #  train_datasets = sum([["50", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in range(6,8)], [])
+        train_datasets = sum([["10", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in [6]], [])
 
     data_paths = {
         "train": train_datasets,
@@ -434,9 +342,7 @@ def get_parser() -> argparse.ArgumentParser:
         default="405b",
         help="Choose the model to be trained",
         choices=[
-            "8b", # Llama 3 8B config for debugging
-            "70b", # Llama 3 70B config for debugging
-            "405b", # Llama 3.1 405B config
+            "8b", # Llama 3 8B config 
         ])
 
     model_group.add_argument("--initial_ckpt_path", type=str, default=None)
@@ -683,8 +589,9 @@ if __name__ == "__main__":
 
             
                 try: 
-                    print("WandB is logged in.")
+                    print ("control C to skip")
                     login_info = wandb.login()
+                    print("WandB is logged in.")
                     pretrain.log.extra_loggers = [
                         run.Config(
                             WandbLogger,
