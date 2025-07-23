@@ -285,6 +285,7 @@ AdamW
 The model runs with BF16 by default. This can be changed by setting `--training.mixed_precision_param=float32`.
 ### Weight initialization
 The weight initialization strategy is taken from torchtitan. It consists of a mixture of constant, Xavier and Normal initialization.
+Special attention should be taken to the initialization of AdaLN layers and the final projection layer, which follow the [DiT implementation](https://github.com/facebookresearch/DiT/blob/main/models.py#L189).
 For precise details, we encourage the consultation of the code at `torchtitan/experiments/flux/model/model.py:init_weights`.
 
 # 5. Quality
@@ -300,18 +301,15 @@ ALGORITHM: Validation Loss Computation
 
 INPUT:
   - validation_samples: set of validation data samples
-  - num_timesteps: 8 (number of equidistant time steps)
 
 INITIALIZE:
   - sum[8]: array of zeros for accumulating losses
   - count[8]: array of zeros for counting samples per timestep
-  - t: 0 (current timestep index)
 
-FOR each sample in validation_samples:
-    loss = forward_pass(sample, timestamp=t/8)
+FOR each sample, timestep in validation_samples:
+    loss = forward_pass(sample, timestep=t/8)
     sum[t] += loss
     count[t] += 1
-    t = (t + 1) % num_timesteps
 
 mean_per_timestep = sum / count
 validation_loss = mean(mean_per_timestep)
