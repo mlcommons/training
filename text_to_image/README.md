@@ -78,6 +78,8 @@ The filter file is included in this repository. It was generated using `torchtit
 
 ### COCO-2014 subset
 
+For validation purposes, each sample of the dataset is associated with a timestep that is used to evaluate it.
+For more details, consult the [evaluation algorithm](#quality-metric)
 To download the cleaned data, run the following:
 
 **Note:** We reccomend training directly on preprocessed embeddings. To do that, skip [here](#preprocessing).
@@ -288,6 +290,9 @@ For precise details, we encourage the consultation of the code at `torchtitan/ex
 # 5. Quality
 ### Quality metric
 Validation loss averaged over 8 equidistant time steps [0, 7/8], as described in [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/pdf/2403.03206).
+The validation dataset is prepared in advance so that each sample is associated with a timestep.
+This is an integer from 0 to 7 inclusive, and thus should be divided by `8.0` to obtain the timestep.
+
 The algorithm is as follows:
 
 ```pseudocode
@@ -313,6 +318,9 @@ validation_loss = mean(mean_per_timestep)
 
 RETURN validation_loss
 ```
+
+As we ensure that the validation set has an equal number of samples per timestep, 
+a simple average of all loss values is equivalent to the above.
 
 ### Quality target
 0.586
