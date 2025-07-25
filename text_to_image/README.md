@@ -78,6 +78,8 @@ The filter file is included in this repository. It was generated using `torchtit
 
 ### COCO-2014 subset
 
+For validation purposes, each sample of the dataset is associated with a timestep that is used to evaluate it.
+For more details, consult the [evaluation algorithm](#quality-metric)
 To download the cleaned data, run the following:
 
 **Note:** We reccomend training directly on preprocessed embeddings. To do that, skip [here](#preprocessing).
@@ -279,15 +281,22 @@ In turn, the model code is largely based on the model open-sourced in [huggingfa
 The MSE calculated over latents is used for the loss
 ### Optimizer
 AdamW
+### Randomness
+For own implementations, an important detail is that each data parallel rank has its own seed, derived from the main seed.
+This is imperative so that each rank generates different noise to be added to the training samples.
 ### Precision
 The model runs with BF16 by default. This can be changed by setting `--training.mixed_precision_param=float32`.
 ### Weight initialization
 The weight initialization strategy is taken from torchtitan. It consists of a mixture of constant, Xavier and Normal initialization.
+Special attention should be taken to the initialization of AdaLN layers and the final projection layer, which follow the [DiT implementation](https://github.com/facebookresearch/DiT/blob/main/models.py#L189).
 For precise details, we encourage the consultation of the code at `torchtitan/experiments/flux/model/model.py:init_weights`.
 
 # 5. Quality
 ### Quality metric
 Validation loss averaged over 8 equidistant time steps [0, 7/8], as described in [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://arxiv.org/pdf/2403.03206).
+The validation dataset is prepared in advance so that each sample is associated with a timestep.
+This is an integer from 0 to 7 inclusive, and thus should be divided by `8.0` to obtain the timestep.
+
 The algorithm is as follows:
 
 ```pseudocode
@@ -295,24 +304,24 @@ ALGORITHM: Validation Loss Computation
 
 INPUT:
   - validation_samples: set of validation data samples
-  - num_timesteps: 8 (number of equidistant time steps)
 
 INITIALIZE:
   - sum[8]: array of zeros for accumulating losses
   - count[8]: array of zeros for counting samples per timestep
-  - t: 0 (current timestep index)
 
-FOR each sample in validation_samples:
-    loss = forward_pass(sample, timestamp=t/8)
+FOR each sample, timestep in validation_samples:
+    loss = forward_pass(sample, timestep=t/8)
     sum[t] += loss
     count[t] += 1
-    t = (t + 1) % num_timesteps
 
 mean_per_timestep = sum / count
 validation_loss = mean(mean_per_timestep)
 
 RETURN validation_loss
 ```
+
+As we ensure that the validation set has an equal number of samples per timestep, 
+a simple average of all loss values is equivalent to the above.
 
 ### Quality target
 0.586
