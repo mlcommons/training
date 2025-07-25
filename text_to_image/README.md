@@ -281,6 +281,9 @@ In turn, the model code is largely based on the model open-sourced in [huggingfa
 The MSE calculated over latents is used for the loss
 ### Optimizer
 AdamW
+### Randomness
+For own implementations, an important detail is that each data parallel rank has its own seed, derived from the main seed.
+This is imperative so that each rank generates different noise to be added to the training samples.
 ### Precision
 The model runs with BF16 by default. This can be changed by setting `--training.mixed_precision_param=float32`.
 ### Weight initialization
