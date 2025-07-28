@@ -148,4 +148,7 @@ python3 pretrain_llama31.py \
 --target_log_ppl $TARGET \
 --step_time_atol $STEP_TIME_ATOL \
 --ckpt_start_step $START_STEPS \
+--warmup_steps $WARMUP_STEPS \
+--eval_every $EVAL_EVERY \
+--start_eval_at $START_EVAL_AT \
 $CMD_SUFFIX

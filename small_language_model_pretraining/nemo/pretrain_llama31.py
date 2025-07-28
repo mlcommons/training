@@ -11,11 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import os
+import math
 import argparse
 from typing import Optional
-import math
-import os
+
 import torch
+import wandb
+from lightning.pytorch.loggers import  WandbLogger
+
 from nemo.collections import llm
 from nemo.collections.common.tokenizers import AutoTokenizer
 from nemo import lightning as nl
@@ -24,8 +29,9 @@ from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_
 import nemo_run as run
 from nemo.lightning.run import plugins
 from nemo.collections.llm.gpt.data import build_pretraining_datamodule
+
 from callbacks import PreemptiveStop, MLPerfCallback, MetricsLogger
-from lightning.pytorch.loggers import  WandbLogger
+
 
 def local_executor(
     custom_env_vars: Optional[dict[str, str]] = None,
@@ -150,47 +156,37 @@ def get_pretrain(
     nnodes: int,
     ngpus_per_node: int,
     max_steps: int,
+    warmup_steps: int,
     data_module: run.Config,
     max_lr: float = 1e-4,
     eval_every: Optional[int] = None,
+    start_eval_at: Optional[int] = None,
     eval_batches: Optional[int] = None,
+    tensor_model_parallel_size: Optional[int] = 1
 ) -> run.Partial:
 
     exp_name = size
 
-    # Providing 8B and 70B here for debugging purpose
-    # Actual benchmark should use 405B
-    if size == "8b":
-        pretrain = llm.llama3_8b.pretrain_recipe(
-            dir="/outputs",
-            name=exp_name,
-            num_nodes=nnodes,
-            num_gpus_per_node=ngpus_per_node
-        )
+    pretrain = llm.llama3_8b.pretrain_recipe(
+        dir="/outputs",
+        name=exp_name,
+        num_nodes=nnodes,
+        num_gpus_per_node=ngpus_per_node
+    )
 
-        llama31_config = run.Config(llm.gpt.model.llama.Llama31Config8B)
-        llama31_config.seq_length = 8192
-        pretrain.model.config = llama31_config
+    llama31_config = run.Config(llm.gpt.model.llama.Llama31Config8B)
+    llama31_config.seq_length = 8192
+    pretrain.model.config = llama31_config
 
-        pretrain.trainer.strategy.tensor_model_parallel_size = 1
-        pretrain.trainer.strategy.pipeline_model_parallel_size = 1
-        pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 1 # set it back to 7?
-        pretrain.trainer.strategy.context_parallel_size = 1
-
-        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=3e-4)
-        # max_tokens = 100 * 8192 # Llama 3.1 paper section 3.4.1 - decays LR to 8e10-7 over 1,200,000 steps
-        # pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
-
-    # warmup_tokens = 8000 * base_gbs * 8192
-
-    # max_lr = (gbs / base_gbs) * base_lr
-    # max_lr = round(max_lr, 8) # rounds to the nearest 8th digit.
+    pretrain.trainer.strategy.tensor_model_parallel_size = tensor_model_parallel_size
+    pretrain.trainer.strategy.pipeline_model_parallel_size = 1
+    pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 1 # set it back to 7?
+    pretrain.trainer.strategy.context_parallel_size = 1
 
     # Code tracing shows that this is AdamW
     pretrain.optim = distributed_fused_adam_with_cosine_annealing(
         max_lr=max_lr,
-        # warmup_steps = math.ceil(warmup_tokens / 8192 / gbs),
-        warmup_steps=math.ceil(max_steps * 0.1),
+        warmup_steps=warmup_steps,
         min_lr=max_lr * 0.1
     )
 
@@ -214,7 +210,7 @@ def get_pretrain(
     pretrain.trainer.max_steps = max_steps
 
     pretrain.data = data_module
-    pretrain.trainer.val_check_interval = eval_every
+    pretrain.trainer.val_check_interval = start_eval_at
     pretrain.trainer.limit_val_batches = eval_batches
     pretrain.trainer.limit_test_batches = eval_batches
 
@@ -321,12 +317,10 @@ def get_parser() -> argparse.ArgumentParser:
     model_group.add_argument(
         "--size",
         type=str,
-        default="405b",
+        default="8b",
         help="Choose the model to be trained",
         choices=[
             "8b", # Llama 3 8B config 
-            "70b", # Llama 3 70B config for debugging
-            "405b", # Llama 3.1 405B config
         ])
 
     model_group.add_argument("--initial_ckpt_path", type=str, default=None)
@@ -343,8 +337,10 @@ def get_parser() -> argparse.ArgumentParser:
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
     data_group.add_argument("--max_lr", type=float, default=1e-4, help="Peak learning rate. Min LR will be 0.1 of max_lr")
     data_group.add_argument("--eval_every", type=int, default=46080, help="Evaluate at least every N training sequences")
+    data_group.add_argument("--start_eval_at", type=int, default=None, help="Start evaluation at N training sequences")
     data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
+    data_group.add_argument('--warmup_steps', type=int, default=None, help="Number of steps for LR warmup")
     data_group.add_argument("--use_full_dataset", action="store_true", help="If set, then we use the full dataset, instead of the last 256/1024 shards")
     data_group.add_argument("--tokenizer_path", type=str, help="Tokenizer path that's used to tokenize the dataset")
 
@@ -403,6 +399,10 @@ if __name__ == "__main__":
 
     eval_every_n_batches = math.ceil(args.eval_every / (args.gbs))
     eval_batches = math.ceil(args.eval_tokens / (args.gbs))
+    if args.start_eval_at is not None:
+        start_eval_at = math.ceil(args.start_eval_at / args.gbs)
+    else:
+        start_eval_at = eval_every_n_batches
 
     exp_prefix, pretrain = get_pretrain(
         max_lr=args.max_lr,
@@ -410,8 +410,10 @@ if __name__ == "__main__":
         nnodes=args.nodes,
         ngpus_per_node=args.gpus_per_node,
         max_steps=args.max_steps,
+        warmup_steps=args.warmup_steps,
         data_module=data,
         eval_every=eval_every_n_batches,
+        start_eval_at=start_eval_at,
         eval_batches=eval_batches,
     )
 
@@ -558,6 +560,7 @@ if __name__ == "__main__":
                                 global_batch_size=args.gbs,
                                 micro_batch_size=args.mbs,
                                 sequence_length=8192,
+                                eval_every=eval_every_n_batches,
                                 init_global_step=start_step,
                                 configs=configs,
                             ),
