@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import math
 import argparse
 from typing import Optional
@@ -24,7 +23,6 @@ from lightning.pytorch.loggers import  WandbLogger
 from nemo.collections import llm
 from nemo.collections.common.tokenizers import AutoTokenizer
 from nemo import lightning as nl
-from megatron.core.distributed import DistributedDataParallelConfig
 from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_cosine_annealing
 import nemo_run as run
 from nemo.lightning.run import plugins
@@ -162,7 +160,6 @@ def get_pretrain(
     eval_every: Optional[int] = None,
     start_eval_at: Optional[int] = None,
     eval_batches: Optional[int] = None,
-    tensor_model_parallel_size: Optional[int] = 1
 ) -> run.Partial:
 
     exp_name = size
@@ -178,7 +175,7 @@ def get_pretrain(
     llama31_config.seq_length = 8192
     pretrain.model.config = llama31_config
 
-    pretrain.trainer.strategy.tensor_model_parallel_size = tensor_model_parallel_size
+    pretrain.trainer.strategy.tensor_model_parallel_size = 1
     pretrain.trainer.strategy.pipeline_model_parallel_size = 1
     pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 1 # set it back to 7?
     pretrain.trainer.strategy.context_parallel_size = 1
