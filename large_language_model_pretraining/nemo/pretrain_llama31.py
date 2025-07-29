@@ -25,6 +25,7 @@ from nemo.lightning.run import plugins
 from nemo.collections.llm.gpt.data import build_pretraining_datamodule
 from callbacks import PreemptiveStop, MLPerfCallback, MetricsLogger
 
+
 def slurm_executor(
     user: str,
     host: str,
@@ -93,6 +94,7 @@ def get_pretrain(
     nnodes: int, 
     ngpus_per_node: int,
     data_module: run.Config,
+    start_eval_at: Optional[int]=None,
     eval_every: Optional[int]=None, 
     eval_batches: Optional[int]=None,
 ) -> run.Partial:
@@ -180,7 +182,7 @@ def get_pretrain(
     pretrain.trainer.max_steps = math.ceil(max_tokens / 8192 / gbs)
 
     pretrain.data = data_module
-    pretrain.trainer.val_check_interval = eval_every
+    pretrain.trainer.val_check_interval = start_eval_at
     pretrain.trainer.limit_val_batches = eval_batches
     pretrain.trainer.limit_test_batches = eval_batches
 
@@ -300,7 +302,8 @@ def get_parser() -> argparse.ArgumentParser:
     
     data_group.add_argument("--gbs", type=int, default=1152, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    data_group.add_argument("--eval_every", type=int, default=46080, help="Evaluate at least every N training sequences")
+    data_group.add_argument("--start_eval_at", type=int, default=262144, help="Start evaluating at N training sequences")
+    data_group.add_argument("--eval_every", type=int, default=16384, help="Evaluate at least every N training sequences")
     data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
     data_group.add_argument("--use_full_dataset", action="store_true", help="If set, then we use the full dataset, instead of the last 256/1024 shards")
@@ -352,6 +355,7 @@ if __name__ == "__main__":
         use_full_dataset=args.use_full_dataset,
     )
 
+    start_eval_at = math.ceil(args.start_eval_at / args.gbs)
     eval_every_n_batches = math.ceil(args.eval_every / (args.gbs))
     eval_batches = math.ceil(args.eval_tokens / (args.gbs))
 
@@ -360,6 +364,7 @@ if __name__ == "__main__":
         nnodes=args.nodes, 
         ngpus_per_node=args.gpus_per_node,
         data_module=data,
+        start_eval_at=start_eval_at,
         eval_every=eval_every_n_batches,
         eval_batches=eval_batches,
     )
@@ -497,6 +502,7 @@ if __name__ == "__main__":
                                 micro_batch_size=args.mbs, 
                                 sequence_length=8192,
                                 init_global_step=start_step,
+                                eval_every=eval_every_n_batches,
                                 configs=configs,
                             ),
                         ]
