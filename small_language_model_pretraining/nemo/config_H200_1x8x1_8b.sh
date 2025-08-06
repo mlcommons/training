@@ -88,8 +88,8 @@ export MBS=2
 #     If we want to save a checkpoint, then this value must be set
 export MAX_STEPS=1200000
 export WARMUP_STEPS=512 # 16384 // GBS
-export EVAL_EVERY=384 # 12288 // GBS
-export START_EVAL_AT=384 # 
+export EVAL_EVERY=12288
+export START_EVAL_AT=147456
 
 export TENSOR_PARALLEL_SIZE=1
 
