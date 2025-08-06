@@ -86,7 +86,7 @@ export MBS=4
 # Dataloader: Max run N batches, optional
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
-export MAX_STEPS=2000
+export MAX_STEPS=1200000
 
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
