@@ -155,10 +155,6 @@ The model largely follows the Llama 3.1 8B [paper](https://arxiv.org/abs/2407.21
 | Context Length | 8192 |
 
 
-### Checkpoint download
-
-MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. You must first agree to the [confidentiality notice](https://llama3-1.mlcommons.org) using your organizational email address, then you will receive a link to a directory containing Rclone download instructions. _If you cannot access the form but you are part of a MLCommons Member organization, submit the [MLCommons subscription form](https://mlcommons.org/community/subscribe/) with your organizational email address and [associate a Google account](https://accounts.google.com/SignUpWithoutGmail) with your organizational email address. You should then be able to access the confidentiality form using that Google account._
-
 #### Saving and restoring a checkpoint
 
 Large runs might need to span across multiple Slurm jobs, and we need to save and load checkpoints with contexts so that training can resume between jobs. To support this, we have added some environment variables. Please refer to `config.sh` for more details. 
@@ -176,11 +172,11 @@ Validation loss
 
 ### Quality target
 
-Validation log perplexity = yet to determine 
+Validation log perplexity = 3.3
 
 ### Evaluation frequency
 
-We perform evaluation every **46,080** sequences. 
+We perform evaluation every **12288** sequences. 
 
 ### Evaluation thoroughness
 
@@ -190,14 +186,6 @@ We evaluate using **5,760** sequences from our customized validation dataset.
 # 6. Other
 
 
-
-### HuggingFace Checkpoint Preprocessing
-
-Here are the instructions to prepare the NeMo-formatted checkpoint from scratch. Checkpoint conversion is already done and the converted checkpoint can be accessed by following instructions in the [Checkpoint download](#checkpoint-download) section. 
-
-#### HuggingFace checkpoint downloading
-
-We use the HuggingFace Llama 3.1 8B BF16 checkpoint as the initial checkpoint in this benchmark. **Notice that we are downloading the BF16 not the FP8 version of the model**. 
 
 #### Run model conversion
 
