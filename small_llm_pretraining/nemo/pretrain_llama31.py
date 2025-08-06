@@ -335,7 +335,7 @@ def get_parser() -> argparse.ArgumentParser:
     data_group.add_argument("--max_lr", type=float, default=1e-4, help="Peak learning rate. Min LR will be 0.1 of max_lr")
     data_group.add_argument("--eval_every", type=int, default=46080, help="Evaluate at least every N training sequences")
     data_group.add_argument("--start_eval_at", type=int, default=None, help="Start evaluation at N training sequences")
-    data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
+    data_group.add_argument("--eval_tokens", type=int, default=1024, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
     data_group.add_argument('--warmup_steps', type=int, default=None, help="Number of steps for LR warmup")
     data_group.add_argument("--use_full_dataset", action="store_true", help="If set, then we use the full dataset, instead of the last 256/1024 shards")

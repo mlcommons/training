@@ -88,8 +88,7 @@ export MBS=4
 #     If we want to save a checkpoint, then this value must be set
 # export MAX_STEPS=1200000 # Fixed max_steps=1200000 in pretrain_llama31.py  
 export EVAL_EVERY=12288
-export EVAL_EVERY=12288
-export START_EVAL_AT=147456
+export START_EVAL_AT=0
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
 #     For instance, if you are resuming from a checkpoint folder `checkpoint-par-0-20-steps/checkpoint`, 

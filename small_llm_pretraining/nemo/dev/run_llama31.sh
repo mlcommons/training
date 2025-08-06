@@ -69,8 +69,8 @@ IFS=" " read -ra seeds <<< $SEEDS
 : "${NPAR:=1}"
 : "${SAVE_CKPT:=0}"
 : "${TAG:=""}"
-: "${TARGET:="5.6"}"
-: "${STEP_TIME_ATOL:="7200"}" # maximum tolerable step time, setting to 2hr by default
+: "${TARGET:="3.3"}"
+: "${STEP_TIME_ATOL:="18000"}" # maximum tolerable step time, setting to 2hr by default
 
 # Run
 

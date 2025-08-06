@@ -89,7 +89,7 @@ export MBS=1
 # export MAX_STEPS=1200000 # Fixed max_steps=1200000 in pretrain_llama31.py  
 export WARMUP_STEPS=512 # 16384 // GBS
 export EVAL_EVERY=12288
-export START_EVAL_AT=147456
+export START_EVAL_AT=0
 
 export TENSOR_PARALLEL_SIZE=4
 

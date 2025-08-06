@@ -50,7 +50,7 @@ class MLLogger:
             self.logger.event(**kwargs)
 
     def submission_info(self):
-        self.event(key=constants.SUBMISSION_BENCHMARK, value="llama31_405b")
+        self.event(key=constants.SUBMISSION_BENCHMARK, value="llama31_8b")
         self.event(key=constants.SUBMISSION_ORG, value="reference_implementation")
         self.event(key=constants.SUBMISSION_DIVISION, value=constants.CLOSED)
         self.event(key=constants.SUBMISSION_STATUS, value=constants.ONPREM)
