@@ -87,7 +87,7 @@ export MBS=4
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
 export MAX_STEPS=1200000
-
+export EVAL_EVERY=12288
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
 #     For instance, if you are resuming from a checkpoint folder `checkpoint-par-0-20-steps/checkpoint`, 
