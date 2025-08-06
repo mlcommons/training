@@ -86,7 +86,7 @@ export MBS=2
 # Dataloader: Max run N batches, optional
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
-export MAX_STEPS=2000
+export MAX_STEPS=1200000
 export WARMUP_STEPS=512 # 16384 // GBS
 export EVAL_EVERY=384 # 12288 // GBS
 export START_EVAL_AT=384 # 
