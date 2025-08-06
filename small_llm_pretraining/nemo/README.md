@@ -122,7 +122,7 @@ Warning! If you receive an error message of file not found, look into where `pre
 
 We use the default split from the C4 dataset. This means that we use `c4-train.<x>-of-01024.json.gz` files (where `768 <= x <= 1023`) for training, and we use our customized `c4-validation-91205-samples.en.json.gz`, which contains the first 91205 samples from the unshuffled C4 validation dataset, for evaluation. 
 
-Notice here that we are using the first 5760 sequences (47,185,920 tokens) from the validation dataset to perform the validation. According to our experiments, the first 91205 samples from the unshuffled C4 dataset yields 47,186,855 tokens, which is the smallest amount of samples needed to yield 47,185,920 tokens. Thus, we have chosen the first 91205 samples as our validation dataset. 
+Notice here that we are using the first 1024 sequences (8,388,608 tokens) from the validation dataset to perform the validation. According to our experiments, the first 91205 samples from the unshuffled C4 dataset yields 47,186,855 tokens, which is the smallest amount of samples needed to yield 47,185,920 tokens. Thus, we have chosen the first 91205 samples as our validation dataset. 
 
 #### Training data order
 
@@ -130,7 +130,7 @@ We randomly shuffle the **last 256 of 1024 shards** for the benchmarking area.
 
 #### Test data order
 
-We use the first 5,760 sequences (91,205 untokenized samples) in the validation dataset for validation. We **do not shuffle** the validation dataset. 
+We use the first 1024 sequences in the validation dataset for validation. We **do not shuffle** the validation dataset. 
 
 # 4. Model
 ### Publication/Attribution
@@ -180,7 +180,7 @@ We perform evaluation every **12288** sequences.
 
 ### Evaluation thoroughness
 
-We evaluate using **5,760** sequences from our customized validation dataset. 
+We evaluate using **1024** sequences from our customized validation dataset. 
 
 
 # 6. Other
