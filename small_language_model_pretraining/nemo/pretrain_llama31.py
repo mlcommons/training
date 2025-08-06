@@ -11,24 +11,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import wandb
+
+import math
 import argparse
 from typing import Optional
-import math
-import os
+
 import torch
+import wandb
+from lightning.pytorch.loggers import  WandbLogger
+
 from nemo.collections import llm
 from nemo.collections.common.tokenizers import AutoTokenizer
 from nemo import lightning as nl
-from megatron.core.distributed import DistributedDataParallelConfig
 from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_cosine_annealing
 import nemo_run as run
 from nemo.lightning.run import plugins
 from nemo.collections.llm.gpt.data import build_pretraining_datamodule
-from callbacks import PreemptiveStop, MLPerfCallback, MetricsLogger
-from lightning.pytorch.loggers import  WandbLogger
 
-log_lr = 0
+from callbacks import PreemptiveStop, MLPerfCallback, MetricsLogger
+
+
 def local_executor(
     custom_env_vars: Optional[dict[str, str]] = None,
     devices: int = 8,
@@ -73,15 +75,6 @@ def local_executor(
         # "NVTE_DP_AMAX_REDUCE_INTERVAL": "0",
         # "NVTE_ASYNC_AMAX_REDUCTION": "1",
     }
-    # env_vars = {
-    #     "TRANSFORMERS_OFFLINE": "1",
-    #     "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
-    #     "NCCL_NVLS_ENABLE": "0",
-    #     "NVTE_DP_AMAX_REDUCE_INTERVAL": "0",
-    #     "NVTE_ASYNC_AMAX_REDUCTION": "1",
-    #     "NVTE_FUSED_ATTN": "0",
-    #     "TOKENIZERS_PARALLELISM": "false",
-    # }
     if custom_env_vars:
         env_vars |= custom_env_vars
 
@@ -124,7 +117,7 @@ def slurm_executor(
         "NCCL_NVLS_ENABLE": "0",
         "NVTE_DP_AMAX_REDUCE_INTERVAL": "0",
         "NVTE_ASYNC_AMAX_REDUCTION": "1",
-        "NVTE_FUSED_ATTN": "0",
+        "NVTE_FUSED_ATTN": "1",
         "TOKENIZERS_PARALLELISM": "false",
     }
     if custom_env_vars:
@@ -138,13 +131,12 @@ def slurm_executor(
             host=host,
             job_dir=remote_job_dir,
         ),
-        nodes=nodes,
-        ntasks_per_node=devices,
-        gpus_per_node=devices,
-        mem="0",
         exclusive=True,
         gres="gpu:8",
-        packager=run.GitArchivePackager(),
+        nodes=nodes,
+        ntasks_per_node=devices,
+        mem="0",
+        packager=run.GitArchivePackager(subpath="small_language_model_pretraining/nemo", ref="HEAD"),
         dependencies=dependencies,
     )
 
@@ -161,58 +153,38 @@ def get_pretrain(
     size: str,
     nnodes: int,
     ngpus_per_node: int,
-    max_steps: int, 
+    max_steps: int,
+    warmup_steps: int,
     data_module: run.Config,
-    max_lr: float=1e-4, 
-    eval_every: Optional[int]=None,
-    eval_batches: Optional[int]=None,
+    max_lr: float = 1e-4,
+    eval_every: Optional[int] = None,
+    start_eval_at: Optional[int] = None,
+    eval_batches: Optional[int] = None,
 ) -> run.Partial:
 
     exp_name = size
-    base_gbs = 1152
-    gbs = data_module.global_batch_size
 
-    # Providing 8B and 70B here for debugging purpose
-    # Actual benchmark should use 405B
-    if size == "8b":
-        pretrain = llm.llama3_8b.pretrain_recipe(
-            dir="/outputs",
-            name=exp_name,
-            num_nodes=nnodes,
-            num_gpus_per_node=ngpus_per_node
-        )
+    pretrain = llm.llama3_8b.pretrain_recipe(
+        dir="/outputs",
+        name=exp_name,
+        num_nodes=nnodes,
+        num_gpus_per_node=ngpus_per_node
+    )
 
-        llama31_config = run.Config(llm.gpt.model.llama.Llama31Config8B)
-        llama31_config.seq_length = 8192
-        pretrain.model.config = llama31_config
+    llama31_config = run.Config(llm.gpt.model.llama.Llama31Config8B)
+    llama31_config.seq_length = 8192
+    pretrain.model.config = llama31_config
 
-        pretrain.trainer.strategy.tensor_model_parallel_size = 1
-        pretrain.trainer.strategy.pipeline_model_parallel_size = 1
-        pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 1 # set it back to 7?
-        pretrain.trainer.strategy.context_parallel_size = 1
+    pretrain.trainer.strategy.tensor_model_parallel_size = 1
+    pretrain.trainer.strategy.pipeline_model_parallel_size = 1
+    pretrain.trainer.strategy.virtual_pipeline_model_parallel_size = 1 # set it back to 7?
+    pretrain.trainer.strategy.context_parallel_size = 1
 
-        pretrain.optim = distributed_fused_adam_with_cosine_annealing(max_lr=3e-4)
-
-    log_lr = max_lr
-
-    # 50k samples
-    # max_steps = math.ceil(57600 * 8192 / 8192 / gbs)
-    # warmup_steps = math.ceil(57600 * 8192 / 8192 / gbs * 0.1)
-    # # 230k samples
-    max_steps = math.ceil(230000 * 8192 / 8192 / gbs)
-    warmup_steps = math.ceil(230000 * 8192 / 8192 / gbs * 0.1)
-    # # 450k samples
-    # max_steps = math.ceil(450000 * 8192 / 8192 / gbs)
-    # warmup_steps = math.ceil(450000 * 8192 / 8192 / gbs * 0.1)
-
-    pretrain.trainer.max_steps = max_steps
-    pretrain.trainer.log_every_n_steps = 1
     # Code tracing shows that this is AdamW
     pretrain.optim = distributed_fused_adam_with_cosine_annealing(
-        max_lr = max_lr,
-        # warmup_steps = math.ceil(warmup_tokens / 8192 / gbs),
-        warmup_steps = math.ceil (warmup_steps), 
-        min_lr = 0.1*max_lr
+        max_lr=max_lr,
+        warmup_steps=warmup_steps,
+        min_lr=max_lr * 0.1
     )
 
     precision = run.Config(
@@ -232,8 +204,10 @@ def get_pretrain(
     pretrain.trainer.plugins = precision
 
     # sets up everything else
+    pretrain.trainer.max_steps = max_steps
+
     pretrain.data = data_module
-    pretrain.trainer.val_check_interval = eval_every
+    pretrain.trainer.val_check_interval = start_eval_at
     pretrain.trainer.limit_val_batches = eval_batches
     pretrain.trainer.limit_test_batches = eval_batches
 
@@ -265,7 +239,7 @@ def get_data(
 
     train_datasets = None
 
-    dataset_path = os.getenv("PREPROCESSED_PATH")
+    dataset_path = "/preproc_data"
 
     if use_full_dataset:
         train_datasets = sum([["12.5", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in range(8)], [])
@@ -290,7 +264,7 @@ def get_data(
         seq_length=seq_length,
         global_batch_size=gbs,
         micro_batch_size=mbs,
-        # index_mapping_dir="/data/npy_index",
+        index_mapping_dir="/npy_index",
         seed=seed,
 
         # Option to reset the position IDs in the dataset at an interval.
@@ -320,6 +294,7 @@ def get_parser() -> argparse.ArgumentParser:
     slurm_group.add_argument("--time", type=str, required=True, help="Time limit for the job")
     slurm_group.add_argument("--dependencies", nargs="*", help="list of dependencies for the job, dependency type as 'afterok'") # not useful for now
     slurm_group.add_argument("--max_retries", type=int, default=0)
+    slurm_group.add_argument("--run_slurm", action="store_true", help="run in slurm executor instead of locally")
 
     slurm_group.add_argument(
         "--mounts",
@@ -339,7 +314,7 @@ def get_parser() -> argparse.ArgumentParser:
     model_group.add_argument(
         "--size",
         type=str,
-        default="405b",
+        default="8b",
         help="Choose the model to be trained",
         choices=[
             "8b", # Llama 3 8B config 
@@ -351,6 +326,7 @@ def get_parser() -> argparse.ArgumentParser:
     model_group.add_argument("--ckpt_start_step", type=int, default=0, help="Sets this value to how many steps the resumed checkpoint is already trained on")
     model_group.add_argument("--continual_ckpt_path", type=str, default=None, help="Sets this to the path that saves the checkpoint")
     model_group.add_argument("--save_ckpt", action="store_true", help="If set, then we save the checkpoint at the end of the experiment")
+    model_group.add_argument("--tensor_parallel_size", type=int, default=None, help="Set tensor parallelism to the model")
 
     data_group = parser.add_argument_group("Dataset arguments")
 
@@ -358,8 +334,10 @@ def get_parser() -> argparse.ArgumentParser:
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
     data_group.add_argument("--max_lr", type=float, default=1e-4, help="Peak learning rate. Min LR will be 0.1 of max_lr")
     data_group.add_argument("--eval_every", type=int, default=46080, help="Evaluate at least every N training sequences")
+    data_group.add_argument("--start_eval_at", type=int, default=None, help="Start evaluation at N training sequences")
     data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
+    data_group.add_argument('--warmup_steps', type=int, default=None, help="Number of steps for LR warmup")
     data_group.add_argument("--use_full_dataset", action="store_true", help="If set, then we use the full dataset, instead of the last 256/1024 shards")
     data_group.add_argument("--tokenizer_path", type=str, help="Tokenizer path that's used to tokenize the dataset")
 
@@ -382,27 +360,28 @@ if __name__ == "__main__":
     assert not (args.num_pars == 1 and args.continual_ckpt_path is None), "NPar > 1 but a shared checkpoint path is not found"
     assert not (not args.save_ckpt and args.num_pars > 1), "multiple experiments are specified but checkpoint is not saved"
 
-    # executor = slurm_executor(
-    #     user=args.user,
-    #     host=args.host,
-    #     remote_job_dir=args.job_dir,
-    #     account=args.account,
-    #     partition=args.partition,
-    #     nodes=args.nodes,
-    #     devices=args.gpus_per_node,
-    #     time = args.time,
-    #     custom_mounts=list(args.mounts.split(",")),
-    #     custom_env_vars=({envvar.split("=")[0]: envvar.split("=")[1] for envvar in args.envvars.split(",")} if args.envvars is not None else None),
-    #     container_image=args.image,
-    #     dependencies=args.dependencies,
-    #     retries = args.max_retries,
-    # )
-
-    executor = local_executor(
-        custom_env_vars=({envvar.split("=")[0]: envvar.split("=")[1] for envvar in args.envvars.split(",")} if args.envvars is not None else None),
-        devices=args.gpus_per_node,
-        retries=args.max_retries,
-    )
+    if args.run_slurm:
+        executor = slurm_executor(
+            user=args.user,
+            host=args.host,
+            remote_job_dir=args.job_dir,
+            account=args.account,
+            partition=args.partition,
+            nodes=args.nodes,
+            devices=args.gpus_per_node,
+            time=args.time,
+            custom_mounts=list(args.mounts.split(",")),
+            custom_env_vars=({envvar.split("=")[0]: envvar.split("=")[1] for envvar in args.envvars.split(",")} if args.envvars is not None else None),
+            container_image=args.image,
+            dependencies=args.dependencies,
+            retries=args.max_retries,
+        )
+    else:
+        executor = local_executor(
+           custom_env_vars=({envvar.split("=")[0]: envvar.split("=")[1] for envvar in args.envvars.split(",")} if args.envvars is not None else None),
+           devices=args.gpus_per_node,
+           retries=args.max_retries,
+        )
 
     seq_length = 8192
 
@@ -413,20 +392,25 @@ if __name__ == "__main__":
         tokenizer_path=args.tokenizer_path,
         seed=1234, # overwritten in each experiments
         use_full_dataset=args.use_full_dataset,
-        
     )
 
     eval_every_n_batches = math.ceil(args.eval_every / (args.gbs))
     eval_batches = math.ceil(args.eval_tokens / (args.gbs))
+    if args.start_eval_at is not None:
+        start_eval_at = math.ceil(args.start_eval_at / args.gbs)
+    else:
+        start_eval_at = eval_every_n_batches
 
     exp_prefix, pretrain = get_pretrain(
-        max_lr=args.max_lr, 
+        max_lr=args.max_lr,
         size=args.size,
         nnodes=args.nodes,
         ngpus_per_node=args.gpus_per_node,
-        max_steps=args.max_steps, 
+        max_steps=args.max_steps,
+        warmup_steps=args.warmup_steps,
         data_module=data,
         eval_every=eval_every_n_batches,
+        start_eval_at=start_eval_at,
         eval_batches=eval_batches,
     )
 
@@ -435,8 +419,7 @@ if __name__ == "__main__":
 
     # Collect all HP configs
     from mlperf_logging.mllog import constants
-
-    tp = pretrain.trainer.strategy.tensor_model_parallel_size
+    tp = args.tensor_parallel_size or pretrain.trainer.strategy.tensor_model_parallel_size
     pp = pretrain.trainer.strategy.pipeline_model_parallel_size
     cp = pretrain.trainer.strategy.context_parallel_size
     dp = (pretrain.trainer.num_nodes * pretrain.trainer.devices) // (tp * pp * cp)
@@ -482,7 +465,7 @@ if __name__ == "__main__":
     pretrain.data.num_train_samples = pretrain.trainer.max_steps * pretrain.data.global_batch_size
     print (f'{pretrain.trainer.max_steps=}\n{pretrain.data.global_batch_size=}\n{pretrain.data.num_train_samples=}')
     datamodule = pretrain.data.clone()
-    datamodule.num_dataset_builder_threads = 64*4
+    datamodule.num_dataset_builder_threads = 64
     build_data_index = run.Partial(
         build_pretraining_datamodule,
         datamodule=datamodule,
@@ -504,7 +487,6 @@ if __name__ == "__main__":
     static_max_steps = pretrain.trainer.max_steps if static_max_steps is None else static_max_steps
 
     print (f'{static_max_steps=}') 
-
     if not args.save_ckpt:
         print (f'Not saving checkpoints')
         pretrain.trainer.enable_checkpointing = False
@@ -542,7 +524,6 @@ if __name__ == "__main__":
                     ending_steps = f"-{experiment_max_steps + static_max_steps}-steps"
 
                 print (f'experiment_max_steps: {experiment_max_steps}')
-
                 checkpoint_name = "checkpoint" + f"-seed-{seed}-par-{j}{ending_steps}"
                 experiment_write_to_path = static_write_to_path + "/" + checkpoint_name
 
@@ -570,13 +551,13 @@ if __name__ == "__main__":
                     configs[constants.INIT_CHECKPOINT_STEP] = start_step
                     pretrain.trainer.callbacks = (
                         original_callbacks + [
-                            # run.Config(PreemptiveStop, stop_on_step=experiment_max_steps),
-                            run.Config(PreemptiveStop, stop_on_step=pretrain.trainer.max_steps),
+                            run.Config(PreemptiveStop, stop_on_step=experiment_max_steps),
                             run.Config(
                                 MLPerfCallback,
                                 global_batch_size=args.gbs,
                                 micro_batch_size=args.mbs,
                                 sequence_length=8192,
+                                eval_every=eval_every_n_batches,
                                 init_global_step=start_step,
                                 configs=configs,
                             ),
@@ -587,8 +568,7 @@ if __name__ == "__main__":
                         pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
                         pretrain.log.ckpt.save_on_train_epoch_end = False
 
-            
-                try: 
+                try:
                     print ("control C to skip")
                     login_info = wandb.login()
                     print("WandB is logged in.")
@@ -602,7 +582,6 @@ if __name__ == "__main__":
                     ]
                 except:
                     print("WandB is NOT logged in.")
-                    
                     pretrain.log.extra_loggers = [
                         run.Config(
                             MetricsLogger,
@@ -613,7 +592,9 @@ if __name__ == "__main__":
                             train_step_time_atol=args.step_time_atol,
                         ),
                     ]
-                
+                    if args.save_ckpt:
+                        pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
+                        pretrain.log.ckpt.save_on_train_epoch_end = False
                 experiment_read_from_path = experiment_write_to_path + "/checkpoint"
 
                 exp.add(

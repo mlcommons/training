@@ -82,16 +82,16 @@ export SIZE="8b"
 # Dataloader: Global batch size
 export GBS=32
 # Dataloader: Micro batch size
-export MBS=2
+export MBS=1
 # Dataloader: Max run N batches, optional
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
-export MAX_STEPS=2000
+export MAX_STEPS=1200000
 export WARMUP_STEPS=512 # 16384 // GBS
-export EVAL_EVERY=384 # 12288 // GBS
-export START_EVAL_AT=384 # 
+export EVAL_EVERY=12288
+export START_EVAL_AT=147456
 
-export TENSOR_PARALLEL_SIZE=1
+export TENSOR_PARALLEL_SIZE=4
 
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
