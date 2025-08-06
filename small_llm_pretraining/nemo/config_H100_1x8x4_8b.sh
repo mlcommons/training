@@ -83,6 +83,7 @@ export SIZE="8b"
 export GBS=32
 # Dataloader: Micro batch size
 export MBS=1
+export MAX_LR="5e-4"
 # Dataloader: Max run N batches, optional
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
