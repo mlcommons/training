@@ -1,0 +1,9 @@
+git+https://github.com/mlcommons/logging.git@5.0.0-rc2
+git+https://github.com/NVIDIA/mlperf-common.git@68cf1d0d5e3de3351e66abb696d0e2d011aabf47
+huggingface_hub==0.24.0
+transformers==4.43.2
+numpy==1.26.4
+plotly==6.0.0
+nbformat==5.10.4
+kaleido==0.2.1
+redis==5.2.1

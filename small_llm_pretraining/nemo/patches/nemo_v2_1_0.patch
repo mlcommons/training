@@ -1,0 +1,64 @@
+diff --git a/nemo/collections/multimodal/modules/stable_diffusion/attention.py b/nemo/collections/multimodal/modules/stable_diffusion/attention.py
+index 646540e88..fad8e4e0a 100644
+--- a/nemo/collections/multimodal/modules/stable_diffusion/attention.py
++++ b/nemo/collections/multimodal/modules/stable_diffusion/attention.py
+@@ -143,7 +143,13 @@ def zero_module(module):
+ 
+ 
+ def Normalize(in_channels, num_groups=32, act=""):
+-    return GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True, act=act)
++    try:
++        from apex.contrib.group_norm import GroupNorm as GroupNorm
++        return GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True, act=act)
++    except ImportError:
++        print("Using torch.nn.GroupNorm. Hip/Cuda kernel could not be imported from Apex")
++        import torch.nn.GroupNorm as GroupNorm
++        return GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
+ 
+ 
+ class LinearAttention(nn.Module):
+@@ -595,4 +601,4 @@ class SpatialTransformer(nn.Module):
+         x = x.transpose(1, 2).view(b, c, h, w)  # b (h w) c -> b c h w
+         if not self.use_linear:
+             x = self.proj_out(x)
+-        return x_in + x
++        return x_in + x
+\ No newline at end of file
+diff --git a/nemo/collections/multimodal/modules/stable_diffusion/diffusionmodules/util.py b/nemo/collections/multimodal/modules/stable_diffusion/diffusionmodules/util.py
+index 69700a436..bfd21ab7e 100644
+--- a/nemo/collections/multimodal/modules/stable_diffusion/diffusionmodules/util.py
++++ b/nemo/collections/multimodal/modules/stable_diffusion/diffusionmodules/util.py
+@@ -257,7 +257,13 @@ def mean_flat(tensor):
+ 
+ 
+ def normalization(in_channels, act="", gn_groups=32):
+-    return GroupNorm(num_groups=gn_groups, num_channels=in_channels, eps=1e-5, affine=True, act=act)
++    try:
++        from apex.contrib.group_norm import GroupNorm as GroupNorm
++        return GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True, act=act)
++    except ImportError:
++        print("Using torch.nn.GroupNorm. Hip/Cuda kernel could not be imported from Apex")
++        import torch.nn.GroupNorm as GroupNorm
++        return GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
+ 
+ 
+ # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
+@@ -361,4 +367,4 @@ def exists(x):
+ def default(val, d):
+     if exists(val):
+         return val
+-    return d() if isfunction(d) else d
++    return d() if isfunction(d) else d
+\ No newline at end of file
+diff --git a/requirements/requirements_nlp.txt b/requirements/requirements_nlp.txt
+index 6a86dacbf..a6f60380e 100644
+--- a/requirements/requirements_nlp.txt
++++ b/requirements/requirements_nlp.txt
+@@ -11,7 +11,6 @@ jieba
+ mamba-ssm==2.2.2; sys_platform == 'linux'
+ markdown2
+ matplotlib>=3.3.2
+-#megatron_core>0.6.0 # add back once mcore on pypi is compatible again
+ nltk>=3.6.5
+ numpy<2  # tensorstore has an implicit compiled dependency on numpy<2
+ opencc
