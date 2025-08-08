@@ -1,0 +1,17 @@
+ARG FROM_IMAGE_NAME=nvcr.io/nvidia/pytorch:24.01-py3
+FROM ${FROM_IMAGE_NAME}
+
+RUN apt-get update \
+    && apt-get install -y curl
+
+RUN curl https://rclone.org/install.sh | bash
+
+COPY requirements.txt /
+RUN pip install --no-cache-dir -r /requirements.txt
+RUN pip install flash-attn==2.4.1 --no-build-isolation
+
+COPY . /workspace/ft-llm
+
+RUN chmod -R +x /workspace/ft-llm
+
+WORKDIR /workspace/ft-llm
