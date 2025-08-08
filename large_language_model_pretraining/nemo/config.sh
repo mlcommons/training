@@ -78,7 +78,6 @@ export MBS=1
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
 export MAX_STEPS=""
-export START_EVAL_AT="258048" # 18432*FLOOR(0.0026*GBS+12)
 export EVAL_EVERY="18432"
 
 # Experiment: starting steps
