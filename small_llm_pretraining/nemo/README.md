@@ -112,8 +112,10 @@ export MERGED_C4_PATH=""
 export PREPROCESSED_PATH=""
 
 # Extra Slurm-related arguments can be provided here
-sbatch preprocess.sh
+sbatch utils/preprocess.sh
 ```
+
+If you are not using Slurm, then you should go inside the `utils/preprocess.sh` and run the commands manually. 
 
 Warning! If you receive an error message of file not found, look into where `preprocess_data_for_megatron.py` is located in your path. 
 
