@@ -57,7 +57,7 @@ We use the Mixtral 8x22B tokenizer from [HuggingFace/MistralAI](https://huggingf
 
 The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using RClone as follows: 
 
-To run Rclone on Windows, you can download the executable here. To install Rclone on Linux/macOS/BSD systems, run:
+To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows). To install Rclone on Linux/macOS/BSD systems, run:
 
 ```
 sudo -v ; curl https://rclone.org/install.sh | sudo bash
