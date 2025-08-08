@@ -159,6 +159,7 @@ class MLPerfCallback(pl.Callback):
         micro_batch_size,
         sequence_length,
         init_global_step,
+        eval_every,
         configs={}
     ):
         mllogger.event(key=constants.CACHE_CLEAR, value=True)
@@ -169,6 +170,7 @@ class MLPerfCallback(pl.Callback):
         self.gbs = global_batch_size
         self.mbs = micro_batch_size
         self.seq_len = sequence_length
+        self.eval_every = eval_every
 
         self.is_target_reached = False
         self.status = constants.ABORTED
@@ -185,7 +187,6 @@ class MLPerfCallback(pl.Callback):
     def on_train_epoch_start(self, trainer, pl_module):
         mllogger.start(key=constants.EPOCH_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
         mllogger.start(key=constants.BLOCK_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
-
         return super().on_train_epoch_start(trainer, pl_module)
     
     @rank_zero_only
@@ -201,9 +202,14 @@ class MLPerfCallback(pl.Callback):
         return super().on_train_end(trainer, pl_module)
     
     @rank_zero_only
-    def on_validation_start(self, trainer, pl_module):
+    def log_eval_start(self, trainer, pl_module):
         mllogger.end(key=constants.BLOCK_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
         mllogger.start(key=constants.EVAL_START, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
+
+    def on_validation_start(self, trainer, pl_module):
+        trainer.val_check_interval = self.eval_every
+        trainer.val_check_batch = self.eval_every
+        self.log_eval_start(trainer, pl_module)
         return super().on_validation_start(trainer, pl_module)
 
     def on_validation_end(self, trainer, pl_module):

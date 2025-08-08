@@ -78,6 +78,7 @@ export MBS=1
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
 export MAX_STEPS=""
+export EVAL_EVERY="18432"
 
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
@@ -93,3 +94,4 @@ export NPAR=1
 #     The training script will discard all excessive seeds, and generate seeds if given seeds < NEXP. 
 #     To preserve randomness, we recommend not to set this value so that each time seeds can be randomly generated. 
 export SEEDS=""
+
