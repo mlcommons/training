@@ -1,0 +1,20 @@
+FROM pytorch/pytorch:1.13.0-cuda11.6-cudnn8-devel
+
+WORKDIR /workspace/repository
+
+RUN pip install scikit-learn==0.24.2
+RUN pip install torch_geometric==2.4.0
+RUN pip install --no-index  torch_scatter==2.1.1 torch_sparse==0.6.17 -f https://data.pyg.org/whl/torch-1.13.0+cu117.html
+RUN pip install graphlearn-torch==0.2.2
+RUN pip install numpy==1.26.4
+
+RUN apt update
+RUN apt install -y git wget unzip
+RUN pip install git+https://github.com/mlcommons/logging.git
+
+# TF32 instead of FP32 for faster compute
+ENV NVIDIA_TF32_OVERRIDE=1
+
+COPY . /workspace/repository
+RUN chmod +x *.sh
+WORKDIR /workspace/repository
