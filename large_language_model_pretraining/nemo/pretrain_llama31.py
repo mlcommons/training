@@ -302,7 +302,6 @@ def get_parser() -> argparse.ArgumentParser:
     
     data_group.add_argument("--gbs", type=int, default=1152, help="Global batch size, should be divisible by PP")
     data_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    data_group.add_argument("--start_eval_at", type=int, default=258048, help="Start evaluating at N training sequences")
     data_group.add_argument("--eval_every", type=int, default=18432, help="Evaluate at least every N training sequences")
     data_group.add_argument("--eval_tokens", type=int, default=5760, help="Evaluate using at least N evaluation sequences")
     data_group.add_argument('--max_steps', type=int, default=None, help="Maximum number of steps that each experiment partition will train on. None means no restriction on max steps. ")
@@ -355,7 +354,7 @@ if __name__ == "__main__":
         use_full_dataset=args.use_full_dataset,
     )
 
-    start_eval_at = math.ceil(args.start_eval_at / args.gbs)
+    start_eval_at = int(args.eval_every) * math.floor(0.0026 * args.gbs + 12) / args.gbs
     eval_every_n_batches = math.ceil(args.eval_every / (args.gbs))
     eval_batches = math.ceil(args.eval_tokens / (args.gbs))
 
