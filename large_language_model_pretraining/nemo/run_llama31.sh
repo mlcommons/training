@@ -140,5 +140,4 @@ python3 pretrain_llama31.py \
 --ckpt_start_step $START_STEPS \
 --max_retries $MAX_RETRIES \
 --eval_every $EVAL_EVERY \
---start_eval_at $START_EVAL_AT \
 $CMD_SUFFIX
