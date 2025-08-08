@@ -38,21 +38,21 @@ export IMAGE="DUMMY"
 # export ORIGINAL_C4_PATH="/data/data/C4"
 
 # This corresponds to the PREPROCESSED_PATH in README section 3's dataset download part
-export PREPROCESSED_PATH="/data/llama3_8b/data/C4_processed"
-export MERGED_C4_PATH="/data/llama3_8b/data/C4_merged"
+export PREPROCESSED_PATH="/data/llama31_8b/data/C4_processed/"
+export MERGED_C4_PATH="/data/llama31_8b/data/C4_merged"
 # Dataset: Numpy index working directory, contains shuffled dataset
 # This path must be able to hold >400GB data
 export TMP_NPY_INDEX="/data/npy_indices"
 # Dataset: Tokenizer path
 # This corresponds to the TOKENIZER_PATH in README section 3's tokenizer download part
-export TOKENIZER_PATH="/data/llama3_8b/model/Llama-3.1-8B"
+export TOKENIZER_PATH="/data/llama31_8b/model/Llama-3.1-8B-ref/"
 # export TOKENIZER_PATH="/data/llama3_405b_ref/tokenizer"
 
 # Model: checkpoint and tokenizer path
 #     This is the checkpoint that we want to start with. 
 #     Each checkpoint should be a folder containing two sub-folders: context and weights. 
 #     And we need to pass this folder's path (the folder containing context and weights) here.  
-export MODEL_CKPT="/data/llama3_8b/model/Llama-3.1-8B_nemo"
+export MODEL_CKPT="/data/llama31_8b/model/Llama-3.1-8B-ref/"
 # export MODEL_CKPT="None"
 # Model: Continual checkpoint directory to write and resume
 #     This is the directory to hold all intermediate checkpoints. 
@@ -71,9 +71,6 @@ export FROM_HF=1
 # Model: Whether we want to save a checkpoint. Must be 1 if NPAR > 1. If 1, then we save a checkpoint at the end.
 export SAVE_CKPT=0
 
-# export SRC_PATH="/data/training/Llama-3.1-8B/original/"
-# export DST_PATH="/data/training/Llama-3.1-8B/nemo/"
-export CONT_IMAGE_URL="rocm/mlperf:llama31_8b_training_5.1_gfx942 "
 
 
 # Training Configs: 
@@ -88,8 +85,11 @@ export MAX_LR="5e-4"
 #     If an empty string is provided (""), then the training will continue until time limit
 #     If we want to save a checkpoint, then this value must be set
 # export MAX_STEPS=1200000 # Fixed max_steps=1200000 in pretrain_llama31.py  
+export WARMUP_STEPS=512 # 16384 // GBS
 export EVAL_EVERY=12288
 export START_EVAL_AT=0
+
+export TENSOR_PARALLEL_SIZE=1
 # Experiment: starting steps
 #     This is the starting "offset" step from the checkpoint. 
 #     For instance, if you are resuming from a checkpoint folder `checkpoint-par-0-20-steps/checkpoint`, 

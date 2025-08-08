@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import os 
 import math
 import argparse
 from typing import Optional
@@ -207,7 +207,7 @@ def get_pretrain(
     pretrain.trainer.max_steps = 1200000 # Hardcoded to fix max_steps for this benchmark 
 
     pretrain.data = data_module
-    pretrain.trainer.val_check_interval = start_eval_at
+    pretrain.trainer.val_check_interval = eval_every / int (os.getenv ("GBS"))
     pretrain.trainer.limit_val_batches = eval_batches
     pretrain.trainer.limit_test_batches = eval_batches
 
@@ -239,7 +239,7 @@ def get_data(
 
     train_datasets = None
 
-    dataset_path = "/preproc_data"
+    dataset_path = dataset_path = os.getenv("PREPROCESSED_PATH")
 
     if use_full_dataset:
         train_datasets = sum([["12.5", f"{dataset_path}/c4-train.en_{idx}_text_document"] for idx in range(8)], [])

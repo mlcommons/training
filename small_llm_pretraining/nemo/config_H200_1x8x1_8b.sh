@@ -71,9 +71,6 @@ export FROM_HF=1
 # Model: Whether we want to save a checkpoint. Must be 1 if NPAR > 1. If 1, then we save a checkpoint at the end.
 export SAVE_CKPT=0
 
-# export SRC_PATH="/data/training/Llama-3.1-8B/original/"
-# export DST_PATH="/data/training/Llama-3.1-8B/nemo/"
-export CONT_IMAGE_URL="rocm/mlperf:llama31_8b_training_5.1_gfx942 "
 
 
 # Training Configs: 
