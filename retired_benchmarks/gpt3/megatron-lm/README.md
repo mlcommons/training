@@ -253,7 +253,3 @@ cd scripts
 sbatch preprocess.sh <path to c4>
 sbatch preprocess_val.sh <path to c4> <path to validation json>
 ```
-
-# 4. Model
-### Publication/Attribution
-Megatron ([1](https://arxiv.org/pdf/1909.08053.pdf) and [2](https://arxiv.org/pdf/2104.04473.pdf)) is a large, powerful transformer developed by the Applied Deep Learning Research team at NVIDIA.
