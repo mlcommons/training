@@ -183,7 +183,7 @@ def get_pretrain(
 
     pretrain.log.tensorboard = None
     pretrain.log.ckpt.every_n_train_steps = None
-    pretrain.log.ckpt.save_top_k = -1
+    pretrain.log.ckpt.save_top_k = 0
     pretrain.log.ckpt.save_last = False
     pretrain.log.ckpt.always_save_context = False
     pretrain.log.ckpt.save_weights_only = False
@@ -191,6 +191,7 @@ def get_pretrain(
     pretrain.log.ckpt.save_on_train_epoch_end = False
     pretrain.log.ckpt.monitor = "consumed_samples"
     pretrain.log.ckpt.mode = "max"
+    pretrain.trainer.strategy.async_save = False
 
     return exp_name, pretrain
 
