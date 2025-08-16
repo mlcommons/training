@@ -317,7 +317,7 @@ def get_parser() -> argparse.ArgumentParser:
     experiment_group.add_argument("--seeds", type=int, nargs="*", default=[], help="random seeds")
     experiment_group.add_argument("--num_exps", type=int, default=1)
     experiment_group.add_argument("--num_pars", type=int, default=1)
-    experiment_group.add_argument("--target_log_ppl", type=float, default=5.6)
+    experiment_group.add_argument("--target_log_ppl", type=float, default=3.3)
     experiment_group.add_argument("--step_time_atol", type=int, default=1600, help="train step time atol")
 
     return parser
@@ -539,20 +539,6 @@ if __name__ == "__main__":
                         pretrain.log.ckpt.every_n_train_steps = experiment_max_steps
                         pretrain.log.ckpt.save_on_train_epoch_end = False
 
-                try:
-                    print ("control C to skip")
-                    login_info = wandb.login()
-                    print("WandB is logged in.")
-                    pretrain.log.extra_loggers = [
-                        run.Config(
-                            WandbLogger,
-                            project='llama3.1_8b_training', 
-                            name=f'{checkpoint_name}-gbs={args.gbs}-lr={pretrain.optim.config.lr}', 
-
-                        ),
-                    ]
-                except:
-                    print("WandB is NOT logged in.")
                     pretrain.log.extra_loggers = [
                         run.Config(
                             MetricsLogger,

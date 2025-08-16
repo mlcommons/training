@@ -212,6 +212,7 @@ class MLPerfCallback(pl.Callback):
         trainer.val_check_interval = self.eval_every
         trainer.val_check_batch = self.eval_every
         self.log_eval_start(trainer, pl_module)
+        return super().on_validation_start(trainer, pl_module)
 
     def on_validation_end(self, trainer, pl_module):
         mllogger.end(key=constants.EVAL_STOP, metadata={constants.SAMPLES_COUNT: self.consumed_samples(trainer)})
