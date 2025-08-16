@@ -20,7 +20,7 @@ docker run -it --rm \
 
 The current codebase is using the c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4) for train and evaluation. 
 
-<!-- ### Preprocessed data download
+## Preprocessed data download
 
 The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using RClone as follows: 
 
@@ -32,13 +32,26 @@ sudo -v ; curl https://rclone.org/install.sh | sudo bash
 
 Once Rclone is installed, run the following command to authenticate with the bucket:
 
-```
-rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
+```bash
+rclone config create mlc-upload s3 \
+    provider=Cloudflare \
+    access_key_id=b4da5f7caeb19316de92d9e3a03346f6 \
+    secret_access_key=ff25d851e53229ae1383c35cef05921a9f484a6d2183d7be62d630715a8105a9 \
+    endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com \
+    no_check_bucket=true
 ```
 
-You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints: -->
+You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and tokenizer:
 
-### Raw data downloading
+```bash
+# Dataset:
+rclone copy -P --stats 5s </path/to/data/> mlc-upload:mlcommons-training-wg-intake/dataset/llama31_8b -P
+
+# Tokenizer:
+rclone copy -P --stats 5s </path/to/model/> mlc-upload:mlcommons-training-wg-intake/tokenizer/llama31_8b -P
+```
+
+## Raw data downloading [Optional]
 
 We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this benchmark. The original zipped **`json.gz`** files can be downloaded by following AllenAI C4's instruction, and you can download our zipped customized validation dataset from the MLCommons S3 bucket by running the following command: 
 
