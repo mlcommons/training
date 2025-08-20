@@ -22,33 +22,19 @@ The current codebase is using the c4/en/3.0.1 dataset from [HuggingFace/AllenAI]
 
 ## Preprocessed data download
 
-The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using RClone as follows: 
-
-To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows). To install Rclone on Linux/macOS/BSD systems, run:
-
-```
-sudo -v ; curl https://rclone.org/install.sh | sudo bash
-```
-
-Once Rclone is installed, run the following command to authenticate with the bucket:
+The pre-tokenized dataset and the tokenizer are available to download. More instructions to download on Windows are available [here](https://training.mlcommons-storage.org/index.html). You can download using the following commands:
 
 ```bash
-rclone config create mlc-upload s3 \
-    provider=Cloudflare \
-    access_key_id=b4da5f7caeb19316de92d9e3a03346f6 \
-    secret_access_key=ff25d851e53229ae1383c35cef05921a9f484a6d2183d7be62d630715a8105a9 \
-    endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com \
-    no_check_bucket=true
-```
-
-You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and tokenizer:
+# data 
+# go to the path where you want the data to be downloaded
+# use the same path in config when exporting PREPROCESSED_PATH
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d llama3_1_8b_preprocessed_c4_dataset https://training.mlcommons-storage.org/metadata/llama-3-1-8b-preprocessed-c4-dataset.uri
 
 ```bash
-# Dataset:
-rclone copy -P --stats 5s </path/to/data/> mlc-upload:mlcommons-training-wg-intake/dataset/llama31_8b -P
-
-# Tokenizer:
-rclone copy -P --stats 5s </path/to/model/> mlc-upload:mlcommons-training-wg-intake/tokenizer/llama31_8b -P
+# tokenizer 
+# go to the path where you want the tokenizer to be downloaded
+# use the same path in config when exporting TOKENIZER_PATH
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d llama3_1_8b_tokenizer https://training.mlcommons-storage.org/metadata/llama-3-1-8b-tokenizer.uri
 ```
 
 ## Raw data downloading [Optional]
