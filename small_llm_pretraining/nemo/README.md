@@ -22,7 +22,7 @@ The current codebase is using the c4/en/3.0.1 dataset from [HuggingFace/AllenAI]
 
 ## Preprocessed data download
 
-The pre-tokenized dataset and the tokenizer are available to download. More instructions to download on Windows are available [here]( https://github.com/mlcommons/r2-downloader). You can download using the following commands:
+The pre-tokenized dataset and the tokenizer are available to download. More instructions to download on Windows are available [here](https://training.mlcommons-storage.org/index.html). You can download using the following commands:
 
 ```bash
 # data 
