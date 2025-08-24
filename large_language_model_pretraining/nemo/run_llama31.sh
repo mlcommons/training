@@ -16,6 +16,9 @@
 
 set -e
 
+git init
+git add .
+git commit -sm "First commit"
 git config --global --add safe.directory /workspace/llama31
 
 # Vars without defaults
