@@ -47,7 +47,7 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 | Model | reference implementation | framework* | dataset | model parameter count**
 | ---- | ---- | ---- | ---- | ----
 | retinanet | [single_stage_detector](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages | 37M
-| flux.1-schnell| [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | pytorch | CC12M subset | 11.9B
+| flux.1 | [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | torchtitan | CC12M subset | 11.9B
 | llama3.1_8b | [small_llm_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_pretraining) | NeMo | C4 | 8b
 | llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
 | llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/large_language_model_pretraining) | NeMo | C4 | 405B
