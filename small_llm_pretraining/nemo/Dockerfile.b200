@@ -87,6 +87,7 @@ RUN if [ "${MCORE_REVISION}" != SKIP ]; then \
     git checkout ${MCORE_REVISION} && \
     echo MCORE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MCORE_COMMIT_HASH.env && \
+    sed -i "/triton/d" requirements/pytorch_24.10/requirements.txt && \
     pip install . && \
     cd megatron/core/datasets && \
     make \
