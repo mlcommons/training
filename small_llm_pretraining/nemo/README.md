@@ -46,7 +46,7 @@ We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this
 export C4_PATH=""
 
 # download the full C4 files, including all raw train and validations
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/en_json/3.0.1 $C4_PATH -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $C4_PATH https://training.mlcommons-storage.org/metadata/c4-full-dataset-unzipped.uri
 ```
 After downloading, run the following command to process them to zip them into `.gz` format before running the data preprocessing. 
 
