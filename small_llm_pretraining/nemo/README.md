@@ -29,7 +29,7 @@ The pre-tokenized dataset and the tokenizer are available to download. More info
 # go to the path where you want the data to be downloaded
 # use the same path in config when exporting PREPROCESSED_PATH
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d llama3_1_8b_preprocessed_c4_dataset https://training.mlcommons-storage.org/metadata/llama-3-1-8b-preprocessed-c4-dataset.uri
-
+```
 ```bash
 # tokenizer 
 # go to the path where you want the tokenizer to be downloaded
@@ -50,7 +50,7 @@ bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/he
 ```
 After downloading, run the following command to process them to zip them into `.gz` format before running the data preprocessing. 
 
-```
+```bash
 bash utils/parallel_compress_json_to_gz.sh
 ```
 
