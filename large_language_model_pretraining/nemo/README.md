@@ -55,28 +55,16 @@ We use the Mixtral 8x22B tokenizer from [HuggingFace/MistralAI](https://huggingf
 
 ### Preprocessed data download
 
-The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using RClone as follows: 
+The pre-tokenized dataset and the tokenizer are available to download from the S3 bucket. You can download this data from the bucket using the [MLCommons R2 Downloader](https://github.com/mlcommons/r2-downloader): 
 
-To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows). To install Rclone on Linux/macOS/BSD systems, run:
-
-```
-sudo -v ; curl https://rclone.org/install.sh | sudo bash
-```
-
-Once Rclone is installed, run the following command to authenticate with the bucket:
-
-```
-rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
-```
-
-You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints: 
+Navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints. More information about the MLCommons R2 Downloader, including how to run it on Windows, can be found [here](https://training.mlcommons-storage.org).
 
 #### Dataset
 
-```
+```bash
 # Replace this path with your desired path on the machine
 export PREPROCESSED_PATH="./"
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/mixtral_8x22b_preprocessed $PREPROCESSED_PATH -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $PREPROCESSED_PATH https://training.mlcommons-storage.org/metadata/mixtral-8x22b-preprocessed-c4-dataset.uri
 ```
 
 After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`: 
@@ -85,10 +73,10 @@ After the download is complete, you should see files with the following naming c
 
 #### Tokenizer
 
-```
+```bash
 # Replace this path with your desired path on the machine
 export TOKENIZER_PATH="./"
-rclone copy mlc-training:mlcommons-training-wg-public/llama3_1/datasets/tokenizer $TOKENIZER_PATH -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $TOKENIZER_PATH https://training.mlcommons-storage.org/metadata/mixtral-8x22b-tokenizer.uri
 ```
 
 After the download is complete, you should see five files under `TOKENIZER_PATH`: 
@@ -138,7 +126,7 @@ The model largely follows the Llama 3.1 405B [paper](https://arxiv.org/abs/2407.
 
 ### Checkpoint download
 
-MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. You must first agree to the [confidentiality notice](https://llama3-1.mlcommons.org) using your organizational email address, then you will receive a link to a directory containing Rclone download instructions. _If you cannot access the form but you are part of a MLCommons Member organization, submit the [MLCommons subscription form](https://mlcommons.org/community/subscribe/) with your organizational email address and [associate a Google account](https://accounts.google.com/SignUpWithoutGmail) with your organizational email address. You should then be able to access the confidentiality form using that Google account._
+MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. You must first agree to the [confidentiality notice](https://llama3-1.mlcommons.org) using your organizational email address, then you will receive a link to a download directions page with MLCommons R2 Downloader commands. _If you cannot access the form but you are part of a MLCommons Member organization, submit the [MLCommons subscription form](https://mlcommons.org/community/subscribe/) with your organizational email address and [associate a Google account](https://accounts.google.com/SignUpWithoutGmail) with your organizational email address. You should then be able to access the confidentiality form using that Google account._
 
 #### Saving and restoring a checkpoint
 
@@ -182,7 +170,7 @@ We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this
 export ORIGINAL_C4_PATH=""
 
 # download the customized zipped validation dataset
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/c4-validation-91205-samples.en.json.gz $ORIGINAL_C4_PATH -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $ORIGINAL_C4_PATH https://training.mlcommons-storage.org/metadata/c4-validation-dataset-zipped.uri
 ```
 
 Alternatively, we have also hosted the **unzipped C4 `json`** files on MLCommons S3 bucket. You can download them using the following commands: 
@@ -191,14 +179,21 @@ Alternatively, we have also hosted the **unzipped C4 `json`** files on MLCommons
 export ORIGINAL_C4_PATH=""
 
 # download the full C4 files, including all raw train and validations
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/en_json/3.0.1 $ORIGINAL_C4_PATH -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $ORIGINAL_C4_PATH https://training.mlcommons-storage.org/metadata/c4-full-dataset-unzipped.uri
 ```
 
 Note that for unzipped JSON files, it is recommended to zip them into `.gz` format before running the data preprocessing. 
 
 #### Prepare tokenizer
 
-We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed. 
+We use Mixtral 8x22B tokenizer in this benchmark. Tokenizer files can be downloaded [here](https://huggingface.co/mistralai/Mixtral-8x22B-v0.1/tree/main). Only the five files containing tokenizer-related contents (`special_tokens_map.json`, `tokenizer.json`, `tokenizer.model`, `tokenizer.model.v1`, `tokenizer_config.json`) are needed.
+
+You can download just that subset of files using the following command:
+
+```bash
+export TOKENIZER_PATH=""
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $TOKENIZER_PATH https://training.mlcommons-storage.org/metadata/mixtral-8x22b-tokenizer.uri
+```
 
 #### Run data preprocessing
 
