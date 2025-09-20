@@ -487,21 +487,21 @@ black mixture_of_experts_pretraining/
 # Train and eval datasets
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/c4 https://training.mlcommons-storage.org/metadata/c4-train-and-eval-datasets.uri
 ```
-```
+```bash
 # Preprocessed dataset
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/preprocessed_c4 https://training.mlcommons-storage.org/metadata/mixtral-8x22b-preprocessed-c4-dataset.uri
 ```
 ## Checkpoints
 * Mixtral-8x22B-v0.1-fsdp: use for `tensor_parallelism=1`
-```
+```bash
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/Mixtral-8x22B-v0.1-fsdp https://training.mlcommons-storage.org/metadata/mixtral-8x22b-v0-1-fsdp-checkpoint.uri
 ```
 * Mixtral-8x22B-v0.1-2d-fsdp-tp: use for `tensor_parallelism` > 1
-```
+```bash
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/Mixtral-8x22B-v0.1-2d-fsdp-tp https://training.mlcommons-storage.org/metadata/mixtral-8x22b-v0-1-2d-fsdp-tp-checkpoint.uri
 ```
 
 ## Docker Images
-```
+```bash
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/mixtral-8x22b-docker-images.uri
 ```
