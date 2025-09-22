@@ -25,7 +25,7 @@ Each reference implementation provides the following:
  
 * Code that implements the model in at least one framework.
 * A Dockerfile which can be used to run the benchmark in a container.
-* A script which downloads the appropriate dataset.
+* Instructions to download the appropriate dataset.
 * A script which runs and times training the model.
 * Documentation on the dataset, model, and machine setup.
 
@@ -34,7 +34,7 @@ Each reference implementation provides the following:
 Follow instructions on the Readme of each benchmark. Generally, a benchmark can be run with the following steps:
 
 1. Setup docker & dependencies. There is a shared script (install_cuda_docker.sh) to do this. Some benchmarks will have additional setup, mentioned in their READMEs.
-2. Download the dataset using `./download_dataset.sh`. This should be run outside of docker, on your host machine. This should be run from the directory it is in (it may make assumptions about CWD).
+2. Download the dataset from [mlcommons-storage](https://training.mlcommons-storage.org/index.html). This should be run outside of docker, on your host machine. This should be run from the directory it is in (it may make assumptions about CWD).
 3. Optionally, run `verify_dataset.sh` to ensure the was successfully downloaded.
 4. Build and run the docker image, the command to do this is included with each Benchmark. 
 
