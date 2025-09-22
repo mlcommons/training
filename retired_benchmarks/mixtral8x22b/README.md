@@ -477,18 +477,6 @@ black mixture_of_experts_pretraining/
 ```
 
 # 9. S3 artifacts download
-The dataset, docker image and the checkpoints are available to download from an S3 bucket. You can download this data from the bucket using Rclone as follows:
-
-To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
-To install Rclone on Linux/macOS/BSD systems, run:
-```
-sudo -v ; curl https://rclone.org/install.sh | sudo bash
-```
-Once Rclone is installed, run the following command to authenticate with the bucket:
-```
-rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
-```
-You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints:
 
 ## Text Datasets
 **Dataset**
@@ -496,27 +484,24 @@ You can then navigate in the terminal to your desired download directory and run
 * Eval Dataset `original/en_val_subset_json`
 * Preprocessed GPU dataset `mixtral_8x22b_preprocessed`
 ```
-mkdir -p datasets
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4 ./datasets -P
-
-# moving them to the original naming convention so that it won't break the code
-mv ./datasets/original ./datasets/c4
-mv ./datasets/mixtral_8x22b_preprocessed ./datasets/preprocessed_c4
+# Train and eval datasets
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/c4 https://training.mlcommons-storage.org/metadata/c4-train-and-eval-datasets.uri
+```
+```bash
+# Preprocessed dataset
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/preprocessed_c4 https://training.mlcommons-storage.org/metadata/mixtral-8x22b-preprocessed-c4-dataset.uri
 ```
 ## Checkpoints
 * Mixtral-8x22B-v0.1-fsdp: use for `tensor_parallelism=1`
-```
-mkdir -p checkpoints/Mixtral-8x22B-v0.1-fsdp
-rclone copy mlc-training:mlcommons-training-wg-public/mixtral_8x22b/checkpoints/Mixtral-8x22B-v0.1-fsdp ./datasets/Mixtral-8x22B-v0.1-fsdp -P
+```bash
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/Mixtral-8x22B-v0.1-fsdp https://training.mlcommons-storage.org/metadata/mixtral-8x22b-v0-1-fsdp-checkpoint.uri
 ```
 * Mixtral-8x22B-v0.1-2d-fsdp-tp: use for `tensor_parallelism` > 1
-```
-mkdir -p checkpoints/Mixtral-8x22B-v0.1-2d-fsdp-tp
-rclone copy mlc-training:mlcommons-training-wg-public/mixtral_8x22b/checkpoints/Mixtral-8x22B-v0.1-2d-fsdp-tp ./datasets/Mixtral-8x22B-v0.1-fsdp -P
+```bash
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/Mixtral-8x22B-v0.1-2d-fsdp-tp https://training.mlcommons-storage.org/metadata/mixtral-8x22b-v0-1-2d-fsdp-tp-checkpoint.uri
 ```
 
 ## Docker Images
-```
-mkdir -p docker-images
-rclone copy mlc-training:mlcommons-training-wg-public/mixtral_8x22b/docker-images ./docker-images -P
+```bash
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/mixtral-8x22b-docker-images.uri
 ```

@@ -22,14 +22,14 @@ The current codebase is using the c4/en/3.0.1 dataset from [HuggingFace/AllenAI]
 
 ## Preprocessed data download
 
-The pre-tokenized dataset and the tokenizer are available to download. More instructions to download on Windows are available [here](https://training.mlcommons-storage.org/index.html). You can download using the following commands:
+The pre-tokenized dataset and the tokenizer are available to download. More information about the MLCommons R2 Downloader, including how to run it on Windows, are available [here](https://training.mlcommons-storage.org). You can download using the following commands:
 
 ```bash
 # data 
 # go to the path where you want the data to be downloaded
 # use the same path in config when exporting PREPROCESSED_PATH
 bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d llama3_1_8b_preprocessed_c4_dataset https://training.mlcommons-storage.org/metadata/llama-3-1-8b-preprocessed-c4-dataset.uri
-
+```
 ```bash
 # tokenizer 
 # go to the path where you want the tokenizer to be downloaded
@@ -46,11 +46,11 @@ We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this
 export C4_PATH=""
 
 # download the full C4 files, including all raw train and validations
-rclone copy mlc-training:mlcommons-training-wg-public/common/datasets/c4/original/en_json/3.0.1 $C4_PATH -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $C4_PATH https://training.mlcommons-storage.org/metadata/c4-full-dataset-unzipped.uri
 ```
 After downloading, run the following command to process them to zip them into `.gz` format before running the data preprocessing. 
 
-```
+```bash
 bash utils/parallel_compress_json_to_gz.sh
 ```
 
