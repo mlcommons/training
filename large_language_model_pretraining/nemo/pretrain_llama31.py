@@ -75,8 +75,8 @@ def slurm_executor(
         gpus_per_node=devices,
         mem="0",
         exclusive=True,
-        gres="gpu:8",
-        packager=run.GitArchivePackager(subpath="large_language_model_pretraining/nemo", ref="HEAD"),
+        gres=f"gpu:{devices}",
+        packager=run.GitArchivePackager(),
         dependencies=dependencies,
     )
 
