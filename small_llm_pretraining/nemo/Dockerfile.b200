@@ -29,8 +29,7 @@ ENV CUSTOM_FROM_IMAGE_NAME ${FROM_IMAGE_NAME}
 # Custom libraries version
 WORKDIR /workspace/
 
-ARG GIT_COMMIT_ID
-ENV GIT_COMMIT_ID=$GIT_COMMIT_ID
+ENV PIP_CONSTRAINT=""
 
 RUN git config --global user.name "a" && \
     git config --global user.email "a"
@@ -38,38 +37,6 @@ RUN git config --global user.name "a" && \
 WORKDIR /workspace/
 
 RUN pip install numcodecs==0.13.1
-
-## 1. Apex
-ARG APEX_REVISION=SKIP
-ENV CUSTOM_APEX_REVISION ${APEX_REVISION}
-ARG APEX_MAX_JOBS=4
-
-RUN if [ "${APEX_REVISION}" != SKIP ]; then \
-    git clone https://github.com/NVIDIA/apex && \
-    cd apex && \
-    echo APEX_REVISION=${APEX_REVISION} && \
-    git checkout ${APEX_REVISION} && \
-    echo APEX_COMMIT_HASH=$(git rev-parse HEAD) && \
-    MAX_JOBS=${APEX_MAX_JOBS} NVCC_APPEND_FLAGS="--threads 8" pip install -v --no-build-isolation --no-cache-dir --disable-pip-version-check --config-settings "--build-option=--cpp_ext --cuda_ext --bnp --xentropy --deprecated_fused_adam --deprecated_fused_lamb --fast_multihead_attn --distributed_lamb --fast_layer_norm --transducer --distributed_adam --fmha --fast_bottleneck --nccl_p2p --peer_memory --permutation_search --focal_loss --fused_conv_bias_relu --index_mul_2d --cudnn_gbn --group_norm" . \
-    ; fi
-
-
-
-## 2. Transformer Engine
-ARG TE_REVISION=SKIP
-ENV CUSTOM_TE_REVISION ${TE_REVISION}
-
-RUN if [ "${TE_REVISION}" != SKIP ]; then \
-    pip uninstall -y transformer-engine && \
-    git clone https://github.com/NVIDIA/TransformerEngine.git transformerengine && \
-    cd transformerengine && \
-    git checkout ${TE_REVISION} && \
-    echo TE_COMMIT_HASH=$(git rev-parse HEAD) && \
-    echo $(git rev-parse HEAD) > /TE_COMMIT_HASH.env && \
-    git submodule init && git submodule update && \
-    NVTE_CUDA_ARCHS="90;100" NVTE_UB_WITH_MPI=1 NVTE_FRAMEWORK=pytorch MPI_HOME=/usr/local/mpi pip install --force-reinstall --no-deps . \
-    ; fi
-
 
 ## 3. NeMo
 ARG NEMO_REVISION=v2.1.0
@@ -120,6 +87,7 @@ RUN if [ "${MCORE_REVISION}" != SKIP ]; then \
     git checkout ${MCORE_REVISION} && \
     echo MCORE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MCORE_COMMIT_HASH.env && \
+    sed -i "/triton/d" requirements/pytorch_24.10/requirements.txt && \
     pip install . && \
     cd megatron/core/datasets && \
     make \
