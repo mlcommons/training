@@ -61,10 +61,10 @@ The container can now be used on H100 machines once the above installation steps
 Once this is done, we should `cd /workspace/repository` and follow the same training workflow from there. 
 
 ### Steps to download and verify data
-Download the dataset:
+Download the dataset (you can read more about the MLC R2 Downloader, including how to run it on Windows, [here](https://training.mlcommons-storage.org)):
 ```bash
 
-bash download_igbh_full.sh
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/gnn-igbh-dataset-full.uri
 ```
 
 Before training, generate the seeds for training and validation:
