@@ -200,7 +200,7 @@ torchx run -s local_cwd dist.ddp -j 1x8 --script dlrm_main.py -- \
     --multi_hot_sizes=3,2,1,2,6,1,1,1,1,7,3,8,1,6,9,5,1,1,1,12,100,27,10,3,1,1
 ```
 
-# Appendix
+# Appendix (Optional): Manual dataset creation
 
 ## Steps to create the synthetic multi-hot dataset
 
