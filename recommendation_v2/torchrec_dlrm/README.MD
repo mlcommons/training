@@ -138,32 +138,16 @@ A module which can be used for DLRM inference exists [here](https://github.com/p
 
 # Running the MLPerf DLRM v2 benchmark
 
-## Create the synthetic multi-hot dataset
-### Step 1: Download and uncompressing the [Criteo 1TB Click Logs dataset](https://ailab.criteo.com/ressources/criteo-1tb-click-logs-dataset-for-mlperf)
+## Download the preprocessed Criteo multi-hot dataset 
+You can download this data from the bucket using the [MLCommons R2 Downloader](https://github.com/mlcommons/r2-downloader). Navigate in the terminal to your desired download directory and run the following commands to download the dataset. More information about the MLCommons R2 Downloader, including how to run it on Windows, can be found [here](https://training.mlcommons-storage.org).
 
-### Step 2: Run the 1TB Criteo Preprocess script.
-Example usage:
+```bash
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/dlrmv2-preprocessed-criteo-click-logs.uri
 
 ```
-bash ./scripts/process_Criteo_1TB_Click_Logs_dataset.sh \
-./criteo_1tb/raw_input_dataset_dir \
-./criteo_1tb/temp_intermediate_files_dir \
-./criteo_1tb/numpy_contiguous_shuffled_output_dataset_dir
-```
 
-The script requires 700GB of RAM and takes 1-2 days to run. MD5 checksums for the output dataset files are in md5sums_preprocessed_criteo_click_logs_dataset.txt.
-
-### Step 3: Run the `materialize_synthetic_multihot_dataset.py` script
-```
-python materialize_synthetic_multihot_dataset.py \
-    --in_memory_binary_criteo_path $PREPROCESSED_CRITEO_1TB_CLICK_LOGS_DATASET_PATH \
-    --output_path $MATERIALIZED_DATASET_PATH \
-    --num_embeddings_per_feature 40000000,39060,17295,7424,20265,3,7122,1543,63,40000000,3067956,405282,10,2209,11938,155,4,976,14,40000000,40000000,40000000,590152,12973,108,36 \
-    --multi_hot_sizes 3,2,1,2,6,1,1,1,1,7,3,8,1,6,9,5,1,1,1,12,100,27,10,3,1,1 \
-    --multi_hot_distribution_type uniform
-```
-
-### Step 4: Run the MLPerf DLRM v2 benchmark, which uses the materialized multi-hot dataset
+## Run the MLPerf DLRM v2 benchmark, which uses the materialized multi-hot dataset
 Example running 8 GPUs:
 ```
 export TOTAL_TRAINING_SAMPLES=4195197692 ;
@@ -214,3 +198,34 @@ torchx run -s local_cwd dist.ddp -j 1x8 --script dlrm_main.py -- \
     --learning_rate 0.005 \
     --multi_hot_distribution_type uniform \
     --multi_hot_sizes=3,2,1,2,6,1,1,1,1,7,3,8,1,6,9,5,1,1,1,12,100,27,10,3,1,1
+```
+
+# Appendix (Optional): Manual dataset creation
+
+## Steps to create the synthetic multi-hot dataset
+
+This is not required if you follow instructions above to download the preprocessed dataset from [mlcommons-storage](https://training.mlcommons-storage.org).
+
+### Step 1: Download and uncompressing the [Criteo 1TB Click Logs dataset](https://ailab.criteo.com/ressources/criteo-1tb-click-logs-dataset-for-mlperf)
+
+### Step 2: Run the 1TB Criteo Preprocess script.
+Example usage:
+
+```
+bash ./scripts/process_Criteo_1TB_Click_Logs_dataset.sh \
+./criteo_1tb/raw_input_dataset_dir \
+./criteo_1tb/temp_intermediate_files_dir \
+./criteo_1tb/numpy_contiguous_shuffled_output_dataset_dir
+```
+
+The script requires 700GB of RAM and takes 1-2 days to run. MD5 checksums for the output dataset files are in md5sums_preprocessed_criteo_click_logs_dataset.txt.
+
+### Step 3: Run the `materialize_synthetic_multihot_dataset.py` script
+```
+python materialize_synthetic_multihot_dataset.py \
+    --in_memory_binary_criteo_path $PREPROCESSED_CRITEO_1TB_CLICK_LOGS_DATASET_PATH \
+    --output_path $MATERIALIZED_DATASET_PATH \
+    --num_embeddings_per_feature 40000000,39060,17295,7424,20265,3,7122,1543,63,40000000,3067956,405282,10,2209,11938,155,4,976,14,40000000,40000000,40000000,590152,12973,108,36 \
+    --multi_hot_sizes 3,2,1,2,6,1,1,1,1,7,3,8,1,6,9,5,1,1,1,12,100,27,10,3,1,1 \
+    --multi_hot_distribution_type uniform
+```

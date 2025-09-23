@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Deprecated: Use instructions in https://training.mlcommons-storage.org/index.html to download the dataset.
+
 #https://github.com/IllinoisGraphBenchmark/IGB-Datasets/blob/main/igb/download_igbh600m.sh
 echo "IGBH600M download starting"
 cd ../../data/

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Deprecated: Use instructions in https://training.mlcommons-storage.org/index.html to download the dataset.
+
 DATA_DIR="./igbh/full/processed"
 
 # Capture MLCube parameter
