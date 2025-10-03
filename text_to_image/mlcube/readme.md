@@ -66,7 +66,7 @@ You can execute the complete pipeline with one single command.
 * Demo pipeline:
 
 ```shell
-mlcube run --task=download_demo,download_models,demo -Pdocker.build_strategy=always
+mlcube run --task=download_demo,demo -Pdocker.build_strategy=always
 ```
 
 **Note**: To rebuild the image use the flag: `-Pdocker.build_strategy=always` during the `mlcube run` command.
