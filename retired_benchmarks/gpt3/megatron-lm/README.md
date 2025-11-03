@@ -164,30 +164,21 @@ Evaluation on the validation subset that consists of 24567 examples.
 # 6. Other
 
 ### S3 artifacts download
-The dataset and the checkpoints are available to download from an S3 bucket. You can download this data from the bucket using Rclone as follows:
+The dataset and the checkpoints are available to download from an S3-compatible bucket. You can download this data from the bucket using the MLCommons R2 Downloader. More information about the MLCommons R2 Downloader, including how to run it on Windows and in the dedicated container image, can be found [here](https://training.mlcommons-storage.org).
 
-To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
-To install Rclone on Linux/macOS/BSD systems, run:
-```
-sudo -v ; curl https://rclone.org/install.sh | sudo bash
-```
-Once Rclone is installed, run the following command to authenticate with the bucket:
-```
-rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
-```
-You can then navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints:
+Navigate in the terminal to your desired download directory and run the following commands to download the dataset and checkpoints:
 
 **`dataset_c4_spm.tar`**
 ```
-rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/dataset_c4_spm.tar ./ -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/gpt-3-megatron-preprocessed-dataset.uri
 ```
 **`checkpoint_megatron_fp32.tar`**
 ```
-rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/checkpoint_megatron_fp32.tar ./ -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/gpt-3-megatron-fp32-checkpoint.uri
 ```
 **`checkpoint_nemo_bf16`**
 ```
-rclone copy mlc-training:mlcommons-training-wg-public/gpt3/megatron-lm/checkpoint_nemo_bf16.tar ./ -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/gpt-3-megatron-bf16-checkpoint.uri
 ```
 
 ### Model conversion from Paxml checkpoints
