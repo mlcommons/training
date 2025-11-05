@@ -18,23 +18,12 @@ The following files are available for download in a Cloudflare R2 bucket.
 * License.txt
 * vocab.txt: Contains WordPiece to id mapping
 
-### Download from bucket
+### Download with MLC R2 Downloader
 
-You can access the bucket and download the files with Rclone
-
-To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
-To install Rclone on Linux/macOS/BSD systems, run:
-```
-sudo -v ; curl https://rclone.org/install.sh | sudo bash
-```
-Once Rclone is installed, run the following command to authenticate with the bucket:
-```
-rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
-```
-You can then navigate in the terminal to your desired download directory and run the following command to download the input files:
+Navigate in the terminal to your desired download directory and run the following commands to download the input files. More information about the MLCommons R2 Downloader, including how to run it on Windows and in the dedicated container image, can be found [here](https://training.mlcommons-storage.org).
 
 ```
-rclone copy mlc-training:mlcommons-training-wg-public/wikipedia_for_bert/input_files ./input_files -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/bert-input-files.uri
 ```
 
 ### Alternatively generate the checkpoints
@@ -57,23 +46,12 @@ The dataset was prepared using Python 3.7.6, nltk 3.4.5 and the [tensorflow/tens
 
 Files after the download, uncompress, extract, clean up and dataset seperation steps are available for download in a Cloudflare R2 bucket. The main reason is that, WikiExtractor.py replaces some of the tags present in XML such as {CURRENTDAY}, {CURRENTMONTHNAMEGEN} with the current values obtained from time.strftime ([code](https://github.com/attardi/wikiextractor/blob/e4abb4cbd019b0257824ee47c23dd163919b731b/WikiExtractor.py#L632)). Hence, one might see slighly different preprocessed files after the WikiExtractor.py file is invoked. This means the md5sum hashes of these files will also be different each time WikiExtractor is called.
 
-### Download from bucket
+### Download with MLC R2 Downloader
 
-You can access the bucket and download the files with Rclone
-
-To run Rclone on Windows, you can download the executable [here](https://rclone.org/install/#windows).
-To install Rclone on Linux/macOS/BSD systems, run:
-```
-sudo -v ; curl https://rclone.org/install.sh | sudo bash
-```
-Once Rclone is installed, run the following command to authenticate with the bucket:
-```
-rclone config create mlc-training s3 provider=Cloudflare access_key_id=76ea42eadb867e854061a1806220ee1e secret_access_key=a53625c4d45e3ca8ac0df8a353ea3a41ffc3292aa25259addd8b7dc5a6ce2936 endpoint=https://c2686074cb2caf5cbaf6d134bdba8b47.r2.cloudflarestorage.com
-```
-You can then navigate in the terminal to your desired download directory and run the following command to download the dataset:
+Navigate in the terminal to your desired download directory and run the following commands to download the dataset. More information about the MLCommons R2 Downloader, including how to run it on Windows and in the dedicated container image, can be found [here](https://training.mlcommons-storage.org).
 
 ```
-rclone copy mlc-training:mlcommons-training-wg-public/wikipedia_for_bert/processed_dataset ./processed_dataset -P
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/bert-preprocessed-wikipedia-dataset.uri
 ```
 
 ### Files in ./results directory:

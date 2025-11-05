@@ -111,10 +111,21 @@ The benchmark employs two datasets:
 ### Laion 400m
 The benchmark uses a CC-BY licensed subset of the Laion400 dataset.
 
-The LAION datasets comprise lists of URLs for original images, paired with the ALT text linked to those images. As downloading millions of images from the internet is not a deterministic process and to ensure the replicability of the benchmark results, submitters are asked to download the subset from the MLCommons storage. The dataset is provided in two formats:
+The LAION datasets comprise lists of URLs for original images, paired with the ALT text linked to those images. As downloading millions of images from the internet is not a deterministic process and to ensure the replicability of the benchmark results, submitters are asked to download the subset from MLCommons storage using the MLCommons R2 Downloader. More information about the MLCommons R2 Downloader, including how to run it on Windows and in the dedicated container image, can be found [here](https://training.mlcommons-storage.org). 
 
-1. Preprocessed moments (recommended):`scripts/datasets/laion400m-filtered-download-moments.sh --output-dir /datasets/laion-400m/webdataset-moments-filtered`
-2. Raw images: `scripts/datasets/laion400m-filtered-download-images.sh --output-dir /datasets/laion-400m/webdataset-filtered`
+The dataset is provided in two formats, which can be downloaded with the following commands.
+
+1. Preprocessed moments (recommended):
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/laion-400m/webdataset-moments-filtered https://training.mlcommons-storage.org/metadata/stable-diffusion-laion-400m-filtered-moments-dataset.uri
+```
+
+2. Raw images:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/laion-400m/webdataset-filtered https://training.mlcommons-storage.org/metadata/table-diffusion-laion-400m-filtered-images-dataset.uri
+```
 
 While the benchmark code is compatible with both formats, we recommend using the preprocessed moments to save on computational resources.
 
@@ -123,11 +134,16 @@ For additional information about Laion 400m, the CC-BY subset, and the scripts u
 ### COCO-2014
 The COCO-2014-validation dataset consists of 40,504 images and 202,654 annotations. However, our benchmark uses only a subset of 30,000 images and annotations chosen at random with a preset seed. It's not necessary to download the entire COCO dataset as our focus is primarily on the labels (prompts) and the inception activation for the corresponding images (used for the FID score).
 
-To ensure reproducibility, we ask the submitters to download the relevant files from the MLCommons storage:
+To ensure reproducibility, we ask the submitters to download the relevant files from MLCommons storage using the MLCommons R2 Downloader. More information about the MLCommons R2 Downloader, including how to run it on Windows and in the dedicated container image, can be found [here](https://training.mlcommons-storage.org).
+
+The files can be downloaded with the following commands.
 
 ```bash
-scripts/datasets/coco2014-validation-download-prompts.sh --output-dir /datasets/coco2014
-scripts/datasets/coco2014-validation-download-stats.sh --output-dir /datasets/coco2014
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/coco2014 https://training.mlcommons-storage.org/metadata/stable-diffusion-coco2014-validation-prompts-dataset.uri
+```
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d datasets/coco2014 https://training.mlcommons-storage.org/metadata/stable-diffusion-coco2014-validation-stats-dataset.uri
 ```
 
 While the benchmark code can work with raw images, we recommend using the preprocessed inception weights to save on computational resources.
@@ -138,19 +154,21 @@ For additional information about the validation process and the used metrics, re
 
 ## Downloading the checkpoints
 
+You can download the checkpoints with the MLCommons R2 Downloader. More information about the MLCommons R2 Downloader, including how to run it on Windows and in the dedicated container image, can be found [here](https://training.mlcommons-storage.org).
+
 The benchmark utilizes several network architectures for both the training and validation processes:
 
 1. **Stable Diffusion**: This component leverages StabilityAI's 512-base-ema.ckpt checkpoint from HuggingFace. While the checkpoint includes weights for the UNet, VAE, and OpenCLIP text embedder, the UNet weights are not used and are discarded when loading the weights. The checkpoint can be downloaded with the following command:
 ```bash
-scripts/checkpoints/download_sd.sh --output-dir /checkpoints/sd
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/sd https://training.mlcommons-storage.org/metadata/stable-diffusion-sd-checkpoint.uri
 ```
 2. **Inception**: The Inception network is employed during validation to compute the Fréchet Inception Distance (FID) score. The necessary weights can be downloaded with the following command:
 ```bash
-scripts/checkpoints/download_inception.sh --output-dir /checkpoints/inception
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/inception https://training.mlcommons-storage.org/metadata/stable-diffusion-inception-checkpoint.uri
 ```
 3. **OpenCLIP ViT-H-14 Model**: This model is utilized for the computation of the CLIP score. The required weights can be downloaded using the command:
 ```bash
-scripts/checkpoints/download_clip.sh --output-dir /checkpoints/clip
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d checkpoints/clip https://training.mlcommons-storage.org/metadata/stable-diffusion-clip-checkpoint.uri
 ```
 
 The aforementioned scripts will handle both the download and integrity verification of the checkpoints.

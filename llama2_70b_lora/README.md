@@ -41,18 +41,9 @@ git clone https://github.com/mlperf/logging.git mlperf-logging
 pip install -e mlperf-logging
 ```
 ## Download Data and Model
-MLCommons hosts the model and preprocessed dataset for download **exclusively by MLCommons Members**. You must first agree to the [confidentiality notice](https://llama2.mlcommons.org) using your organizational email address, then you will receive a link to a directory containing Rclone download instructions. _If you cannot access the form but you are part of a MLCommons Member organization, submit the [MLCommons subscription form](https://mlcommons.org/community/subscribe/) with your organizational email address and [associate a Google account](https://accounts.google.com/SignUpWithoutGmail) with your organizational email address._ Once you have access to the Rclone download instructions, follow steps 1-3 to install and set up and authenticate Rclone. Finally, download the model to the desired download directory (default ./models):
-```
-mkdir models
-cd models
-rclone copy mlc-llama2:Llama2-70b-fused-qkv-mlperf ./Llama2-70b-fused-qkv-mlperf -P
-```
-Similarly download the data to the desired download directory (default ./dataset):
-```
-mkdir dataset
-cd dataset
-rclone copy mlc-llama2:training/scrolls_gov_report_8k ./scrolls_gov_report_8k -P
-```
+MLCommons hosts the model and preprocessed dataset for download **exclusively by MLCommons Members**. You must first agree to the [confidentiality notice](https://llama2.mlcommons.org) using your organizational email address, then you will receive a link to a download instructions page with [MLCommons R2 Downloader](https://github.com/mlcommons/r2_downloader) commands. _If you cannot access the form but you are part of a MLCommons Member organization, submit the [MLCommons subscription form](https://mlcommons.org/community/subscribe/) with your organizational email address and [associate a Google account](https://accounts.google.com/SignUpWithoutGmail) with your organizational email address._ 
+
+Once you have access to the download instructions, download the Training model to the desired download directory (default ./models). Similarly, download the Training data to the desired download directory (default ./dataset):
 
 ## Llama2-70B on 8 devices
 
