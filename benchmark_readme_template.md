@@ -40,3 +40,5 @@ What is the numeric quality target
 How many training items between quality evaluations (typically all, evaluated every epoch)
 ### Evaluation thoroughness
 How many test items per quality evaluation (typically all)
+# 6. Approx runtime
+Add approximate runtime using UNOPTIMIZED reference code. Include information on which hardware was used and training precision. 
