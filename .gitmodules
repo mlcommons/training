@@ -6,3 +6,6 @@
 	path = text_to_image/torchtitan
 	url = https://github.com/pytorch/torchtitan.git
 	branch = mlperf-training-flux.1
+[submodule "reasoning/RL"]
+	path = reasoning/RL
+	url = https://github.com/hXl3s/RL.git
