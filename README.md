@@ -42,6 +42,25 @@ Each benchmark will run until the target quality is reached and then stop, print
 
 Some these benchmarks are rather slow or take a long time to run on the reference hardware. We expect to see significant performance improvements with more hardware and optimized implementations.
 
+# MLPerf Training v6.0 (Submission Deadline May 15, 2026)
+
+| Model | reference implementation | framework* | dataset | model parameter count**
+| ---- | ---- | ---- | ---- | ----
+| flux.1 | [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | torchtitan | CC12M subset | 11.9B
+| llama3.1_8b | [small_llm_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_pretraining) | NeMo | C4 | 8b
+| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/large_language_model_pretraining) | NeMo | C4 | 405B
+| dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
+| gpt_oss_20b*** | TBD | TBD | TBD | TBD |
+| deepseekv3*** | TBD | TBD | TBD | TBD |
+| llm_reasoning*** | TBD | TBD | TBD | TBD |
+
+*Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
+ 
+**Model parameter count is not the same as active parameter that are being trained in the benchmark. 
+
+***Work in progress so details are TBD (To be decided)
+
 # MLPerf Training v5.1 (Submission Deadline Oct 10, 2025)
 
 | Model | reference implementation | framework* | dataset | model parameter count**
