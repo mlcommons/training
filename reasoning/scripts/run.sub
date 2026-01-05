@@ -1,0 +1,104 @@
+#!/bin/bash
+
+BASE_DIRECTORY=${BASE_DIRECTORY:?"BASE_DIRECTORY has to be set"}
+CONFIG_FILE=${CONFIG_FILE:?"CONFIG_FILE has to be set"}
+IMAGE_FILE=${IMAGE_FILE:?"IMAGE_FILE has to be set"}
+
+CKPT_DIR=${BASE_DIRECTORY}/data/checkpoint
+DATA_DIR=${BASE_DIRECTORY}/data/dataset
+HF_HOME=${BASE_DIRECTORY}/huggingface
+
+RESULTS_DIR=${BASE_DIRECTORY}/results/${EXPERIMENT_NAME}
+mkdir -p ${RESULTS_DIR}/raylog
+
+GPU_PER_NODE=${GPU_PER_NODE:-8}
+
+NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
+NODES_ARRAY=($NODES)
+HEAD_NODE=${NODES_ARRAY[0]}
+HEAD_NODE_IP=$(srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" hostname --ip-address)
+HEAD_NODE_PORT=41993
+
+# if we detect a space character in the head node IP, we'll
+# convert it to an ipv4 address. This step is optional.
+if [[ "$HEAD_NODE_IP" == *" "* ]]; then
+    IFS=' ' read -ra ADDR <<<"$HEAD_NODE_IP"
+    if [[ ${#ADDR[0]} -gt 16 ]]; then
+        HEAD_NODE_IP=${ADDR[1]}
+    else
+        HEAD_NODE_IP=${ADDR[0]}
+    fi
+    echo "IPV6 address detected. We split the IPV4 address as $HEAD_NODE_IP"
+fi
+
+srun --ntasks-per-node=1 --container-image="${IMAGE_FILE}" --container-name="reasoning-ml" true
+min_worker_port=54001
+max_worker_port=54557
+
+CONTAINER_MOUNTS=(
+  "${CKPT_DIR}:/opt/checkpoints"
+  "${DATA_DIR}:/dataset"
+  "${RESULTS_DIR}:/results"
+  "${HF_HOME}:/workspace/huggingface"
+  "${BASE_DIRECTORY}/RL:/opt/nemo-rl"
+)
+
+CONTAINER_MOUNTS="${CONTAINER_MOUNTS[@]}"
+CONTAINER_MOUNTS="${CONTAINER_MOUNTS// /,}"
+
+PORT_DEFINITIONS=(
+    "--runtime-env-agent-port=$((${max_worker_port} + 1))"
+    "--dashboard-port=$((${max_worker_port} + 2))"
+    "--dashboard-agent-grpc-port=$((${max_worker_port} + 3))"
+    "--metrics-export-port=$((${max_worker_port} + 4))"
+)
+
+export RAY_memory_monitor_refresh_ms=0
+
+
+echo "Starting Ray Head Node on ${HEAD_NODE} with address ${HEAD_NODE_IP}:41993"
+srun -N1 --overlap --ntasks-per-node=1 --cpus-per-task=$((16 * GPU_PER_NODE)) --container-name="reasoning-ml" \
+    --container-mounts ${CONTAINER_MOUNTS} \
+    --container-workdir /opt/nemo-rl -w ${HEAD_NODE} --export HF_HOME=/workspace/huggingface \
+    --container-remap-root --container-writable --no-container-mount-home -o ${RESULTS_DIR}/raylog/head_node_ray.log \
+        ray start --head --port ${HEAD_NODE_PORT} --block --min-worker-port=$min_worker_port \
+            --max-worker-port=$max_worker_port --resources="{\"worker_units\": $GPU_PER_NODE, \"slurm_managed_ray_cluster\": 1}" \
+            ${PORT_DEFINITIONS[@]} &
+
+sleep 10
+WORKER_NODE_COUNT=$((SLURM_JOB_NUM_NODES - 1))
+echo "Starting Worker Nodes on ${NODES_ARRAY[@]:1}"
+
+if [ "$WORKER_NODE_COUNT" -gt 0 ]; then
+    for node in "${NODES_ARRAY[@]:1}"; do
+        echo "Starting Worker Node on ${node}"
+        srun -N1 --exclusive --ntasks-per-node=1 --cpus-per-task=$((16 * GPU_PER_NODE)) --container-name="reasoning-ml" \
+            --container-mounts ${CONTAINER_MOUNTS} \
+            --container-workdir /opt/nemo-rl -w "${node}" --export HF_HOME=/workspace/huggingface \
+            --container-remap-root --container-writable --no-container-mount-home -o ${RESULTS_DIR}/raylog/worker_${node}_ray.log \
+                ray start --address ${HEAD_NODE_IP}:${HEAD_NODE_PORT} --block --min-worker-port=$min_worker_port \
+                    --max-worker-port=$max_worker_port --resources="{\"worker_units\": $GPU_PER_NODE}" \
+                    ${PORT_DEFINITIONS[@]} &
+    done
+fi
+
+echo "Waiting for all nodes to start"
+sleep 5
+
+export HF_HOME=/workspace/huggingface
+export TRITON_HOME=/workspace/huggingface/triton
+export VLLM_SKIP_P2P_CHECK=1
+export VLLM_NO_USAGE_STATS=1
+
+srun -N1 --container-name="reasoning-ml" --container-workdir /opt/nemo-rl/ -w ${HEAD_NODE} --container-mounts ${CONTAINER_MOUNTS} \
+    --container-remap-root --container-writable --no-container-mount-home -o ${RESULTS_DIR}/output_${SLURM_JOB_ID}.out \
+    --export ALL,HF_HOME=/workspace/huggingface,TRITON_HOME=/workspace/huggingface/triton \
+        python -u /opt/nemo-rl/examples/run_grpo_math.py \
+            --config ${CONFIG_FILE} \
+              cluster.num_nodes=${SLURM_JOB_NUM_NODES} \
+              checkpointing.checkpoint_dir="/results/checkpoints" \
+              data.prompt_file="/opt/nemo-rl/examples/prompts/cot.txt" \
+              logger.log_dir="/results/logs/" \
+              logger.wandb_enabled=false \
+              logger.tensorboard_enabled=false \
+              $@
