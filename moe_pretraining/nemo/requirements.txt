@@ -1,0 +1,16 @@
+git+https://github.com/denys-fridman/logging.git@dfridman/deepseek-v3  # TODO(dfridman): revert to main repo once merged
+git+https://github.com/NVIDIA/mlperf-common.git@b86d175a05849d650a8ff69c1e2c37b9f4e61d51
+transformers==4.57.1
+blobfile==3.0.0
+prettytable==3.11.0
+# WAR for MultiStorageClient
+multi-storage-client<0.26.0
+
+# TODO(dfridman): below are needed by megatron-bridge. Dependencies need to be fixed on MBridge side:
+# some of the below packages are in `uv.lock`, but not in `pyproject.toml` - so we can't easily pip install them.
+wandb==0.23.0
+nvidia-modelopt[all]==0.39.0
+nvidia-resiliency-ext==0.5.0
+megatron-energon==6.0.1
+bitstring==4.3.1
+filetype==1.2.0
