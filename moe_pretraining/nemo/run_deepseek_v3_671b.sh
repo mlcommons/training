@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024-2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,119 +16,141 @@
 
 set -e
 
-#git config --global --add safe.directory /workspace/llama31
-
 # Vars without defaults
 #     Slurm settings
-: "${USER:?USER not set}"
-: "${HOST:?HOST not set}"
 : "${ACCOUNT:?ACCOUNT not set}"
 : "${PARTITION:?PARTITION not set}"
-: "${REMOTE:=0}"
 
 #     Job settings
-: "${JOB_DIR:?JOB_DIR not set}"
+: "${LOG_DIR:?LOG_DIR not set}"
 : "${IMAGE:?IMAGE not set}"
 
 #     Dataset settings
 : "${PREPROCESSED_PATH:?PREPROCESSED_PATH not set}"
-: "${TOKENIZER_PATH:?TOKENIZER_PATH not set}"
+: "${MODEL_CKPT:?MODEL_CKPT not set}"
 
 # Vars with defaults
 #     Slurm settings
 : "${TIME:="04:00:00"}"
-: "${NNODES:=1}"
-: "${GPUS_PER_NODE:=8}"
-: "${DEPENDENCIES:=""}"
+: "${NNODES:=64}"
+: "${GPUS_PER_NODE:=4}"
+: "${GPU:="gb300"}"
 
 #     Job settings
-: "${NEMO_RUN_DIR:=""}" # Provide customized NeMo-Run path here
-: "${TMP_NPY_INDEX:=""}" # Provide temporary NNumpy Index saving directory
-: "${MAX_RETRIES:=0}"
+: "${TMP_NPY_INDEX:=""}"
 
 #     Model settings
-: "${GBS:=1024}"
+: "${GBS:=2048}"
 : "${MBS:=1}"
+: "${TENSOR_PARALLEL_SIZE:=1}"
+: "${PIPELINE_PARALLEL_SIZE:=4}"
+: "${VIRTUAL_PIPELINE_PARALLEL_SIZE:=""}"
+: "${CONTEXT_PARALLEL_SIZE:=1}"
+: "${EXPERT_PARALLEL_SIZE:=64}"
+: "${EXPERT_TENSOR_PARALLEL_SIZE:=1}"
+: "${SEQUENCE_LENGTH:=4096}"
+: "${RECOMPUTE_MODULES:="mlp,moe_act"}"
+: "${CUDA_GRAPH_IMPLEMENTATION:="transformer_engine"}"
+: "${CUDA_GRAPH_SCOPE:="attn"}"
+: "${MOE_TOKEN_DISPATCHER_TYPE:="alltoall"}"
+: "${MOE_GROUPED_GEMM:=True}"
+: "${MOE_PERMUTE_FUSION:=False}"
+: "${MOE_ROUTER_FUSION:=False}"
 
-# Eval settings
+#     Training settings
+: "${MAX_STEPS:=1000}"
+: "${WARMUP_STEPS:=0}"
+: "${LR:="2e-4"}"
+: "${MIN_LR:="5e-6"}"
+: "${SEED:=1234}"
+
+#     Eval settings
 : "${EVAL_CHECK_INTERVAL:=10}"
 : "${EVAL_BATCHES:=1}"
 
-#     Dataloader settings
-: "${MAX_STEPS:="1200000"}"
-
 #     Experiment settings
-: "${SEEDS:=""}"
-IFS=" " read -ra seeds <<< $SEEDS
-: "${NEXP:=1}"
-: "${NPAR:=1}"
-: "${TAG:=""}"
-: "${TARGET:="1.0"}"  # TODO(dfridman): update once determined
-: "${STEP_TIME_ATOL:="18000"}" # maximum tolerable step time, setting to 5hr by default
+: "${EXP_NAME:=""}"
+: "${TARGET:="1.0"}"
+: "${DRYRUN:=0}"
+: "${DETACH:=0}"
 
-# Run
+# Build mounts
+MOUNTS="${LOG_DIR}:/output,${LOG_DIR}:/mlperf-outputs,${PREPROCESSED_PATH}:/preproc_data,${MODEL_CKPT}:/checkpoint"
 
-MOUNTS="${JOB_DIR}:/output,${JOB_DIR}:/mlperf-outputs,${PREPROCESSED_PATH}:/preproc_data,${TOKENIZER_PATH}:/tokenizer,${MODEL_CKPT}:/checkpoint"
-
-CMD_SUFFIX=""
-
-if [ ! $NEMO_RUN_DIR = "" ]; then
-    MOUNTS="${MOUNTS},${NEMO_RUN_DIR}:/opt/NeMo-Run"
-fi
-
-if [ ! $TMP_NPY_INDEX = "" ]; then
+if [ -n "$TMP_NPY_INDEX" ]; then
     MOUNTS="${MOUNTS},${TMP_NPY_INDEX}:/npy_index"
 fi
 
-if [ ! $DEPENDENCIES = "" ]; then 
-    CMD_SUFFIX="${CMD_SUFFIX} --dependencies ${DEPENDENCIES}"
+# Build environment variables
+ENVVARS="PREPROCESSED_PATH=/preproc_data"
+
+# Build launcher arguments
+LAUNCHER_ARGS="--account $ACCOUNT --partition $PARTITION"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --nodes $NNODES --gpus_per_node $GPUS_PER_NODE"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --gpu $GPU"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --time_limit $TIME"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --container_image $IMAGE"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --log_dir $LOG_DIR"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --mounts $MOUNTS"
+LAUNCHER_ARGS="$LAUNCHER_ARGS --envvars $ENVVARS"
+
+if [ -n "$EXP_NAME" ]; then
+    LAUNCHER_ARGS="$LAUNCHER_ARGS --exp_name $EXP_NAME"
 fi
 
-if [ ! $MAX_STEPS = "" ]; then
-    CMD_SUFFIX="${CMD_SUFFIX} --max_steps ${MAX_STEPS}"
+if [ "$DRYRUN" -gt 0 ]; then
+    LAUNCHER_ARGS="$LAUNCHER_ARGS --dryrun"
 fi
 
-if [ ! $TAG = "" ]; then
-    CMD_SUFFIX="${CMD_SUFFIX} --tag ${TAG}"
+if [ "$DETACH" -gt 0 ]; then
+    LAUNCHER_ARGS="$LAUNCHER_ARGS --detach"
 fi
 
-if [ $REMOTE -gt 0 ]; then
-    CMD_SUFFIX="${CMD_SUFFIX} --run_slurm"
+# Build pretrain arguments
+PRETRAIN_ARGS="--tensor_parallel_size $TENSOR_PARALLEL_SIZE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --pipeline_parallel_size $PIPELINE_PARALLEL_SIZE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --context_parallel_size $CONTEXT_PARALLEL_SIZE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --expert_model_parallel_size $EXPERT_PARALLEL_SIZE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --expert_tensor_parallel_size $EXPERT_TENSOR_PARALLEL_SIZE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --sequence_length $SEQUENCE_LENGTH"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --gbs $GBS"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --mbs $MBS"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --lr $LR"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --min_lr $MIN_LR"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --max_steps $MAX_STEPS"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --warmup_steps $WARMUP_STEPS"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --seed $SEED"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --eval_check_interval $EVAL_CHECK_INTERVAL"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --eval_batches $EVAL_BATCHES"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --target_log_ppl $TARGET"
+
+if [ -n "$VIRTUAL_PIPELINE_PARALLEL_SIZE" ]; then
+    PRETRAIN_ARGS="$PRETRAIN_ARGS --virtual_pipeline_parallel_size $VIRTUAL_PIPELINE_PARALLEL_SIZE"
 fi
+
+if [ -n "$RECOMPUTE_MODULES" ]; then
+    PRETRAIN_ARGS="$PRETRAIN_ARGS --recompute_modules $RECOMPUTE_MODULES"
+fi
+
+if [ -n "$CUDA_GRAPH_IMPLEMENTATION" ]; then
+    PRETRAIN_ARGS="$PRETRAIN_ARGS --cuda_graph_implementation $CUDA_GRAPH_IMPLEMENTATION"
+fi
+
+if [ -n "$CUDA_GRAPH_SCOPE" ]; then
+    PRETRAIN_ARGS="$PRETRAIN_ARGS --cuda_graph_scope $CUDA_GRAPH_SCOPE"
+fi
+
+PRETRAIN_ARGS="$PRETRAIN_ARGS --moe_token_dispatcher_type $MOE_TOKEN_DISPATCHER_TYPE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --moe_grouped_gemm $MOE_GROUPED_GEMM"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --moe_permute_fusion $MOE_PERMUTE_FUSION"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --moe_router_fusion $MOE_ROUTER_FUSION"
 
 # Allows MLLogger objects to be constructed locally
-if [ ! -d /mlperf-outputs ]; then mkdir /mlperf-outputs; fi
+if [ ! -d /mlperf-outputs ]; then mkdir -p /mlperf-outputs 2>/dev/null || true; fi
 
 set -x
 
-python3 pretrain_llama31.py \
---user $USER --host $HOST \
---job_dir $JOB_DIR \
---account $ACCOUNT --partition $PARTITION \
---nodes $NNODES --gpus_per_node $GPUS_PER_NODE \
---time $TIME \
---max_retries $MAX_RETRIES \
---mounts $MOUNTS \
---image $IMAGE \
---size $SIZE \
---gbs $GBS \
---mbs $MBS \
---seeds ${seeds[@]} \
---num_exps $NEXP \
---num_pars $NPAR \
---tokenizer_path $TOKENIZER_PATH \
---target_log_ppl $TARGET \
---step_time_atol $STEP_TIME_ATOL \
---warmup_steps $WARMUP_STEPS \
---tensor_parallel_size $TENSOR_PARALLEL_SIZE \
---pipeline_parallel_size $PIPELINE_PARALLEL_SIZE \
---context_parallel_size $CONTEXT_PARALLEL_SIZE \
---expert_model_parallel_size $EXPERT_PARALLEL_SIZE \
---expert_tensor_parallel_size $EXPERT_TENSOR_PARALLEL_SIZE \
---recompute_modules $RECOMPUTE_MODULES \
---cuda_graph_implementation $CUDA_GRAPH_IMPLEMENTATION \
---cuda_graph_scope $CUDA_GRAPH_SCOPE \
---lr $LR \
---eval_check_interval $EVAL_CHECK_INTERVAL \
---eval_batches $EVAL_BATCHES \
-$CMD_SUFFIX
+python3 run_deepseek.py \
+    $LAUNCHER_ARGS \
+    -- \
+    $PRETRAIN_ARGS
