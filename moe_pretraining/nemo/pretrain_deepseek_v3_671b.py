@@ -221,6 +221,7 @@ def get_parser() -> argparse.ArgumentParser:
     model_group = parser.add_argument_group("Model arguments")
     model_group.add_argument("--tensor_parallel_size", type=int, required=True, help="Tensor parallel size")
     model_group.add_argument("--pipeline_parallel_size", type=int, required=True, help="Pipeline parallel size")
+    model_group.add_argument("--virtual_pipeline_parallel_size", type=int, default=None, help="Virtual pipeline parallel size")
     model_group.add_argument("--context_parallel_size", type=int, required=True, help="Context parallel size")
     model_group.add_argument("--expert_model_parallel_size", type=int, required=True, help="Expert model parallel size")
     model_group.add_argument("--expert_tensor_parallel_size", type=int, required=True, help="Expert tensor parallel size")
