@@ -39,8 +39,6 @@ set -e
 : "${GPUS_PER_NODE:=4}"
 : "${GPU:="gb300"}"
 
-#     Job settings
-: "${TMP_NPY_INDEX:=""}"
 
 #     Model settings
 : "${GBS:=2048}"
@@ -80,10 +78,9 @@ set -e
 # Build mounts
 MOUNTS="${LOG_DIR}:/output,${LOG_DIR}:/mlperf-outputs,${DATA_DIR}:/preproc_data,${MODEL_CKPT}:/checkpoint,${DATA_DIR}/tokenizer:/tokenizer"
 
-if [ -n "$TMP_NPY_INDEX" ]; then
-    MOUNTS="${MOUNTS},${TMP_NPY_INDEX}:/npy_index"
-fi
-
+TMP_NPY_INDEX="$LOG_DIR/npy_index"
+mkdir -p "$TMP_NPY_INDEX"
+MOUNTS="${MOUNTS},${TMP_NPY_INDEX}:/npy_index"
 
 # Build launcher arguments
 LAUNCHER_ARGS="--account $ACCOUNT --partition $PARTITION"
