@@ -51,8 +51,8 @@ def get_data(seq_length: int, seed):
     """Configure dataset paths and parameters."""
     dataset_path = os.getenv("PREPROCESSED_PATH", "/preproc_data")
     val_test_path = f"{dataset_path}/c4-validation-91205-samples.en_text_document"
-    train_datasets = [f"{dataset_path}/c4-train.en_{idx}_text_document" for idx in [6, 7]]
-    train_datasets_weights = [50] * 2
+    train_datasets = [f"{dataset_path}/c4-train.en_{idx}_text_document" for idx in [6]]
+    train_datasets_weights = [50] * len(train_datasets)
 
     data_paths = [
         (train_datasets, train_datasets_weights),
