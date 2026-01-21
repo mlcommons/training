@@ -12,43 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SSH: username that connects to the remote cluster
-export USER="DUMMY"
-# SSH: remote cluster URL
-export HOST="DUMMY"
+# SLURM: Username on a cluster
+export USER="<SLURM_USER>"
 # Slurm: account for job submission 
-export ACCOUNT="DUMMY"
+export ACCOUNT="<SLURM_ACCOUNT>"
 # Slurm: partition for job submission
-export PARTITION="DUMMY"
+export PARTITION="<SLURM_PARTITION>"
 # Slurm: job time limit, defaults to 8 hours
-export TIME="08:00:00"
-# Slurm: --nodes arguments, default to use 288 nodes
+export TIME="02:00:00"
+# Slurm: --nodes arguments
 export NNODES=64
-# Slurm: --gpus_per_node and --ntasks_per_node argument, defaults to 8 GPUs per node
+# Slurm: --gpus_per_node and --ntasks_per_node argument
 export GPUS_PER_NODE=4
-# Slurm: max job retries for transient job failures, defaults to retry 3 times
+# Slurm: max job retries for transient job failures
 export MAX_RETRIES=1
 
 # Folder mapping:
 # Output directory that holds logs, any path that you like. 
-export JOB_DIR="/workspace/code/logs"
+export LOG_DIR="<LOG_DIR>"
 # Image / container path, either local cache file or remote URL
-export IMAGE="DUMMY"
+export IMAGE="<IMAGE>"
 # Dataset: C4 dataset location that contains the dataset after preprocessing
-# export ORIGINAL_C4_PATH="/data/data/C4"
-
-# This corresponds to the PREPROCESSED_PATH in README section 3's dataset download part
-export PREPROCESSED_PATH="/data/deepseek_v3_671b/data/C4_processed"
-export MERGED_C4_PATH="/data/deepseek_v3_671b/data/C4_merged"
-# Dataset: Numpy index working directory, contains shuffled dataset
-# This path must be able to hold >400GB data
-export TMP_NPY_INDEX="/data/npy_indices"
-# Dataset: Tokenizer path
-# This corresponds to the TOKENIZER_PATH in README section 3's tokenizer download part
-export TOKENIZER_PATH="/data/deepseek_v3_671b/model/DeepSeek-V3-671B-Base"
-# export TOKENIZER_PATH="/data/llama3_405b_ref/tokenizer"
-
-export MODEL_CKPT="$TOKENIZER_PATH"
+export DATA_DIR="<DATA_DIR>"
+# Model checkpoint path
+export MODEL_CKPT="<MODEL_CKPT>"
 
 # Training Configs: 
 # Dataloader: Global batch size
@@ -66,7 +53,7 @@ export PIPELINE_PARALLEL_SIZE=4
 export CONTEXT_PARALLEL_SIZE=1
 export EXPERT_PARALLEL_SIZE=64
 export EXPERT_TENSOR_PARALLEL_SIZE=1
-export RECOMPUTE_MODULES="mlp,moe_act"
+export RECOMPUTE_MODULES="mlp,moe"
 export CUDA_GRAPH_IMPLEMENTATION="transformer_engine"
 export CUDA_GRAPH_SCOPE="attn"
 
