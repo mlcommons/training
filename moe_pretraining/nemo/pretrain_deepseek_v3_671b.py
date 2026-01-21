@@ -15,7 +15,7 @@
 import argparse
 import os
 
-from megatron.bridge.recipes.deepseek import deepseek_v3_pretrain_config, set_deepseek_v3_pipeline_model_parallel_layout
+from megatron.bridge.recipes.deepseek.deepseek_v3 import deepseek_v3_pretrain_config, set_deepseek_v3_pipeline_model_parallel_layout
 from megatron.bridge.training.config import GPTDatasetConfig, ConfigContainer
 from megatron.bridge.training.gpt_step import forward_step
 from megatron.bridge.training.pretrain import pretrain
