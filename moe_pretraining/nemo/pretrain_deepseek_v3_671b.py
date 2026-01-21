@@ -15,10 +15,11 @@
 import argparse
 import os
 
-from megatron.bridge.recipes.deepseek import deepseek_v3_pretrain_config
+from megatron.bridge.recipes.deepseek import deepseek_v3_pretrain_config, set_deepseek_v3_pipeline_model_parallel_layout
 from megatron.bridge.training.config import GPTDatasetConfig, ConfigContainer
 from megatron.bridge.training.gpt_step import forward_step
 from megatron.bridge.training.pretrain import pretrain
+from megatron.bridge.training.tokenizers.config import TokenizerConfig
 
 from callback import (
     MLPerfLoggingCallback,
@@ -113,31 +114,23 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
         mllogger.event(key=key, value=value)
 
 
+def get_tokenizer_config():
+    return TokenizerConfig(
+        tokenizer_type="HuggingFaceTokenizer",
+        tokenizer_model="/tokenizer",
+        hf_tokenizer_kwargs={"use_fast": True},
+    )
+
+
 def create_config(args):
     """Create the training configuration from arguments."""
-    config = deepseek_v3_pretrain_config(
-        pipeline_model_parallel_size=args.pipeline_parallel_size,
-        virtual_pipeline_parallel_size=args.virtual_pipeline_parallel_size,
-    )
+    config = deepseek_v3_pretrain_config()
 
     # Model parallelism configuration (hardcoded for DeepSeek V3)
     model_cfg = config.model
-    model_cfg.tensor_model_parallel_size = args.tensor_parallel_size
-    model_cfg.context_parallel_size = args.context_parallel_size
-    model_cfg.expert_model_parallel_size = args.expert_model_parallel_size
-    model_cfg.expert_tensor_parallel_size = args.expert_tensor_parallel_size
-    model_cfg.sequence_parallel = args.tensor_parallel_size > 1
-    model_cfg.seq_length = args.sequence_length
-    model_cfg.recompute_modules = args.recompute_modules.split(",") if args.recompute_modules else []
-    model_cfg.cuda_graph_implementation = args.cuda_graph_implementation
-    model_cfg.cuda_graph_scope = args.cuda_graph_scope.split(",") if args.cuda_graph_scope else []
-
-    # MoE parameters (hardcoded for DeepSeek V3)
-    model_cfg.moe_token_dispatcher_type = args.moe_token_dispatcher_type
-    model_cfg.moe_grouped_gemm = args.moe_grouped_gemm
-    model_cfg.moe_permute_fusion = args.moe_permute_fusion
-    model_cfg.moe_router_fusion = args.moe_router_fusion
-    model_cfg.moe_router_force_load_balancing = False
+    model_cfg.pipeline_model_parallel_size = args.pipeline_parallel_size
+    model_cfg.virtual_pipeline_model_parallel_size = args.virtual_pipeline_parallel_size
+    set_deepseek_v3_pipeline_model_parallel_layout(model_cfg)
 
     # Training configuration
     train_cfg = config.train
@@ -167,6 +160,9 @@ def create_config(args):
         seq_length=args.sequence_length,
         seed=args.seed,
     )
+
+    # Tokenizer configuration
+    config.tokenizer = get_tokenizer_config()
 
     # Checkpoint configuration
     checkpoint_cfg = config.checkpoint
