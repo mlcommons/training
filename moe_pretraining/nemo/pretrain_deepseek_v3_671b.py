@@ -133,7 +133,7 @@ def create_config(args):
     set_deepseek_v3_pipeline_model_parallel_layout(model_cfg)
 
     model_cfg.tensor_model_parallel_size = args.tensor_parallel_size
-    model_cfg.context_parallel_size = cfg.model.context_parallel_size
+    model_cfg.context_parallel_size = args.context_parallel_size
     model_cfg.expert_model_parallel_size = args.expert_model_parallel_size
     model_cfg.expert_tensor_parallel_size = args.expert_tensor_parallel_size
     model_cfg.sequence_parallel = args.tensor_parallel_size > 1
