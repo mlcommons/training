@@ -29,7 +29,7 @@ set -e
 : "${IMAGE:?IMAGE not set}"
 
 #     Dataset settings
-: "${PREPROCESSED_PATH:?PREPROCESSED_PATH not set}"
+: "${DATA_DIR:?DATA_DIR not set}"
 : "${MODEL_CKPT:?MODEL_CKPT not set}"
 
 # Vars with defaults
@@ -78,14 +78,12 @@ set -e
 : "${DETACH:=1}"
 
 # Build mounts
-MOUNTS="${LOG_DIR}:/output,${LOG_DIR}:/mlperf-outputs,${PREPROCESSED_PATH}:/preproc_data,${MODEL_CKPT}:/checkpoint"
+MOUNTS="${LOG_DIR}:/output,${LOG_DIR}:/mlperf-outputs,${DATA_DIR}:/preproc_data,${MODEL_CKPT}:/checkpoint,${DATA_DIR}/tokenizer:/tokenizer"
 
 if [ -n "$TMP_NPY_INDEX" ]; then
     MOUNTS="${MOUNTS},${TMP_NPY_INDEX}:/npy_index"
 fi
 
-# Build environment variables
-ENVVARS="PREPROCESSED_PATH=/preproc_data"
 
 # Build launcher arguments
 LAUNCHER_ARGS="--account $ACCOUNT --partition $PARTITION"
@@ -95,7 +93,6 @@ LAUNCHER_ARGS="$LAUNCHER_ARGS --time_limit $TIME"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --container_image $IMAGE"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --log_dir $LOG_DIR"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --mounts $MOUNTS"
-LAUNCHER_ARGS="$LAUNCHER_ARGS --envvars $ENVVARS"
 
 if [ -n "$EXP_NAME" ]; then
     LAUNCHER_ARGS="$LAUNCHER_ARGS --exp_name $EXP_NAME"
