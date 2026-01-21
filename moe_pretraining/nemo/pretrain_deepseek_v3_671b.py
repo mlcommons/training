@@ -132,6 +132,26 @@ def create_config(args):
     model_cfg.virtual_pipeline_model_parallel_size = args.virtual_pipeline_parallel_size
     set_deepseek_v3_pipeline_model_parallel_layout(model_cfg)
 
+    model_cfg.tensor_model_parallel_size = args.tensor_parallel_size
+    model_cfg.context_parallel_size = cfg.model.context_parallel_size
+    model_cfg.expert_model_parallel_size = args.expert_model_parallel_size
+    model_cfg.expert_tensor_parallel_size = args.expert_tensor_parallel_size
+    model_cfg.sequence_parallel = args.tensor_parallel_size > 1
+    model_cfg.seq_length = args.sequence_length
+    model_cfg.recompute_modules = args.recompute_modules.split(",") if args.recompute_modules else []
+    if args.cuda_graph_implementation:
+        model_cfg.cuda_graph_implementation = args.cuda_graph_implementation
+    if args.cuda_graph_scope:
+        model_cfg.cuda_graph_scope = args.cuda_graph_scope
+    # MoE params
+    model_cfg.moe_token_dispatcher_type = args.moe_token_dispatcher_type
+    model_cfg.moe_grouped_gemm = args.moe_grouped_gemm
+    model_cfg.moe_permute_fusion = args.moe_permute_fusion
+    model_cfg.moe_router_fusion = args.moe_router_fusion
+    model_cfg.moe_router_force_load_balancing = False
+
+
+
     # Training configuration
     train_cfg = config.train
     train_cfg.micro_batch_size = args.mbs
