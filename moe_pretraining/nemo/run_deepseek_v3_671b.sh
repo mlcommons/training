@@ -75,7 +75,7 @@ set -e
 : "${EXP_NAME:=""}"
 : "${TARGET:="1.0"}"
 : "${DRYRUN:=0}"
-: "${DETACH:=0}"
+: "${DETACH:=1}"
 
 # Build mounts
 MOUNTS="${LOG_DIR}:/output,${LOG_DIR}:/mlperf-outputs,${PREPROCESSED_PATH}:/preproc_data,${MODEL_CKPT}:/checkpoint"
