@@ -13,11 +13,7 @@
 # limitations under the License.
 
 import argparse
-import math
 import os
-from typing import Optional
-
-import torch
 
 from megatron.bridge.recipes.deepseek import deepseek_v3_pretrain_config
 from megatron.bridge.training.config import GPTDatasetConfig, ConfigContainer
@@ -149,11 +145,9 @@ def create_config(args):
     train_cfg.global_batch_size = args.gbs
     train_cfg.train_iters = args.max_steps
 
-    # Compute eval intervals
-    eval_every_n_batches = math.ceil(args.eval_every / args.gbs)
-    eval_batches = math.ceil(args.eval_tokens / args.gbs)
-    train_cfg.eval_interval = eval_every_n_batches
-    train_cfg.eval_iters = eval_batches
+    # Eval configuration
+    train_cfg.eval_interval = args.eval_check_interval
+    train_cfg.eval_iters = args.eval_batches
 
     # Optimizer configuration
     optimizer_cfg = config.optimizer
@@ -189,33 +183,13 @@ def create_config(args):
 
 
 def get_parser() -> argparse.ArgumentParser:
-    """Create argument parser with same structure as llama31 pretrain script."""
+    """Create argument parser for DeepSeek V3 pretraining."""
     parser = argparse.ArgumentParser(description="DeepSeek V3 Pretraining")
-    parser.add_argument("--tag", type=str, help="Optional experiment tag", required=False, default="")
 
-    # Slurm and executor related
-    slurm_group = parser.add_argument_group("Slurm executor arguments")
-    slurm_group.add_argument('--user', type=str, required=True, help="Remote cluster SSH user name")
-    slurm_group.add_argument("--host", type=str, required=True, help="Remote cluster host address")
-    slurm_group.add_argument("--job_dir", type=str, required=True, help="Remote job directory")
-    slurm_group.add_argument("--account", type=str, required=True, help="Account to be used for Slurm job submission")
-    slurm_group.add_argument("--partition", type=str, required=True, help="Partition to be used for Slurm job submission")
-    slurm_group.add_argument("--nodes", type=int, required=True, help="Number of nodes to be used")
-    slurm_group.add_argument("--gpus_per_node", type=int, required=True, help="Number of GPUs per node")
-    slurm_group.add_argument("--time", type=str, required=True, help="Time limit for the job")
-    slurm_group.add_argument("--dependencies", nargs="*", help="list of dependencies for the job")
-    slurm_group.add_argument("--max_retries", type=int, default=0)
-    slurm_group.add_argument("--run_slurm", action="store_true", help="run in slurm executor instead of locally")
-    slurm_group.add_argument(
-        "--mounts",
-        type=str,
-        required=True,
-        help=(
-            "Custom mount paths, formatted as a string of <original>:<mapped>[,<original>:<mapped>], "
-            "and should contain one path for /output, dataset path: /preproc_data, /npy_index"
-        ))
-    slurm_group.add_argument("--envvars", type=str, help="Environment variables to be added", default=None)
-    slurm_group.add_argument("--image", type=str, required=True, help="Container image path, either remote or local")
+    # Cluster arguments (used for logging)
+    cluster_group = parser.add_argument_group("Cluster arguments")
+    cluster_group.add_argument("--nodes", type=int, required=True, help="Number of nodes")
+    cluster_group.add_argument("--gpus_per_node", type=int, required=True, help="Number of GPUs per node")
 
     # Model arguments
     model_group = parser.add_argument_group("Model arguments")
@@ -228,35 +202,24 @@ def get_parser() -> argparse.ArgumentParser:
     model_group.add_argument("--recompute_modules", type=str, help="Recompute modules")
     model_group.add_argument("--cuda_graph_implementation", type=str, help="CUDA graph implementation")
     model_group.add_argument("--cuda_graph_scope", type=str, help="CUDA graph scope")
-    model_group.add_argument("--moe_token_dispatcher_type", type=str, help="MoE token dispatcher type", default="alltoall")
-    model_group.add_argument("--moe_grouped_gemm", type=bool, help="MoE grouped GEMM", default=True)
-    model_group.add_argument("--moe_permute_fusion", type=bool, help="MoE permute fusion", default=False)
-    model_group.add_argument("--moe_router_fusion", type=bool, help="MoE router fusion", default=False)
-    model_group.add_argument("--moe_router_force_load_balancing", type=bool, help="MoE router force load balancing", default=False)
-    model_group.add_argument("--sequence_length", type=int, help="Sequence length", default=4096)
-
+    model_group.add_argument("--moe_token_dispatcher_type", type=str, default="alltoall", help="MoE token dispatcher type")
+    model_group.add_argument("--moe_grouped_gemm", type=bool, default=True, help="MoE grouped GEMM")
+    model_group.add_argument("--moe_permute_fusion", type=bool, default=False, help="MoE permute fusion")
+    model_group.add_argument("--moe_router_fusion", type=bool, default=False, help="MoE router fusion")
+    model_group.add_argument("--sequence_length", type=int, default=4096, help="Sequence length")
 
     # Training arguments
     training_group = parser.add_argument_group("Training arguments")
     training_group.add_argument("--gbs", type=int, default=1024, help="Global batch size")
     training_group.add_argument("--mbs", type=int, default=1, help="Micro batch size")
-    training_group.add_argument("--lr", type=float, default=2e-4, help="Initial learning rate after warmup.")
+    training_group.add_argument("--lr", type=float, default=2e-4, help="Initial learning rate after warmup")
     training_group.add_argument("--min_lr", type=float, default=5e-6, help="Minimum learning rate")
-    training_group.add_argument('--max_steps', type=int, default=1000, help="Maximum number of steps")
-    training_group.add_argument('--warmup_steps', type=int, default=0, help="Number of steps for LR warmup")
+    training_group.add_argument("--max_steps", type=int, default=1000, help="Maximum number of steps")
+    training_group.add_argument("--warmup_steps", type=int, default=0, help="Number of steps for LR warmup")
     training_group.add_argument("--seed", type=int, default=1234, help="Random seed")
     training_group.add_argument("--eval_check_interval", type=int, default=10, help="Evaluate every N steps")
     training_group.add_argument("--eval_batches", type=int, default=1, help="Evaluate N batches")
-
-
-    # Experiment management arguments
-    experiment_group = parser.add_argument_group("Experiment management arguments")
-    experiment_group.add_argument("--dryrun", action="store_true", help="Whether we are launching dryrun or actual runs")
-    experiment_group.add_argument("--seeds", type=int, nargs="*", default=[], help="random seeds")
-    experiment_group.add_argument("--num_exps", type=int, default=1)
-    experiment_group.add_argument("--num_pars", type=int, default=1)
-    experiment_group.add_argument("--target_log_ppl", type=float, default=1.0, help="Target log perplexity")
-    experiment_group.add_argument("--step_time_atol", type=int, default=1600, help="train step time atol")
+    training_group.add_argument("--target_log_ppl", type=float, default=1.0, help="Target log perplexity")
 
     return parser
 
@@ -293,10 +256,6 @@ class ArgsConfig:
 def main():
     """Main entry point for DeepSeek V3 pretraining."""
     args = get_parser().parse_args()
-
-    if args.tag and not args.tag.startswith("-"):
-        args.tag = "-" + args.tag
-
     init_logging()
     config = create_config(args)
     cfg = ArgsConfig(args)
