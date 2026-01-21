@@ -107,7 +107,8 @@ if [ "$DETACH" -gt 0 ]; then
 fi
 
 # Build pretrain arguments
-PRETRAIN_ARGS="--tensor_parallel_size $TENSOR_PARALLEL_SIZE"
+PRETRAIN_ARGS="--nodes $NNODES --gpus_per_node $GPUS_PER_NODE"
+PRETRAIN_ARGS="$PRETRAIN_ARGS --tensor_parallel_size $TENSOR_PARALLEL_SIZE"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --pipeline_parallel_size $PIPELINE_PARALLEL_SIZE"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --context_parallel_size $CONTEXT_PARALLEL_SIZE"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --expert_model_parallel_size $EXPERT_PARALLEL_SIZE"
