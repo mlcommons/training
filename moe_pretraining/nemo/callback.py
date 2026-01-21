@@ -368,7 +368,6 @@ class MLPerfLoggingCallback:
         self.global_batch_size = self.cfg.model.global_batch_size
         self.train_block_started = True
         self.train_current_block = 0
-        self.force_success = cfg.custom.force_success_status
         self.previous_step = 0
 
     def on_train_start(
@@ -462,10 +461,9 @@ class MLPerfLoggingCallback:
             )
         elif global_state.train_state.step >= self.cfg.trainer.max_steps:
             global_state.should_stop = True
-            status = "success" if self.force_success else "aborted"
             mllogger.end(
                 mllogger.constants.RUN_STOP,
-                metadata={mllogger.constants.SAMPLES_COUNT: samples_count, "status": status},
+                metadata={mllogger.constants.SAMPLES_COUNT: samples_count, "status": "aborted"},
             )
         if not os.environ.get("VAL_CHECK_INTERVAL"):
             global_state.cfg.train.eval_interval = self.cfg.default_val_check_interval
@@ -491,11 +489,10 @@ class MLPerfLoggingCallback:
         eval_after_this_step = step % global_state.cfg.train.eval_interval == 0
         if last_step and not eval_after_this_step:
             samples_count = self._get_samples_count(global_state)
-            status = "success" if self.force_success else "aborted"
             self._end_train_block(global_state)
             mllogger.end(
                 mllogger.constants.RUN_STOP,
-                metadata={mllogger.constants.SAMPLES_COUNT: samples_count, "status": status},
+                metadata={mllogger.constants.SAMPLES_COUNT: samples_count, "status": "aborted"},
             )
             self.train_block_started = False
             global_state.should_stop = True
