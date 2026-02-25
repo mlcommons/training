@@ -54,6 +54,10 @@ RUN pip uninstall -y megatron-core && \
     git submodule update --init --recursive && \
     echo MBRIDGE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MBRIDGE_COMMIT_HASH.env && \
+    # TODO(dfridman): knob for eval batch size. Remove once merged in the upstream
+    git remote add dfridman https://github.com/denys-fridman/Megatron-Bridge.git && \
+    git fetch dfridman && \
+    git cherry-pick 01cc7a6c76f5d8918a981e22f02975ae775c2d97 && \
     cd /workspace/Megatron-Bridge/3rdparty/Megatron-LM && \
     echo MCORE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MCORE_COMMIT_HASH.env && \
