@@ -42,9 +42,10 @@ export MODEL_CKPT="<MODEL_CKPT>"
 export GBS=1024
 # Dataloader: Micro batch size
 export MBS=1
-export MAX_LR="2e-4"
-export WARMUP_STEPS=256
-export EVAL_CHECK_INTERVAL=10  # every $EVAL_CHECK_INTERVAL steps
+export MAX_LR="0.000026833"  # 0.000024 * sqrt(20480/16384) = 0.000026833
+export MAX_STEPS=12000
+export WARMUP_STEPS=4
+export EVAL_CHECK_INTERVAL=1  # every $EVAL_CHECK_INTERVAL steps
 export EVAL_BATCHES=1  # evaluate on $EVAL_BATCHES * $GBS samples
 
 
