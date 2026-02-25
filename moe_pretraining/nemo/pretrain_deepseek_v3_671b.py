@@ -166,6 +166,7 @@ def create_config(args):
     optimizer_cfg = config.optimizer
     optimizer_cfg.lr = args.lr
     optimizer_cfg.min_lr = args.min_lr
+    optimizer_cfg.adam_eps = 1e-8
 
     # Scheduler configuration
     scheduler_cfg = config.scheduler
