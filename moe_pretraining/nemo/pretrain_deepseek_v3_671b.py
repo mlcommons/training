@@ -77,7 +77,10 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
     """Log hyperparameters for MLPerf compliance."""
     bmark = mllogger.constants.DEEPSEEK_V3
     opt_lr_decay_steps = args.max_steps - args.warmup_steps
+    mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
     mllogger.mlperf_submission_log(bmark)
+    mllogger.event(key=mllogger.constants.SUBMISSION_POC_NAME, value="Denys Fridman")
+    mllogger.event(key=mllogger.constants.SUBMISSION_POC_EMAIL, value="dfridman@nvidia.com")
 
     # Compute gradient accumulation steps
     tp = args.tensor_parallel_size
