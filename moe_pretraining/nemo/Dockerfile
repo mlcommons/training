@@ -46,7 +46,7 @@ RUN git clone https://github.com/NVIDIA/NeMo-Run.git && \
     pip install -e .
 
 ## 2. Megatron-bridge and megatron-core
-ARG MBRIDGE_REVISION=main
+ARG MBRIDGE_REVISION=38858ef0ae3b835af236ec1cf8bf1feca4d400fa
 RUN pip uninstall -y megatron-core && \
     git clone https://github.com/NVIDIA-NeMo/Megatron-Bridge.git /workspace/Megatron-Bridge && \
     cd /workspace/Megatron-Bridge && \
