@@ -1,4 +1,4 @@
-git+https://github.com/denys-fridman/logging.git@dfridman/deepseek-v3  # TODO(dfridman): revert to main repo once merged
+git+https://github.com/denys-fridman/logging.git@dfridman/deepseek-v3  # TODO: revert to main repo once https://github.com/mlcommons/logging/pull/445 is merged
 git+https://github.com/NVIDIA/mlperf-common.git@b86d175a05849d650a8ff69c1e2c37b9f4e61d51
 transformers==4.57.1
 blobfile==3.0.0
