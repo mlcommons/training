@@ -68,6 +68,7 @@ set -e
 #     Eval settings
 : "${EVAL_CHECK_INTERVAL:=10}"
 : "${EVAL_BATCHES:=1}"
+: "${EVAL_BATCH_SIZE:=""}"
 
 #     Experiment settings
 : "${EXP_NAME:=""}"
@@ -120,6 +121,9 @@ PRETRAIN_ARGS="$PRETRAIN_ARGS --warmup_steps $WARMUP_STEPS"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --seed $SEED"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --eval_check_interval $EVAL_CHECK_INTERVAL"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --eval_batches $EVAL_BATCHES"
+if [ -n "$EVAL_BATCH_SIZE" ]; then
+    PRETRAIN_ARGS="$PRETRAIN_ARGS --eval_batch_size $EVAL_BATCH_SIZE"
+fi
 PRETRAIN_ARGS="$PRETRAIN_ARGS --target_log_ppl $TARGET"
 
 if [ -n "$VIRTUAL_PIPELINE_PARALLEL_SIZE" ]; then

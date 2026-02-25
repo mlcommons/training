@@ -47,6 +47,7 @@ export MAX_STEPS=12000
 export WARMUP_STEPS=4
 export EVAL_CHECK_INTERVAL=1  # every $EVAL_CHECK_INTERVAL steps
 export EVAL_BATCHES=1  # evaluate on $EVAL_BATCHES * $GBS samples
+export EVAL_BATCH_SIZE=1024
 
 
 export TENSOR_PARALLEL_SIZE=1

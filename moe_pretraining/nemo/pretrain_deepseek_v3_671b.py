@@ -164,6 +164,8 @@ def create_config(args):
     # Eval configuration
     train_cfg.eval_interval = args.eval_check_interval
     train_cfg.eval_iters = args.eval_batches
+    if args.eval_batch_size is not None:
+        train_cfg.eval_batch_size = args.eval_batch_size
 
     # Optimizer configuration
     optimizer_cfg = config.optimizer
@@ -239,6 +241,7 @@ def get_parser() -> argparse.ArgumentParser:
     training_group.add_argument("--seed", type=int, default=1234, help="Random seed")
     training_group.add_argument("--eval_check_interval", type=int, default=10, help="Evaluate every N steps")
     training_group.add_argument("--eval_batches", type=int, default=1, help="Evaluate N batches")
+    training_group.add_argument("--eval_batch_size", type=int, default=None, help="Batch size for evaluation")
     training_group.add_argument("--target_log_ppl", type=float, default=1.0, help="Target log perplexity")
 
     return parser
