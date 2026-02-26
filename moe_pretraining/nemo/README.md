@@ -51,7 +51,7 @@ bash run_deepseek_v3_671b.sh
 
 We use the c4/en/3.0.1 dataset from [HuggingFace/AllenAI](https://huggingface.co/datasets/allenai/c4).
 
-We use the DeepSeek V3 tokenizer from [HuggingFace/DeepSeek](https://huggingface.co/deepseek-ai/DeepSeek-V3).
+We use the Llama 3.1 8B tokenizer from [HuggingFace/Meta](https://huggingface.co/meta-llama/Llama-3.1-8B).
 
 ### Preprocessed data download
 
@@ -62,21 +62,21 @@ Navigate in the terminal to your desired download directory and run the followin
 #### Dataset
 
 ```bash
-# Replace this path with your desired path on the machine
-export PREPROCESSED_PATH="./"
-bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $PREPROCESSED_PATH https://training.mlcommons-storage.org/metadata/deepseek-v3-preprocessed-c4-dataset.uri
+# go to the path where you want the data to be downloaded
+# use the same path in config when exporting DATA_DIR
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d llama3_1_8b_preprocessed_c4_dataset https://training.mlcommons-storage.org/metadata/llama-3-1-8b-preprocessed-c4-dataset.uri
 ```
 
-After the download is complete, you should see files with the following naming conventions under `PREPROCESSED_PATH`, ending with both `.idx` and `.bin`:
+After the download is complete, you should see files with the following naming conventions under `DATA_DIR`, ending with both `.idx` and `.bin`:
 - Training partitions: `c4-train.en_<number>_text_document`
 - Validation partitions: `c4-validation-91205-samples.en_text_document`
 
 #### Tokenizer
 
 ```bash
-# Replace this path with your desired path on the machine
-export TOKENIZER_PATH="./"
-bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d $TOKENIZER_PATH https://training.mlcommons-storage.org/metadata/deepseek-v3-tokenizer.uri
+# go to the path where you want the tokenizer to be downloaded
+# use the same path in config when exporting DATA_DIR (tokenizer is expected under $DATA_DIR/tokenizer)
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) -d llama3_1_8b_tokenizer https://training.mlcommons-storage.org/metadata/llama-3-1-8b-tokenizer.uri
 ```
 
 ### Training and test data separation
@@ -113,8 +113,8 @@ The model follows the DeepSeek V3 671B [paper](https://arxiv.org/abs/2412.19437)
 | # Shared Experts | 1 |
 | Activation | SwiGLU |
 | Normalization | RMSNorm |
-| Tokenizer | DeepSeek V3 tokenizer |
-| Vocab size | 129,280 |
+| Tokenizer | Llama 3.1 8B tokenizer |
+| Vocab size | 128,000 |
 | Context Length | 4,096 |
 
 ### Checkpoint download
