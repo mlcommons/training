@@ -165,12 +165,14 @@ We use [AllenAI C4](https://huggingface.co/datasets/allenai/c4) dataset for this
 
 After downloading the raw data and tokenizer, run the preprocessing script to generate `.bin` and `.idx` files compatible with Megatron-Core's data loader.
 
-### HuggingFace Checkpoint Preprocessing
+### Checkpoint Preprocessing
 
-#### HuggingFace checkpoint downloading
+#### Starting checkpoint
 
-We use the HuggingFace DeepSeek V3 671B checkpoint as the initial checkpoint in this benchmark. The original HuggingFace checkpoint can be downloaded [here](https://huggingface.co/deepseek-ai/DeepSeek-V3).
+The initial checkpoint used in this benchmark is derived from the HuggingFace DeepSeek V3 671B checkpoint, which can be downloaded [here](https://huggingface.co/deepseek-ai/DeepSeek-V3).
 
-#### Run model conversion
+Because this benchmark uses the Llama 3.1 8B tokenizer instead of the original DeepSeek tokenizer, the token distribution seen by the MoE router differs from what the model was originally trained on, causing router load imbalance. To address this, the HuggingFace checkpoint was further trained for **50 iterations** with a sequence auxiliary load balancing loss weight of **1e-2**. This brief warm-up allows the router to adapt to the new token distribution before the main benchmark training begins.
 
-Assuming that we have downloaded the HuggingFace checkpoint to a `<SRC_PATH>` directory, the checkpoint must be converted to Megatron-Bridge format before training. After conversion is done, set `MODEL_CKPT=<DST_PATH>` when launching the job.
+#### Checkpoint conversion
+
+The adapted checkpoint must be converted to Megatron-Bridge format before training. After conversion is done, set `MODEL_CKPT=<DST_PATH>` when launching the job.
