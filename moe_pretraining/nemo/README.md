@@ -173,4 +173,8 @@ The checkpoint distributed for this benchmark is provided in HuggingFace format 
 
 It was produced as follows: the original HuggingFace DeepSeek V3 671B checkpoint was loaded into Megatron-Bridge and trained for **50 iterations** with a sequence auxiliary load balancing loss weight of **1e-2**, then converted back to HuggingFace format. This warm-up step is necessary because this benchmark uses the Llama 3.1 8B tokenizer instead of the original DeepSeek tokenizer — the change in token distribution causes MoE router load imbalance, and the 50 iterations allow the router to adapt before the main benchmark training begins.
 
-Set `MODEL_CKPT` in the config file to the path of the downloaded checkpoint before launching the job.
+The distributed checkpoint is in HuggingFace format and must be converted to Megatron-LM format before training.
+
+<!-- TODO: add conversion script and instructions -->
+
+After conversion, set `MODEL_CKPT` in the config file to the path of the converted checkpoint before launching the job.
