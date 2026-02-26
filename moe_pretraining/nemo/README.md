@@ -1,6 +1,6 @@
 # 1. Problem
 
-Large Language Model pretraining - DeepSeek V3 671B
+Large Language Model pretraining - DeepSeek V3 671B (Mixture of Experts)
 
 # 2. Directions
 
