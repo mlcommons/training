@@ -93,12 +93,14 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
     mini_batch_size = args.gbs // dp
     grad_accumulation_steps = mini_batch_size // args.mbs
 
+    eval_batch_size = args.eval_batch_size if args.eval_batch_size is not None else args.gbs
     logging_configs = {
         mllogger.constants.SEED: args.seed,
+        mllogger.constants.MAX_STEPS: args.max_steps,
         mllogger.constants.GLOBAL_BATCH_SIZE: args.gbs,
         mllogger.constants.GRADIENT_ACCUMULATION_STEPS: grad_accumulation_steps,
         mllogger.constants.MAX_SEQUENCE_LENGTH: args.sequence_length,
-        mllogger.constants.EVAL_SAMPLES: args.gbs * args.eval_batches,
+        mllogger.constants.EVAL_SAMPLES: eval_batch_size * args.eval_batches,
         mllogger.constants.TRAIN_SAMPLES: 1574207408,
         mllogger.constants.INIT_CHECKPOINT_STEP: 0,
         mllogger.constants.OPT_NAME: mllogger.constants.ADAMW,
@@ -111,7 +113,6 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
         mllogger.constants.OPT_END_LR: args.min_lr,
         mllogger.constants.OPT_LR_WARMUP_STEPS: mbridge_config.scheduler.lr_warmup_iters,
         mllogger.constants.OPT_LR_DECAY_STEPS: opt_lr_decay_steps,
-        mllogger.constants.MAX_STEPS: args.max_steps,
         mllogger.constants.OPT_LR_DECAY_SCHEDULE: "cosine with linear warmup",
         "target_accuracy": args.target_log_ppl,
     }

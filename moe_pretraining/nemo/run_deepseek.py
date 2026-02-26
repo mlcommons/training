@@ -92,6 +92,7 @@ def slurm_executor(
     custom_env_vars: Dict[str, str] = None,
     custom_srun_args: List[str] = None,
     gres: Optional[str] = None,
+    segment: Optional[int] = None,
 ) -> run.SlurmExecutor:
     """
     Create a Slurm executor for DeepSeek V3 pretraining.
@@ -109,6 +110,7 @@ def slurm_executor(
         custom_env_vars: Additional environment variables
         custom_srun_args: Additional srun arguments
         gres: GPU resource specification
+        segment: Slurm segment size (auto-computed for GB200/GB300 if not provided)
     """
     custom_mounts = custom_mounts or []
     custom_env_vars = custom_env_vars or {}
@@ -143,9 +145,8 @@ def slurm_executor(
     # Mount the script directory
     mounts.append(f"{SCRIPT_DIR}:{SCRIPT_DIR}")
 
-    # Compute segment for GB200/GB300
-    segment = None
-    if num_gpus_per_node == 4:
+    # Compute segment for GB200/GB300 if not explicitly provided
+    if segment is None and num_gpus_per_node == 4:
         if nodes <= 18:
             segment = nodes
         else:
@@ -202,6 +203,7 @@ def get_parser() -> argparse.ArgumentParser:
     slurm_group.add_argument("--time_limit", type=str, default="04:00:00", help="Job time limit")
     slurm_group.add_argument("--gpu", type=str, default="gb300", help="GPU type (gb200, gb300, h100)")
     slurm_group.add_argument("--gres", type=str, default=None, help="GPU resource specification")
+    slurm_group.add_argument("--segment", type=int, default=None, help="Slurm segment size (auto-computed for GB200/GB300 if not set)")
 
     # Container configuration
     container_group = parser.add_argument_group("Container configuration")
@@ -287,6 +289,7 @@ def main():
         custom_mounts=custom_mounts,
         custom_env_vars=custom_env_vars,
         gres=args.gres,
+        segment=args.segment,
     )
 
     # Build the pretrain script path

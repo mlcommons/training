@@ -38,6 +38,7 @@ set -e
 : "${NNODES:=64}"
 : "${GPUS_PER_NODE:=4}"
 : "${GPU:="gb300"}"
+: "${SEGMENT:=""}"
 
 
 #     Model settings
@@ -86,6 +87,9 @@ LAUNCHER_ARGS="--account $ACCOUNT --partition $PARTITION"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --nodes $NNODES --gpus_per_node $GPUS_PER_NODE"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --gpu $GPU"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --time_limit $TIME"
+if [ -n "$SEGMENT" ]; then
+    LAUNCHER_ARGS="$LAUNCHER_ARGS --segment $SEGMENT"
+fi
 LAUNCHER_ARGS="$LAUNCHER_ARGS --container_image $IMAGE"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --log_dir $LOG_DIR"
 LAUNCHER_ARGS="$LAUNCHER_ARGS --mounts $MOUNTS"
