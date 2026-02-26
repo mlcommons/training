@@ -39,7 +39,7 @@ export MODEL_CKPT="<MODEL_CKPT>"
 
 # Training Configs: 
 # Dataloader: Global batch size
-export GBS=1024
+export GBS=16384
 # Dataloader: Micro batch size
 export MBS=1
 export MAX_LR=0.000024
