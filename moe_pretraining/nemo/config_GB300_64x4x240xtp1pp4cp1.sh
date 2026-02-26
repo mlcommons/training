@@ -39,10 +39,10 @@ export MODEL_CKPT="<MODEL_CKPT>"
 
 # Training Configs: 
 # Dataloader: Global batch size
-export GBS=20480
+export GBS=15360
 # Dataloader: Micro batch size
 export MBS=1
-export MAX_LR=0.000026833  # 0.000024 * sqrt(20480/16384) = 0.000026833
+export MAX_LR=0.000023238  # 0.000024 * sqrt(15360/16384) = 0.000023238
 export MAX_STEPS=12000
 export WARMUP_STEPS=4
 export EVAL_CHECK_INTERVAL=1  # every $EVAL_CHECK_INTERVAL steps
