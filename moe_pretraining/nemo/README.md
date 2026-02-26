@@ -169,10 +169,8 @@ After downloading the raw data and tokenizer, run the preprocessing script to ge
 
 #### Starting checkpoint
 
-The initial checkpoint used in this benchmark is derived from the HuggingFace DeepSeek V3 671B checkpoint, which can be downloaded [here](https://huggingface.co/deepseek-ai/DeepSeek-V3).
+The checkpoint distributed for this benchmark is provided in HuggingFace format and can be downloaded from MLCommons (see [Checkpoint download](#checkpoint-download)).
 
-Because this benchmark uses the Llama 3.1 8B tokenizer instead of the original DeepSeek tokenizer, the token distribution seen by the MoE router differs from what the model was originally trained on, causing router load imbalance. To address this, the HuggingFace checkpoint was further trained for **50 iterations** with a sequence auxiliary load balancing loss weight of **1e-2**. This brief warm-up allows the router to adapt to the new token distribution before the main benchmark training begins.
+It was produced as follows: the original HuggingFace DeepSeek V3 671B checkpoint was loaded into Megatron-Bridge and trained for **50 iterations** with a sequence auxiliary load balancing loss weight of **1e-2**, then converted back to HuggingFace format. This warm-up step is necessary because this benchmark uses the Llama 3.1 8B tokenizer instead of the original DeepSeek tokenizer — the change in token distribution causes MoE router load imbalance, and the 50 iterations allow the router to adapt before the main benchmark training begins.
 
-#### Checkpoint conversion
-
-The adapted checkpoint must be converted to Megatron-Bridge format before training. After conversion is done, set `MODEL_CKPT=<DST_PATH>` when launching the job.
+Set `MODEL_CKPT` in the config file to the path of the downloaded checkpoint before launching the job.
