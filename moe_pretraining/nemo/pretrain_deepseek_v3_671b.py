@@ -142,10 +142,7 @@ def create_config(args):
     model_cfg.sequence_parallel = args.tensor_parallel_size > 1
     model_cfg.seq_length = args.sequence_length
     model_cfg.recompute_modules = args.recompute_modules.split(",") if args.recompute_modules else []
-    if args.cuda_graph_implementation:
-        model_cfg.cuda_graph_implementation = args.cuda_graph_implementation
-    if args.cuda_graph_scope:
-        model_cfg.cuda_graph_scope = args.cuda_graph_scope
+    model_cfg.cuda_graph_implementation = "none"
     # MoE params
     model_cfg.moe_token_dispatcher_type = args.moe_token_dispatcher_type
     model_cfg.moe_grouped_gemm = args.moe_grouped_gemm
@@ -224,8 +221,6 @@ def get_parser() -> argparse.ArgumentParser:
     model_group.add_argument("--expert_model_parallel_size", type=int, required=True, help="Expert model parallel size")
     model_group.add_argument("--expert_tensor_parallel_size", type=int, required=True, help="Expert tensor parallel size")
     model_group.add_argument("--recompute_modules", type=str, help="Recompute modules")
-    model_group.add_argument("--cuda_graph_implementation", type=str, help="CUDA graph implementation")
-    model_group.add_argument("--cuda_graph_scope", type=str, help="CUDA graph scope")
     model_group.add_argument("--moe_token_dispatcher_type", type=str, default="alltoall", help="MoE token dispatcher type")
     model_group.add_argument("--moe_grouped_gemm", type=bool, default=True, help="MoE grouped GEMM")
     model_group.add_argument("--moe_permute_fusion", type=bool, default=False, help="MoE permute fusion")

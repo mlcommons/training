@@ -56,8 +56,6 @@ export CONTEXT_PARALLEL_SIZE=1
 export EXPERT_PARALLEL_SIZE=64
 export EXPERT_TENSOR_PARALLEL_SIZE=1
 export RECOMPUTE_MODULES="mlp,moe"
-export CUDA_GRAPH_IMPLEMENTATION="transformer_engine"
-export CUDA_GRAPH_SCOPE="attn"
 
 # Experiment manager: Number of experiments to launch
 export NEXP=1

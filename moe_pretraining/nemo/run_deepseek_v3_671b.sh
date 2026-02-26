@@ -51,8 +51,6 @@ set -e
 : "${EXPERT_TENSOR_PARALLEL_SIZE:=1}"
 : "${SEQUENCE_LENGTH:=4096}"
 : "${RECOMPUTE_MODULES:="mlp,moe_act"}"
-: "${CUDA_GRAPH_IMPLEMENTATION:="transformer_engine"}"
-: "${CUDA_GRAPH_SCOPE:="attn"}"
 : "${MOE_TOKEN_DISPATCHER_TYPE:="alltoall"}"
 : "${MOE_GROUPED_GEMM:=True}"
 : "${MOE_PERMUTE_FUSION:=False}"
@@ -134,13 +132,6 @@ if [ -n "$RECOMPUTE_MODULES" ]; then
     PRETRAIN_ARGS="$PRETRAIN_ARGS --recompute_modules $RECOMPUTE_MODULES"
 fi
 
-if [ -n "$CUDA_GRAPH_IMPLEMENTATION" ]; then
-    PRETRAIN_ARGS="$PRETRAIN_ARGS --cuda_graph_implementation $CUDA_GRAPH_IMPLEMENTATION"
-fi
-
-if [ -n "$CUDA_GRAPH_SCOPE" ]; then
-    PRETRAIN_ARGS="$PRETRAIN_ARGS --cuda_graph_scope $CUDA_GRAPH_SCOPE"
-fi
 
 PRETRAIN_ARGS="$PRETRAIN_ARGS --moe_token_dispatcher_type $MOE_TOKEN_DISPATCHER_TYPE"
 PRETRAIN_ARGS="$PRETRAIN_ARGS --moe_grouped_gemm $MOE_GROUPED_GEMM"
