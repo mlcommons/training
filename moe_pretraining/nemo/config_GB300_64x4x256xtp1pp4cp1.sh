@@ -55,7 +55,7 @@ export PIPELINE_PARALLEL_SIZE=4
 export CONTEXT_PARALLEL_SIZE=1
 export EXPERT_PARALLEL_SIZE=64
 export EXPERT_TENSOR_PARALLEL_SIZE=1
-export RECOMPUTE_MODULES="mlp,moe"
+export RECOMPUTE_MODULES="mlp,moe_act"
 
 # Experiment manager: Number of experiments to launch
 export NEXP=1
