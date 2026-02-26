@@ -72,7 +72,7 @@ set -e
 
 #     Experiment settings
 : "${EXP_NAME:=""}"
-: "${TARGET:="1.0"}"
+: "${TARGET:="3.60"}"
 : "${DRYRUN:=0}"
 : "${DETACH:=1}"
 

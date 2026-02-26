@@ -243,7 +243,7 @@ def get_parser() -> argparse.ArgumentParser:
     training_group.add_argument("--eval_check_interval", type=int, default=10, help="Evaluate every N steps")
     training_group.add_argument("--eval_batches", type=int, default=1, help="Evaluate N batches")
     training_group.add_argument("--eval_batch_size", type=int, default=None, help="Batch size for evaluation")
-    training_group.add_argument("--target_log_ppl", type=float, default=1.0, help="Target log perplexity")
+    training_group.add_argument("--target_log_ppl", type=float, default=3.60, help="Target log perplexity")
 
     return parser
 
