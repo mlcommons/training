@@ -183,3 +183,7 @@ bash run_conversion.sh
 ```
 
 After conversion, set `MODEL_CKPT` in the config file to the path of the converted checkpoint before launching the job.
+
+# 7. Reference Hardware and Expected Runtime
+
+The reference results were produced on **64 nodes of NVIDIA GB300**, with 4 GPUs per node (256 GPUs total). A full training run to convergence takes approximately **1 hour 30 minutes**.
