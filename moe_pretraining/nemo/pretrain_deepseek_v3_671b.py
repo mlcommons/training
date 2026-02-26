@@ -32,10 +32,13 @@ from callback import (
 
 def get_rank():
     """Get the current process rank."""
+    import os
     import torch.distributed as dist
     if dist.is_available() and dist.is_initialized():
         return dist.get_rank()
-    return 0
+    # Before torch.distributed is initialized, fall back to launcher env vars
+    # (RANK is set by torchrun, SLURM_PROCID is set by srun)
+    return int(os.environ.get("RANK", os.environ.get("SLURM_PROCID", 0)))
 
 
 def init_logging():
