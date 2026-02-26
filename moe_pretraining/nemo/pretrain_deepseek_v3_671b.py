@@ -196,6 +196,7 @@ def create_config(args):
     checkpoint_cfg.load_optim = False
     checkpoint_cfg.load_rng = False
     checkpoint_cfg.exit_on_missing_checkpoint = True
+    checkpoint_cfg.ckpt_step = 0
 
     # Logger configuration
     logger_cfg = config.logger
