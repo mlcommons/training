@@ -175,6 +175,11 @@ It was produced as follows: the original HuggingFace DeepSeek V3 671B checkpoint
 
 The distributed checkpoint is in HuggingFace format and must be converted to Megatron-LM format before training.
 
-<!-- TODO: add conversion script and instructions -->
+Fill out [config_conversion.sh](./config_conversion.sh) with your paths and parallelism settings, then run:
+
+```bash
+source config_conversion.sh
+bash run_conversion.sh
+```
 
 After conversion, set `MODEL_CKPT` in the config file to the path of the converted checkpoint before launching the job.
