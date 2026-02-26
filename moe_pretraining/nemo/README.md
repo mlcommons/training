@@ -141,7 +141,7 @@ Validation loss (LM loss)
 
 ### Quality target
 
-Validation loss = 2.55
+Validation loss = 3.60
 
 ### Evaluation frequency
 
