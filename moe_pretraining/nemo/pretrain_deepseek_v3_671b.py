@@ -75,7 +75,7 @@ def get_data(seq_length: int, seed):
 
 def log_hyperparams(args, mbridge_config: ConfigContainer):
     """Log hyperparameters for MLPerf compliance."""
-    bmark = mllogger.constants.DEEPSEEK_V3
+    bmark = mllogger.constants.DEEPSEEK_V3_671B
     opt_lr_decay_steps = args.max_steps - args.warmup_steps
     mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
     mllogger.mlperf_submission_log(bmark)
