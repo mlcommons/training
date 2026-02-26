@@ -43,6 +43,7 @@ export GBS=15360
 # Dataloader: Micro batch size
 export MBS=1
 export MAX_LR=0.000023238  # 0.000024 * sqrt(15360/16384) = 0.000023238
+export MIN_LR=1e-8
 export MAX_STEPS=12000
 export WARMUP_STEPS=4
 export EVAL_CHECK_INTERVAL=1  # every $EVAL_CHECK_INTERVAL steps
