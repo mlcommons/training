@@ -12,7 +12,7 @@ We recommend using the latest PyTorch container. The latest tested compatible ve
 
 #### Container setup
 
-All of the following codes are assumed to be run within a container. A [Dockerfile](./Dockerfile) is available for building containers on top of `nvcr.io/nvidia/pytorch:25.12-py3`.
+A [Dockerfile](./Dockerfile) is available for building the container on top of `nvcr.io/nvidia/pytorch:25.12-py3`.
 
 To build the container:
 
@@ -20,16 +20,7 @@ To build the container:
 docker build -t <tag> -f Dockerfile .
 ```
 
-To launch the container:
-
-```bash
-docker run -it --rm \
---network=host --ipc=host \
--v ~/.ssh:/root/.ssh \
-<tag> bash
-```
-
-Note: it's recommended to map your `.ssh` folder to inside the container, so that it's easier for the code to set up remote cluster access.
+The built container image path is later set in the config file by the user (see `IMAGE` in the config).
 
 ### Steps to download and verify data
 
@@ -37,9 +28,17 @@ The current codebase is using C4 dataset for train and evaluation. Please refer 
 
 ### Steps to run and time
 
-To train DeepSeek V3 671B, we need to fill out all fields in one of the config files (e.g. [config_GB300_64x4x256xtp1pp4cp1.sh](./config_GB300_64x4x256xtp1pp4cp1.sh)). This file contains all configurations for Slurm cluster access and job submission, directory mappings, containers, and model configurations.
+To train DeepSeek V3 671B, fill out all fields in one of the config files (e.g. [config_GB300_64x4x256xtp1pp4cp1.sh](./config_GB300_64x4x256xtp1pp4cp1.sh)). This file contains all configurations for Slurm cluster access and job submission, directory mappings, containers, and model configurations.
 
-Once the config is properly filled, we run the following code snippet **inside the container**:
+Jobs are launched **outside the container**. First, set up a Python virtual environment and install [NeMo-Run](https://github.com/NVIDIA-NeMo/Run):
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install git+https://github.com/NVIDIA-NeMo/Run.git
+```
+
+Then source the config and run the launch script:
 
 ```bash
 source config_GB300_64x4x256xtp1pp4cp1.sh
