@@ -89,7 +89,7 @@ We randomly shuffle the training shards for the benchmarking area.
 
 ### Test data order
 
-We use the first sequences in the validation dataset for validation. We **do not shuffle** the validation dataset.
+We use the first 1,024 sequences (1,024 × 4,096 = 4,194,304 tokens) in the validation dataset for validation. We **do not shuffle** the validation dataset.
 
 # 4. Model
 
