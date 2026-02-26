@@ -152,6 +152,7 @@ def create_config(args):
     model_cfg.moe_permute_fusion = args.moe_permute_fusion
     model_cfg.moe_router_fusion = args.moe_router_fusion
     model_cfg.moe_router_force_load_balancing = False
+    model_cfg.moe_aux_loss_coeff = 0.01
 
 
 
