@@ -119,7 +119,7 @@ The model follows the DeepSeek V3 671B [paper](https://arxiv.org/abs/2412.19437)
 
 ### Checkpoint download
 
-MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. You must first agree to the confidentiality notice using your organizational email address, then you will receive a link to download instructions with [MLCommons R2 Downloader](https://github.com/mlcommons/r2_downloader) commands.
+MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. Download instructions are available via the [MLCommons R2 Downloader](https://github.com/mlcommons/r2_downloader).
 
 #### Saving and restoring a checkpoint
 
