@@ -1,6 +1,13 @@
 # 1. Problem
 
-Large Language Model pretraining - DeepSeek V3 671B (Mixture of Experts)
+Large Language Model pretraining - DeepSeek V3 671B (Mixture of Experts).
+
+To closely follow the training recipe from the [DeepSeek-v3 Technical report](https://arxiv.org/html/2412.19437v2) which employs a batch size scheduling strategy, where the batch size is gradually increased from 3072 to 15360 in the training of the first 469B tokens, and then keeps 15360 in the remaining training of 4.8T tokens, the benchmark enforces all submissions to use a GBS of atleast 15360. This ensures that the benchmark is representative of DeepSeek-v3 pretraining while maintaining fairness because the task force experiments showed that convergence in the benchmarking region can be much faster with GBS << 15360. 
+
+* **GBS<15360 - not allowed**
+* GBS>=15360: `opt_base_learning_rate = 0.000024 * sqrt(GBS / 16384)`, rounded to the **9th** decimal place.
+
+Given the very large GBS and the motivation to keep the total benchmarking cost <= 512 GPU-hours, the benchmark is setup to evaluate after each training GBS step.
 
 # 2. Directions
 
@@ -149,11 +156,11 @@ Validation loss = 3.60
 
 ### Evaluation frequency
 
-We perform evaluation every step.
+We perform evaluation after every training step.
 
 ### Evaluation thoroughness
 
-We evaluate using 1,024 samples from our customized validation dataset.
+We evaluate using the first 1,024 samples from the custom validation dataset.
 
 # 6. Other
 
@@ -190,4 +197,4 @@ After conversion, set `MODEL_CKPT` in the config file to the path of the convert
 
 # 7. Reference Hardware and Expected Runtime
 
-The reference results were produced on **64 nodes of NVIDIA GB300**, with 4 GPUs per node (256 GPUs total). A full training run to convergence takes approximately **1 hour 30 minutes**.
+The reference results were produced on **64 of the 72 NVIDIA GB300 nodes of a GB300 NVL72 rack**, with 4 GPUs per node (256 GPUs total). A full training run to convergence takes approximately **1 hour 30 minutes**.
