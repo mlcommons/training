@@ -199,6 +199,7 @@ def create_config(args):
     checkpoint_cfg.load_rng = False
     checkpoint_cfg.exit_on_missing_checkpoint = True
     checkpoint_cfg.ckpt_step = 0
+    checkpoint_cfg.save = None  # MLPerf benchmark: do not save model checkpoints during training
 
     # Logger configuration
     logger_cfg = config.logger
