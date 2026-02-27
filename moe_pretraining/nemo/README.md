@@ -6,9 +6,7 @@ Large Language Model pretraining - DeepSeek V3 671B (Mixture of Experts)
 
 ### Steps to configure machine
 
-To use this repository, please install a supported version of PyTorch with GPU support and NVIDIA APEX. **Slurm-based clusters are required to run the reference**.
-
-We recommend using the latest PyTorch container. The latest tested compatible version is `nvcr.io/nvidia/pytorch:25.12-py3`.
+To use this repository, install a supported version of PyTorch with GPU support and NVIDIA APEX. **Slurm-based clusters are required to run the reference**.
 
 #### Container setup
 
@@ -119,7 +117,13 @@ The model follows the DeepSeek V3 671B [paper](https://arxiv.org/abs/2412.19437)
 
 ### Checkpoint download
 
-MLCommons hosts the checkpoint for download **exclusively by MLCommons Members**. Download instructions are available via the [MLCommons R2 Downloader](https://github.com/mlcommons/r2_downloader).
+MLCommons hosts the checkpoint for download **exclusively by MLCommons Members** at [MLCommons storage](https://training.mlcommons-storage.org/index.html#deepseekv3-benchmark). Download instructions are available via the [MLCommons R2 Downloader](https://github.com/mlcommons/r2_downloader).
+
+```
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) https://training.mlcommons-storage.org/metadata/deepseekv3_checkpoint_bf16.uri
+```
+
+The checkpoint is ~1.4TB
 
 #### Saving and restoring a checkpoint
 
