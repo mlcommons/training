@@ -542,9 +542,8 @@ class DeltaTimingCallback:
         if global_state.train_state.step % self.log_every_n_steps == 0 and get_last_pp_rank():
             mllogger.event(
                 key="tracked_stats",
-                metadata={mllogger.constants.SAMPLES_COUNT: self.global_batch_size * global_state.train_state.step},
+                metadata={mllogger.constants.SAMPLES_COUNT: self.global_batch_size * (global_state.train_state.step + 1)},
                 value={
-                    "train_step_time": d,
                     "reduced_train_loss": ret[0]["lm loss"].item(),
                 },
                 unique=False,
