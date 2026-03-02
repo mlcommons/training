@@ -55,7 +55,7 @@ from nemo_run.core.execution.launcher import SlurmTemplate
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
+SCRIPT_DIR = Path("/workspace/code")
 PRETRAIN_SCRIPT = "pretrain_deepseek_v3_671b.py"
 
 # Inline bash template for Slurm
@@ -141,9 +141,6 @@ def slurm_executor(
 
     env_vars.update(custom_env_vars)
     mounts.extend(custom_mounts)
-
-    # Mount the script directory
-    mounts.append(f"{SCRIPT_DIR}:{SCRIPT_DIR}")
 
     # Compute segment for GB200/GB300 if not explicitly provided
     if segment is None and num_gpus_per_node == 4:
