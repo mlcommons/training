@@ -368,7 +368,6 @@ class MLPerfLoggingCallback:
         self.global_batch_size = self.cfg.model.global_batch_size
         self.train_block_started = True
         self.train_current_block = 0
-        self.previous_step = 0
 
     def on_train_start(
         self,
@@ -411,7 +410,6 @@ class MLPerfLoggingCallback:
         """Log validation start."""
         if hasattr(global_state, "warmup") and global_state.warmup:
             return
-        self._log_train_step_time(global_state)
         if self.train_block_started:
             self._end_train_block(global_state)
 
@@ -518,23 +516,6 @@ class MLPerfLoggingCallback:
             },
         )
         self.train_block_started = False
-
-    def _log_train_step_time(
-        self,
-        global_state: GlobalState,
-    ) -> None:
-        delta_t = self.timer.get_delta()
-        global_step = self._get_step(global_state)
-        delta_step = global_step - self.previous_step
-        mllogger.event(
-            key="tracked_stats",
-            metadata={mllogger.constants.SAMPLES_COUNT: delta_step * self.global_batch_size},
-            value={
-                "train_step_time": delta_t / (delta_step + 1e-8),
-            },
-        )
-
-        self.previous_step = global_step
 
     def _log_custom_timedelta(self, value_key, step: int = 0):
         mllogger.event(
