@@ -1,4 +1,5 @@
 :::MLLOG {"namespace": "", "time_ms": 1772231288235, "event_type": "POINT_IN_TIME", "key": "cache_clear", "value": true, "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 83}}
+:::MLLOG {"namespace": "", "time_ms": 1772231288239, "event_type": "INTERVAL_START", "key": "init_start", "value": null, "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 290}}
 :::MLLOG {"namespace": "", "time_ms": 1772231288235, "event_type": "POINT_IN_TIME", "key": "submission_benchmark", "value": "deepseekv3_671b", "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 84}}
 :::MLLOG {"namespace": "", "time_ms": 1772231288235, "event_type": "POINT_IN_TIME", "key": "submission_org", "value": "NVIDIA", "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 84}}
 :::MLLOG {"namespace": "", "time_ms": 1772231288235, "event_type": "POINT_IN_TIME", "key": "submission_division", "value": "closed", "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 84}}
@@ -26,7 +27,6 @@
 :::MLLOG {"namespace": "", "time_ms": 1772231288238, "event_type": "POINT_IN_TIME", "key": "opt_learning_rate_decay_steps", "value": 11996, "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 121}}
 :::MLLOG {"namespace": "", "time_ms": 1772231288238, "event_type": "POINT_IN_TIME", "key": "opt_learning_rate_decay_schedule", "value": "cosine with linear warmup", "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 121}}
 :::MLLOG {"namespace": "", "time_ms": 1772231288239, "event_type": "POINT_IN_TIME", "key": "target_accuracy", "value": 3.6, "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 121}}
-:::MLLOG {"namespace": "", "time_ms": 1772231288239, "event_type": "INTERVAL_START", "key": "init_start", "value": null, "metadata": {"file": "/workspace/code/pretrain_deepseek_v3_671b.py", "lineno": 290}}
 :::MLLOG {"namespace": "", "time_ms": 1772231640146, "event_type": "INTERVAL_END", "key": "init_stop", "value": null, "metadata": {"file": "/workspace/code/callback.py", "lineno": 381}}
 :::MLLOG {"namespace": "", "time_ms": 1772231640220, "event_type": "INTERVAL_START", "key": "run_start", "value": null, "metadata": {"file": "/workspace/code/callback.py", "lineno": 381}}
 :::MLLOG {"namespace": "", "time_ms": 1772231640220, "event_type": "INTERVAL_START", "key": "block_start", "value": null, "metadata": {"file": "/workspace/code/callback.py", "lineno": 383, "samples_count": 15360, "step": 0}}
