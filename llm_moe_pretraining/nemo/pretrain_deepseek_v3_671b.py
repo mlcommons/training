@@ -81,6 +81,7 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
     bmark = mllogger.constants.DEEPSEEK_V3_671B
     opt_lr_decay_steps = args.max_steps - args.warmup_steps
     mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
+    mllogger.start(key=mllogger.constants.INIT_START)
     mllogger.mlperf_submission_log(bmark)
     mllogger.event(key=mllogger.constants.SUBMISSION_POC_NAME, value="Denys Fridman")
     mllogger.event(key=mllogger.constants.SUBMISSION_POC_EMAIL, value="dfridman@nvidia.com")
@@ -287,7 +288,6 @@ def main():
 
     if get_rank() == 0:
         log_hyperparams(args, config)
-        mllogger.start(key=mllogger.constants.INIT_START)
 
     register_callback(DeltaTimingCallback(cfg))
     register_callback(MLPerfLoggingCallback(cfg))
