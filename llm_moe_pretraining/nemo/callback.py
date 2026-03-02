@@ -67,21 +67,6 @@ def broadcast_loss(loss_reduced):
 mllogger = MLLoggerWrapper(PyTCommunicationHandler())
 
 
-class DeltaTimer:
-    """Timer for measuring time deltas."""
-
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.start_time = time.perf_counter()
-        return self.start_time
-
-    def get_delta(self):
-        prev_time = self.start_time
-        return self.reset() - prev_time
-
-
 # =============================================================================
 # Callback Protocol and Manager
 # =============================================================================
@@ -386,8 +371,6 @@ class MLPerfLoggingCallback:
                 "step": global_state.train_state.step,
             },
         )
-        self.timer = DeltaTimer()
-
     def on_train_end(
         self,
         global_state: GlobalState,
@@ -430,8 +413,6 @@ class MLPerfLoggingCallback:
     ):
         if hasattr(global_state, "warmup") and global_state.warmup:
             return
-        self._log_custom_timedelta("validation_time", self._get_step(global_state))
-
         samples_count = self._get_samples_count(global_state)
         if self.cfg.model.pipeline_model_parallel_size > 1:
             loss = broadcast_loss(ret[0])
@@ -516,13 +497,6 @@ class MLPerfLoggingCallback:
             },
         )
         self.train_block_started = False
-
-    def _log_custom_timedelta(self, value_key, step: int = 0):
-        mllogger.event(
-            key="tracked_stats",
-            metadata={"step": step},
-            value={value_key: self.timer.get_delta()},
-        )
 
     def _get_step(self, global_state):
         return global_state.train_state.step
