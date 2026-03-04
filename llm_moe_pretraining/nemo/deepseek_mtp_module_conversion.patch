@@ -1,7 +1,7 @@
 From 2541ed57c003abda13dc20df8d6d80942cec1082 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Thu, 8 Jan 2026 14:00:01 +0100
-Subject: [PATCH 1/5] deepseek: add conversion support for MTP module
+Subject: [PATCH 1/6] deepseek: add conversion support for MTP module
 
 Signed-off-by: Denys Fridman <dfridman@nvidia.com>
 ---
@@ -174,7 +174,7 @@ index 3ad7d53500..1976665aa4 100644
 From 7bce78096ae7b1fc0b0b0b7c60edfb97e83934f5 Mon Sep 17 00:00:00 2001
 From: Chen Cui <cxcui@alumni.cmu.edu>
 Date: Thu, 8 Jan 2026 12:47:37 -0800
-Subject: [PATCH 2/5] lint
+Subject: [PATCH 2/6] lint
 
 Signed-off-by: Chen Cui <cxcui@alumni.cmu.edu>
 ---
@@ -198,7 +198,7 @@ index c62d3935ff..7ae806f879 100644
 From 88a96b8b8907dfdf31df319a2eaf4839c28544be Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Wed, 4 Mar 2026 11:16:17 +0100
-Subject: [PATCH 3/5] Set DeepSeek V3 pipeline layout in roundtrip conversion
+Subject: [PATCH 3/6] Set DeepSeek V3 pipeline layout in roundtrip conversion
  script
 
 ---
@@ -237,7 +237,7 @@ index 629ffe77c1..687a8edc92 100644
 From 4b69248a7da8edb61693577f6aaf7c4a8e6ecb82 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Wed, 4 Mar 2026 11:24:14 +0100
-Subject: [PATCH 4/5] Add --vp argument for virtual pipeline parallelism size
+Subject: [PATCH 4/6] Add --vp argument for virtual pipeline parallelism size
 
 ---
  examples/conversion/hf_megatron_roundtrip_multi_gpu.py | 5 +++++
@@ -291,7 +291,7 @@ index 687a8edc92..8397b06a3f 100644
 From acf24db197c8384a0c3ea792ffc1de1c1d32c730 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Wed, 4 Mar 2026 14:10:48 +0100
-Subject: [PATCH 5/5] Remove weight verification check from roundtrip script
+Subject: [PATCH 5/6] Remove weight verification check from roundtrip script
 
 ---
  .../hf_megatron_roundtrip_multi_gpu.py        | 36 -------------------
@@ -359,3 +359,83 @@ index 8397b06a3f..f8d69a0b1a 100644
  
  if __name__ == "__main__":
      parser = argparse.ArgumentParser(
+
+From de288c964b8ea8d4390d3e960b158b92f5439d38 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 14:27:54 +0100
+Subject: [PATCH 6/6] Remove HF checkpoint saving from roundtrip script
+
+---
+ .../hf_megatron_roundtrip_multi_gpu.py        | 21 -------------------
+ 1 file changed, 21 deletions(-)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index f8d69a0b1a..4cc0219ab2 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -62,7 +62,6 @@
+ @torchrun_main
+ def main(
+     hf_model_id: str = HF_MODEL_ID,
+-    output_dir: str = None,
+     tp: int = 1,
+     pp: int = 1,
+     vp: int | None = None,
+@@ -71,7 +70,6 @@ def main(
+     megatron_save_path: str | None = None,
+     megatron_load_path: str | None = None,
+     trust_remote_code: bool | None = None,
+-    strict: bool = False,
+ ) -> None:
+     """Perform round-trip conversion between HuggingFace and Megatron-LM models on multiple GPUs."""
+     if os.environ.get("WORLD_SIZE") is None:
+@@ -79,12 +77,6 @@ def main(
+         console.print(f"torchrun --nproc_per_node <gpus> {sys.argv[0]}")
+         sys.exit(1)
+ 
+-    model_name = hf_model_id.split("/")[-1]
+-    if output_dir:
+-        save_path = os.path.join(output_dir, model_name)
+-    else:
+-        save_path = model_name
+-
+     bridge = AutoBridge.from_hf_pretrained(
+         hf_model_id,
+         trust_remote_code=is_safe_repo(
+@@ -141,11 +133,6 @@ def main(
+     # Now we can check for rank
+     is_rank_0 = torch.distributed.get_rank() == 0
+ 
+-    if is_rank_0:
+-        console.print(f"Saving HF-ckpt in {save_path}...")
+-
+-    bridge.save_hf_pretrained(megatron_model, save_path, strict=strict)
+-
+     # Save in Megatron format if path is provided
+     if megatron_save_path:
+         if is_rank_0:
+@@ -158,12 +145,6 @@ def main(
+         description="Convert between HuggingFace and Megatron-LM model formats on multiple GPUs"
+     )
+     parser.add_argument("--hf-model-id", type=str, default=HF_MODEL_ID, help="HuggingFace model ID to convert")
+-    parser.add_argument(
+-        "--output-dir",
+-        type=str,
+-        default=None,
+-        help="The directory where the converted model directory will be created. Defaults to the current working directory.",
+-    )
+     parser.add_argument("--tp", type=int, default=1, help="Tensor parallelism size")
+     parser.add_argument("--pp", type=int, default=1, help="Pipeline parallelism size")
+     parser.add_argument("--vp", type=int, default=None, help="Virtual pipeline parallelism size")
+@@ -183,11 +164,9 @@ def main(
+         help="Path to load the model in Megatron checkpoint format. If provided, model will not start from HF checkpoint.",
+     )
+     parser.add_argument("--trust-remote-code", action="store_true", help="if trust_remote_code")
+-    parser.add_argument("--not-strict", action="store_true", help="Perform loose validation during weight export")
+     args = parser.parse_args()
+     main(
+         args.hf_model_id,
+-        args.output_dir,
+         args.tp,
+         args.pp,
+         args.vp,
