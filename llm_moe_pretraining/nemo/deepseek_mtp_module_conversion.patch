@@ -1,4 +1,4 @@
-From e4faa80737db6498b55e3ebc983a53e968ccf100 Mon Sep 17 00:00:00 2001
+From 06e8b9c56f0529c5f903dcf3f803af427b4c9032 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Thu, 8 Jan 2026 14:00:01 +0100
 Subject: [PATCH 1/2] deepseek: add conversion support for MTP module
@@ -7,15 +7,15 @@ Signed-off-by: Denys Fridman <dfridman@nvidia.com>
 ---
  src/megatron/bridge/models/deepseek/common.py | 72 ++++++++++++++++++-
  .../models/deepseek/deepseek_v2_bridge.py     | 10 ++-
- .../models/deepseek/deepseek_v3_bridge.py     | 14 ++--
- 3 files changed, 88 insertions(+), 8 deletions(-)
+ .../models/deepseek/deepseek_v3_bridge.py     | 28 ++++----
+ 3 files changed, 94 insertions(+), 16 deletions(-)
 
 diff --git a/src/megatron/bridge/models/deepseek/common.py b/src/megatron/bridge/models/deepseek/common.py
-index f409c9ba59..ceae4017fd 100644
+index bc34726a..c62d3935 100644
 --- a/src/megatron/bridge/models/deepseek/common.py
 +++ b/src/megatron/bridge/models/deepseek/common.py
-@@ -15,9 +15,13 @@
- from megatron.bridge.models.conversion.param_mapping import AutoMapping, GatedMLPMapping
+@@ -76,9 +76,13 @@ def get_common_configs(hf_pretrained: PreTrainedCausalLM) -> dict:
+     return configs
  
  
 -def get_common_mapping_list() -> list:
@@ -29,7 +29,7 @@ index f409c9ba59..ceae4017fd 100644
      """
      param_mappings = {
          # Embed
-@@ -55,8 +59,6 @@ def get_common_mapping_list() -> list:
+@@ -116,8 +120,6 @@ def get_common_mapping_list() -> list:
          "decoder.layers.*.self_attention.linear_q_proj.weight": "model.layers.*.self_attn.q_proj.weight",
      }
  
@@ -38,7 +38,7 @@ index f409c9ba59..ceae4017fd 100644
      mapping_list = []
      # Convert each dictionary entry to AutoMapping(hf_param, megatron_param)
      for megatron_param, hf_param in param_mappings.items():
-@@ -82,4 +84,68 @@ def get_common_mapping_list() -> list:
+@@ -143,4 +145,68 @@ def get_common_mapping_list() -> list:
          ]
      )
  
@@ -108,11 +108,11 @@ index f409c9ba59..ceae4017fd 100644
 +
      return mapping_list
 diff --git a/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py b/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
-index 6309518e2d..083902e754 100644
+index 8b2d5908..69b96e8f 100644
 --- a/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
 +++ b/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
-@@ -84,6 +84,14 @@ def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> MLAModelProvider
- 
+@@ -49,6 +49,14 @@ class DeepSeekV2Bridge(MegatronModelBridge):
+         provider = DeepSeekV2ModelProvider(**configs)
          return provider
  
 +    def build_conversion_tasks(self, hf_pretrained, megatron_model):
@@ -128,35 +128,51 @@ index 6309518e2d..083902e754 100644
 +        mapping_list = get_common_mapping_list(hf_config=hf_config)
          return MegatronMappingRegistry(*mapping_list)
 diff --git a/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py b/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
-index f6dd8ee7a9..0f8ebded18 100644
+index 52a1e947..10fd985d 100644
 --- a/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
 +++ b/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
-@@ -89,13 +89,19 @@ def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> MLAModelProvider
-         )
-         provider.moe_shared_expert_intermediate_size = hf_config.moe_intermediate_size * hf_config.n_shared_experts
+@@ -51,20 +51,24 @@ class DeepSeekV3Bridge(MegatronModelBridge):
+         if hasattr(hf_config, "aux_loss_alpha"):
+             configs["moe_aux_loss_coeff"] = hf_config.aux_loss_alpha
  
 -        # TODO: mtp
--        provider.mtp_num_layers = None
 -
+         provider = DeepSeekV3ModelProvider(**configs)
 +        provider.mtp_num_layers = getattr(hf_config, "num_nextn_predict_layers", 0) or None
          return provider
  
+-    def mapping_registry(self) -> MegatronMappingRegistry:
+-        mapping_list = get_common_mapping_list()
+-
+-        param_mappings = {
+-            # expert bias
+-            "decoder.layers.*.mlp.router.expert_bias": "model.layers.*.mlp.gate.e_score_correction_bias",
+-        }
+-
+-        for megatron_param, hf_param in param_mappings.items():
+-            mapping_list.append(AutoMapping(megatron_param=megatron_param, hf_param=hf_param))
 +    def build_conversion_tasks(self, hf_pretrained, megatron_model):
 +        """Override to store config before mapping_registry is called."""
 +        # Store config on instance for use in mapping_registry
 +        self._hf_config = hf_pretrained.config
 +        return super().build_conversion_tasks(hf_pretrained, megatron_model)
-+
-     def mapping_registry(self) -> MegatronMappingRegistry:
--        mapping_list = get_common_mapping_list()
+ 
++    def mapping_registry(self) -> MegatronMappingRegistry:
 +        # Get hf_config if available (set by build_conversion_tasks)
 +        hf_config = getattr(self, "_hf_config", None)
 +        mapping_list = get_common_mapping_list(hf_config=hf_config)
-         mapping_list.append(
-             AutoMapping(
-                 megatron_param="decoder.layers.*.mlp.router.expert_bias",
++        mapping_list.append(
++            AutoMapping(
++                megatron_param="decoder.layers.*.mlp.router.expert_bias",
++                hf_param="model.layers.*.mlp.gate.e_score_correction_bias",
++            )
++        )
+         return MegatronMappingRegistry(*mapping_list)
+-- 
+2.34.1
 
-From e94fb515dbd92d222b4eb09ebc57cf5919f3a78c Mon Sep 17 00:00:00 2001
+
+From 68d07a2044a9dcb8f57d5616fb02d4154a9a1109 Mon Sep 17 00:00:00 2001
 From: Chen Cui <cxcui@alumni.cmu.edu>
 Date: Thu, 8 Jan 2026 12:47:37 -0800
 Subject: [PATCH 2/2] lint
@@ -167,10 +183,10 @@ Signed-off-by: Chen Cui <cxcui@alumni.cmu.edu>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/megatron/bridge/models/deepseek/common.py b/src/megatron/bridge/models/deepseek/common.py
-index ceae4017fd..984ba3823a 100644
+index c62d3935..7ae806f8 100644
 --- a/src/megatron/bridge/models/deepseek/common.py
 +++ b/src/megatron/bridge/models/deepseek/common.py
-@@ -123,7 +123,7 @@ def get_common_mapping_list(hf_config=None) -> list:
+@@ -184,7 +184,7 @@ def get_common_mapping_list(hf_config=None) -> list:
                          AutoMapping(
                              megatron_param=f"mtp.layers.{mtp_layer}.transformer_layer.mlp.router.expert_bias",
                              hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.gate.e_score_correction_bias",
@@ -179,3 +195,6 @@ index ceae4017fd..984ba3823a 100644
                      ]
                  )
  
+-- 
+2.34.1
+
