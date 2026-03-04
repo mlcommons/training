@@ -1,7 +1,7 @@
-From 06e8b9c56f0529c5f903dcf3f803af427b4c9032 Mon Sep 17 00:00:00 2001
+From 2541ed57c003abda13dc20df8d6d80942cec1082 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Thu, 8 Jan 2026 14:00:01 +0100
-Subject: [PATCH 1/2] deepseek: add conversion support for MTP module
+Subject: [PATCH 1/3] deepseek: add conversion support for MTP module
 
 Signed-off-by: Denys Fridman <dfridman@nvidia.com>
 ---
@@ -11,7 +11,7 @@ Signed-off-by: Denys Fridman <dfridman@nvidia.com>
  3 files changed, 94 insertions(+), 16 deletions(-)
 
 diff --git a/src/megatron/bridge/models/deepseek/common.py b/src/megatron/bridge/models/deepseek/common.py
-index bc34726a..c62d3935 100644
+index bc34726afa..c62d3935ff 100644
 --- a/src/megatron/bridge/models/deepseek/common.py
 +++ b/src/megatron/bridge/models/deepseek/common.py
 @@ -76,9 +76,13 @@ def get_common_configs(hf_pretrained: PreTrainedCausalLM) -> dict:
@@ -108,10 +108,10 @@ index bc34726a..c62d3935 100644
 +
      return mapping_list
 diff --git a/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py b/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
-index 8b2d5908..69b96e8f 100644
+index 8b2d5908fe..69b96e8ff3 100644
 --- a/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
 +++ b/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
-@@ -49,6 +49,14 @@ class DeepSeekV2Bridge(MegatronModelBridge):
+@@ -49,6 +49,14 @@ def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> DeepSeekV2ModelP
          provider = DeepSeekV2ModelProvider(**configs)
          return provider
  
@@ -128,10 +128,10 @@ index 8b2d5908..69b96e8f 100644
 +        mapping_list = get_common_mapping_list(hf_config=hf_config)
          return MegatronMappingRegistry(*mapping_list)
 diff --git a/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py b/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
-index 52a1e947..10fd985d 100644
+index 3ad7d53500..1976665aa4 100644
 --- a/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
 +++ b/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
-@@ -51,20 +51,24 @@ class DeepSeekV3Bridge(MegatronModelBridge):
+@@ -53,22 +53,26 @@ def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> DeepSeekV3ModelP
          if hasattr(hf_config, "aux_loss_alpha"):
              configs["moe_aux_loss_coeff"] = hf_config.aux_loss_alpha
  
@@ -168,14 +168,13 @@ index 52a1e947..10fd985d 100644
 +            )
 +        )
          return MegatronMappingRegistry(*mapping_list)
--- 
-2.34.1
+ 
+     def maybe_modify_converted_hf_weight(
 
-
-From 68d07a2044a9dcb8f57d5616fb02d4154a9a1109 Mon Sep 17 00:00:00 2001
+From 7bce78096ae7b1fc0b0b0b7c60edfb97e83934f5 Mon Sep 17 00:00:00 2001
 From: Chen Cui <cxcui@alumni.cmu.edu>
 Date: Thu, 8 Jan 2026 12:47:37 -0800
-Subject: [PATCH 2/2] lint
+Subject: [PATCH 2/3] lint
 
 Signed-off-by: Chen Cui <cxcui@alumni.cmu.edu>
 ---
@@ -183,7 +182,7 @@ Signed-off-by: Chen Cui <cxcui@alumni.cmu.edu>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/megatron/bridge/models/deepseek/common.py b/src/megatron/bridge/models/deepseek/common.py
-index c62d3935..7ae806f8 100644
+index c62d3935ff..7ae806f879 100644
 --- a/src/megatron/bridge/models/deepseek/common.py
 +++ b/src/megatron/bridge/models/deepseek/common.py
 @@ -184,7 +184,7 @@ def get_common_mapping_list(hf_config=None) -> list:
@@ -195,6 +194,42 @@ index c62d3935..7ae806f8 100644
                      ]
                  )
  
--- 
-2.34.1
 
+From 88a96b8b8907dfdf31df319a2eaf4839c28544be Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 11:16:17 +0100
+Subject: [PATCH 3/3] Set DeepSeek V3 pipeline layout in roundtrip conversion
+ script
+
+---
+ examples/conversion/hf_megatron_roundtrip_multi_gpu.py | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index 629ffe77c1..687a8edc92 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -53,6 +53,7 @@
+ from megatron.bridge import AutoBridge
+ from megatron.bridge.models.decorators import torchrun_main
+ from megatron.bridge.models.hf_pretrained.utils import is_safe_repo
++from megatron.bridge.recipes.deepseek.deepseek_v3 import set_deepseek_v3_pipeline_model_parallel_layout
+ 
+ 
+ HF_MODEL_ID = "meta-llama/Llama-3.2-1B"
+@@ -101,6 +102,7 @@ def main(
+         model_provider.params_dtype = torch.bfloat16
+         model_provider.expert_model_parallel_size = ep
+         model_provider.expert_tensor_parallel_size = etp
++        set_deepseek_v3_pipeline_model_parallel_layout(model_provider)
+ 
+         # Once all overrides are set, finalize the model provider to ensure the post initialization logic is run
+         model_provider.finalize()
+@@ -127,6 +129,7 @@ def main(
+         model_provider.params_dtype = torch.bfloat16
+         model_provider.expert_model_parallel_size = ep
+         model_provider.expert_tensor_parallel_size = etp
++        set_deepseek_v3_pipeline_model_parallel_layout(model_provider)
+ 
+         # Once all overrides are set, finalize the model provider to ensure the post initialization logic is run
+         model_provider.finalize()
