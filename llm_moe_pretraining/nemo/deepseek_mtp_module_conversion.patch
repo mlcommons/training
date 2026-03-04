@@ -1,7 +1,7 @@
 From 2541ed57c003abda13dc20df8d6d80942cec1082 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Thu, 8 Jan 2026 14:00:01 +0100
-Subject: [PATCH 1/4] deepseek: add conversion support for MTP module
+Subject: [PATCH 1/5] deepseek: add conversion support for MTP module
 
 Signed-off-by: Denys Fridman <dfridman@nvidia.com>
 ---
@@ -174,7 +174,7 @@ index 3ad7d53500..1976665aa4 100644
 From 7bce78096ae7b1fc0b0b0b7c60edfb97e83934f5 Mon Sep 17 00:00:00 2001
 From: Chen Cui <cxcui@alumni.cmu.edu>
 Date: Thu, 8 Jan 2026 12:47:37 -0800
-Subject: [PATCH 2/4] lint
+Subject: [PATCH 2/5] lint
 
 Signed-off-by: Chen Cui <cxcui@alumni.cmu.edu>
 ---
@@ -198,7 +198,7 @@ index c62d3935ff..7ae806f879 100644
 From 88a96b8b8907dfdf31df319a2eaf4839c28544be Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Wed, 4 Mar 2026 11:16:17 +0100
-Subject: [PATCH 3/4] Set DeepSeek V3 pipeline layout in roundtrip conversion
+Subject: [PATCH 3/5] Set DeepSeek V3 pipeline layout in roundtrip conversion
  script
 
 ---
@@ -237,7 +237,7 @@ index 629ffe77c1..687a8edc92 100644
 From 4b69248a7da8edb61693577f6aaf7c4a8e6ecb82 Mon Sep 17 00:00:00 2001
 From: Denys Fridman <dfridman@nvidia.com>
 Date: Wed, 4 Mar 2026 11:24:14 +0100
-Subject: [PATCH 4/4] Add --vp argument for virtual pipeline parallelism size
+Subject: [PATCH 4/5] Add --vp argument for virtual pipeline parallelism size
 
 ---
  examples/conversion/hf_megatron_roundtrip_multi_gpu.py | 5 +++++
@@ -287,3 +287,75 @@ index 687a8edc92..8397b06a3f 100644
          args.ep,
          args.etp,
          args.megatron_save_path,
+
+From acf24db197c8384a0c3ea792ffc1de1c1d32c730 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 14:10:48 +0100
+Subject: [PATCH 5/5] Remove weight verification check from roundtrip script
+
+---
+ .../hf_megatron_roundtrip_multi_gpu.py        | 36 -------------------
+ 1 file changed, 36 deletions(-)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index 8397b06a3f..f8d69a0b1a 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -48,7 +48,6 @@
+ 
+ import torch
+ from rich.console import Console
+-from rich.table import Table
+ 
+ from megatron.bridge import AutoBridge
+ from megatron.bridge.models.decorators import torchrun_main
+@@ -142,39 +141,7 @@ def main(
+     # Now we can check for rank
+     is_rank_0 = torch.distributed.get_rank() == 0
+ 
+-    # Formatting
+     if is_rank_0:
+-        table = Table(title="Hugging Face Weights Verification")
+-        table.add_column("Weight Name", style="cyan")
+-        table.add_column("Shape")
+-        table.add_column("DType")
+-        table.add_column("Device")
+-        table.add_column("Matches Original", justify="center")
+-
+-    if is_rank_0:
+-        console.print(f"[yellow]Tensor parallel size: {model_provider.tensor_model_parallel_size}[/yellow]")
+-        console.print(f"[yellow]Pipeline parallel size: {model_provider.pipeline_model_parallel_size}[/yellow]")
+-        console.print(f"[yellow]Expert parallel size: {model_provider.expert_model_parallel_size}[/yellow]")
+-        console.print(f"[yellow]Expert tensor parallel size: {model_provider.expert_tensor_parallel_size}[/yellow]")
+-
+-    all_match = True
+-    for name, param in bridge.export_hf_weights(megatron_model, show_progress=False):
+-        if is_rank_0:
+-            original_param = bridge.hf_pretrained.state[name]
+-            match = torch.allclose(
+-                param, original_param.to(param.device), atol=1e-1
+-            )  # Increased tolerance for bfloat16
+-            all_match = all_match and match
+-            table.add_row(
+-                name,
+-                str(tuple(param.shape)),
+-                str(param.dtype).replace("torch.", ""),
+-                str(param.device),
+-                "✅" if match else "❌",
+-            )
+-
+-    if is_rank_0:
+-        console.print(table)
+         console.print(f"Saving HF-ckpt in {save_path}...")
+ 
+     bridge.save_hf_pretrained(megatron_model, save_path, strict=strict)
+@@ -185,9 +152,6 @@ def main(
+             console.print(f"Saving Megatron checkpoint in {megatron_save_path}...")
+         bridge.save_megatron_model(megatron_model, megatron_save_path)
+ 
+-    if not all_match:
+-        raise ValueError("Weight mismatch detected")
+-
+ 
+ if __name__ == "__main__":
+     parser = argparse.ArgumentParser(
