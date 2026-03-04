@@ -1,0 +1,27 @@
+From 01cc7a6c76f5d8918a981e22f02975ae775c2d97 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Thu, 19 Feb 2026 18:17:09 +0100
+Subject: [PATCH] feat: Support independent eval_batch_size for validation
+
+Allow setting cfg.train.eval_batch_size to use a different batch size
+for validation than training global_batch_size.
+---
+ src/megatron/bridge/training/eval.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/megatron/bridge/training/eval.py b/src/megatron/bridge/training/eval.py
+index e3e72d4c..54e296c1 100644
+--- a/src/megatron/bridge/training/eval.py
++++ b/src/megatron/bridge/training/eval.py
+@@ -89,7 +89,7 @@ def evaluate(
+     total_loss_dict = {}
+ 
+     # make validation batch size independent from training batch size
+-    eval_batch_size = state.cfg.train.global_batch_size
++    eval_batch_size = getattr(state.cfg.train, 'eval_batch_size', state.cfg.train.global_batch_size)
+     eval_num_microbatches = eval_batch_size // (state.cfg.train.micro_batch_size * state.cfg.data_parallel_size)
+ 
+     with torch.no_grad():
+-- 
+2.34.1
+
