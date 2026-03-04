@@ -45,6 +45,9 @@ RUN git clone https://github.com/NVIDIA/NeMo-Run.git && \
     echo NEMORUN_COMMIT_HASH=$(git rev-parse HEAD) && \
     pip install -e .
 
+WORKDIR /workspace/code
+COPY . .
+
 ## 2. Megatron-bridge and megatron-core
 ARG MBRIDGE_REVISION=38858ef0ae3b835af236ec1cf8bf1feca4d400fa
 RUN pip uninstall -y megatron-core && \
@@ -55,9 +58,7 @@ RUN pip uninstall -y megatron-core && \
     echo MBRIDGE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MBRIDGE_COMMIT_HASH.env && \
     # TODO(dfridman): knob for eval batch size. Remove once merged in the upstream
-    git remote add dfridman https://github.com/denys-fridman/Megatron-Bridge.git && \
-    git fetch dfridman && \
-    git cherry-pick 01cc7a6c76f5d8918a981e22f02975ae775c2d97 && \
+    git apply /workspace/code/eval_batch_size.patch && \
     cd /workspace/Megatron-Bridge/3rdparty/Megatron-LM && \
     echo MCORE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MCORE_COMMIT_HASH.env && \
@@ -69,8 +70,3 @@ ENV PYTHONPATH "/workspace/Megatron-Bridge/src:/workspace/Megatron-Bridge/3rdpar
 RUN pip uninstall transformers -y
 COPY requirements.txt .
 RUN pip install --no-cache-dir -U -r requirements.txt
-
-
-WORKDIR /workspace/code
-
-COPY . .
