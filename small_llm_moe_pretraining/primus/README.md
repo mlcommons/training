@@ -149,4 +149,4 @@ gpt-oss-20b/primus/
 ```
 # 8. Approximnate runtime
 
-TBD
+Approximate train time to convergence is ~6.5 hours.
