@@ -1,0 +1,441 @@
+From 2541ed57c003abda13dc20df8d6d80942cec1082 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Thu, 8 Jan 2026 14:00:01 +0100
+Subject: [PATCH 1/6] deepseek: add conversion support for MTP module
+
+Signed-off-by: Denys Fridman <dfridman@nvidia.com>
+---
+ src/megatron/bridge/models/deepseek/common.py | 72 ++++++++++++++++++-
+ .../models/deepseek/deepseek_v2_bridge.py     | 10 ++-
+ .../models/deepseek/deepseek_v3_bridge.py     | 28 ++++----
+ 3 files changed, 94 insertions(+), 16 deletions(-)
+
+diff --git a/src/megatron/bridge/models/deepseek/common.py b/src/megatron/bridge/models/deepseek/common.py
+index bc34726afa..c62d3935ff 100644
+--- a/src/megatron/bridge/models/deepseek/common.py
++++ b/src/megatron/bridge/models/deepseek/common.py
+@@ -76,9 +76,13 @@ def get_common_configs(hf_pretrained: PreTrainedCausalLM) -> dict:
+     return configs
+ 
+ 
+-def get_common_mapping_list() -> list:
++def get_common_mapping_list(hf_config=None) -> list:
+     """
+     Returns a list of common parameter mappings for the DeepSeek family of models.
++
++    Args:
++        hf_config: Optional HuggingFace config. If provided and contains MTP layers,
++                   MTP mappings will be included.
+     """
+     param_mappings = {
+         # Embed
+@@ -116,8 +120,6 @@ def get_common_mapping_list() -> list:
+         "decoder.layers.*.self_attention.linear_q_proj.weight": "model.layers.*.self_attn.q_proj.weight",
+     }
+ 
+-    # TODO: mtp layers
+-
+     mapping_list = []
+     # Convert each dictionary entry to AutoMapping(hf_param, megatron_param)
+     for megatron_param, hf_param in param_mappings.items():
+@@ -143,4 +145,68 @@ def get_common_mapping_list() -> list:
+         ]
+     )
+ 
++    if hf_config is not None:
++        # Add MTP mappings if config has MTP layers
++        num_mtp_layers = getattr(hf_config, "num_nextn_predict_layers", 0)
++        if num_mtp_layers > 0:
++            num_transformer_layers = hf_config.num_hidden_layers
++
++            for mtp_layer in range(num_mtp_layers):
++                # Add layer-specific mappings for MTP transformer layers
++                for megatron_param, hf_param in param_mappings.items():
++                    megatron_param_mtp = (
++                        megatron_param.replace(".*", ".*.transformer_layer")
++                        .replace("decoder", "mtp")
++                        .replace(".*", f".{mtp_layer}")
++                    )
++                    hf_param_mtp = hf_param.replace("layers.*", f"layers.{mtp_layer + num_transformer_layers}")
++                    mapping_list.append(AutoMapping(megatron_param=megatron_param_mtp, hf_param=hf_param_mtp))
++
++                # Add MTP-specific normalization and projection layers
++                mapping_list.extend(
++                    [
++                        AutoMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.enorm.weight",
++                            hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.enorm.weight",
++                        ),
++                        AutoMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.hnorm.weight",
++                            hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.hnorm.weight",
++                        ),
++                        AutoMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.eh_proj.weight",
++                            hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.eh_proj.weight",
++                        ),
++                        AutoMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.final_layernorm.weight",
++                            hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.shared_head.norm.weight",
++                        ),
++                        AutoMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.transformer_layer.mlp.router.expert_bias",
++                            hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.gate.e_score_correction_bias",
++                        )
++                    ]
++                )
++
++                # Add MTP Gated MLP mappings
++                mapping_list.extend(
++                    [
++                        GatedMLPMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.transformer_layer.mlp.linear_fc1.weight",
++                            gate=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.gate_proj.weight",
++                            up=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.up_proj.weight",
++                        ),
++                        GatedMLPMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.transformer_layer.mlp.shared_experts.linear_fc1.weight",
++                            gate=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.shared_experts.gate_proj.weight",
++                            up=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.shared_experts.up_proj.weight",
++                        ),
++                        GatedMLPMapping(
++                            megatron_param=f"mtp.layers.{mtp_layer}.transformer_layer.mlp.experts.linear_fc1.weight*",
++                            gate=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.experts.*.gate_proj.weight",
++                            up=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.experts.*.up_proj.weight",
++                        ),
++                    ]
++                )
++
+     return mapping_list
+diff --git a/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py b/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
+index 8b2d5908fe..69b96e8ff3 100644
+--- a/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
++++ b/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py
+@@ -49,6 +49,14 @@ def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> DeepSeekV2ModelP
+         provider = DeepSeekV2ModelProvider(**configs)
+         return provider
+ 
++    def build_conversion_tasks(self, hf_pretrained, megatron_model):
++        """Override to store config before mapping_registry is called."""
++        # Store config on instance for use in mapping_registry
++        self._hf_config = hf_pretrained.config
++        return super().build_conversion_tasks(hf_pretrained, megatron_model)
++
+     def mapping_registry(self) -> MegatronMappingRegistry:
+-        mapping_list = get_common_mapping_list()
++        # Get hf_config if available (set by build_conversion_tasks)
++        hf_config = getattr(self, "_hf_config", None)
++        mapping_list = get_common_mapping_list(hf_config=hf_config)
+         return MegatronMappingRegistry(*mapping_list)
+diff --git a/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py b/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
+index 3ad7d53500..1976665aa4 100644
+--- a/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
++++ b/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py
+@@ -53,22 +53,26 @@ def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> DeepSeekV3ModelP
+         if hasattr(hf_config, "aux_loss_alpha"):
+             configs["moe_aux_loss_coeff"] = hf_config.aux_loss_alpha
+ 
+-        # TODO: mtp
+-
+         provider = DeepSeekV3ModelProvider(**configs)
++        provider.mtp_num_layers = getattr(hf_config, "num_nextn_predict_layers", 0) or None
+         return provider
+ 
+-    def mapping_registry(self) -> MegatronMappingRegistry:
+-        mapping_list = get_common_mapping_list()
+-
+-        param_mappings = {
+-            # expert bias
+-            "decoder.layers.*.mlp.router.expert_bias": "model.layers.*.mlp.gate.e_score_correction_bias",
+-        }
+-
+-        for megatron_param, hf_param in param_mappings.items():
+-            mapping_list.append(AutoMapping(megatron_param=megatron_param, hf_param=hf_param))
++    def build_conversion_tasks(self, hf_pretrained, megatron_model):
++        """Override to store config before mapping_registry is called."""
++        # Store config on instance for use in mapping_registry
++        self._hf_config = hf_pretrained.config
++        return super().build_conversion_tasks(hf_pretrained, megatron_model)
+ 
++    def mapping_registry(self) -> MegatronMappingRegistry:
++        # Get hf_config if available (set by build_conversion_tasks)
++        hf_config = getattr(self, "_hf_config", None)
++        mapping_list = get_common_mapping_list(hf_config=hf_config)
++        mapping_list.append(
++            AutoMapping(
++                megatron_param="decoder.layers.*.mlp.router.expert_bias",
++                hf_param="model.layers.*.mlp.gate.e_score_correction_bias",
++            )
++        )
+         return MegatronMappingRegistry(*mapping_list)
+ 
+     def maybe_modify_converted_hf_weight(
+
+From 7bce78096ae7b1fc0b0b0b7c60edfb97e83934f5 Mon Sep 17 00:00:00 2001
+From: Chen Cui <cxcui@alumni.cmu.edu>
+Date: Thu, 8 Jan 2026 12:47:37 -0800
+Subject: [PATCH 2/6] lint
+
+Signed-off-by: Chen Cui <cxcui@alumni.cmu.edu>
+---
+ src/megatron/bridge/models/deepseek/common.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/megatron/bridge/models/deepseek/common.py b/src/megatron/bridge/models/deepseek/common.py
+index c62d3935ff..7ae806f879 100644
+--- a/src/megatron/bridge/models/deepseek/common.py
++++ b/src/megatron/bridge/models/deepseek/common.py
+@@ -184,7 +184,7 @@ def get_common_mapping_list(hf_config=None) -> list:
+                         AutoMapping(
+                             megatron_param=f"mtp.layers.{mtp_layer}.transformer_layer.mlp.router.expert_bias",
+                             hf_param=f"model.layers.{mtp_layer + num_transformer_layers}.mlp.gate.e_score_correction_bias",
+-                        )
++                        ),
+                     ]
+                 )
+ 
+
+From 88a96b8b8907dfdf31df319a2eaf4839c28544be Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 11:16:17 +0100
+Subject: [PATCH 3/6] Set DeepSeek V3 pipeline layout in roundtrip conversion
+ script
+
+---
+ examples/conversion/hf_megatron_roundtrip_multi_gpu.py | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index 629ffe77c1..687a8edc92 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -53,6 +53,7 @@
+ from megatron.bridge import AutoBridge
+ from megatron.bridge.models.decorators import torchrun_main
+ from megatron.bridge.models.hf_pretrained.utils import is_safe_repo
++from megatron.bridge.recipes.deepseek.deepseek_v3 import set_deepseek_v3_pipeline_model_parallel_layout
+ 
+ 
+ HF_MODEL_ID = "meta-llama/Llama-3.2-1B"
+@@ -101,6 +102,7 @@ def main(
+         model_provider.params_dtype = torch.bfloat16
+         model_provider.expert_model_parallel_size = ep
+         model_provider.expert_tensor_parallel_size = etp
++        set_deepseek_v3_pipeline_model_parallel_layout(model_provider)
+ 
+         # Once all overrides are set, finalize the model provider to ensure the post initialization logic is run
+         model_provider.finalize()
+@@ -127,6 +129,7 @@ def main(
+         model_provider.params_dtype = torch.bfloat16
+         model_provider.expert_model_parallel_size = ep
+         model_provider.expert_tensor_parallel_size = etp
++        set_deepseek_v3_pipeline_model_parallel_layout(model_provider)
+ 
+         # Once all overrides are set, finalize the model provider to ensure the post initialization logic is run
+         model_provider.finalize()
+
+From 4b69248a7da8edb61693577f6aaf7c4a8e6ecb82 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 11:24:14 +0100
+Subject: [PATCH 4/6] Add --vp argument for virtual pipeline parallelism size
+
+---
+ examples/conversion/hf_megatron_roundtrip_multi_gpu.py | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index 687a8edc92..8397b06a3f 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -66,6 +66,7 @@ def main(
+     output_dir: str = None,
+     tp: int = 1,
+     pp: int = 1,
++    vp: int | None = None,
+     ep: int = 1,
+     etp: int = 1,
+     megatron_save_path: str | None = None,
+@@ -98,6 +99,7 @@ def main(
+         model_provider = bridge.to_megatron_provider(load_weights=False)
+         model_provider.tensor_model_parallel_size = tp
+         model_provider.pipeline_model_parallel_size = pp
++        model_provider.virtual_pipeline_model_parallel_size = vp
+         model_provider.pipeline_dtype = torch.bfloat16
+         model_provider.params_dtype = torch.bfloat16
+         model_provider.expert_model_parallel_size = ep
+@@ -125,6 +127,7 @@ def main(
+         model_provider = bridge.to_megatron_provider(load_weights=True)
+         model_provider.tensor_model_parallel_size = tp
+         model_provider.pipeline_model_parallel_size = pp
++        model_provider.virtual_pipeline_model_parallel_size = vp
+         model_provider.pipeline_dtype = torch.bfloat16
+         model_provider.params_dtype = torch.bfloat16
+         model_provider.expert_model_parallel_size = ep
+@@ -199,6 +202,7 @@ def main(
+     )
+     parser.add_argument("--tp", type=int, default=1, help="Tensor parallelism size")
+     parser.add_argument("--pp", type=int, default=1, help="Pipeline parallelism size")
++    parser.add_argument("--vp", type=int, default=None, help="Virtual pipeline parallelism size")
+     parser.add_argument("--ep", type=int, default=1, help="Expert parallelism size")
+     parser.add_argument("--etp", type=int, default=1, help="Expert tensor parallelism size")
+ 
+@@ -222,6 +226,7 @@ def main(
+         args.output_dir,
+         args.tp,
+         args.pp,
++        args.vp,
+         args.ep,
+         args.etp,
+         args.megatron_save_path,
+
+From acf24db197c8384a0c3ea792ffc1de1c1d32c730 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 14:10:48 +0100
+Subject: [PATCH 5/6] Remove weight verification check from roundtrip script
+
+---
+ .../hf_megatron_roundtrip_multi_gpu.py        | 36 -------------------
+ 1 file changed, 36 deletions(-)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index 8397b06a3f..f8d69a0b1a 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -48,7 +48,6 @@
+ 
+ import torch
+ from rich.console import Console
+-from rich.table import Table
+ 
+ from megatron.bridge import AutoBridge
+ from megatron.bridge.models.decorators import torchrun_main
+@@ -142,39 +141,7 @@ def main(
+     # Now we can check for rank
+     is_rank_0 = torch.distributed.get_rank() == 0
+ 
+-    # Formatting
+     if is_rank_0:
+-        table = Table(title="Hugging Face Weights Verification")
+-        table.add_column("Weight Name", style="cyan")
+-        table.add_column("Shape")
+-        table.add_column("DType")
+-        table.add_column("Device")
+-        table.add_column("Matches Original", justify="center")
+-
+-    if is_rank_0:
+-        console.print(f"[yellow]Tensor parallel size: {model_provider.tensor_model_parallel_size}[/yellow]")
+-        console.print(f"[yellow]Pipeline parallel size: {model_provider.pipeline_model_parallel_size}[/yellow]")
+-        console.print(f"[yellow]Expert parallel size: {model_provider.expert_model_parallel_size}[/yellow]")
+-        console.print(f"[yellow]Expert tensor parallel size: {model_provider.expert_tensor_parallel_size}[/yellow]")
+-
+-    all_match = True
+-    for name, param in bridge.export_hf_weights(megatron_model, show_progress=False):
+-        if is_rank_0:
+-            original_param = bridge.hf_pretrained.state[name]
+-            match = torch.allclose(
+-                param, original_param.to(param.device), atol=1e-1
+-            )  # Increased tolerance for bfloat16
+-            all_match = all_match and match
+-            table.add_row(
+-                name,
+-                str(tuple(param.shape)),
+-                str(param.dtype).replace("torch.", ""),
+-                str(param.device),
+-                "✅" if match else "❌",
+-            )
+-
+-    if is_rank_0:
+-        console.print(table)
+         console.print(f"Saving HF-ckpt in {save_path}...")
+ 
+     bridge.save_hf_pretrained(megatron_model, save_path, strict=strict)
+@@ -185,9 +152,6 @@ def main(
+             console.print(f"Saving Megatron checkpoint in {megatron_save_path}...")
+         bridge.save_megatron_model(megatron_model, megatron_save_path)
+ 
+-    if not all_match:
+-        raise ValueError("Weight mismatch detected")
+-
+ 
+ if __name__ == "__main__":
+     parser = argparse.ArgumentParser(
+
+From de288c964b8ea8d4390d3e960b158b92f5439d38 Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Wed, 4 Mar 2026 14:27:54 +0100
+Subject: [PATCH 6/6] Remove HF checkpoint saving from roundtrip script
+
+---
+ .../hf_megatron_roundtrip_multi_gpu.py        | 21 -------------------
+ 1 file changed, 21 deletions(-)
+
+diff --git a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+index f8d69a0b1a..4cc0219ab2 100644
+--- a/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
++++ b/examples/conversion/hf_megatron_roundtrip_multi_gpu.py
+@@ -62,7 +62,6 @@
+ @torchrun_main
+ def main(
+     hf_model_id: str = HF_MODEL_ID,
+-    output_dir: str = None,
+     tp: int = 1,
+     pp: int = 1,
+     vp: int | None = None,
+@@ -71,7 +70,6 @@ def main(
+     megatron_save_path: str | None = None,
+     megatron_load_path: str | None = None,
+     trust_remote_code: bool | None = None,
+-    strict: bool = False,
+ ) -> None:
+     """Perform round-trip conversion between HuggingFace and Megatron-LM models on multiple GPUs."""
+     if os.environ.get("WORLD_SIZE") is None:
+@@ -79,12 +77,6 @@ def main(
+         console.print(f"torchrun --nproc_per_node <gpus> {sys.argv[0]}")
+         sys.exit(1)
+ 
+-    model_name = hf_model_id.split("/")[-1]
+-    if output_dir:
+-        save_path = os.path.join(output_dir, model_name)
+-    else:
+-        save_path = model_name
+-
+     bridge = AutoBridge.from_hf_pretrained(
+         hf_model_id,
+         trust_remote_code=is_safe_repo(
+@@ -141,11 +133,6 @@ def main(
+     # Now we can check for rank
+     is_rank_0 = torch.distributed.get_rank() == 0
+ 
+-    if is_rank_0:
+-        console.print(f"Saving HF-ckpt in {save_path}...")
+-
+-    bridge.save_hf_pretrained(megatron_model, save_path, strict=strict)
+-
+     # Save in Megatron format if path is provided
+     if megatron_save_path:
+         if is_rank_0:
+@@ -158,12 +145,6 @@ def main(
+         description="Convert between HuggingFace and Megatron-LM model formats on multiple GPUs"
+     )
+     parser.add_argument("--hf-model-id", type=str, default=HF_MODEL_ID, help="HuggingFace model ID to convert")
+-    parser.add_argument(
+-        "--output-dir",
+-        type=str,
+-        default=None,
+-        help="The directory where the converted model directory will be created. Defaults to the current working directory.",
+-    )
+     parser.add_argument("--tp", type=int, default=1, help="Tensor parallelism size")
+     parser.add_argument("--pp", type=int, default=1, help="Pipeline parallelism size")
+     parser.add_argument("--vp", type=int, default=None, help="Virtual pipeline parallelism size")
+@@ -183,11 +164,9 @@ def main(
+         help="Path to load the model in Megatron checkpoint format. If provided, model will not start from HF checkpoint.",
+     )
+     parser.add_argument("--trust-remote-code", action="store_true", help="if trust_remote_code")
+-    parser.add_argument("--not-strict", action="store_true", help="Perform loose validation during weight export")
+     args = parser.parse_args()
+     main(
+         args.hf_model_id,
+-        args.output_dir,
+         args.tp,
+         args.pp,
+         args.vp,
