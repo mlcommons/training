@@ -29,12 +29,22 @@ ENV CUSTOM_FROM_IMAGE_NAME ${FROM_IMAGE_NAME}
 # Custom libraries version
 WORKDIR /workspace/
 
-ENV PIP_CONSTRAINT=""
-
 RUN git config --global user.name "a" && \
     git config --global user.email "a"
 
 WORKDIR /workspace/
+
+# Freeze the NGC base image's torch stack so later pip installs can't downgrade it.
+# The base image ships custom NGC builds of torch/torchvision/torchaudio with
+# matching transformer_engine .so files; any version change breaks the ABI.
+RUN python3 -c "\
+import importlib, sys; \
+pkgs = ['torch', 'torchvision', 'torchaudio']; \
+lines = []; \
+[lines.append(f'{p}=={importlib.import_module(p).__version__}') for p in pkgs if importlib.util.find_spec(p)]; \
+open('/pip_torch_constraint.txt','w').write('\n'.join(lines)+'\n'); \
+print('--- Pinned torch packages ---'); [print(l) for l in lines]"
+ENV PIP_CONSTRAINT=/pip_torch_constraint.txt
 
 RUN pip install numcodecs==0.13.1
 
@@ -95,6 +105,8 @@ RUN if [ "${MCORE_REVISION}" != SKIP ]; then \
 
 ENV PYTHONPATH "${PYTHONPATH}:/workspace/Megatron-LM"
 
+# Clear the torch constraint now that all installs are done.
+ENV PIP_CONSTRAINT=""
 
 WORKDIR /workspace/code
 
