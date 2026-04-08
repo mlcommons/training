@@ -61,9 +61,10 @@ PRETRAIN_SCRIPT = "pretrain_deepseek_v3_671b.py"
 # Inline bash template for Slurm
 INLINE_TEMPLATE = r"""
 #!/usr/bin/env bash
+export SHLVL=1
 set -euo pipefail
 
-bash -c '{{ pre_cmds }} {{ command }}'
+{{ pre_cmds }} {{ command }}
 """
 
 # Default environment variables for performance

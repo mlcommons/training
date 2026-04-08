@@ -71,14 +71,15 @@ def main():
         gres=args.gres,
     )
 
-    convert_args_str = " ".join(convert_args)
-    inline_script = f"python {CONVERSION_SCRIPT} {convert_args_str}"
-
-    nemorun_script = run.Script(inline=inline_script)
+    nemorun_script = run.Script(
+        path=CONVERSION_SCRIPT,
+        entrypoint="python",
+        args=convert_args,
+    )
 
     exp_name = args.exp_name or "deepseek_v3_hf_to_megatron_conversion"
 
-    logger.info(f"Launching conversion: {inline_script}")
+    logger.info(f"Launching conversion: python {CONVERSION_SCRIPT} {' '.join(convert_args)}")
 
     run.run(
         nemorun_script,
