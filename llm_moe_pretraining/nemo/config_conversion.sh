@@ -19,9 +19,9 @@ export ACCOUNT="<SLURM_ACCOUNT>"
 # Slurm: partition for job submission
 export PARTITION="<SLURM_PARTITION>"
 # Slurm: job time limit
-export TIME="02:00:00"
+export TIME="00:20:00"
 # Slurm: --nodes argument
-export NNODES=64
+export NNODES=4
 # Slurm: --gpus_per_node and --ntasks_per_node argument
 export GPUS_PER_NODE=4
 
@@ -41,4 +41,4 @@ export OUTPUT_DIR="<OUTPUT_DIR>"
 export TENSOR_PARALLEL_SIZE=1
 export PIPELINE_PARALLEL_SIZE=4
 export VIRTUAL_PIPELINE_PARALLEL_SIZE=4
-export EXPERT_PARALLEL_SIZE=64
+export EXPERT_PARALLEL_SIZE=4
