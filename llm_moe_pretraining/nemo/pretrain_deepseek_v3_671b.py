@@ -79,7 +79,6 @@ def get_data(seq_length: int, seed):
 def log_hyperparams(args, mbridge_config: ConfigContainer):
     """Log hyperparameters for MLPerf compliance."""
     bmark = mllogger.constants.DEEPSEEK_V3_671B
-    opt_lr_decay_steps = args.max_steps - args.warmup_steps
     mllogger.event(key=mllogger.constants.CACHE_CLEAR, value=True)
     mllogger.start(key=mllogger.constants.INIT_START)
     mllogger.mlperf_submission_log(bmark)
@@ -113,7 +112,7 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
         mllogger.constants.OPT_GRADIENT_CLIP_NORM: mbridge_config.optimizer.clip_grad,
         mllogger.constants.OPT_END_LR: args.min_lr,
         mllogger.constants.OPT_LR_WARMUP_STEPS: mbridge_config.scheduler.lr_warmup_iters,
-        mllogger.constants.OPT_LR_DECAY_STEPS: opt_lr_decay_steps,
+        mllogger.constants.OPT_LR_DECAY_STEPS: args.lr_decay_steps,
         mllogger.constants.OPT_LR_DECAY_SCHEDULE: "cosine with linear warmup",
         "target_accuracy": args.target_log_ppl,
     }
@@ -179,6 +178,7 @@ def create_config(args):
     # Scheduler configuration
     scheduler_cfg = config.scheduler
     scheduler_cfg.lr_warmup_iters = args.warmup_steps
+    scheduler_cfg.lr_decay_iters = args.lr_decay_steps
 
     # RNG configuration
     rng_cfg = config.rng
@@ -241,6 +241,7 @@ def get_parser() -> argparse.ArgumentParser:
     training_group.add_argument("--min_lr", type=float, default=5e-6, help="Minimum learning rate")
     training_group.add_argument("--max_steps", type=int, default=1000, help="Maximum number of steps")
     training_group.add_argument("--warmup_steps", type=int, default=0, help="Number of steps for LR warmup")
+    training_group.add_argument("--lr_decay_steps", type=int, required=True, help="LR decay steps")
     training_group.add_argument("--seed", type=int, default=1234, help="Random seed")
     training_group.add_argument("--eval_check_interval", type=int, default=10, help="Evaluate every N steps")
     training_group.add_argument("--eval_batches", type=int, default=1, help="Evaluate N batches")
