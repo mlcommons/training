@@ -25,8 +25,6 @@ from callback import (
     MLPerfLoggingCallback,
     DeltaTimingCallback,
     mllogger,
-    install_callbacks,
-    register_callback,
 )
 
 
@@ -290,11 +288,8 @@ def main():
     if get_rank() == 0:
         log_hyperparams(args, config)
 
-    register_callback(DeltaTimingCallback(cfg))
-    register_callback(MLPerfLoggingCallback(cfg))
-    install_callbacks()
-
-    pretrain(config, forward_step_func=forward_step)
+    callbacks = [DeltaTimingCallback(cfg), MLPerfLoggingCallback(cfg)]
+    pretrain(config, forward_step_func=forward_step, callbacks=callbacks)
 
 
 if __name__ == "__main__":
