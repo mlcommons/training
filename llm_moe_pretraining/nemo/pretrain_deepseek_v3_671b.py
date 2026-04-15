@@ -112,6 +112,7 @@ def log_hyperparams(args, mbridge_config: ConfigContainer):
         mllogger.constants.OPT_LR_WARMUP_STEPS: mbridge_config.scheduler.lr_warmup_iters,
         mllogger.constants.OPT_LR_DECAY_STEPS: args.lr_decay_steps,
         mllogger.constants.OPT_LR_DECAY_SCHEDULE: "cosine with linear warmup",
+        mllogger.constants.MOE_AUX_LOSS_COEFF: mbridge_config.model.moe_aux_loss_coeff,
         "target_accuracy": args.target_log_ppl,
     }
 
