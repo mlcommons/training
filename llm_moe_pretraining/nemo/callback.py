@@ -132,7 +132,7 @@ class MLPerfLoggingCallback(Callback):
                 metadata={mllogger.constants.SAMPLES_COUNT: samples_count, "status": "aborted"},
             )
         if not os.environ.get("VAL_CHECK_INTERVAL"):
-            context.state.cfg.validate.eval_interval = self.cfg.trainer.val_check_interval
+            context.state.cfg.train.eval_interval = self.cfg.trainer.val_check_interval
 
         if not context.state.should_stop:
             self._start_train_block(context.state)
@@ -144,7 +144,7 @@ class MLPerfLoggingCallback(Callback):
     def on_train_step_end(self, context: CallbackContext):
         step = context.state.train_state.step + 1
         last_step = step >= self.cfg.trainer.max_steps
-        eval_after_this_step = step % context.state.cfg.validate.eval_interval == 0
+        eval_after_this_step = step % context.state.cfg.train.eval_interval == 0
         if last_step and not eval_after_this_step:
             samples_count = self._get_samples_count(context.state)
             self._end_train_block(context.state)
@@ -162,7 +162,7 @@ class MLPerfLoggingCallback(Callback):
         mllogger.start(
             mllogger.constants.BLOCK_START,
             metadata={
-                mllogger.constants.SAMPLES_COUNT: global_state.cfg.validate.eval_interval * self.global_batch_size,
+                mllogger.constants.SAMPLES_COUNT: global_state.cfg.train.eval_interval * self.global_batch_size,
                 "step": self._get_step(global_state),
             },
         )
@@ -171,7 +171,7 @@ class MLPerfLoggingCallback(Callback):
         mllogger.end(
             mllogger.constants.BLOCK_STOP,
             metadata={
-                mllogger.constants.SAMPLES_COUNT: global_state.cfg.validate.eval_interval * self.global_batch_size,
+                mllogger.constants.SAMPLES_COUNT: global_state.cfg.train.eval_interval * self.global_batch_size,
                 "step": self._get_step(global_state),
             },
         )
