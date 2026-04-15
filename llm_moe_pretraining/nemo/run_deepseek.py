@@ -292,9 +292,6 @@ def main():
 
     # Build the pretrain script path
     pretrain_script_path = SCRIPT_DIR / PRETRAIN_SCRIPT
-    if not pretrain_script_path.is_file():
-        logger.error(f"Pretrain script not found: {pretrain_script_path}")
-        sys.exit(1)
 
     # Create NemoRun script
     nemorun_script = run.Script(
