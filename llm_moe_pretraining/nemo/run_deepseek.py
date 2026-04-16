@@ -55,15 +55,16 @@ from nemo_run.core.execution.launcher import SlurmTemplate
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
+SCRIPT_DIR = Path("/workspace/code")
 PRETRAIN_SCRIPT = "pretrain_deepseek_v3_671b.py"
 
 # Inline bash template for Slurm
 INLINE_TEMPLATE = r"""
 #!/usr/bin/env bash
+export SHLVL=1
 set -euo pipefail
 
-bash -c '{{ pre_cmds }} {{ command }}'
+{{ pre_cmds }} {{ command }}
 """
 
 # Default environment variables for performance
@@ -141,9 +142,6 @@ def slurm_executor(
 
     env_vars.update(custom_env_vars)
     mounts.extend(custom_mounts)
-
-    # Mount the script directory
-    mounts.append(f"{SCRIPT_DIR}:{SCRIPT_DIR}")
 
     # Compute segment for GB200/GB300 if not explicitly provided
     if segment is None and num_gpus_per_node == 4:
@@ -294,9 +292,6 @@ def main():
 
     # Build the pretrain script path
     pretrain_script_path = SCRIPT_DIR / PRETRAIN_SCRIPT
-    if not pretrain_script_path.is_file():
-        logger.error(f"Pretrain script not found: {pretrain_script_path}")
-        sys.exit(1)
 
     # Create NemoRun script
     nemorun_script = run.Script(

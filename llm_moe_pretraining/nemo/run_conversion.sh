@@ -61,7 +61,7 @@ fi
 
 # Build conversion arguments
 CONVERT_ARGS="--hf-model-id /input_checkpoint"
-CONVERT_ARGS="$CONVERT_ARGS --output-dir /output_checkpoint"
+CONVERT_ARGS="$CONVERT_ARGS --megatron-save-path /output_checkpoint"
 CONVERT_ARGS="$CONVERT_ARGS --tp $TENSOR_PARALLEL_SIZE"
 CONVERT_ARGS="$CONVERT_ARGS --pp $PIPELINE_PARALLEL_SIZE"
 CONVERT_ARGS="$CONVERT_ARGS --vp $VIRTUAL_PIPELINE_PARALLEL_SIZE"
