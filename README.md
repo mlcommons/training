@@ -51,8 +51,8 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 | llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
 | llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/large_language_model_pretraining) | NeMo | C4 | 405B
 | dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
-| gpt_oss_20b | small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
-| deepseekv3 | llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
+| gpt_oss_20b | [small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
+| deepseekv3 | [llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
 
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
  
