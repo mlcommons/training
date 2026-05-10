@@ -60,6 +60,10 @@ export PRIMUS_LR_DECAY_ITERS=$((PRIMUS_TRAIN_ITERS-PRIMUS_LR_WARMUP_ITERS))
 export EVAL_SAMPLES_INTERVAL=12288   # Evaluate every 12,288 samples
 export PRIMUS_EVAL_INTERVAL=$((EVAL_SAMPLES_INTERVAL / PRIMUS_GLOBAL_BATCH_SIZE))  # Auto-computed
 
+# Evaluation size (sample-based, adjusts automatically with GBS)
+export EVAL_SAMPLES=1024             # Evaluate on 1,024 samples per eval
+export PRIMUS_EVAL_ITERS=$((EVAL_SAMPLES / PRIMUS_GLOBAL_BATCH_SIZE))  # Auto-computed
+
 # -----------------------------------------------------------------------------
 # Optimizations
 # -----------------------------------------------------------------------------
