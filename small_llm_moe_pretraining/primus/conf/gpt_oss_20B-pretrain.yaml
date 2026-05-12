@@ -164,7 +164,7 @@ modules:
       disable_last_saving: true
       exit_on_missing_checkpoint: false
       ckpt_format: torch
-      eval_iters: 64  # 64 iters × 2 MBS × 8 GPUs = 1024 eval samples
+      eval_iters: ${PRIMUS_EVAL_ITERS:64}  # eval_iters × GBS = total eval samples (target: 1024); default 64 assumes GBS=16
       eval_interval: ${PRIMUS_EVAL_INTERVAL:768}
 
       # Turbo
