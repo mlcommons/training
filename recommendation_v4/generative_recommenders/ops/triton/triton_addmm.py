@@ -65,7 +65,9 @@ def _use_meta_ws() -> bool:
         is_sm100_plus()
         and hasattr(triton, "knobs")
         and hasattr(triton.knobs, "nvidia")
-        and triton.knobs.nvidia.use_meta_ws
+        # `use_meta_ws` is absent in some Triton builds (e.g. nvcr.io/nvidia/pytorch:26.01-py3);
+        # use getattr so import doesn't crash on AttributeError before any step runs.
+        and getattr(triton.knobs.nvidia, "use_meta_ws", False)
     )
 
 
