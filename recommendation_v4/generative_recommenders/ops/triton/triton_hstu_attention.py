@@ -129,6 +129,19 @@ def _should_enable_tma() -> bool:
         return False
     if not torch.cuda.is_available():
         return False
+    # NVIDIA-only gate: TMA (Tensor Memory Accelerator) is Hopper-specific
+    # hardware. On ROCm/HIP, `torch.cuda.get_device_capability()` mirrors the
+    # gfx name into a major.minor tuple — gfx950 (MI350X) returns (9, 5), which
+    # would otherwise pass the `device_capability == 9` check below and trick
+    # the kernel into taking the TMA path. The TMA path uses
+    # `triton.tools.tensor_descriptor.TensorDescriptor` and `TensorDescriptor.load`
+    # which lower to PTX `cp.async.bulk.tensor.*`; on AMD this either fails to
+    # compile or produces a kernel with mismatched reduction-dim shapes for
+    # `tl.dot(silu, v)` in `_hstu_attn_fwd_one_block` (see WARNING in
+    # `_hstu_attn_fwd` for the cascade). Bail out early on HIP so the
+    # non-TMA path is selected and AMD gets a working kernel.
+    if torch.version.hip:
+        return False
     try:
         device_capability = torch.cuda.get_device_capability()[0]
     except (RuntimeError, AssertionError):
@@ -335,15 +348,31 @@ def _get_fw_configs() -> List[triton.Config]:  # noqa: C901
             ),
         ]
 
-        # Add 'USE_TLX' : False, 'NUM_BUFFERS': 1, 'NUM_MMA_WARPS_PER_GROUP': 1, 'NUM_MMA_GROUPS': 1 to non-TLX configs
-        for config in configs:
-            if not config.kwargs.get("USE_TLX", False):
-                config.kwargs["USE_TLX"] = False
-                config.kwargs["NUM_BUFFERS"] = 1
-                config.kwargs["NUM_MMA_WARPS_PER_GROUP"] = 1
-                config.kwargs["NUM_MMA_GROUPS"] = 1
+    # The `_hstu_attn_fwd` kernel signature unconditionally declares the four
+    # constexprs `USE_TLX`, `NUM_BUFFERS`, `NUM_MMA_WARPS_PER_GROUP`,
+    # `NUM_MMA_GROUPS` (introduced for the Hopper TLX warp-specialized variant).
+    # Triton requires every constexpr be bound at autotune time; missing any one
+    # of them triggers `TypeError: dynamic_func() missing N required positional
+    # arguments` during kernel dispatch. This loop populates the non-TLX defaults
+    # so the kernel call site doesn't have to know about TLX at all.
+    #
+    # IMPORTANT: this loop must apply to BOTH the HIP branch and the CUDA branch
+    # above. It used to live inside the CUDA `else:` block which meant HIP
+    # configs reached `_hstu_attn_fwd[grid](...)` without these defaults and
+    # crashed at dispatch. Keep this hoisted (outside the if/else) when
+    # editing — see commit message for the symptom.
+    for config in configs:
+        if not config.kwargs.get("USE_TLX", False):
+            config.kwargs["USE_TLX"] = False
+            config.kwargs["NUM_BUFFERS"] = 1
+            config.kwargs["NUM_MMA_WARPS_PER_GROUP"] = 1
+            config.kwargs["NUM_MMA_GROUPS"] = 1
 
-        # Add TLX configs if TLX is available
+    # TLX (Triton Language Extension) warp-specialized configs are Hopper-only.
+    # Guard with `not torch.version.hip` so AMD never sees them — the TLX code
+    # path inside `_hstu_attn_fwd` calls `tlx.async_descriptor_load(...)` which
+    # requires real TMA tensor descriptors and only compiles on CUDA.
+    if not torch.version.hip:
         if HAS_TLX:
             try:
                 device_capability = torch.cuda.get_device_capability()[0]
