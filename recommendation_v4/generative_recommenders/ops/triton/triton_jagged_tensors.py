@@ -49,7 +49,19 @@ def _triton_concat_2D_jagged_internal(
     is_dense_b: bool,
     BLOCK_D: int,
 ) -> None:
-    if is_sm100_plus():
+    if is_sm100_plus() or (torch.cuda.is_available() and torch.version.hip):
+        # Route AMD/ROCm through the multirow kernel.
+        #
+        # The basic `_concat_2D_jagged` kernel below issues one program per
+        # output row (grid = `(max_seq_len, B)`). On ROCm Triton this fails to
+        # lower in the `TritonAMDGPUCanonicalizePointers` pass with
+        # `RuntimeError: PassManager::run failed` at `make_ttgir`. The
+        # multirow variant tiles rows with a tunable `BLOCK_N` (grid =
+        # `(cdiv(max_seq_len, BLOCK_N), B)`) and compiles cleanly on ROCm.
+        # The original `is_sm100_plus()` gate was conservative — only Blackwell
+        # was opted in. Adding HIP keeps NVIDIA H100/A100 on the basic kernel
+        # they were validated against and unblocks AMD without behavior change
+        # on existing NVIDIA paths.
 
         def grid(meta):
             return (triton.cdiv(max_seq_len, meta["BLOCK_N"]), B)
@@ -107,7 +119,11 @@ def _triton_split_2D_jagged_internal(
     is_dense_b: bool,
     BLOCK_D: int,
 ) -> None:
-    if is_sm100_plus():
+    if is_sm100_plus() or (torch.cuda.is_available() and torch.version.hip):
+        # Route AMD/ROCm through the multirow kernel for the same reason as
+        # `_triton_concat_2D_jagged_internal` above: basic `_split_2D_jagged`
+        # hits `PassManager::run failed` in `TritonAMDGPUCanonicalizePointers`
+        # on ROCm; multirow lowers cleanly.
 
         def grid(meta):
             return (triton.cdiv(max_seq_len, meta["BLOCK_N"]), B)
@@ -608,22 +624,27 @@ class _Concat2DJaggedFunction(torch.autograd.Function):
         d_values_b = torch.empty(
             (ctx.total_len_b, D), device=d_out.device, dtype=d_out.dtype
         )
-        _split_2D_jagged[(ctx.max_seq_len, ctx.B)](
-            JaggedIn=d_out,
-            OffsetsA=offsets_a,
-            OffsetsB=offsets_b,
-            MaxLenA=ctx.max_len_a,
-            MaxLenB=ctx.max_len_b,
-            OutA=d_values_a,
-            OutB=d_values_b,
+        # Go through `_triton_split_2D_jagged_internal` (not raw
+        # `_split_2D_jagged[grid]`) so this backward pass benefits from the same
+        # AMD-routing-through-multirow workaround as the forward. Calling the
+        # raw kernel directly would hit `PassManager::run failed` on ROCm at
+        # `TritonAMDGPUCanonicalizePointers`. If you refactor this, do not
+        # collapse it back to `_split_2D_jagged[(ctx.max_seq_len, ctx.B)](...)`.
+        _triton_split_2D_jagged_internal(
+            jagged_in=d_out,
+            max_seq_len=ctx.max_seq_len,
+            B=ctx.B,
+            offsets_a=offsets_a,
+            offsets_b=offsets_b,
+            max_len_a=ctx.max_len_a,
+            max_len_b=ctx.max_len_b,
+            out_a=d_values_a,
+            out_b=d_values_b,
             D=D,
-            stride_id=d_out.stride(-2),
-            stride_ad=d_values_a.stride(-2),
-            stride_bd=d_values_b.stride(-2),
             n_prefix_to_B=ctx.n_prefix_from_B,
+            is_dense_a=ctx.is_dense_a,
+            is_dense_b=ctx.is_dense_b,
             BLOCK_D=BLOCK_D,
-            IS_DENSE_A=ctx.is_dense_a,
-            IS_DENSE_B=ctx.is_dense_b,
         )
         return None, d_values_a, d_values_b, None, None, None, None, None
 
