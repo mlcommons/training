@@ -1,0 +1,451 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#!/usr/bin/env python3
+
+# pyre-strict
+
+from typing import Optional, Tuple
+
+import torch
+from generative_recommenders.common import HammerKernel
+from generative_recommenders.ops.pytorch.pt_jagged import pytorch_jagged_dense_bmm_add
+from generative_recommenders.ops.pytorch.pt_jagged_tensors import (
+    pytorch_concat_2D_jagged,
+    pytorch_hstu_concat_l2_embeddings,
+    pytorch_hstu_split_l2_embeddings,
+    pytorch_split_2D_jagged,
+)
+from generative_recommenders.ops.triton.triton_jagged import triton_jagged_dense_bmm_add
+from generative_recommenders.ops.triton.triton_jagged_tensors import (
+    triton_concat_2D_jagged,
+    triton_concat_2D_jagged_multirow,
+    triton_split_2D_jagged,
+    triton_split_2D_jagged_multirow,
+)
+from torch.fx._symbolic_trace import is_fx_tracing
+
+try:
+    # @manual=//generative_recommenders/ops/triton_aot:triton_concat_2d_jagged
+    from generative_recommenders.ops.triton_aot.triton_concat_2d_jagged import (  # pyre-ignore[21]
+        aot_triton_kernel_wrapper_concat_2D_jagged,
+    )
+
+    # @manual=//generative_recommenders/ops/triton_aot:triton_split_2d_jagged
+    from generative_recommenders.ops.triton_aot.triton_split_2d_jagged import (  # pyre-ignore[21]
+        aot_triton_kernel_wrapper_split_2D_jagged,
+    )
+except ImportError:
+
+    def aot_triton_kernel_wrapper_concat_2D_jagged(
+        *args: object,
+        **kwargs: object,
+    ) -> torch.Tensor:
+        raise ImportError(
+            "AOT-T is required for the TRITON_INFERENCE concat_2D_jagged kernel."
+        )
+
+    def aot_triton_kernel_wrapper_split_2D_jagged(
+        *args: object,
+        **kwargs: object,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        raise ImportError(
+            "AOT-T is required for the TRITON_INFERENCE split_2D_jagged kernel."
+        )
+
+
+torch.fx.wrap("triton_jagged_dense_bmm_add")
+
+try:
+    from hammer.ops.triton.cc.jagged_dense_bmm.triton_cc_jagged_dense_bmm import (
+        triton_cc_jagged_dense_bmm,
+    )
+except ImportError:
+    triton_cc_jagged_dense_bmm = None
+
+
+torch.fx.wrap("triton_concat_2D_jagged")
+torch.fx.wrap("triton_split_2D_jagged")
+torch.fx.wrap("triton_concat_2D_jagged_multirow")
+torch.fx.wrap("triton_split_2D_jagged_multirow")
+
+
+def concat_2D_jagged(
+    max_seq_len: int,
+    values_left: torch.Tensor,
+    values_right: torch.Tensor,
+    max_len_left: Optional[int] = None,
+    max_len_right: Optional[int] = None,
+    offsets_left: Optional[torch.Tensor] = None,
+    offsets_right: Optional[torch.Tensor] = None,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> torch.Tensor:
+    if torch.jit.is_scripting():
+        return pytorch_concat_2D_jagged(
+            values_left=values_left,
+            values_right=values_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+    if not is_fx_tracing():
+        torch._assert(values_left.dim() == 2, "values_left must be 2D")
+        torch._assert(values_right.dim() == 2, "values_right must be 2D")
+        torch._assert(
+            values_right.shape[1] == values_left.shape[1],
+            f"values_left shape[1] must be equal to values_right shape[1] {values_left.shape[1]} vs {values_right.shape[1]}",
+        )
+    if kernel == HammerKernel.TRITON:
+        return triton_concat_2D_jagged(
+            max_seq_len=max_seq_len,
+            values_left=values_left,
+            values_right=values_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+    elif kernel == HammerKernel.TRITON_INFERENCE:
+        aott_values_left = values_left
+        aott_values_right = values_right
+        if offsets_left is None:
+            assert max_len_left is not None
+            aott_values_left = values_left.reshape(
+                -1,
+                max_len_left,
+                values_left.shape[-1],
+            )
+        if offsets_right is None:
+            assert max_len_right is not None
+            aott_values_right = values_right.reshape(
+                -1,
+                max_len_right,
+                values_right.shape[-1],
+            )
+        return aot_triton_kernel_wrapper_concat_2D_jagged(
+            max_seq_len=max_seq_len,
+            values_a=aott_values_left,
+            values_b=aott_values_right,
+            offsets_a=offsets_left,
+            offsets_b=offsets_right,
+        )
+    else:
+        return pytorch_concat_2D_jagged(
+            values_left=values_left,
+            values_right=values_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+
+
+def split_2D_jagged(
+    max_seq_len: int,
+    values: torch.Tensor,
+    total_len_left: Optional[int] = None,
+    total_len_right: Optional[int] = None,
+    max_len_left: Optional[int] = None,
+    max_len_right: Optional[int] = None,
+    offsets_left: Optional[torch.Tensor] = None,
+    offsets_right: Optional[torch.Tensor] = None,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if torch.jit.is_scripting():
+        return pytorch_split_2D_jagged(
+            max_seq_len=max_seq_len,
+            values=values,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+    if not is_fx_tracing():
+        torch._assert(values.dim() == 2, "values must be 2D")
+        torch._assert(
+            offsets_left is not None or offsets_right is not None,
+            "offsets_left and offsets_right cannot be None at the same time",
+        )
+        if offsets_left is None:
+            torch._assert(
+                max_len_left is not None,
+                "max_len_left must be provided when offsets_left is None",
+            )
+        if offsets_right is None:
+            torch._assert(
+                max_len_right is not None,
+                "max_len_right must be provided when offsets_right is None",
+            )
+        if offsets_left is not None and offsets_right is not None:
+            torch._assert(
+                offsets_left.shape[0] == offsets_right.shape[0],
+                "offsets_left shape[0] must be equal to offsets_right shape[0]",
+            )
+    if kernel == HammerKernel.TRITON:
+        return triton_split_2D_jagged(
+            max_seq_len=max_seq_len,
+            values=values,
+            total_len_left=total_len_left,
+            total_len_right=total_len_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+    elif kernel == HammerKernel.TRITON_INFERENCE:
+        dense_size = 0
+        if offsets_left is None and max_len_left is not None:
+            dense_size = max_len_left
+        elif offsets_right is None and max_len_right is not None:
+            dense_size = max_len_right
+        split_left, split_right = aot_triton_kernel_wrapper_split_2D_jagged(
+            values=values,
+            max_seq_len=max_seq_len,
+            offsets_a=offsets_left,
+            offsets_b=offsets_right,
+            dense_size=dense_size,
+        )
+        if offsets_left is None:
+            split_left = split_left.reshape(-1, split_left.shape[-1])
+        if offsets_right is None:
+            split_right = split_right.reshape(-1, split_right.shape[-1])
+        return split_left, split_right
+    else:
+        return pytorch_split_2D_jagged(
+            max_seq_len=max_seq_len,
+            values=values,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+
+
+def hstu_split_l2_embeddings(
+    max_seq_len: int,
+    x: torch.Tensor,
+    prefix_offsets: torch.Tensor,
+    l2_offsets: torch.Tensor,
+    contextual_seq_len: int,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if kernel == HammerKernel.TRITON:
+        return triton_split_2D_jagged(
+            max_seq_len=max_seq_len,
+            values=x,
+            total_len_right=None,
+            total_len_left=None,
+            max_len_left=None,
+            max_len_right=None,
+            offsets_left=prefix_offsets,
+            offsets_right=l2_offsets,
+            n_prefix_to_right=contextual_seq_len,
+        )
+    else:
+        return pytorch_hstu_split_l2_embeddings(
+            max_seq_len=max_seq_len,
+            x=x,
+            prefix_offsets=prefix_offsets,
+            l2_offsets=l2_offsets,
+            contextual_seq_len=contextual_seq_len,
+        )
+
+
+def hstu_concat_l2_embeddings(
+    max_prefix_len: int,
+    prefix_x: torch.Tensor,
+    prefix_offsets: torch.Tensor,
+    max_l2_len: int,
+    l2_x: torch.Tensor,
+    l2_offsets: torch.Tensor,
+    contextual_seq_len: int,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> torch.Tensor:
+    if kernel == HammerKernel.TRITON:
+        return triton_concat_2D_jagged(
+            max_seq_len=max_prefix_len + max_l2_len,
+            values_left=prefix_x,
+            values_right=l2_x,
+            max_len_left=max_prefix_len,
+            max_len_right=max_l2_len,
+            offsets_left=prefix_offsets,
+            offsets_right=l2_offsets,
+            n_prefix_from_right=contextual_seq_len,
+        )
+    else:
+        return pytorch_hstu_concat_l2_embeddings(
+            contextual_seq_len=contextual_seq_len,
+            max_prefix_len=max_prefix_len,
+            prefix_x=prefix_x,
+            prefix_offsets=prefix_offsets,
+            max_l2_len=max_l2_len,
+            l2_x=l2_x,
+            l2_offsets=l2_offsets,
+        )
+
+
+def jagged_dense_bmm_broadcast_add(
+    max_seq_len: int,
+    seq_offsets: torch.Tensor,
+    jagged: torch.Tensor,
+    dense: torch.Tensor,
+    bias: torch.Tensor,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> torch.Tensor:
+    """
+    Computing out = jagged x dense + bias
+    jagged has shape (sum_B(M_i), K), dense has shape (B, K, N), and bias has shape (B, N)
+    out has shape (sum_B(M_i), N)
+    """
+    if not is_fx_tracing():
+        _, K = jagged.shape
+        B, _, N = dense.shape
+        torch._assert(dense.shape[1] == K, "wrong dense shape[1]")
+        torch._assert(seq_offsets.shape[0] == B + 1, "wrong seq_offsets shape[0]")
+        torch._assert(bias.shape[0] == B, "wrong bias shape[0]")
+        torch._assert(bias.shape[1] == N, "wrong bias shape[1]")
+    if kernel == HammerKernel.TRITON:
+        return triton_jagged_dense_bmm_add(
+            max_seq_len=max_seq_len,
+            seq_offsets=seq_offsets,
+            jagged=jagged,
+            dense=dense,
+            bias=bias,
+            elementwise=False,
+        )
+    elif kernel == HammerKernel.TRITON_CC:
+        if triton_cc_jagged_dense_bmm is None:
+            raise ImportError(
+                "hammer is required for the TRITON_CC kernel in jagged_dense_bmm_broadcast_add."
+            )
+        return triton_cc_jagged_dense_bmm(
+            max_seq_len=max_seq_len,
+            seq_offsets=seq_offsets,
+            jagged=jagged,
+            dense=dense,
+            bias=bias,
+        )
+    else:
+        return pytorch_jagged_dense_bmm_add(
+            max_seq_len=max_seq_len,
+            seq_offsets=seq_offsets,
+            jagged=jagged,
+            dense=dense,
+            bias=bias,
+        )
+
+
+def concat_2D_jagged_multirow(
+    max_seq_len: int,
+    values_left: torch.Tensor,
+    values_right: torch.Tensor,
+    offsets_left: Optional[torch.Tensor],
+    offsets_right: Optional[torch.Tensor],
+    max_len_left: int,
+    max_len_right: int,
+    kernel: HammerKernel = HammerKernel.TRITON,
+) -> torch.Tensor:
+    if not is_fx_tracing():
+        torch._assert(values_left.dim() == 2, "values_left must be 2D")
+        torch._assert(values_right.dim() == 2, "values_right must be 2D")
+        torch._assert(
+            values_right.shape[1] == values_left.shape[1],
+            f"values_left shape[1] must be equal to values_right shape[1] {values_left.shape[1]} vs {values_right.shape[1]}",
+        )
+        if offsets_left is not None and offsets_right is not None:
+            torch._assert(
+                offsets_left.shape[0] == offsets_right.shape[0],
+                "offsets_left and offsets_right must have the same batch dimension",
+            )
+
+    if kernel == HammerKernel.TRITON:
+        return triton_concat_2D_jagged_multirow(
+            max_seq_len=max_seq_len,
+            values_a=values_left,
+            values_b=values_right,
+            offsets_a=offsets_left,
+            offsets_b=offsets_right,
+            max_len_a=max_len_left,
+            max_len_b=max_len_right,
+        )
+    else:
+        return concat_2D_jagged(
+            max_seq_len=max_seq_len,
+            values_left=values_left,
+            values_right=values_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+            kernel=kernel,
+        )
+
+
+def split_2D_jagged_multirow(
+    max_seq_len: int,
+    values: torch.Tensor,
+    total_len_left: Optional[int] = None,
+    total_len_right: Optional[int] = None,
+    max_len_left: Optional[int] = None,
+    max_len_right: Optional[int] = None,
+    offsets_left: Optional[torch.Tensor] = None,
+    offsets_right: Optional[torch.Tensor] = None,
+    kernel: HammerKernel = HammerKernel.TRITON,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if not is_fx_tracing():
+        torch._assert(values.dim() == 2, "values must be 2D")
+        torch._assert(
+            offsets_left is not None or offsets_right is not None,
+            "offsets_left and offsets_right cannot be None at the same time",
+        )
+        if offsets_left is None:
+            torch._assert(
+                max_len_left is not None,
+                "max_len_left must be provided when offsets_left is None",
+            )
+        if offsets_right is None:
+            torch._assert(
+                max_len_right is not None,
+                "max_len_right must be provided when offsets_right is None",
+            )
+        if offsets_left is not None and offsets_right is not None:
+            torch._assert(
+                offsets_left.shape[0] == offsets_right.shape[0],
+                "offsets_left and offsets_right must have the same batch dimension",
+            )
+
+    if kernel == HammerKernel.TRITON:
+        return triton_split_2D_jagged_multirow(
+            max_seq_len=max_seq_len,
+            values=values,
+            total_len_left=total_len_left,
+            total_len_right=total_len_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+        )
+    else:
+        return split_2D_jagged(
+            max_seq_len=max_seq_len,
+            values=values,
+            total_len_left=total_len_left,
+            total_len_right=total_len_right,
+            max_len_left=max_len_left,
+            max_len_right=max_len_right,
+            offsets_left=offsets_left,
+            offsets_right=offsets_right,
+            kernel=kernel,
+        )
