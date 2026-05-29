@@ -1,0 +1,330 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#!/usr/bin/env python3
+
+# pyre-strict
+
+
+from typing import List
+
+import torch
+from generative_recommenders.ops.pytorch.pt_layer_norm import (
+    pytorch_layer_norm,
+    pytorch_rms_norm,
+    pytorch_swish_layer_norm,
+)
+from generative_recommenders.ops.triton.triton_layer_norm import triton_rms_norm
+
+try:
+    from hammer.ops.triton.cc.rms_norm.triton_cc_rms_norm import triton_cc_rms_norm
+    from hammer.ops.triton.cc.swish_layer_norm.triton_cc_swish_layer_norm import (
+        triton_cc_swish_layer_norm,
+    )
+except ImportError:
+    triton_cc_swish_layer_norm = None
+    triton_cc_rms_norm = None
+from generative_recommenders.common import HammerKernel, HammerModule
+from generative_recommenders.ops.triton.triton_layer_norm import (
+    triton_layer_norm,
+    triton_swish_layer_norm,
+)
+from torch.fx._symbolic_trace import is_fx_tracing
+
+try:
+    # @manual=//generative_recommenders/ops/triton_aot:triton_layer_norm
+    from generative_recommenders.ops.triton_aot.triton_layer_norm import (  # pyre-ignore[21]
+        aot_triton_kernel_wrapper_swish_layer_norm,
+    )
+
+    # @manual=//generative_recommenders/ops/triton_aot:triton_rms_norm
+    from generative_recommenders.ops.triton_aot.triton_rms_norm import (  # pyre-ignore[21]
+        aot_triton_kernel_wrapper_rms_norm,
+    )
+except ImportError:
+
+    def aot_triton_kernel_wrapper_swish_layer_norm(
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+        eps: float,
+        is_swish: bool,
+    ) -> torch.Tensor:
+        raise ImportError(
+            "AOT-T is required for the TRITON_INFERENCE swish_layer_norm kernel."
+        )
+
+    def aot_triton_kernel_wrapper_rms_norm(
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        eps: float,
+        silu: bool,
+    ) -> torch.Tensor:
+        raise ImportError("AOT-T is required for the TRITON_INFERENCE rms_norm kernel.")
+
+
+torch.fx.wrap("triton_layer_norm")
+torch.fx.wrap("triton_swish_layer_norm")
+torch.fx.wrap("triton_rms_norm")
+
+
+def layer_norm(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    eps: float = 1e-5,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> torch.Tensor:
+    if torch.jit.is_scripting():
+        # Script-mode fast path: bypass the HammerKernel ladder (which would
+        # drag in is_fx_tracing()'s closed-over global bool).
+        return torch.nn.functional.layer_norm(
+            x,
+            normalized_shape=(x.shape[-1],),
+            weight=weight,
+            bias=bias,
+            eps=eps,
+        )
+    if kernel == HammerKernel.TRITON:
+        if not is_fx_tracing():
+            torch._assert(not x.is_cpu, "x must be device tensor")
+            torch._assert(not weight.is_cpu, "weight must be device tensor")
+            torch._assert(not bias.is_cpu, "bias must be device tensor")
+        return triton_layer_norm(x, weight, bias, eps)
+    elif kernel == HammerKernel.TRITON_INFERENCE:
+        return aot_triton_kernel_wrapper_swish_layer_norm(
+            x,
+            weight,
+            bias,
+            eps,
+            is_swish=False,
+        )
+    elif kernel == HammerKernel.TRITON_CC:
+        if triton_cc_swish_layer_norm is None:
+            raise ImportError(
+                "hammer is required for the TRITON_CC kernel in layer_norm."
+            )
+        return triton_cc_swish_layer_norm(
+            x,
+            weight,
+            bias,
+            eps,
+            is_swish=False,
+        )
+    else:
+        return pytorch_layer_norm(
+            x,
+            [
+                x.shape[-1],
+            ],
+            weight,
+            bias,
+            eps,
+        )
+
+
+def rms_norm(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float = 1e-5,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+    silu: bool = False,
+) -> torch.Tensor:
+    if torch.jit.is_scripting():
+        # Script-mode fast path: bypass the HammerKernel ladder.
+        x_f = x.float()
+        norm = torch.rsqrt(x_f.pow(2).mean(-1, keepdim=True) + eps)
+        out = (x_f * norm * weight.float()).to(x.dtype)
+        if silu:
+            out = torch.nn.functional.silu(out)
+        return out
+    if kernel == HammerKernel.TRITON:
+        if not is_fx_tracing():
+            torch._assert(not x.is_cpu, "x must be device tensor")
+            torch._assert(not weight.is_cpu, "weight must be device tensor")
+        return triton_rms_norm(x, weight, eps, silu)
+    elif kernel == HammerKernel.TRITON_INFERENCE:
+        return aot_triton_kernel_wrapper_rms_norm(x, weight, eps, silu)
+    elif kernel == HammerKernel.TRITON_CC:
+        if triton_cc_rms_norm is None:
+            raise ImportError(
+                "hammer is required for the TRITON_CC kernel in rms_norm."
+            )
+        return triton_cc_rms_norm(
+            x,
+            weight,
+            eps,
+            silu=silu,
+        )
+    else:
+        return pytorch_rms_norm(
+            x,
+            [
+                x.shape[-1],
+            ],
+            weight,
+            eps,
+            silu,
+        )
+
+
+def swish_layer_norm(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    eps: float = 1e-5,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> torch.Tensor:
+    if torch.jit.is_scripting():
+        # Script-mode fast path: bypass the HammerKernel ladder (which
+        # otherwise drags in is_fx_tracing(), Triton/Triton_CC closures,
+        # etc.) and call pure PyTorch directly.
+        return pytorch_swish_layer_norm(
+            x,
+            [x.shape[-1]],
+            weight,
+            bias,
+            eps,
+        )
+    if kernel == HammerKernel.TRITON:
+        if not is_fx_tracing():
+            torch._assert(not x.is_cpu, "x must be device tensor")
+            torch._assert(not weight.is_cpu, "weight must be device tensor")
+            torch._assert(not bias.is_cpu, "bias must be device tensor")
+        return triton_swish_layer_norm(x, [x.shape[-1]], weight, bias, eps)
+    elif kernel == HammerKernel.TRITON_INFERENCE:
+        return aot_triton_kernel_wrapper_swish_layer_norm(
+            x,
+            weight,
+            bias,
+            eps,
+            is_swish=True,
+        )
+    elif kernel == HammerKernel.TRITON_CC:
+        if triton_cc_swish_layer_norm is None:
+            raise ImportError(
+                "hammer is required for the TRITON_CC kernel in swish_layer_norm."
+            )
+        return triton_cc_swish_layer_norm(
+            x,
+            weight,
+            bias,
+            eps,
+            is_swish=True,
+        )
+    else:
+        return pytorch_swish_layer_norm(
+            x,
+            [
+                x.shape[-1],
+            ],
+            weight,
+            bias,
+            eps,
+        )
+
+
+class LayerNorm(HammerModule):
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        is_inference: bool = False,
+    ) -> None:
+        super().__init__(is_inference=is_inference)
+        self._normalized_shape: List[int] = [dim]
+        self._eps = eps
+        self.weight = torch.nn.Parameter(
+            torch.ones(self._normalized_shape),
+        )
+        self.bias = torch.nn.Parameter(
+            torch.zeros(self._normalized_shape),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return layer_norm(
+            x=x,
+            weight=self.weight,
+            bias=self.bias,
+            eps=self._eps,
+            kernel=self.hammer_kernel(),
+        )
+
+
+class RMSNorm(HammerModule):
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        is_inference: bool = False,
+    ) -> None:
+        super().__init__(is_inference=is_inference)
+        self._eps = eps
+        self.weight = torch.nn.Parameter(torch.ones(dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return rms_norm(
+            x,
+            self.weight,
+            self._eps,
+            silu=False,
+            kernel=self.hammer_kernel(),
+        )
+
+
+class RMSNormSilu(HammerModule):
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        is_inference: bool = False,
+    ) -> None:
+        super().__init__(is_inference=is_inference)
+        self._eps = eps
+        self.weight = torch.nn.Parameter(torch.ones(dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return rms_norm(
+            x,
+            self.weight,
+            self._eps,
+            silu=True,
+            kernel=self.hammer_kernel(),
+        )
+
+
+class SwishLayerNorm(HammerModule):
+    def __init__(
+        self,
+        dim: int,
+        eps: float = 1e-5,
+        is_inference: bool = False,
+    ) -> None:
+        super().__init__(is_inference=is_inference)
+        self._normalized_shape: List[int] = [dim]
+        self.weight = torch.nn.Parameter(torch.ones(self._normalized_shape))
+        self.bias = torch.nn.Parameter(torch.zeros(self._normalized_shape))
+        self._eps = eps
+
+    def forward(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
+        return swish_layer_norm(
+            x=x,
+            weight=self.weight,
+            bias=self.bias,
+            eps=self._eps,
+            kernel=self.hammer_kernel(),
+        )

@@ -1,0 +1,52 @@
+batch_size = 64
+num_workers = 2
+prefetch_factor = 4
+dataset = "streaming-100b"
+
+# model parameters
+make_model.dataset = %dataset
+
+# dense model optimizer
+dense_optimizer_factory_and_class.learning_rate = 0.001
+dense_optimizer_factory_and_class.optimizer_name = "Adam"
+dense_optimizer_factory_and_class.momentum = 0
+dense_optimizer_factory_and_class.weight_decay = 0
+dense_optimizer_factory_and_class.eps = 1e-8
+dense_optimizer_factory_and_class.betas = (0.95, 0.999)
+
+# sparse model optimizer
+sparse_optimizer_factory_and_class.learning_rate = 0.001
+sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
+sparse_optimizer_factory_and_class.momentum = 0
+sparse_optimizer_factory_and_class.weight_decay = 0
+sparse_optimizer_factory_and_class.eps = 1e-8
+sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
+
+# dataloader configs
+make_train_test_dataloaders.batch_size = %batch_size
+make_train_test_dataloaders.dataset_type = %dataset
+make_train_test_dataloaders.train_split_percentage = 0.80
+make_train_test_dataloaders.new_path_prefix = "/home/linjianma"
+make_train_test_dataloaders.num_workers = %num_workers
+make_train_test_dataloaders.prefetch_factor = %prefetch_factor
+make_train_test_dataloaders.num_blocks = 20
+
+get_dataset.name = %dataset
+get_dataset.new_path_prefix = "/home/linjianma"
+
+make_streaming_dataloader.batch_size = %batch_size
+make_streaming_dataloader.num_workers = %num_workers
+make_streaming_dataloader.prefetch_factor = %prefetch_factor
+
+# train eval loop variables
+streaming_train_eval_loop.num_train_ts = 90
+streaming_train_eval_loop.output_trace = False
+streaming_train_eval_loop.num_eval_batches = 500
+streaming_train_eval_loop.metric_log_frequency = 40
+streaming_train_eval_loop.checkpoint_frequency = 3
+
+
+# logger variables
+MetricsLogger.tensorboard_log_path = "/home/linjianma/tensorboard/streaming_100b/run4/"
+save_dmp_checkpoint.path = "/home/linjianma/ckpts/streaming_100b/"
+# load_dmp_checkpoint.path = "/home/linjianma/ckpts/streaming_100b/20000/"
