@@ -79,17 +79,21 @@ def setup(
     BACKEND = dist.Backend.NCCL
     TIMEOUT = 1800
 
+    # set device BEFORE init_process_group so NCCL binds this rank to its
+    # own GPU; otherwise every rank's first CUDA context lands on GPU 0,
+    # leaving stale allocations and triggering OOMs on rank 0.
+    torch.cuda.set_device(device)
+
     # initialize the process group
     if not dist.is_initialized():
-        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+        dist.init_process_group(
+            "nccl", rank=rank, world_size=world_size, device_id=device
+        )
 
     pg = dist.new_group(
         backend=BACKEND,
         timeout=timedelta(seconds=TIMEOUT),
     )
-
-    # set device
-    torch.cuda.set_device(device)
 
     return pg
 
