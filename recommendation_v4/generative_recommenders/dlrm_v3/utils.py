@@ -509,6 +509,21 @@ SUPPORTED_DATASETS = [
 
 
 @gin.configurable
+def env_path(key: str = "", default: str = "") -> str:
+    """Resolve a path from os.environ[key], falling back to `default`.
+
+    Intended as a gin macro so paths can be overridden via env vars without
+    editing the gin file. Example gin usage:
+
+        DATA_PATH = @env_path()
+        env_path.key = "DLRM_DATA_PATH"
+        env_path.default = "/some/default/path"
+        make_train_test_dataloaders.new_path_prefix = %DATA_PATH
+    """
+    return os.environ.get(key, default) if key else default
+
+
+@gin.configurable
 def get_dataset(name: str, new_path_prefix: str = "", history_length: Optional[int] = None):
     """
     Get dataset class and configuration by name.
