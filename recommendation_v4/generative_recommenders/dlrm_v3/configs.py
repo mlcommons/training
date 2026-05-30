@@ -19,7 +19,9 @@ Configuration module for DLRMv3 model.
 This module provides configuration functions for the HSTU model architecture and embedding table configurations.
 """
 
-from typing import Dict
+from typing import Dict, Optional
+
+import gin
 
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTUConfig
 from generative_recommenders.modules.multitask_module import (
@@ -31,8 +33,6 @@ from torchrec.modules.embedding_configs import DataType, EmbeddingConfig
 HSTU_EMBEDDING_DIM = 512  # final DLRMv3 model
 HASH_SIZE = 10_000_000
 HASH_SIZE_1B = 1_000_000_000
-
-YAMBDA_EMBEDDING_DIM = 512
 
 # (name, keys, num_embeddings, salt) — single source of truth for both
 # get_embedding_table_config("yambda-5b") and the dataset's cross-hash inputs.
@@ -48,7 +48,20 @@ YAMBDA_5B_CROSS_SPECS = [
 ]
 
 
-def get_hstu_configs(dataset: str = "debug") -> DlrmHSTUConfig:
+@gin.configurable
+def get_hstu_configs(
+    dataset: str = "debug",
+    max_seq_len: Optional[int] = None,
+    max_num_candidates: Optional[int] = None,
+    hstu_embedding_table_dim: Optional[int] = None,
+    hstu_transducer_embedding_dim: Optional[int] = None,
+    hstu_num_heads: Optional[int] = None,
+    hstu_attn_num_layers: Optional[int] = None,
+    hstu_attn_linear_dim: Optional[int] = None,
+    hstu_attn_qk_dim: Optional[int] = None,
+    hstu_input_dropout_ratio: Optional[float] = None,
+    hstu_linear_dropout_rate: Optional[float] = None,
+) -> DlrmHSTUConfig:
     """
     Create and return HSTU model configuration.
 
@@ -333,9 +346,11 @@ def get_hstu_configs(dataset: str = "debug") -> DlrmHSTUConfig:
     elif "yambda" in dataset:
         assert dataset in ["yambda-5b"]
         cross_names = [name for (name, _k, _n, _s) in YAMBDA_5B_CROSS_SPECS]
-        # Smaller per-table dim for yambda (see YAMBDA_EMBEDDING_DIM); transducer
-        # still projects to 512.
-        hstu_config.hstu_embedding_table_dim = YAMBDA_EMBEDDING_DIM
+        # Per-table dim defaults to HSTU_EMBEDDING_DIM (512); override via the
+        # `get_hstu_configs.hstu_embedding_table_dim = N` gin binding if needed.
+        # Note: the embedding tables in get_embedding_table_config also use
+        # HSTU_EMBEDDING_DIM and must stay aligned with this value.
+        hstu_config.hstu_embedding_table_dim = HSTU_EMBEDDING_DIM
         hstu_config.hstu_transducer_embedding_dim = 512
         hstu_config.max_seq_len = 8192
         hstu_config.max_num_candidates = 1
@@ -468,10 +483,37 @@ def get_hstu_configs(dataset: str = "debug") -> DlrmHSTUConfig:
                 task_type=MultitaskTaskType.BINARY_CLASSIFICATION,
             )
         ]
+
+    # Apply gin overrides last so a value set in the gin file wins over the
+    # per-dataset defaults above. Anything left as None inherits the default
+    # the dataset branch (or DlrmHSTUConfig) chose. Example in a gin file:
+    #   get_hstu_configs.max_seq_len = 4096
+    #   get_hstu_configs.hstu_embedding_table_dim = 256
+    _gin_overrides = {
+        "max_seq_len": max_seq_len,
+        "max_num_candidates": max_num_candidates,
+        "max_num_candidates_inference": max_num_candidates,
+        "hstu_embedding_table_dim": hstu_embedding_table_dim,
+        "hstu_transducer_embedding_dim": hstu_transducer_embedding_dim,
+        "hstu_num_heads": hstu_num_heads,
+        "hstu_attn_num_layers": hstu_attn_num_layers,
+        "hstu_attn_linear_dim": hstu_attn_linear_dim,
+        "hstu_attn_qk_dim": hstu_attn_qk_dim,
+        "hstu_input_dropout_ratio": hstu_input_dropout_ratio,
+        "hstu_linear_dropout_rate": hstu_linear_dropout_rate,
+    }
+    for _name, _val in _gin_overrides.items():
+        if _val is not None:
+            setattr(hstu_config, _name, _val)
+
     return hstu_config
 
 
-def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingConfig]:
+@gin.configurable
+def get_embedding_table_config(
+    dataset: str = "debug",
+    embedding_dim: Optional[int] = None,
+) -> Dict[str, EmbeddingConfig]:
     """
     Create and return embedding table configurations.
 
@@ -480,10 +522,16 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
 
     Args:
         dataset: Dataset identifier (currently unused, reserved for dataset-specific configs).
+        embedding_dim: Per-table embedding width override. When set via gin
+            (e.g. `get_embedding_table_config.embedding_dim = 256`), wins over
+            `HSTU_EMBEDDING_DIM`. Keep in sync with the matching gin override on
+            `get_hstu_configs.hstu_embedding_table_dim` — the model and the
+            tables must agree on dim or sharding will reject the plan.
 
     Returns:
         Dict mapping table names to their EmbeddingConfig objects.
     """
+    DIM = embedding_dim if embedding_dim is not None else HSTU_EMBEDDING_DIM
     if "movielens" in dataset:
         assert dataset in [
             "movielens-1m",
@@ -495,42 +543,42 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
             {
                 "movie_id": EmbeddingConfig(
                     num_embeddings=HASH_SIZE,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="movie_id",
                     data_type=DataType.FP16,
                     feature_names=["movie_id", "item_movie_id"],
                 ),
                 "user_id": EmbeddingConfig(
                     num_embeddings=HASH_SIZE,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="user_id",
                     data_type=DataType.FP16,
                     feature_names=["user_id"],
                 ),
                 "sex": EmbeddingConfig(
                     num_embeddings=HASH_SIZE,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="sex",
                     data_type=DataType.FP16,
                     feature_names=["sex"],
                 ),
                 "age_group": EmbeddingConfig(
                     num_embeddings=HASH_SIZE,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="age_group",
                     data_type=DataType.FP16,
                     feature_names=["age_group"],
                 ),
                 "occupation": EmbeddingConfig(
                     num_embeddings=HASH_SIZE,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="occupation",
                     data_type=DataType.FP16,
                     feature_names=["occupation"],
                 ),
                 "zip_code": EmbeddingConfig(
                     num_embeddings=HASH_SIZE,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="zip_code",
                     data_type=DataType.FP16,
                     feature_names=["zip_code"],
@@ -540,14 +588,14 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
             else {
                 "movie_id": EmbeddingConfig(
                     num_embeddings=HASH_SIZE_1B,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="movie_id",
                     data_type=DataType.FP16,
                     feature_names=["movie_id", "item_movie_id"],
                 ),
                 "user_id": EmbeddingConfig(
                     num_embeddings=3_000_000,
-                    embedding_dim=HSTU_EMBEDDING_DIM,
+                    embedding_dim=DIM,
                     name="user_id",
                     data_type=DataType.FP16,
                     feature_names=["user_id"],
@@ -558,14 +606,14 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
         return {
             "item_id": EmbeddingConfig(
                 num_embeddings=HASH_SIZE_1B,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="item_id",
                 data_type=DataType.FP16,
                 feature_names=["item_id", "item_candidate_id"],
             ),
             "item_category_id": EmbeddingConfig(
                 num_embeddings=128,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="item_category_id",
                 data_type=DataType.FP16,
                 weight_init_max=1.0,
@@ -574,7 +622,7 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
             ),
             "user_id": EmbeddingConfig(
                 num_embeddings=10_000_000,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="user_id",
                 data_type=DataType.FP16,
                 feature_names=["user_id"],
@@ -584,49 +632,49 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
         return {
             "video_id": EmbeddingConfig(
                 num_embeddings=HASH_SIZE,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="video_id",
                 data_type=DataType.FP16,
                 feature_names=["video_id", "item_video_id"],
             ),
             "user_id": EmbeddingConfig(
                 num_embeddings=HASH_SIZE,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="user_id",
                 data_type=DataType.FP16,
                 feature_names=["user_id"],
             ),
             "user_active_degree": EmbeddingConfig(
                 num_embeddings=8,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="user_active_degree",
                 data_type=DataType.FP16,
                 feature_names=["user_active_degree"],
             ),
             "follow_user_num_range": EmbeddingConfig(
                 num_embeddings=9,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="follow_user_num_range",
                 data_type=DataType.FP16,
                 feature_names=["follow_user_num_range"],
             ),
             "fans_user_num_range": EmbeddingConfig(
                 num_embeddings=9,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="fans_user_num_range",
                 data_type=DataType.FP16,
                 feature_names=["fans_user_num_range"],
             ),
             "friend_user_num_range": EmbeddingConfig(
                 num_embeddings=8,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="friend_user_num_range",
                 data_type=DataType.FP16,
                 feature_names=["friend_user_num_range"],
             ),
             "register_days_range": EmbeddingConfig(
                 num_embeddings=8,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="register_days_range",
                 data_type=DataType.FP16,
                 feature_names=["register_days_range"],
@@ -637,28 +685,28 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
         tables: Dict[str, EmbeddingConfig] = {
             "item_id": EmbeddingConfig(
                 num_embeddings=9_390_000,
-                embedding_dim=YAMBDA_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="item_id",
                 data_type=DataType.FP32,
                 feature_names=["item_id", "item_candidate_id"],
             ),
             "artist_id": EmbeddingConfig(
                 num_embeddings=1_290_000,
-                embedding_dim=YAMBDA_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="artist_id",
                 data_type=DataType.FP32,
                 feature_names=["artist_id", "item_candidate_artist_id"],
             ),
             "album_id": EmbeddingConfig(
                 num_embeddings=3_370_000,
-                embedding_dim=YAMBDA_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="album_id",
                 data_type=DataType.FP32,
                 feature_names=["album_id", "item_candidate_album_id"],
             ),
             "uid": EmbeddingConfig(
                 num_embeddings=1_000_000,
-                embedding_dim=YAMBDA_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="uid",
                 data_type=DataType.FP32,
                 feature_names=["uid"],
@@ -667,7 +715,7 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
         for name, _keys, num_embeddings, _salt in YAMBDA_5B_CROSS_SPECS:
             tables[name] = EmbeddingConfig(
                 num_embeddings=num_embeddings,
-                embedding_dim=YAMBDA_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name=name,
                 data_type=DataType.FP32,
                 feature_names=[name],
@@ -677,7 +725,7 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
         return {
             "post_id": EmbeddingConfig(
                 num_embeddings=HASH_SIZE,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="post_id",
                 data_type=DataType.FP16,
                 feature_names=[
@@ -689,14 +737,14 @@ def get_embedding_table_config(dataset: str = "debug") -> Dict[str, EmbeddingCon
             ),
             "viewer_id": EmbeddingConfig(
                 num_embeddings=HASH_SIZE,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="viewer_id",
                 data_type=DataType.FP16,
                 feature_names=["viewer_id"],
             ),
             "dummy_contexual": EmbeddingConfig(
                 num_embeddings=HASH_SIZE,
-                embedding_dim=HSTU_EMBEDDING_DIM,
+                embedding_dim=DIM,
                 name="dummy_contexual",
                 data_type=DataType.FP16,
                 feature_names=["dummy_contexual"],
