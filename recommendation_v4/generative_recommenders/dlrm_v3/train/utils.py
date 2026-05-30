@@ -295,10 +295,12 @@ def sparse_optimizer_factory_and_class(
     return optimizer_cls, kwargs, optimizer_factory
 
 
+@gin.configurable
 def make_optimizer_and_shard(
     model: torch.nn.Module,
     device: torch.device,
     world_size: int,
+    hbm_cap_gb: int = 260,
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
         dense_optimizer_factory_and_class()
@@ -316,16 +318,13 @@ def make_optimizer_and_shard(
                         sparse_opt_cls, [param], sparse_opt_args
                     )
     sharders = get_default_sharders()
-    # MI350X has 288 GiB HBM3e per GPU; the 160 GiB cap was sized for older parts.
-    # Matches Primus-DLRM (hbm_cap_gb: 260) which runs the same 5b cross-feat
-    # table set on the same hardware without host materialization.
     planner = EmbeddingShardingPlanner(
         topology=Topology(
             local_world_size=world_size,
             world_size=world_size,
             compute_device="cuda",
-            hbm_cap=260 * 1024 * 1024 * 1024,
-            ddr_cap=32 * 1024 * 1024 * 1024,
+            hbm_cap=hbm_cap_gb * 1024 * 1024 * 1024,
+            ddr_cap=0,
         )
     )
     pg = dist.GroupMember.WORLD

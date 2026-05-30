@@ -32,6 +32,9 @@ make_train_test_dataloaders.num_workers = %num_workers
 make_train_test_dataloaders.prefetch_factor = %prefetch_factor
 make_train_test_dataloaders.num_blocks = 1
 
+# embedding planner
+make_optimizer_and_shard.hbm_cap_gb = 260
+
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = "/apps/chcai/dlrm_data"
 # Per-pool truncation cap. Cache is keyed by L on disk under
