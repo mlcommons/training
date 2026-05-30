@@ -22,12 +22,18 @@ sparse_optimizer_factory_and_class.weight_decay = 0
 sparse_optimizer_factory_and_class.eps = 1e-8
 sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
 
+# Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
+# below. Used by both make_train_test_dataloaders and get_dataset.
+DATA_PATH = @env_path()
+env_path.key = "DLRM_DATA_PATH"
+env_path.default = "/apps/chcai/dlrm_data"
+
 # dataloader configs
 make_train_test_dataloaders.batch_size = %batch_size
 make_train_test_dataloaders.eval_batch_size = 32
 make_train_test_dataloaders.dataset_type = %dataset
 make_train_test_dataloaders.train_split_percentage = 0.90
-make_train_test_dataloaders.new_path_prefix = "/apps/chcai/dlrm_data"
+make_train_test_dataloaders.new_path_prefix = %DATA_PATH
 make_train_test_dataloaders.num_workers = %num_workers
 make_train_test_dataloaders.prefetch_factor = %prefetch_factor
 make_train_test_dataloaders.num_blocks = 1
@@ -36,7 +42,7 @@ make_train_test_dataloaders.num_blocks = 1
 make_optimizer_and_shard.hbm_cap_gb = 260
 
 get_dataset.name = %dataset
-get_dataset.new_path_prefix = "/apps/chcai/dlrm_data"
+get_dataset.new_path_prefix = %DATA_PATH
 # Per-pool truncation cap. Cache is keyed by L on disk under
 # <processed_dir>/hstu_cache_L<N>/; switching L reuses an existing cache
 # (L=2048 was built in a prior session, no rebuild needed).

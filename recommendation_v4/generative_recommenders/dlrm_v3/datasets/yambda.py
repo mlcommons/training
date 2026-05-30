@@ -10,15 +10,12 @@
 """
 Yambda dataset for the DLRMv3 HSTU `modules/` path.
 
-Reads the same parquets produced by Primus-DLRM's preprocessing (no runtime
-dep on Primus). Each sample is one anchor LISTEN event with:
+Reads the parquets produced by `dlrm_v3/preprocess_public_data.py
+--dataset yambda-<size>`. Each sample is one anchor LISTEN event with:
   * label = (played_ratio >= LISTEN_PLUS_THRESHOLD) — the listen_plus bit
   * a chronologically interleaved 3-pool history (listen+/like/skip), with
     pool identity tagged per-position in `action_weight` (bits 1/2/4)
   * 7 pre-hashed cross-feature ids exposed as length-1 contextual entries
-
-Hash formula is byte-identical to `primus_dlrm.data.hashing.cross_hash_nway`
-so embedding rows are interchangeable.
 """
 
 import logging
@@ -60,7 +57,7 @@ def _load_npy_readonly(path: Union[str, Path]) -> np.ndarray:
     arr.flags.writeable = False
     return arr
 
-# Match primus_dlrm.data.preprocessing.EVENT_TYPE_MAP / dataset.LISTEN_PLUS_THRESHOLD
+# Yambda event-type encoding written by preprocess_public_data.py.
 LISTEN_TYPE = 0
 LIKE_TYPE = 1
 LISTEN_PLUS_THRESHOLD = 50
@@ -72,15 +69,14 @@ SKIP_BIT = 4
 
 
 class _FlatEventStore:
-    """Minimal port of Primus-DLRM's FlatEventStore.
+    """Per-user flat event index built from the preprocessed sessions parquet.
 
     Reads `train_sessions.parquet` and explodes per-session arrays into flat
     numpy columns + per-user `(start, end)` index arrays. Cache-compatible
     layout, but writes nothing (rebuilds from parquet each construction).
     """
 
-    # On-disk column layout written by Primus-DLRM's FlatEventStore.save_mmap.
-    # Bit-identical to that schema so the cache is interchangeable.
+    # On-disk column layout.
     _MMAP_COLS = (
         "flat_uid", "flat_item_ids", "flat_timestamps",
         "flat_event_types", "flat_played_ratio",
