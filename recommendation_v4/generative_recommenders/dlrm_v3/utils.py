@@ -509,7 +509,7 @@ SUPPORTED_DATASETS = [
 
 
 @gin.configurable
-def get_dataset(name: str, new_path_prefix: str = ""):
+def get_dataset(name: str, new_path_prefix: str = "", history_length: Optional[int] = None):
     """
     Get dataset class and configuration by name.
 
@@ -630,7 +630,9 @@ def get_dataset(name: str, new_path_prefix: str = ""):
                 # all ranks on a node share the same physical pages.
                 "processed_dir": os.path.join(new_path_prefix, "processed_5b"),
                 "metadata_dir": os.path.join(new_path_prefix, "shared_metadata"),
-                "history_length": 4096,
+                # Per-pool truncation cap; total interleaved UIH ~ 3*L/3 = L.
+                # Override via `get_dataset.history_length = N` in gin.
+                "history_length": history_length if history_length is not None else 4096,
                 "scan_window": 20000,
                 "cross_specs": YAMBDA_5B_CROSS_SPECS,
             },

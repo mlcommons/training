@@ -34,6 +34,14 @@ make_train_test_dataloaders.num_blocks = 1
 
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = "/apps/chcai/dlrm_data"
+# Per-pool truncation cap. Cache is keyed by L on disk under
+# <processed_dir>/hstu_cache_L<N>/; switching L reuses an existing cache
+# (L=2048 was built in a prior session, no rebuild needed).
+get_dataset.history_length = 2048
+
+# Model-side attention budget. Dataset truncates UIH to fit this value if
+# `history_length + contextual + candidate` would overflow.
+get_hstu_configs.max_seq_len = 2048
 
 # train-eval loop variables (yambda is non-streaming)
 train_eval_loop.num_epochs = 1
