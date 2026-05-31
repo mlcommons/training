@@ -24,9 +24,12 @@ sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
 # below. Used by both make_train_test_dataloaders and get_dataset.
-DATA_PATH = @env_path()
-env_path.key = "DLRM_DATA_PATH"
-env_path.default = "/apps/chcai/dlrm_data"
+# Scoped (`data/env_path`) so this binding doesn't collide with the RUN_NAME
+# env_path binding below — every distinct env_path() call site needs its own
+# scope or the later `env_path.key=...` overrides earlier ones.
+DATA_PATH = @data/env_path()
+data/env_path.key = "DLRM_DATA_PATH"
+data/env_path.default = "/apps/chcai/dlrm_data"
 
 # dataloader configs
 make_train_test_dataloaders.batch_size = %batch_size
@@ -62,14 +65,17 @@ train_eval_loop.checkpoint_frequency = 1000000000  # disable mid-training checkp
 train_eval_loop.output_trace = True
 
 # Run name → recommendation_v4/results/<run_name>/ (override via $RUN_NAME env).
-RUN_NAME = @env_path()
-env_path.key     = "RUN_NAME"
-env_path.default = "default"
+RUN_NAME = @run/env_path()
+run/env_path.key     = "RUN_NAME"
+run/env_path.default = "default"
 run_results_dir.run_name = %RUN_NAME
 
 # profiler: capture a 5-step window starting at step 52, every rank.
+# `trim_warmup = True` (default) post-filters the chrome trace so only the 5
+# `active` steps appear; the 1 WARMUP step still runs (lets CUPTI/ROCprof
+# settle) but its events are dropped from the output file.
 Profiler.trace_steps = [52]
-Profiler.warmup = 5
+Profiler.warmup = 1
 Profiler.active = 5
 Profiler.trace_dir = @run_results_dir()
 
