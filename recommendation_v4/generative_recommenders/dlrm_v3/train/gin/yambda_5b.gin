@@ -59,6 +59,19 @@ train_eval_loop.metric_log_frequency = 50
 train_eval_loop.eval_frequency = 5000
 train_eval_loop.num_eval_batches = 500
 train_eval_loop.checkpoint_frequency = 1000000000  # disable mid-training checkpoints (disk-full guard)
+train_eval_loop.output_trace = True
+
+# Run name → recommendation_v4/results/<run_name>/ (override via $RUN_NAME env).
+RUN_NAME = @env_path()
+env_path.key     = "RUN_NAME"
+env_path.default = "default"
+run_results_dir.run_name = %RUN_NAME
+
+# profiler: capture a 5-step window starting at step 52, every rank.
+Profiler.trace_steps = [52]
+Profiler.warmup = 5
+Profiler.active = 5
+Profiler.trace_dir = @run_results_dir()
 
 # logger variables
 MetricsLogger.tensorboard_log_path = "/tmp/tb/yambda_5b/"

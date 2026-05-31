@@ -21,6 +21,7 @@ import contextlib
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 import gin
@@ -81,54 +82,41 @@ logger = logging.getLogger("utils")
 
 def _on_trace_ready_fn(
     rank: Optional[int] = None,
+    trace_dir: str = "/tmp/dlrm_v3_traces",
 ) -> Callable[[torch.profiler.profile], None]:
-    """
-    Create a callback function for handling profiler trace output.
+    """Create the on_trace_ready callback that exports a chrome trace to disk.
 
-    Args:
-        rank: Optional process rank for distributed training (included in filename).
-
-    Returns:
-        A callback function that exports profiler traces to Manifold storage.
+    Filename follows the convention ``trace_step{step}_rank{rank}.json`` so
+    multi-rank captures don't collide and ``scripts/stitch_traces.py`` can
+    merge them by step number.
     """
 
     def handle_fn(p: torch.profiler.profile) -> None:
-        bucket_name = "hammer_gpu_traces"
-        pid = os.getpid()
-        rank_str = f"_rank_{rank}" if rank is not None else ""
-        file_name = f"libkineto_activities_{pid}_{rank_str}.json"
-        manifold_path = "tree/dlrm_v3_bench"
-        target_object_name = manifold_path + "/" + file_name + ".gz"
-        path = f"manifold://{bucket_name}/{manifold_path}/{file_name}"
+        os.makedirs(trace_dir, exist_ok=True)
+        step = getattr(p, "step_num", 0)
+        rank_str = f"_rank{rank}" if rank is not None else ""
+        file_name = f"trace_step{step}{rank_str}.json"
+        path = os.path.join(trace_dir, file_name)
         logger.warning(
             p.key_averages(group_by_input_shape=True).table(
                 sort_by="self_cuda_time_total"
             )
         )
-        logger.warning(
-            f"trace url: https://www.internalfb.com/intern/perfdoctor/trace_view?filepath={target_object_name}&bucket={bucket_name}"
-        )
         p.export_chrome_trace(path)
+        logger.warning(f"Trace written to: {path}")
 
     return handle_fn
 
 
-def profiler_or_nullcontext(enabled: bool, with_stack: bool):
-    """
-    Create a profiler context manager or null context based on enabled flag.
-
-    Args:
-        enabled: Whether to enable profiling.
-        with_stack: Whether to include stack traces in profile.
-
-    Returns:
-        Either a torch.profiler.profile context manager or nullcontext.
-    """
+def profiler_or_nullcontext(
+    enabled: bool, with_stack: bool, trace_dir: str = "/tmp/dlrm_v3_traces"
+):
+    """One-shot profile context for ad-hoc captures (no scheduling)."""
     return (
         profile(
             # pyre-fixme[16]: Module `profiler` has no attribute `ProfilerActivity`.
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            on_trace_ready=_on_trace_ready_fn(),
+            on_trace_ready=_on_trace_ready_fn(trace_dir=trace_dir),
             with_stack=with_stack,
         )
         if enabled
@@ -136,35 +124,85 @@ def profiler_or_nullcontext(enabled: bool, with_stack: bool):
     )
 
 
+def _multi_window_schedule(
+    trace_steps,
+    warmup: int,
+    active: int,
+):
+    """Custom schedule that profiles around each step in ``trace_steps``.
+
+    Step s gets:
+        [s - warmup, s)        -> WARMUP
+        [s, s + active - 1)    -> RECORD
+        s + active - 1         -> RECORD_AND_SAVE
+    """
+    windows = [(s - warmup, s, s + active) for s in sorted(trace_steps)]
+
+    def schedule_fn(step: int) -> torch.profiler.ProfilerAction:
+        for warmup_start, active_start, active_end in windows:
+            if warmup_start <= step < active_start:
+                return torch.profiler.ProfilerAction.WARMUP
+            if active_start <= step < active_end - 1:
+                return torch.profiler.ProfilerAction.RECORD
+            if step == active_end - 1:
+                return torch.profiler.ProfilerAction.RECORD_AND_SAVE
+        return torch.profiler.ProfilerAction.NONE
+
+    return schedule_fn
+
+
+@gin.configurable
 class Profiler:
+    """Scheduled torch.profiler wrapper that writes Chrome traces to disk.
+
+    Two modes (set via gin):
+
+    * Single window (default): ``wait=10, warmup=20, active=50, repeat=1``.
+      Captures one contiguous window starting after ``wait`` steps.
+    * Multi-window: ``trace_steps=[500, 1000, 5000]`` (overrides wait+repeat).
+      Captures a separate window around each listed step.
+
+    All knobs are gin-tunable, e.g. in a gin file::
+
+        Profiler.trace_dir = "/apps/chcai/dlrm_runs/exp42/trace"
+        Profiler.trace_steps = [500, 1000, 5000]
+        Profiler.warmup = 5
+        Profiler.active = 10
     """
-    Wrapper around PyTorch profiler with scheduled profiling.
 
-    Implements a wait-warmup-active schedule for controlled profiling that
-    avoids startup noise and captures representative performance data.
-
-    Args:
-        rank: Process rank for trace file naming.
-        active: Number of active profiling steps (default: 50).
-    """
-
-    def __init__(self, rank, active: int = 50) -> None:
+    def __init__(
+        self,
+        rank: int,
+        active: int = 50,
+        wait: int = 10,
+        warmup: int = 20,
+        repeat: int = 1,
+        trace_steps: Optional[List[int]] = None,
+        trace_dir: str = "/tmp/dlrm_v3_traces",
+        record_shapes: bool = True,
+        profile_memory: bool = False,
+        with_stack: bool = False,
+        with_flops: bool = False,
+        with_modules: bool = False,
+    ) -> None:
         self.rank = rank
+        self.trace_dir = trace_dir
+        if trace_steps:
+            sched = _multi_window_schedule(trace_steps, warmup, active)
+        else:
+            sched = torch.profiler.schedule(
+                wait=wait, warmup=warmup, active=active, repeat=repeat
+            )
         self._profiler: profiler.profile = torch.profiler.profile(
-            schedule=torch.profiler.schedule(
-                wait=10,
-                warmup=20,
-                active=active,
-                repeat=1,
-            ),
-            on_trace_ready=_on_trace_ready_fn(self.rank),
+            schedule=sched,
+            on_trace_ready=_on_trace_ready_fn(self.rank, trace_dir),
             # pyre-fixme[16]: Module `profiler` has no attribute `ProfilerActivity`.
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            record_shapes=True,
-            profile_memory=False,
-            with_stack=False,
-            with_flops=False,
-            with_modules=False,
+            record_shapes=record_shapes,
+            profile_memory=profile_memory,
+            with_stack=with_stack,
+            with_flops=with_flops,
+            with_modules=with_modules,
         )
 
     def step(self) -> None:
@@ -521,6 +559,27 @@ def env_path(key: str = "", default: str = "") -> str:
         make_train_test_dataloaders.new_path_prefix = %DATA_PATH
     """
     return os.environ.get(key, default) if key else default
+
+
+@gin.configurable
+def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
+    """Resolve ``<recommendation_v4>/<subdir>/<run_name>`` from this file's location.
+
+    Used as a gin macro to give per-run output directories that persist on the
+    host (recommendation_v4 is bind-mounted into the training container).
+
+    Example gin usage::
+
+        RUN_NAME = @env_path()
+        env_path.key     = "RUN_NAME"
+        env_path.default = "default"
+        run_results_dir.run_name = %RUN_NAME
+        Profiler.trace_dir = @run_results_dir()
+    """
+    # utils.py lives at <recommendation_v4>/generative_recommenders/dlrm_v3/utils.py;
+    # parents[2] climbs to <recommendation_v4>/.
+    repo_root = Path(__file__).resolve().parents[2]
+    return str(repo_root / subdir / run_name)
 
 
 @gin.configurable
