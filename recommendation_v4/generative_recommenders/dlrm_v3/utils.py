@@ -80,22 +80,108 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("utils")
 
 
+def _trim_warmup_from_trace(path: str, keep_n_active: int) -> None:
+    """Post-process a chrome trace to drop events from WARMUP-phase steps.
+
+    torch.profiler captures events during BOTH the WARMUP and RECORD phases
+    of a schedule and writes them all to the exported trace. There is no
+    built-in flag to exclude WARMUP from the export. We approximate it by:
+
+      1) Finding all ``ProfilerStep#N`` spans in the file.
+      2) Keeping only the last ``keep_n_active`` of them (sorted by start
+         timestamp) as the "active" range.
+      3) Filtering ``traceEvents`` to events whose ``ts`` falls inside that
+         range. Metadata events (``ph='M'``) are always preserved.
+
+    Mutates the file in place.
+    """
+    import json as _json
+    with open(path) as f:
+        d = _json.load(f)
+    events = d.get("traceEvents", [])
+
+    # ProfilerStep spans mark training-step boundaries; we filter by their
+    # time ranges rather than by name index because step numbering can offset
+    # between schedule_fn argument and the value printed in the trace.
+    # torch.profiler emits one ProfilerStep#N span per CPU thread that ran
+    # during that step, so dedupe by name first so "5 active steps" means
+    # 5 distinct step numbers, not 5 spans.
+    name_to_span: Dict[str, tuple] = {}
+    for e in events:
+        nm = e.get("name", "")
+        if "ProfilerStep" not in nm or e.get("ph") != "X" or "ts" not in e:
+            continue
+        ts = e["ts"]
+        end = ts + e.get("dur", 0)
+        prev = name_to_span.get(nm)
+        if prev is None:
+            name_to_span[nm] = (ts, end)
+        else:
+            name_to_span[nm] = (min(prev[0], ts), max(prev[1], end))
+    if len(name_to_span) <= keep_n_active:
+        return
+    sorted_spans = sorted(name_to_span.values())
+    active = sorted_spans[-keep_n_active:]
+    t_start = min(s for s, _ in active)
+    t_end = max(e for _, e in active)
+
+    def _keep(e: dict) -> bool:
+        if e.get("ph") == "M":
+            return True
+        ts = e.get("ts")
+        if ts is None:
+            return True
+        return t_start <= ts < t_end
+
+    kept = [e for e in events if _keep(e)]
+    d["traceEvents"] = kept
+    with open(path, "w") as f:
+        _json.dump(d, f)
+    logger.warning(
+        f"Trimmed WARMUP events from {path}: {len(events):,} -> {len(kept):,} "
+        f"(kept active range [{t_start:.0f}, {t_end:.0f}] us)"
+    )
+
+
 def _on_trace_ready_fn(
     rank: Optional[int] = None,
     trace_dir: str = "/tmp/dlrm_v3_traces",
+    keep_n_active: Optional[int] = None,
+    trace_steps: Optional[List[int]] = None,
 ) -> Callable[[torch.profiler.profile], None]:
     """Create the on_trace_ready callback that exports a chrome trace to disk.
 
-    Filename follows the convention ``trace_step{step}_rank{rank}.json`` so
-    multi-rank captures don't collide and ``scripts/stitch_traces.py`` can
-    merge them by step number.
+    Filename follows ``trace_step{step}_rank{rank}.json`` so multi-rank
+    captures don't collide and ``scripts/stitch_traces.py`` can merge them
+    by step number.
+
+    The ``{step}`` label:
+
+    * If ``trace_steps`` is provided (multi-window mode), the Nth callback
+      invocation labels its file with ``trace_steps[N]`` -- i.e. the
+      user-requested step that triggered the window. This is the most
+      intuitive labelling.
+    * Otherwise falls back to ``p.step_num`` (torch.profiler's internal
+      counter at trigger time, off by ~warmup+active from the schedule
+      arg).
+
+    If ``keep_n_active`` is set, the exported file is post-processed to keep
+    only the last N ProfilerStep-spans worth of events (i.e. drop WARMUP).
     """
+    state = {"fire_count": 0}
 
     def handle_fn(p: torch.profiler.profile) -> None:
         os.makedirs(trace_dir, exist_ok=True)
-        step = getattr(p, "step_num", 0)
+        if trace_steps:
+            i = state["fire_count"]
+            step_label = (
+                trace_steps[i] if i < len(trace_steps) else getattr(p, "step_num", 0)
+            )
+        else:
+            step_label = getattr(p, "step_num", 0)
+        state["fire_count"] += 1
         rank_str = f"_rank{rank}" if rank is not None else ""
-        file_name = f"trace_step{step}{rank_str}.json"
+        file_name = f"trace_step{step_label}{rank_str}.json"
         path = os.path.join(trace_dir, file_name)
         logger.warning(
             p.key_averages(group_by_input_shape=True).table(
@@ -104,6 +190,8 @@ def _on_trace_ready_fn(
         )
         p.export_chrome_trace(path)
         logger.warning(f"Trace written to: {path}")
+        if keep_n_active is not None and keep_n_active > 0:
+            _trim_warmup_from_trace(path, keep_n_active)
 
     return handle_fn
 
@@ -179,6 +267,7 @@ class Profiler:
         repeat: int = 1,
         trace_steps: Optional[List[int]] = None,
         trace_dir: str = "/tmp/dlrm_v3_traces",
+        trim_warmup: bool = True,
         record_shapes: bool = True,
         profile_memory: bool = False,
         with_stack: bool = False,
@@ -193,9 +282,12 @@ class Profiler:
             sched = torch.profiler.schedule(
                 wait=wait, warmup=warmup, active=active, repeat=repeat
             )
+        keep_n = active if trim_warmup else None
         self._profiler: profiler.profile = torch.profiler.profile(
             schedule=sched,
-            on_trace_ready=_on_trace_ready_fn(self.rank, trace_dir),
+            on_trace_ready=_on_trace_ready_fn(
+                self.rank, trace_dir, keep_n, trace_steps
+            ),
             # pyre-fixme[16]: Module `profiler` has no attribute `ProfilerActivity`.
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
             record_shapes=record_shapes,

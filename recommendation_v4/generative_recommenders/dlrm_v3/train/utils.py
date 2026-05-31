@@ -498,7 +498,7 @@ def train_loop(
 ) -> None:
     model.train()
     batch_idx: int = start_batch_idx
-    profiler = Profiler(rank, active=10) if output_trace else None
+    profiler = Profiler(rank) if output_trace else None
 
     for epoch in range(num_epochs):
         dataloader.sampler.set_epoch(epoch)  # pyre-ignore [16]
@@ -567,7 +567,7 @@ def eval_loop(
 ) -> None:
     model.eval()
     batch_idx: int = 0
-    profiler = Profiler(rank, active=10) if output_trace else None
+    profiler = Profiler(rank) if output_trace else None
     metric_logger.reset(mode="eval")
     with torch.no_grad():
         for sample in dataloader:
@@ -627,7 +627,7 @@ def train_eval_loop(
 ) -> None:
     train_batch_idx: int = start_train_batch_idx
     eval_batch_idx: int = start_eval_batch_idx
-    profiler = Profiler(rank, active=10) if output_trace else None
+    profiler = Profiler(rank) if output_trace else None
     assert train_dataloader is not None and eval_dataloader is not None
 
     eval_data_iterator = iter(eval_dataloader)
@@ -752,7 +752,7 @@ def streaming_train_eval_loop(
     metric_log_frequency: int = 1,
     checkpoint_frequency: int = 100,
 ) -> None:
-    profiler = Profiler(rank, active=10) if output_trace else None
+    profiler = Profiler(rank) if output_trace else None
     dataset_class, kwargs = get_dataset()
     kwargs["embedding_config"] = embedding_table_configs
     dataset = HammerToTorchDataset(
