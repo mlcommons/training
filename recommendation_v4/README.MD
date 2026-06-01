@@ -1,135 +1,136 @@
-# Generative Recommenders
+# Recommendation v4 — HSTU + Yambda-5b
 
-Repository hosting code for ``Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations`` ([ICML'24 paper](https://proceedings.mlr.press/v235/zhai24a.html)) and related code, where we demonstrate that the ubiquitously used classical deep learning recommendation paradigm (DLRMs) can be reformulated as a generative modeling problem (Generative Recommenders or GRs) to overcome known compute scaling bottlenecks, propose efficient algorithms such as HSTU and M-FALCON to accelerate training and inference for large-scale sequential models by 10x-1000x, and demonstrate scaling law for the first-time in deployed, billion-user scale recommendation systems.
+This is a fork of [meta-recsys/generative-recommenders](https://github.com/meta-recsys/generative-recommenders) extended to train HSTU (Hierarchical Sequential Transducer Units) on the [Yambda-5b](https://huggingface.co/datasets/yandex/yambda) music-recommendation dataset, sized as an MLPerf-style training benchmark inside the `mlcommons/training` tree.
 
-## Getting started
+For the original repository and the underlying ICML'24 paper (*Actions Speak Louder than Words*), see the upstream README at the link above. This README focuses on what this fork adds: the Yambda data pipeline, the per-pool gather strategy, and how the data feeds into the HSTU `modules/` (dlrm_v3) path.
 
-We recommend using `requirements.txt`. This has been tested with Ubuntu 22.04, CUDA 12.4, and Python 3.10.
-
-```bash
-pip3 install -r requirements.txt
-```
-
-Alternatively, you can manually install PyTorch based on official instructions. Then,
+## 1. Quick start (8-GPU Yambda)
 
 ```bash
-pip3 install gin-config pandas fbgemm_gpu torchrec tensorboard
+docker exec yambda_8gpu bash -c \
+  'cd /workspace/recommendation_v4 && bash scripts/launch_smoke_8gpu.sh'
 ```
 
-## Experiments
-
-### Public Experiments
-
-To reproduce the public experiments in our paper (traditional sequential recommender setting, Section 4.1.1) on MovieLens and Amazon Reviews in the paper, please follow these steps:
-
-#### Download and preprocess data.
+Override the data path or run name without editing the gin:
 
 ```bash
-mkdir -p tmp/ && python3 preprocess_public_data.py
+DLRM_DATA_PATH=/apps/chcai/dlrm_data \
+RUN_NAME=my_experiment \
+bash scripts/launch_smoke_8gpu.sh
 ```
 
-A GPU with 24GB or more HBM should work for most datasets.
+Data path resolves at runtime via `env_path` gin macros (see [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)). Traces and any per-run outputs land in `results/<RUN_NAME>/`.
+
+## 2. Data preparation
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python3 main.py --gin_config_file=configs/ml-1m/hstu-sampled-softmax-n128-large-final.gin --master_port=12345
+python3 -m generative_recommenders.dlrm_v3.preprocess_public_data \
+  --dataset yambda-5b --data-path /apps/chcai/dlrm_data
 ```
 
-Other configurations are included in configs/ml-1m, configs/ml-20m, and configs/amzn-books to make reproducing these experiments easier.
+This downloads the 5b variant of [yandex/yambda](https://huggingface.co/datasets/yandex/yambda) from HuggingFace, then:
 
-#### Verify results.
+1. **Encodes** the raw `event_type` string column into a uint8 lookup (listen=0, like=1, dislike=2, unlike=3, undislike=4).
+2. **Splits** events temporally — 300 train days, 30-min gap, 1 test day — by `Global Temporal Split` (GTS).
+3. **Segments** per-user event timelines into sessions on a 30-min inactivity gap.
+4. **Computes** per-item popularity for downstream metric weighting.
+5. **Writes** the layout `DLRMv3YambdaDataset` expects:
 
-By default we write experimental logs to exps/. We can launch tensorboard with something like the following:
-
-```bash
-tensorboard --logdir ~/generative-recommenders/exps/ml-1m-l200/ --port 24001 --bind_all
-tensorboard --logdir ~/generative-recommenders/exps/ml-20m-l200/ --port 24001 --bind_all
-tensorboard --logdir ~/generative-recommenders/exps/amzn-books-l50/ --port 24001 --bind_all
+```
+<data-path>/
+├── raw/5b/multi_event.parquet                    50 GB (downloaded)
+├── shared_metadata/
+│   ├── artist_item_mapping.parquet               60 MB
+│   ├── album_item_mapping.parquet                76 MB
+│   └── embeddings.parquet                        18 GB (unused by HSTU training)
+└── processed_5b/
+    ├── train_sessions.parquet                    47 GB  ← main training input
+    ├── test_events.parquet                       152 MB
+    ├── session_index.parquet                     600 MB
+    ├── item_popularity.npy                       75 MB
+    └── split_meta.json                           anchor + boundary stats
 ```
 
-With the provided configuration (.gin) files, you should be able to reproduce the following results (verified as of 04/15/2024):
+For smaller variants (yambda-50m / yambda-500m) substitute the dataset name. The preprocessor takes ~2 min for 50m and ~53 min for 5b end-to-end.
 
-**MovieLens-1M (ML-1M)**:
+## 3. Yambda dataset statistics
 
-| Method        | HR@10            | NDCG@10         | HR@50           | NDCG@50         | HR@200          | NDCG@200        |
-| ------------- | ---------------- | ----------------| --------------- | --------------- | --------------- | --------------- |
-| SASRec        | 0.2853           | 0.1603          | 0.5474          | 0.2185          | 0.7528          | 0.2498          |
-| BERT4Rec      | 0.2843 (-0.4%)   | 0.1537 (-4.1%)  |                 |                 |                 |                 |
-| GRU4Rec       | 0.2811 (-1.5%)   | 0.1648 (+2.8%)  |                 |                 |                 |                 |
-| HSTU          | 0.3097 (+8.6%)   | 0.1720 (+7.3%)  | 0.5754 (+5.1%)  | 0.2307 (+5.6%)  | 0.7716 (+2.5%)  | 0.2606 (+4.3%)  |
-| HSTU-large    | **0.3294 (+15.5%)**  | **0.1893 (+18.1%)** | **0.5935 (+8.4%)**  | **0.2481 (+13.5%)** | **0.7839 (+4.1%)**  | **0.2771 (+10.9%)** |
+Numbers from the 5b variant, after preprocessing:
 
-**MovieLens-20M (ML-20M)**:
+| | |
+|---|---|
+| Total interaction events | **4.76 B** |
+| Unique users | **1.00 M** |
+| Max events per user | 27,738 |
+| Median events per user | 2,695 |
+| Mean events per user | 4,763 |
+| Train events (300d) | 4.76 B |
+| Test events (1d) | 22.4 M |
+| Training positions (≥2039 prior events filter) | **3.23 B** |
+| Item catalog size | 9.39 M |
 
-| Method        | HR@10            | NDCG@10         | HR@50           | NDCG@50         | HR@200          | NDCG@200        |
-| ------------- | ---------------- | --------------- | --------------- | --------------- | --------------- | --------------- |
-| SASRec        | 0.2889           | 0.1621          | 0.5503          | 0.2199          | 0.7661          | 0.2527          |
-| BERT4Rec      | 0.2816 (-2.5%)   | 0.1703 (+5.1%)  |                 |                 |                 |                 |
-| GRU4Rec       | 0.2813 (-2.6%)   | 0.1730 (+6.7%)  |                 |                 |                 |                 |
-| HSTU          | 0.3273 (+13.3%)  | 0.1895 (+16.9%) | 0.5889 (+7.0%)  | 0.2473 (+12.5%) | 0.7952 (+3.8%)  | 0.2787 (+10.3%) |
-| HSTU-large    | **0.3556 (+23.1%)**  | **0.2098 (+29.4%)** | **0.6143 (+11.6%)** | **0.2671 (+21.5%)** | **0.8074 (+5.4%)**  | **0.2965 (+17.4%)** |
+### 3.1 Per-event-type distribution (across the full 4.76 B corpus)
 
-**Amazon Reviews (Books)**:
+| Pool | Definition | Count | Share |
+|---|---|---|---|
+| **listen_plus (lp)** | `is_listen AND played_ratio ≥ 50%` | 2.92 B | **61.3%** |
+| **skip** | `is_listen AND played_ratio < 50%` | 1.71 B | **35.9%** |
+| **like** | explicit thumbs-up action | 89 M | **1.9%** |
+| other | dislike / unlike / undislike | 47 M | 1.0% |
 
-| Method        | HR@10            | NDCG@10         | HR@50           | NDCG@50         | HR@200          | NDCG@200        |
-| ------------- | ---------------- | ----------------|---------------- | --------------- | --------------- | --------------- |
-| SASRec        | 0.0306           | 0.0164          | 0.0754          | 0.0260          | 0.1431          | 0.0362          |
-| HSTU          | 0.0416 (+36.4%)  | 0.0227 (+39.3%) | 0.0957 (+27.1%) | 0.0344 (+32.3%) | 0.1735 (+21.3%) | 0.0461 (+27.7%) |
-| HSTU-large    | **0.0478 (+56.7%)**  | **0.0262 (+60.7%)** | **0.1082 (+43.7%)** | **0.0393 (+51.2%)** | **0.1908 (+33.4%)** | **0.0517 (+43.2%)** |
+The `like` pool is roughly **30× rarer** than `lp` — important context for the gather strategy below.
 
-for all three tables above, the ``SASRec`` rows are based on [Self-Attentive Sequential Recommendation](https://arxiv.org/abs/1808.09781) but with the original binary cross entropy loss
-replaced with sampled softmax losses proposed in [Revisiting Neural Retrieval on Accelerators](https://arxiv.org/abs/2306.04039). These rows are reproducible with ``configs/*/sasrec-*-final.gin``.
-The ``BERT4Rec`` and ``GRU4Rec`` rows are based on results reported by [Turning Dross Into Gold Loss: is BERT4Rec really better than SASRec?](https://arxiv.org/abs/2309.07602) -
-note that the comparison slightly favors these two, due to them using full negatives whereas the other rows used 128/512 sampled negatives. The ``HSTU`` and ``HSTU-large`` rows are based on [Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations](https://arxiv.org/abs/2402.17152); in particular, HSTU rows utilize identical configurations as SASRec. ``HSTU`` and ``HSTU-large`` results can be reproduced with ``configs/*/hstu-*-final.gin``.
+## 4. How data is fed to HSTU
 
-### Synthetic Dataset / MovieLens-3B
+For every training anchor (a LISTEN event with ≥ `history_length` prior events), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
 
-We support generating synthetic dataset with fractal expansion introduced in https://arxiv.org/abs/1901.08910. This allows us to expand the current 20 million real-world ratings in ML-20M to 3 billion.
+```
+UIH (User Interaction History):
+  ┌─ Sequence features (chronologically interleaved across 3 pools)
+  │    item_id, artist_id, album_id            ← per-position
+  │    action_weight                            ← per-position (LP_BIT/LIKE_BIT/SKIP_BIT)
+  │    action_timestamp, dummy_watch_time      ← per-position
+  └─ Contextual features (length 1 each)
+       uid + 7 cross-feature hashes (user_x_artist, item_x_hour, …)
+                                                = 8 contextual entries
 
-To download the pre-generated synthetic dataset:
-
-```bash
-pip3 install gdown
-mkdir -p tmp/ && cd tmp/
-gdown https://drive.google.com/uc?id=1-jZ6k0el7e7PyFnwqMLfqUTRh_Qdumt-
-unzip ml-3b.zip && rm ml-3b.zip
+CANDIDATE (the LISTEN event at the anchor):
+  item_id, artist_id, album_id, item_query_time,
+  item_action_weight (LP_BIT if listen_plus, else 0),
+  item_dummy_watchtime
 ```
 
-To generate the synthetic dataset on your own:
+The candidate's `action_weight` is **the supervision label**: HSTU's `_get_supervision_labels_and_weights` masks BCE training to `(supervision_bitmask & task_weight) > 0`, with `task_weight = 1` (LP bit) for the single `listen_plus` task — so only listen_plus candidates supervise.
 
-```bash
-python3 run_fractal_expansion.py --input-csv-file tmp/ml-20m/ratings.csv --write-dataset True --output-prefix tmp/ml-3b/
-```
+### 4.1 Per-pool gather (the cap = L // 3 strategy)
 
-### Efficiency experiments
+The UIH is built by `DLRMv3YambdaDataset._gather_interleaved_history`. For each anchor, it:
 
-``ops/triton`` contains triton kernels needed for efficiency experiments. ``ops/cpp`` contains efficient CUDA kernels. In particular, ``ops/cpp/hstu_attention`` contains the attention implementation based on [FlashAttention V3](https://github.com/Dao-AILab/flash-attention) with state-of-the-art efficiency on H100 GPUs.
+1. Scans the most recent `scan_window` (default 20,000) events of any type before the anchor, **clipped to user_start** so users with shorter history get a smaller window.
+2. From those, takes **the last `L // 3` events** from each of the three pools (lp, like, skip) independently.
+3. Concatenates the three streams and **re-sorts chronologically** to produce an interleaved sequence.
+4. Tags each event's pool identity into `action_weight` via OR'd bitmask (LP=1, LIKE=2, SKIP=4).
 
-## DLRM-v3
+With `L = 2039` and `max_seq_len = 2048`:
+- Per-pool cap = `L // 3 = 679`
+- Maximum total UIH = `3 × 679 = 2037` events
+- Plus `8 contextual + 1 candidate = 9` overhead → 2046 ≤ 2048 model budget (no truncation)
 
-We have created a DLRM model using HSTU and have developed benchmarks for both training and inference to faciliate production RecSys use cases.
+### 4.2 Effective per-anchor fill on real data
 
-#### Run model training with 4 GPUs
+Because the `like` pool is rare (1.9% of events) and the average user has only ~4,763 lifetime events:
 
-```bash
-LOCAL_WORLD_SIZE=4 WORLD_SIZE=4 python3 generative_recommenders/dlrm_v3/train/train_ranker.py --dataset debug --mode train
-```
+| Pool | per-pool cap (L//3) | actual avg fill per anchor | fill rate |
+|---|---|---|---|
+| lp | 679 | ~673 | **99%** |
+| like | 679 | ~105 | **15%** (data-bounded, not cap-bounded) |
+| skip | 679 | ~624 | 92% |
+| **total UIH** | 2037 max | **~1402** | 69% |
 
-#### Run model inference with 4 GPUs
+The `like` cap of 679 is unreachable for yambda data — at the 1.9% global like rate, filling 679 likes would require a user to have ~36k prior events, but the **longest user in the dataset has only 27,738 events total** (and the median user has 2,695). So under-fill on `like` is fundamental to the data.
 
-```bash
-git clone --recurse-submodules https://github.com/mlcommons/inference.git mlperf_inference
-cd mlperf_inference/loadgen
-CFLAGS="-std=c++14 -O3" python -m pip install .
+This means the model sees on average ~1,402 UIH events per sample, not the theoretical 2,037. With the TRITON jagged-attention backend the GPU only does work for the actual events, so the under-fill costs **sequence budget but not GPU compute** — no wasted attention work, just less context per sample than the budget suggests.
 
-LOCAL_WORLD_SIZE=4 WORLD_SIZE=4 python3 generative_recommenders/dlrm_v3/inference/main.py --dataset debug
-```
+## 5. License
 
-## License
-This codebase is Apache 2.0 licensed, as found in the [LICENSE](LICENSE) file.
-
-## Contributors
-The overall project is made possible thanks to the joint work from many technical contributors (listed in alphabetical order):
-
-Adnan Akhundov, Bugra Akyildiz, Shabab Ayub, Alex Bao, Renqin Cai, Jennifer Cao, Xuan Cao, Guoqiang Jerry Chen, Lei Chen, Li Chen, Sean Chen, Xianjie Chen, Huihui Cheng, Weiwei Chu, Ted Cui, Shiyan Deng, Nimit Desai, Fei Ding, Shilin Ding, Francois Fagan, Lu Fang, Leon Gao, Zhaojie Gong, Fangda Gu, Liang Guo, Liz Guo, Jeevan Gyawali, Yuchen Hao, Daisy Shi He, Michael Jiayuan He, Yu He, Samuel Hsia, Jie Hua, Yanzun Huang, Hongyi Jia, Rui Jian, Jian Jin, Rafay Khurram, Rahul Kindi, Changkyu Kim, Yejin Lee, Fu Li, Han Li, Hong Li, Shen Li, Rui Li, Wei Li, Zhijing Li, Lucy Liao, Xueting Liao, Emma Lin, Hao Lin, Chloe Liu, Jingzhou Liu, Xing Liu, Xingyu Liu, Kai Londenberg, Yinghai Lu, Liang Luo, Linjian Ma, Matt Ma, Yun Mao, Bert Maher, Ajit Mathews, Matthew Murphy, Satish Nadathur, Min Ni, Jongsoo Park, Colin Peppler, Jing Qian, Lijing Qin, Jing Shan, Alex Singh, Timothy Shi,  Yu Shi, Dennis van der Staay, Xiao Sun, Colin Taylor, Shin-Yeh Tsai, Rohan Varma, Omkar Vichare, Alyssa Wang, Pengchao Wang, Shengzhi Wang, Wenting Wang, Xiaolong Wang, Yueming Wang, Zhiyong Wang, Wei Wei, Bin Wen, Carole-Jean Wu, Yanhong Wu, Eric Xu, Bi Xue, Hong Yan, Zheng Yan, Chao Yang, Junjie Yang, Wen-Yun Yang, Ze Yang, Zimeng Yang, Yuanjun Yao, Chunxing Yin, Daniel Yin, Yiling You, Jiaqi Zhai, Keke Zhai, Yanli Zhao, Zhuoran Zhao, Hui Zhang, Jingjing Zhang, Lu Zhang, Lujia Zhang, Na Zhang, Rui Zhang, Xiong Zhang, Ying Zhang, Zhiyun Zhang, Charles Zheng, Erheng Zhong, Zhao Zhu, Xin Zhuang.
-
-For the initial paper describing the Generative Recommender problem formulation and the algorithms used, including HSTU and M-FALCON, please refer to ``Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations``([ICML'24 paper](https://dl.acm.org/doi/10.5555/3692070.3694484), [slides](https://icml.cc/media/icml-2024/Slides/32684.pdf)).
+Apache 2.0 (inherited from upstream).
