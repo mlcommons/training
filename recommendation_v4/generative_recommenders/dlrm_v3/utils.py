@@ -654,6 +654,20 @@ def env_path(key: str = "", default: str = "") -> str:
 
 
 @gin.configurable
+def env_int(key: str = "", default: int = 0) -> int:
+    """Resolve an int from os.environ[key], falling back to `default`.
+
+    Companion to `env_path` for numeric overrides. Example gin usage:
+
+        make_optimizer_and_shard.hbm_cap_gb = @env_int()
+        env_int.key = "HBM_CAP_GB"
+        env_int.default = 260
+    """
+    raw = os.environ.get(key) if key else None
+    return int(raw) if raw else default
+
+
+@gin.configurable
 def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
     """Resolve ``<recommendation_v4>/<subdir>/<run_name>`` from this file's location.
 
