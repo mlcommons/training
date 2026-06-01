@@ -125,24 +125,29 @@ training.
 ### Container image
 
 ```
-nvcr.io/nvidia/pytorch:26.01-py3
+nvcr.io/nvidia/pytorch:26.04-py3
 ```
 
-Digest: `sha256:38ed2ecb2c16d10677006d73fb0a150855d6ec81db8fc66e800b5ae92741007e`
+Digest: `sha256:192d749b4d773610ec9e01c0443a9df545d196c412b7b8fd33bfa3da362a49e7`
 
 The image's native PyTorch is kept as-is and must not be reinstalled (so CUPTI
 stays matched to the driver and `sm_100` support is preserved).
+
+`nvcr.io/nvidia/pytorch:26.01-py3` (torch `2.10.0a0` / CUDA 13.1, digest
+`sha256:38ed2ecb2c16d10677006d73fb0a150855d6ec81db8fc66e800b5ae92741007e`) is
+also validated and performance-equivalent — rebuild `fbgemm_gpu` against
+whichever image's torch you run.
 
 ### Dependency versions
 
 | package | version | notes |
 |---|---|---|
-| **torch** | `2.10.0a0+a36e1d39eb.nv26.01.42222806` (CUDA 13.1) | native to the image; not reinstalled |
+| **torch** | `2.12.0a0+0291f960b6.nv26.04.48445190` (CUDA 13.2) | native to the image; not reinstalled |
 | **triton** | `3.6.0` | native to the image; provides `triton.language.make_tensor_descriptor` (required by the TRITON HSTU path) |
-| **fbgemm_gpu** | `fbgemm_gpu_nightly-2026.6.1` (CUDA 13.1, `sm_100`) | built from source against the native torch, from FBGEMM commit `939f2da156b05d2f1bcba8c037d613c1098d0db5` (2026-04-29); public wheels are ABI-incompatible with the NGC torch |
+| **fbgemm_gpu** | `fbgemm_gpu_nightly-2026.6.1` (CUDA 13.2, `sm_100`) | built from source against the native torch, from FBGEMM commit `939f2da156b05d2f1bcba8c037d613c1098d0db5` (2026-04-29); public wheels are ABI-incompatible with the NGC torch. Build command: `TORCH_CUDA_ARCH_LIST=10.0 python setup.py bdist_wheel --build-target default --build-variant cuda --package_channel nightly --nvml_lib_path /usr/lib/x86_64-linux-gnu/libnvidia-ml.so` (~55 min — the `sm_100` TBE-forward kernels dominate via `ptxas`) |
 | **torchrec** | `1.4.0` | installed with `--no-deps` |
 | **polars-u64-idx** | `1.33.1` | 64-bit row index — `yambda-5b` has > 4.29 B rows (overflows stock polars' 32-bit index) |
-| CUPTI (for `torch.profiler`) | 13.1 (native) | matches the driver; the `+cu128` stack's CUPTI 12.8 fails on B200 (`CUPTI_ERROR_INVALID_DEVICE`) |
+| CUPTI (for `torch.profiler`) | 13.2 (native) | matches the driver; the `+cu128` stack's CUPTI 12.8 fails on B200 (`CUPTI_ERROR_INVALID_DEVICE`) |
 
 Additional Python deps:
 `xxhash`, `gin-config`, `absl-py`, `pandas`, `tensorboard`, `pyarrow`, `pyyaml`,
@@ -165,6 +170,7 @@ From `generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin`:
 | max_seq_len (attention budget) | 2048 | `get_hstu_configs.max_seq_len` |
 | bf16 training | True | `make_model.bf16_training` |
 | HBM cap (per GPU) | 150 GiB | `make_optimizer_and_shard.hbm_cap_gb` (env `HBM_CAP_GB`) |
+| **triton autotune pinning** | **True (full autotune)** | `apply_env_bootstrap.TRITON_FULL_AUTOTUNE` — the pinned configs are MI350X-specific, so B200 runs full autotune to find its own `sm_100` winners |
 | dense optimizer | Adam, lr 1e-3, betas (0.95, 0.999), eps 1e-8 | `dense_optimizer_factory_and_class.*` |
 | sparse optimizer | RowWiseAdagrad, lr 1e-3, betas (0.95, 0.999), eps 1e-8 | `sparse_optimizer_factory_and_class.*` |
 | world_size | 8 | `MetricsLogger.world_size` |
