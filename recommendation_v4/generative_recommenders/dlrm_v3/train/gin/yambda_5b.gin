@@ -46,10 +46,20 @@ make_optimizer_and_shard.hbm_cap_gb = 260
 
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = %DATA_PATH
-# Per-pool truncation cap. Cache is keyed by L on disk under
-# <processed_dir>/hstu_cache_L<N>/; switching L reuses an existing cache
-# (L=2048 was built in a prior session, no rebuild needed).
-get_dataset.history_length = 2048
+# Total user-interaction-history (UIH) budget per sample, distributed evenly
+# across 3 behaviour pools (listen+ / like / skip) at L//3 events each.
+# Per-sample sequence the model sees =
+#     3 × (L // 3) + 8 contextual + 1 candidate
+# Choosing 2039 makes 3 × 679 + 9 = 2046, the largest value that fits
+# get_hstu_configs.max_seq_len = 2048 with no dataset-side truncation.
+# Larger L overflows the budget; the dataset truncates UIH events to fit.
+# Note: like events are only 1.9% of the yambda corpus and max user lifetime
+# is ~28k events, so the like pool fills to ~105 events per anchor on
+# average (not 679) — TRITON's jagged attention skips the unfilled slots,
+# so the under-fill costs sequence budget but not GPU compute.
+# Cache is keyed by L on disk under <processed_dir>/hstu_cache_L<N>/;
+# switching L reuses an existing cache or builds a new one (~5 min).
+get_dataset.history_length = 2039
 
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow.
