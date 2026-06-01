@@ -1,10 +1,19 @@
 batch_size = 32
-num_workers = 1
-prefetch_factor = 2
+num_workers = 4
+prefetch_factor = 8
 dataset = "yambda-5b"
 
 # model parameters
 make_model.dataset = %dataset
+make_model.bf16_training = True
+
+# False = use pinned triton kernel configs (deterministic; whether that's
+# the fast or slow equilibrium depends on which config was pinned for the
+# current training shape + GPU). For a NEW training config (new shape,
+# new GPU, new triton/torch version), set True and run with
+# TRITON_PRINT_AUTOTUNING=1 to discover the fast configs, then update the
+# pinned constants in ops/triton/_autotune_pinning.py call sites.
+apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 
 # dense model optimizer
 dense_optimizer_factory_and_class.learning_rate = 0.001
