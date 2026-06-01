@@ -33,6 +33,7 @@ from generative_recommenders.common import (
     switch_to_contiguous_if_needed,
     triton_autotune,
 )
+from generative_recommenders.ops.triton._autotune_pinning import pinned_or_full
 from generative_recommenders.ops.utils import is_sm100_plus, is_sm90
 from torch._inductor.runtime import triton_helpers
 
@@ -2150,7 +2151,10 @@ def split_2D_jagged_w_prefix_multirow(
 
 
 @triton_autotune(
-    configs=_get_split_concat_2d_jagged_multirow_configs_wrapper(),
+    configs=pinned_or_full(
+        [triton.Config({"BLOCK_N": 1}, num_warps=2)],
+        _get_split_concat_2d_jagged_multirow_configs_wrapper,
+    ),
     key=["BLOCK_D"],
 )
 @triton.jit

@@ -204,15 +204,20 @@ class ChunkDistributedSampler(DistributedSampler[_T_co]):
 @gin.configurable
 def make_model(
     dataset: str,
+    bf16_training: bool = False,
 ) -> Tuple[torch.nn.Module, DlrmHSTUConfig, Dict[str, EmbeddingConfig]]:
     hstu_config = get_hstu_configs(dataset)
     table_config = get_embedding_table_config(dataset)
 
+    # bf16 autocast is off by default: on the PYTORCH attn backend the
+    # pt_hstu_attention QK einsum backward overflows in bf16 at long
+    # sequences (NaN at step 1 when N>1k). Safe with TRITON; flip via
+    # `make_model.bf16_training = True` in the gin.
     model = DlrmHSTU(
         hstu_configs=hstu_config,
         embedding_tables=table_config,
         is_inference=False,
-        bf16_training=False,
+        bf16_training=bf16_training,
     )
 
     # Triton on ROCm fails to compile some jagged kernels at our shapes

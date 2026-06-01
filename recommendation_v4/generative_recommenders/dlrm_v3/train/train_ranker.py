@@ -23,21 +23,13 @@ import traceback
 
 import gin
 import torch
-from generative_recommenders.dlrm_v3.checkpoint import load_dmp_checkpoint
-from generative_recommenders.dlrm_v3.train.utils import (
-    cleanup,
-    eval_loop,
-    make_model,
-    make_optimizer_and_shard,
-    make_train_test_dataloaders,
-    setup,
-    streaming_train_eval_loop,
-    train_eval_loop,
-    train_loop,
-)
-from generative_recommenders.dlrm_v3.utils import MetricsLogger
 from torch import multiprocessing as mp
 from torchrec.test_utils import get_free_port
+
+# NOTE: heavy imports of generative_recommenders.dlrm_v3.* are deferred to
+# inside _main_func so that gin-driven env-var bootstrap (see
+# _env_bootstrap.apply_env_bootstrap) can run BEFORE the triton kernel
+# modules evaluate their `@triton.autotune` decorators at module-load time.
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -65,13 +57,43 @@ def _main_func(
 ) -> None:
     device = torch.device(f"cuda:{rank}")
     logger.info(f"rank: {rank}, world_size: {world_size}, device: {device}")
+    # Phase 1: parse gin early with skip_unknown=True so env-bootstrap
+    # bindings take effect BEFORE any module-level @gin.configurable
+    # discovers itself. This is required because triton @triton.autotune
+    # decorators in generative_recommenders.ops.triton.* read env vars at
+    # module import time, and the heavy imports below pull those in.
+    from generative_recommenders.dlrm_v3.train._env_bootstrap import apply_env_bootstrap
+
+    gin.parse_config_file(gin_file, skip_unknown=True)
+    apply_env_bootstrap()
+
+    # Phase 2: heavy imports. Triton kernel modules evaluate their autotune
+    # decorators here, using the env vars set above.
+    from generative_recommenders.dlrm_v3.checkpoint import load_dmp_checkpoint
+    from generative_recommenders.dlrm_v3.train.utils import (
+        cleanup,
+        eval_loop,
+        make_model,
+        make_optimizer_and_shard,
+        make_train_test_dataloaders,
+        setup,
+        streaming_train_eval_loop,
+        train_eval_loop,
+        train_loop,
+    )
+    from generative_recommenders.dlrm_v3.utils import MetricsLogger
+
     setup(
         rank=rank,
         world_size=world_size,
         master_port=master_port,
         device=device,
     )
-    # parse all arguments
+    # Phase 3: re-parse to bind the @gin.configurables now that they are
+    # registered. The earlier skip_unknown pass already consumed the
+    # env-bootstrap binding, but bindings are idempotent so re-applying is
+    # fine, and this pass is the one that actually wires up make_model,
+    # make_train_test_dataloaders, etc.
     gin.parse_config_file(gin_file)
 
     model, model_configs, embedding_table_configs = make_model()

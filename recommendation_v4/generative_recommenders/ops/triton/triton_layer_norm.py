@@ -30,6 +30,7 @@ from generative_recommenders.common import (
     switch_to_contiguous_if_needed,
     triton_autotune,
 )
+from generative_recommenders.ops.triton._autotune_pinning import pinned_or_full
 from generative_recommenders.ops.utils import (
     is_sm100_plus,
     is_sm90,
@@ -306,7 +307,10 @@ def _layer_norm_bwd_dx(
 
 
 @triton_autotune(
-    configs=_get_layer_norm_fwd_configs(),
+    configs=pinned_or_full(
+        [triton.Config({"BLOCK_N": 8}, num_warps=1)],
+        _get_layer_norm_fwd_configs,
+    ),
     key=["BLOCK_D"],
 )
 @triton.jit
@@ -463,7 +467,10 @@ def _get_bwd_dwdb_configs() -> List[triton.Config]:
 
 
 @triton_autotune(
-    configs=_get_bwd_dwdb_configs(),
+    configs=pinned_or_full(
+        [triton.Config({"BLOCK_N": 128}, num_warps=8)],
+        _get_bwd_dwdb_configs,
+    ),
     key=["D"],
 )
 @triton.jit
