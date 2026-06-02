@@ -28,6 +28,7 @@ from typing import Dict, List, Tuple
 import torch
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTUConfig
 from torchrec.sparse.jagged_tensor import KeyedJaggedTensor
+from torchrec.streamable import Pipelineable
 
 
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +36,7 @@ logger: logging.Logger = logging.getLogger("dlrmv3_dataset")
 
 
 @dataclass
-class Samples:
+class Samples(Pipelineable):
     """
     Container for batched samples with user interaction history and candidate features.
 
@@ -46,16 +47,48 @@ class Samples:
 
     uih_features_kjt: KeyedJaggedTensor
     candidates_features_kjt: KeyedJaggedTensor
+    # UIH + candidate features concatenated into the single KJT that the model's
+    # sharded EmbeddingCollection consumes. Pre-built here (dataloader/CPU) rather
+    # than inside DlrmHSTU.forward so the embedding lookup's input is a plain
+    # attribute of the batch — which lets TorchRec's TrainPipelineSparseDist hoist
+    # its input_dist into the prefetch stage (otherwise the runtime cat +
+    # from_lengths_sync counts as an "input modification" and the embedding
+    # collection is left un-pipelined).
+    merged_sparse_features: KeyedJaggedTensor
 
-    def to(self, device: torch.device) -> None:
+    def to(self, device: torch.device, non_blocking: bool = False) -> "Samples":
         """
-        Move all tensors to the specified device.
+        Move all tensors to the specified device (in place) and return self.
 
-        Args:
-            device: Target device to move tensors to.
+        Returning ``self`` (rather than ``None``) and accepting ``non_blocking``
+        makes ``Samples`` conform to TorchRec's ``Pipelineable`` protocol so it
+        can be driven by ``TrainPipelineSparseDist``. Existing call sites that
+        use ``sample.to(device)`` for its side effect continue to work unchanged.
         """
         for attr in vars(self):
-            setattr(self, attr, getattr(self, attr).to(device=device))
+            setattr(
+                self,
+                attr,
+                getattr(self, attr).to(device=device, non_blocking=non_blocking),
+            )
+        return self
+
+    def record_stream(self, stream: torch.Stream) -> None:
+        """Record the contained KJTs on ``stream`` (Pipelineable protocol).
+
+        Required by ``TrainPipelineSparseDist`` so the prefetched batch's H2D
+        copy on the side stream is not freed before compute consumes it.
+        """
+        self.uih_features_kjt.record_stream(stream)
+        self.candidates_features_kjt.record_stream(stream)
+        self.merged_sparse_features.record_stream(stream)
+
+    def pin_memory(self) -> "Samples":
+        """Pin the contained KJTs' host memory (Pipelineable protocol)."""
+        self.uih_features_kjt = self.uih_features_kjt.pin_memory()
+        self.candidates_features_kjt = self.candidates_features_kjt.pin_memory()
+        self.merged_sparse_features = self.merged_sparse_features.pin_memory()
+        return self
 
     def batch_size(self) -> int:
         """
@@ -65,6 +98,31 @@ class Samples:
             Number of samples in the batch.
         """
         return self.uih_features_kjt.stride()
+
+
+def merge_uih_candidate_kjts(
+    uih_features: KeyedJaggedTensor,
+    candidates_features: KeyedJaggedTensor,
+) -> KeyedJaggedTensor:
+    """Concatenate the UIH and candidate KJTs into the single KJT consumed by the
+    model's ``EmbeddingCollection``.
+
+    Must mirror ``DlrmHSTU.preprocess`` exactly (key order = uih + candidates,
+    values/lengths concatenated in that order). Built on the dataloader side so
+    the model can read it straight off the batch and TorchRec can pipeline the
+    embedding ``input_dist``.
+    """
+    return KeyedJaggedTensor.from_lengths_sync(
+        keys=uih_features.keys() + candidates_features.keys(),
+        values=torch.cat(
+            [uih_features.values(), candidates_features.values()],
+            dim=0,
+        ),
+        lengths=torch.cat(
+            [uih_features.lengths(), candidates_features.lengths()],
+            dim=0,
+        ),
+    )
 
 
 def collate_fn(
@@ -84,9 +142,14 @@ def collate_fn(
         candidates_features_kjt_list,
     ) = list(zip(*samples))
 
+    uih_features_kjt = kjt_batch_func(uih_features_kjt_list)
+    candidates_features_kjt = kjt_batch_func(candidates_features_kjt_list)
     return Samples(
-        uih_features_kjt=kjt_batch_func(uih_features_kjt_list),
-        candidates_features_kjt=kjt_batch_func(candidates_features_kjt_list),
+        uih_features_kjt=uih_features_kjt,
+        candidates_features_kjt=candidates_features_kjt,
+        merged_sparse_features=merge_uih_candidate_kjts(
+            uih_features_kjt, candidates_features_kjt
+        ),
     )
 
 

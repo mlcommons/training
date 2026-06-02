@@ -38,7 +38,11 @@ from generative_recommenders.dlrm_v3.configs import (
     get_embedding_table_config,
     get_hstu_configs,
 )
-from generative_recommenders.dlrm_v3.datasets.dataset import collate_fn, Dataset
+from generative_recommenders.dlrm_v3.datasets.dataset import (
+    collate_fn,
+    Dataset,
+    Samples,
+)
 from generative_recommenders.dlrm_v3.utils import get_dataset, MetricsLogger, Profiler
 from generative_recommenders.common import HammerKernel
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTU, DlrmHSTUConfig
@@ -83,6 +87,21 @@ def setup(
     # own GPU; otherwise every rank's first CUDA context lands on GPU 0,
     # leaving stale allocations and triggering OOMs on rank 0.
     torch.cuda.set_device(device)
+
+    # Seed all RNGs so weight init (make_model, called after setup) is
+    # reproducible across runs. Same seed on every rank → dense params are
+    # initialized identically across ranks; sharded embeddings are init'd from
+    # the meta device by DMP. Fixed seed makes pipeline-vs-non-pipeline an
+    # init-matched A/B (data order is already deterministic via the sampler).
+    import random
+
+    import numpy as np
+
+    _SEED = 1
+    random.seed(_SEED)
+    np.random.seed(_SEED)
+    torch.manual_seed(_SEED)
+    torch.cuda.manual_seed_all(_SEED)
 
     # initialize the process group
     if not dist.is_initialized():
@@ -205,6 +224,7 @@ class ChunkDistributedSampler(DistributedSampler[_T_co]):
 def make_model(
     dataset: str,
     bf16_training: bool = False,
+    hammer_kernel: Optional[str] = None,
 ) -> Tuple[torch.nn.Module, DlrmHSTUConfig, Dict[str, EmbeddingConfig]]:
     hstu_config = get_hstu_configs(dataset)
     table_config = get_embedding_table_config(dataset)
@@ -220,13 +240,21 @@ def make_model(
         bf16_training=bf16_training,
     )
 
-    # Triton on ROCm fails to compile some jagged kernels at our shapes
-    # (PassManager::run failed at make_ttgir). Allow the PyTorch backend as a
-    # global override so AMD smoke runs end-to-end. CUDA paths default to TRITON.
-    kernel_override = os.environ.get("HSTU_HAMMER_KERNEL", "").upper()
-    if kernel_override:
-        model.set_hammer_kernel(HammerKernel[kernel_override])
-        logger.warning(f"HSTU_HAMMER_KERNEL override: {kernel_override}")
+    # HSTU attention/compute kernel backend. Precedence:
+    #   HSTU_HAMMER_KERNEL env var  >  make_model.hammer_kernel gin  >  model default.
+    # The env var stays as an ad-hoc override (e.g. forcing PYTORCH for a one-off
+    # debug run) without editing the gin. Note: the fused TRITON path avoids
+    # materializing the dense [B, H, N, N] attention-score tensor that the PYTORCH
+    # path allocates (~32 GiB at N=2048, bs=1024), so TRITON is both faster and
+    # far lighter on HBM. On older ROCm, TRITON could hit PassManager errors at
+    # some shapes (make_ttgir) — fall back to PYTORCH via the gin/env if so.
+    kernel_choice = (
+        os.environ.get("HSTU_HAMMER_KERNEL", "").upper()
+        or (hammer_kernel.upper() if hammer_kernel else "")
+    )
+    if kernel_choice:
+        model.set_hammer_kernel(HammerKernel[kernel_choice])
+        logger.warning(f"HSTU hammer kernel set to: {kernel_choice}")
 
     return (
         model,
@@ -610,6 +638,97 @@ def eval_loop(
         print(f"{k}: {v}")
 
 
+class _PipelineModelWrapper(torch.nn.Module):
+    """Adapt ``DlrmHSTU.forward`` to the ``(loss, output)`` contract that
+    ``TrainPipelineSparseDist`` expects.
+
+    The wrapped ``model`` is the same DMP instance handed to the pipeline as
+    ``model=``; the pipeline rewrites its sharded ``EmbeddingCollection`` in
+    place, so calling it here is what lets the embedding all-to-all overlap the
+    dense forward/backward compute.
+    """
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self._model = model
+
+    def forward(
+        self, batch: Samples
+    ) -> Tuple[torch.Tensor, Tuple[Any, ...]]:
+        # The model runs in `_pipeline_mode`: it takes the whole batch as its
+        # single arg and reads the pre-merged sparse KJT off it. This keeps the
+        # EmbeddingCollection input a plain getattr on the batch placeholder so
+        # TorchRec pipelines its input_dist (instead of skipping it for "input
+        # modifications").
+        (
+            _,
+            _,
+            aux_losses,
+            mt_target_preds,
+            mt_target_labels,
+            mt_target_weights,
+        ) = self._model(batch)
+        loss = sum(aux_losses.values())
+        num_candidates = batch.candidates_features_kjt.lengths().view(
+            len(batch.candidates_features_kjt.keys()), -1
+        )[0]
+        output = (
+            aux_losses,
+            mt_target_preds,
+            mt_target_labels,
+            mt_target_weights,
+            num_candidates,
+        )
+        return loss, output
+
+
+def build_train_pipeline(
+    model: torch.nn.Module,
+    optimizer: Optimizer,
+    device: torch.device,
+    grad_clip_norm: float = 1.0,
+) -> Any:
+    """Build a ``TrainPipelineSparseDist`` for the DMP-wrapped HSTU model.
+
+    The 3-stage pipeline overlaps (1) H2D transfer of batch N+2, (2) the sparse
+    data-dist all-to-all of batch N+1's embedding lookup, and (3) dense fwd/bwd
+    of batch N, on separate CUDA streams. Requires the model to be wrapped with
+    ``DistributedModelParallel`` (see ``make_optimizer_and_shard``).
+    """
+    # Lazy import: keeps module import working on torchrec builds that move or
+    # rename the pipeline, and matches the reference Primus-DLRM setup.
+    from torchrec.distributed.train_pipeline import TrainPipelineSparseDist
+
+    # Switch the (DMP-wrapped) HSTU model into pipeline mode so both the fx trace
+    # and the live forward consume the batch as a single arg and read the
+    # pre-merged sparse KJT off it — required for the embedding input_dist to be
+    # pipelined. Eval call sites pass the batch the same way (see train_eval_loop).
+    underlying = model.module if hasattr(model, "module") else model
+    underlying._pipeline_mode = True
+
+    # The pipeline calls backward()+optimizer.step() internally inside
+    # progress(), leaving no in-loop hook point for gradient clipping. Clip via
+    # a full-backward hook (fires after autograd populates dense grads, before
+    # the optimizer step) to preserve parity with the sequential path's
+    # clip_grad_norm_(model.parameters(), max_norm=1.0).
+    if grad_clip_norm and grad_clip_norm > 0:
+
+        def _clip_grads(_m: torch.nn.Module, _gi: Any, _go: Any) -> None:
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=grad_clip_norm
+            )
+
+        model.register_full_backward_hook(_clip_grads)
+
+    return TrainPipelineSparseDist(
+        model=model,
+        optimizer=optimizer,
+        device=device,
+        execute_all_batches=True,
+        custom_model_fwd=_PipelineModelWrapper(model),
+    )
+
+
 @gin.configurable
 def train_eval_loop(
     rank: int,
@@ -628,6 +747,7 @@ def train_eval_loop(
     eval_frequency: int = 1,
     start_train_batch_idx: int = 0,
     start_eval_batch_idx: int = 0,
+    use_pipeline: bool = False,
     # lr_scheduler: to-do: Add a scheduler
 ) -> None:
     train_batch_idx: int = start_train_batch_idx
@@ -638,40 +758,61 @@ def train_eval_loop(
     eval_data_iterator = iter(eval_dataloader)
     train_data_iterator = iter(train_dataloader)
 
+    # 3-stage TorchRec pipeline (overlaps embedding a2a with dense compute).
+    # When enabled, progress() owns H2D copy, sparse-dist, fwd/bwd and the
+    # optimizer step; grad clipping moves to a full-backward hook (see builder).
+    train_pipeline = (
+        build_train_pipeline(model, optimizer, device) if use_pipeline else None
+    )
+
     for epoch in range(num_epochs):
         train_dataloader.sampler.set_epoch(epoch)  # pyre-ignore [16]
         while True:
             model.train()
-            try:
-                sample = next(train_data_iterator)
-            except StopIteration:
-                train_data_iterator = iter(train_dataloader)
-                break
-            optimizer.zero_grad()
-            sample.to(device)
-            (
-                _,
-                _,
-                aux_losses,
-                mt_target_preds,
-                mt_target_labels,
-                mt_target_weights,
-            ) = model.forward(
-                sample.uih_features_kjt,
-                sample.candidates_features_kjt,
-            )
-            # pyre-ignore
-            sum(aux_losses.values()).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+            if train_pipeline is not None:
+                try:
+                    (
+                        aux_losses,
+                        mt_target_preds,
+                        mt_target_labels,
+                        mt_target_weights,
+                        num_candidates,
+                    ) = train_pipeline.progress(train_data_iterator)
+                except StopIteration:
+                    train_data_iterator = iter(train_dataloader)
+                    break
+            else:
+                try:
+                    sample = next(train_data_iterator)
+                except StopIteration:
+                    train_data_iterator = iter(train_dataloader)
+                    break
+                optimizer.zero_grad()
+                sample.to(device)
+                (
+                    _,
+                    _,
+                    aux_losses,
+                    mt_target_preds,
+                    mt_target_labels,
+                    mt_target_weights,
+                ) = model.forward(
+                    sample.uih_features_kjt,
+                    sample.candidates_features_kjt,
+                )
+                # pyre-ignore
+                sum(aux_losses.values()).backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                num_candidates = sample.candidates_features_kjt.lengths().view(
+                    len(sample.candidates_features_kjt.keys()), -1
+                )[0]
             metric_logger.update(
                 mode="train",
                 predictions=mt_target_preds,
                 labels=mt_target_labels,
                 weights=mt_target_weights,
-                num_candidates=sample.candidates_features_kjt.lengths().view(
-                    len(sample.candidates_features_kjt.keys()), -1
-                )[0],
+                num_candidates=num_candidates,
             )
             if train_batch_idx % metric_log_frequency == 0:
                 metric_logger.compute_and_log(
@@ -710,9 +851,15 @@ def train_eval_loop(
                             mt_target_preds,
                             mt_target_labels,
                             mt_target_weights,
-                        ) = model.forward(
-                            sample.uih_features_kjt,
-                            sample.candidates_features_kjt,
+                        ) = (
+                            # In pipeline mode the model takes the batch as one
+                            # arg (see _PipelineModelWrapper / DlrmHSTU.forward).
+                            model.forward(sample)
+                            if use_pipeline
+                            else model.forward(
+                                sample.uih_features_kjt,
+                                sample.candidates_features_kjt,
+                            )
                         )
                         metric_logger.update(
                             mode="eval",

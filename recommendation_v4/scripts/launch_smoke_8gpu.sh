@@ -28,9 +28,12 @@ python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; print('impor
 export HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
 export WORLD_SIZE=$(python -c "import torch; print(torch.cuda.device_count())")
-# AMD/ROCm: Triton HSTU kernel hits PassManager errors on some shapes; force
-# PYTORCH backend. On CUDA, unset this to default to TRITON for ~3-5x speedup.
-export HSTU_HAMMER_KERNEL=${HSTU_HAMMER_KERNEL:-PYTORCH}
+# HSTU attention backend is selected in the gin (make_model.hammer_kernel),
+# defaulting to TRITON — fused/flash-style, so it avoids the dense [B,H,N,N]
+# score tensor the PYTORCH path materializes (~32 GiB at N=2048/bs=1024) and is
+# both faster and far lighter on HBM. Only export HSTU_HAMMER_KERNEL=PYTORCH
+# before launch for a one-off fallback (e.g. a ROCm Triton PassManager error).
+export HSTU_HAMMER_KERNEL=${HSTU_HAMMER_KERNEL:-}
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 
 # --- GPU clock sanity guard ---------------------------------------------------
