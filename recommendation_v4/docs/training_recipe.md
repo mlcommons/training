@@ -119,8 +119,8 @@ training.
 | item | value |
 |---|---|
 | GPUs | 8× NVIDIA B200 (`sm_100`, compute capability 10.0) |
-| Host driver | 580.159.03 (reports CUDA 13.2) |
-| Forward-compat userspace driver | `libcuda.so.595.45.04` (engaged automatically by the NGC image) |
+| Host driver | 580.159.03 (reports CUDA 13.0) |
+| Forward-compat userspace driver | `libcuda.so.595.58.03` (CUDA 13.2.1; engaged automatically by the NGC image) |
 
 ### Container image
 
@@ -144,8 +144,8 @@ whichever image's torch you run.
 |---|---|---|
 | **torch** | `2.12.0a0+0291f960b6.nv26.04.48445190` (CUDA 13.2) | native to the image; not reinstalled |
 | **triton** | `3.6.0` | native to the image; provides `triton.language.make_tensor_descriptor` (required by the TRITON HSTU path) |
-| **fbgemm_gpu** | `fbgemm_gpu_nightly-2026.6.1` (CUDA 13.2, `sm_100`) | built from source against the native torch, from FBGEMM commit `939f2da156b05d2f1bcba8c037d613c1098d0db5` (2026-04-29); public wheels are ABI-incompatible with the NGC torch. Build command: `TORCH_CUDA_ARCH_LIST=10.0 python setup.py bdist_wheel --build-target default --build-variant cuda --package_channel nightly --nvml_lib_path /usr/lib/x86_64-linux-gnu/libnvidia-ml.so` (~55 min — the `sm_100` TBE-forward kernels dominate via `ptxas`) |
-| **torchrec** | `1.4.0` | installed with `--no-deps` |
+| **fbgemm_gpu** | FBGEMM commit `10b775730212923f65f7b78f79b6a01d80cf3c29` (2026-06-01 `main`, CUDA 13.2, `sm_100`) | built from source against the native torch; public wheels are ABI-incompatible with the NGC torch. The built wheel is named `fbgemm_gpu_nightly-2026.6.1` — that version is the build date, not the source date, so always identify the build by the commit above. Build command: `TORCH_CUDA_ARCH_LIST=10.0 python setup.py bdist_wheel --build-target default --build-variant cuda --package_channel nightly --nvml_lib_path /usr/lib/x86_64-linux-gnu/libnvidia-ml.so` (~55 min — the `sm_100` TBE-forward kernels dominate via `ptxas`) |
+| **torchrec** | `1.7.0.dev20260601+cu130` (nightly, tested) | installed `--no-deps` from `https://download.pytorch.org/whl/nightly/cu130`. Perf-neutral vs stable `1.4.0`; use `1.4.0` (latest stable) if you prefer a non-pre-release |
 | **polars-u64-idx** | `1.33.1` | 64-bit row index — `yambda-5b` has > 4.29 B rows (overflows stock polars' 32-bit index) |
 | CUPTI (for `torch.profiler`) | 13.2 (native) | matches the driver; the `+cu128` stack's CUPTI 12.8 fails on B200 (`CUPTI_ERROR_INVALID_DEVICE`) |
 
