@@ -84,6 +84,37 @@ def is_sm90_plus() -> bool:
     return is_sm100_plus() or is_sm90()
 
 
+@functools.lru_cache(maxsize=None)
+def is_amd_mi350() -> bool:
+    """Detect an AMD Instinct MI350-class GPU (gfx950) running under ROCm.
+
+    MI350 benefits from the same multi-row, separated-RNG layer-norm-mul-dropout
+    path as Blackwell datacenter parts (sm_100), so it is gated together with
+    is_sm100_plus() at the kernel dispatch sites.
+    """
+    if not torch.cuda.is_available():
+        return False
+    if getattr(torch.version, "hip", None) is None:
+        return False
+    try:
+        arch = torch.cuda.get_device_properties(0).gcnArchName or ""
+    except (AssertionError, RuntimeError, AttributeError):
+        return False
+    return "gfx950" in arch
+
+
+def use_separated_rng_ln_mul_dropout() -> bool:
+    """Hardware that should use the autotuned, multi-row ``_ln_mul_dropout_fwd_rng``
+    kernel with a precomputed dropout mask instead of the legacy single-row,
+    fused-RNG ``_ln_mul_dropout_fwd`` kernel.
+
+    Blackwell datacenter GPUs (sm_100-103) and AMD MI350 (gfx950) both prefer the
+    separated-RNG path: it batches rows per program and lets the backward reuse the
+    same mask, which is a large win over launching one program per row.
+    """
+    return is_sm100_plus() or is_amd_mi350()
+
+
 def copy_if_different_ptr(dst: torch.Tensor, src: torch.Tensor) -> None:
     if torch.compiler.is_compiling():
         # .data_ptr() will break PT2

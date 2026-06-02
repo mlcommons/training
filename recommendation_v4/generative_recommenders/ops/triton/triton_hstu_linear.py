@@ -48,7 +48,7 @@ def _get_layer_norm_mul_dropout_fwd_multirow_configs() -> List[triton.Config]:
     return configs
 
 
-from generative_recommenders.ops.utils import is_sm100_plus
+from generative_recommenders.ops.utils import use_separated_rng_ln_mul_dropout
 
 # @manual=//triton:triton
 from triton.language.extra import libdevice
@@ -1064,11 +1064,16 @@ def _triton_layer_norm_mul_dropout_fwd_impl(
 
     num_warps: int = min(max(BLOCK_D // 256, 1), 8)
     random_mask: torch.Tensor = torch.empty(0, dtype=x.dtype, device=x.device)
-    # Benchmark shows separating RNG from ln_mul_dropout kernel only benefits on
-    # blackwell when CONCAT_UX is enabled. (fused RNG kernel can benefit from rand3x fast
-    # dropout)
+    # Separating RNG from the ln_mul_dropout kernel lets us batch multiple rows per
+    # program (autotuned _ln_mul_dropout_fwd_rng) and reuse the precomputed mask in the
+    # backward, instead of launching one program per row with fused RNG. This is a large
+    # win on Blackwell (sm_100) and AMD MI350 (gfx950); other GPUs keep the fused path.
     # Extended to support concat_u + concat_x for mask reuse optimization
-    if not FUSE_OUTPUT_LN_RNG_BLACKWELL and is_sm100_plus() and training:
+    if (
+        not FUSE_OUTPUT_LN_RNG_BLACKWELL
+        and use_separated_rng_ln_mul_dropout()
+        and training
+    ):
         random_mask = _create_dropout_mask(
             N=N,
             D=D,

@@ -46,6 +46,7 @@ from generative_recommenders.common import (
     switch_to_contiguous_if_needed,
     triton_autotune,
 )
+from generative_recommenders.ops.triton._autotune_pinning import pinned_or_full
 from triton.language.extra.libdevice import (  # @manual=//triton:triton
     fast_dividef,
     fast_expf,
@@ -1585,8 +1586,50 @@ def _hstu_attn_fwd_compute_tlx(  # noqa C901
                 tl.store(out_ptrs, acc, mask=(offs_m < seq_len)[:, None])
 
 
+def _get_fw_pinned_configs() -> List[triton.Config]:
+    # Pinned forward-attention configs for MI350X gfx950. The full search is a
+    # coin flip between matrix_instr_nonkdim 16 (fast) and 32 (slow); pinning the
+    # known winners makes cold starts deterministic. See _autotune_pinning.
+    #
+    # This is a LIST, one entry per training shape we've tuned (currently just
+    # bs=1024). With >1 entry the autotuner still runs a tiny benchmark over only
+    # these candidates and caches the winner per `key` (AUTOTUNE_Z / H /
+    # AUTOTUNE_MAX_SEQ_LEN / DimQ / DimV / ...), so each batch size automatically
+    # picks its own config — same pattern as the layer-norm pins.
+    #
+    # TO ADD A NEW BATCH SIZE / SHAPE:
+    #   1. Run once with TRITON_FULL_AUTOTUNE=1 TRITON_PRINT_AUTOTUNING=1.
+    #   2. Grep the log for "best config selected:" under "_hstu_attn_fwd".
+    #   3. Append that config below (copy BLOCK_M/BLOCK_N/matrix_instr_nonkdim/
+    #      waves_per_eu/kpack/num_stages/num_warps verbatim).
+    # The four USE_TLX/NUM_* defaults below are required by the kernel signature
+    # (see the USE_TLX-default loop in _get_fw_configs); the pinned path bypasses
+    # that loop, so every pinned entry must set them explicitly.
+    if torch.version.hip:
+        return [
+            # --- yambda bs=1024, L=2048 winner (from capture log) ---
+            triton.Config(
+                {
+                    "BLOCK_M": 128,
+                    "BLOCK_N": 32,
+                    "matrix_instr_nonkdim": 16,
+                    "waves_per_eu": 0,
+                    "kpack": 2,
+                    "USE_TLX": False,
+                    "NUM_BUFFERS": 1,
+                    "NUM_MMA_WARPS_PER_GROUP": 1,
+                    "NUM_MMA_GROUPS": 1,
+                },
+                num_stages=2,
+                num_warps=8,
+            ),
+            # --- add more (bs, L) winners here; see "TO ADD A NEW BATCH SIZE" ---
+        ]
+    return _get_fw_configs()
+
+
 @triton_autotune(
-    configs=_get_fw_configs(),
+    configs=pinned_or_full(_get_fw_pinned_configs(), _get_fw_configs),
     key=[
         "AUTOTUNE_Z",
         "H",
@@ -1730,7 +1773,7 @@ def _hstu_attn_fwd(  # noqa C901
 
 
 @triton_autotune(
-    configs=_get_fw_configs(),
+    configs=pinned_or_full(_get_fw_pinned_configs(), _get_fw_configs),
     key=[
         "AUTOTUNE_Z",
         "H",
@@ -2390,8 +2433,44 @@ def _get_bw_configs() -> List[triton.Config]:
     return configs
 
 
+def _get_bw_pinned_configs() -> List[triton.Config]:
+    # Pinned backward-attention configs for MI350X gfx950. Pins the fast
+    # matrix_instr_nonkdim=16 winner(s) to avoid the 16-vs-32 autotune lottery.
+    #
+    # LIST, one entry per tuned shape (currently just bs=1024). With >1 entry the
+    # autotuner benchmarks only these candidates and caches the winner per `key`
+    # (AUTOTUNE_Z / H / AUTOTUNE_MAX_SEQ_LEN / DimQ / DimV), so each batch size
+    # picks its own config automatically — same pattern as the layer-norm pins.
+    #
+    # TO ADD A NEW BATCH SIZE / SHAPE:
+    #   1. Run once with TRITON_FULL_AUTOTUNE=1 TRITON_PRINT_AUTOTUNING=1.
+    #   2. Grep the log for "best config selected:" under "_hstu_attn_bwd".
+    #   3. Append that config below (verbatim BLOCK_M/BLOCK_N/matrix_instr_nonkdim/
+    #      waves_per_eu/SEQUENCE_PARALLEL/UNROLL/num_stages/num_warps).
+    # Keep pre_hook=_bwd_pre_hook on every entry (the bwd configs require it).
+    if torch.version.hip:
+        return [
+            # --- yambda bs=1024, L=2048 winner (from capture log) ---
+            triton.Config(
+                {
+                    "BLOCK_M": 32,
+                    "BLOCK_N": 128,
+                    "matrix_instr_nonkdim": 16,
+                    "waves_per_eu": 0,
+                    "SEQUENCE_PARALLEL": False,
+                    "UNROLL": 1,
+                },
+                num_stages=1,
+                num_warps=4,
+                pre_hook=_bwd_pre_hook,
+            ),
+            # --- add more (bs, L) winners here; see "TO ADD A NEW BATCH SIZE" ---
+        ]
+    return _get_bw_configs()
+
+
 @triton_autotune(
-    configs=_get_bw_configs(),
+    configs=pinned_or_full(_get_bw_pinned_configs(), _get_bw_configs),
     key=[
         "AUTOTUNE_Z",
         "H",
