@@ -29,20 +29,9 @@ the ROCm-matched build used by triton/fbgemm.
 
 ### Dependency versions
 
-Two stacks validated; both land at the same ~52 ms/step steady state with the
-pinned triton autotune configs.
-
-**Stack A — image-native torch (default, no torch swap):**
-
-| package | version | notes |
-|---|---|---|
-| **torch** | `2.10.0+git94c6e04` | native to the image; not reinstalled |
-| **triton** | `3.6.0` | native to the image |
-| **fbgemm_gpu** | `fbgemm_gpu_nightly_rocm-2026.6.1` (built from FBGEMM commit `1509423`, 2026-06-01 `main`) for `gfx950` | image ships `2026.5.14`; rebuild from source gives a measurable boost from the TBE-forward V2 grid-striding (#5669) + warpSize 32/64 unified build (#5739) + `__syncthreads` cleanup (#5744). Build command: `python setup.py -j 32 bdist_wheel --build-target=default --build-variant=rocm -DHIP_ROOT_DIR=/opt/rocm -DAMDGPU_TARGETS=gfx950` |
-| **torchrec** | `1.4.0` | image native |
-| **polars-u64-idx** | `1.33.1` | 64-bit row index — `yambda-5b` has > 4.29 B rows. Installed from a pre-staged local tarball by `scripts/launch_smoke_8gpu.sh` (reserved nodes have no outbound DNS) |
-
-**Stack B — torch 2.12 / torchrec 1.7 / fbgemm @ B200 commit (B200-aligned, validated):**
+Aligned with the B200 path: same torch major.minor, same torchrec commit,
+same fbgemm SHA. The image's native torch / torchvision / torchaudio /
+torchrec / fbgemm_gpu are all replaced; only the image's triton stays.
 
 | package | version | install |
 |---|---|---|
@@ -50,24 +39,14 @@ pinned triton autotune configs.
 | **torchvision** | `0.27.0+rocm7.2` | `pip install --upgrade --no-deps --index-url https://download.pytorch.org/whl/rocm7.2 torchvision` — ABI must match torch 2.12 |
 | **torchaudio** | `2.11.0+rocm7.2` | `pip install --upgrade --no-deps --index-url https://download.pytorch.org/whl/rocm7.2 torchaudio` — ABI must match torch 2.12 |
 | **triton** | `3.6.0` | image native, unchanged |
-| **fbgemm_gpu** | `fbgemm_gpu_nightly_rocm-2026.6.2` (built from FBGEMM commit `10b77573`, same SHA as the B200 path) | rebuild against torch 2.12. Build command unchanged from Stack A: `python setup.py -j 32 bdist_wheel --build-target=default --build-variant=rocm -DHIP_ROOT_DIR=/opt/rocm -DAMDGPU_TARGETS=gfx950` |
+| **fbgemm_gpu** | `fbgemm_gpu_nightly_rocm-2026.6.2` (built from FBGEMM commit `10b77573`, same SHA as the B200 path) for `gfx950` | rebuild from source against the replaced torch. Build command: `python setup.py -j 32 bdist_wheel --build-target=default --build-variant=rocm -DHIP_ROOT_DIR=/opt/rocm -DAMDGPU_TARGETS=gfx950` |
 | **torchrec** | `1.7.0a0+bf55480` (git tag `v2026.06.01.00`) | `pip install --force-reinstall --no-deps "git+https://github.com/pytorch/torchrec.git@v2026.06.01.00"` |
-| **polars-u64-idx** | `1.33.1` | as above |
+| **polars-u64-idx** | `1.33.1` | 64-bit row index — `yambda-5b` has > 4.29 B rows. Installed from a pre-staged local tarball by `scripts/launch_smoke_8gpu.sh` |
 
-Both stacks land at the same ~52 ms/step steady state with the TRITON HSTU
-backend + pinned triton configs. Pinned configs differ between Stack A and
-Stack B — the torchrec 1.7 code path invokes layer-norm / jagged kernels at
-different shape keys than torchrec 1.4, so Stack B uses a re-captured pin
-set (already merged in this repo; flip Stack via Container A vs B above).
-
-Stack A is the lower-risk path (no torch swap). Stack B aligns the active
-torch / torchrec / fbgemm SHA exactly with the B200 path below, useful
-for cross-platform A/B comparisons.
-
-**Caveat:** on Stack B the `HSTU_HAMMER_KERNEL=PYTORCH` fallback regresses
-to ~169 ms/step (vs ~107 ms on Stack A). Only the TRITON HSTU path is
-performance-parity across stacks. Default config uses TRITON so this only
-matters if you intentionally force PYTORCH for debugging.
+**Caveat:** the `HSTU_HAMMER_KERNEL=PYTORCH` fallback path regresses on
+torch 2.12 (~169 ms/step vs ~107 ms on torch 2.10). The default TRITON
+HSTU backend is unaffected — only matters if you intentionally force
+PYTORCH for debugging.
 
 ### Training configuration
 
