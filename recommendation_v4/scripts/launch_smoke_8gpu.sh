@@ -32,6 +32,26 @@ export WORLD_SIZE=$(python -c "import torch; print(torch.cuda.device_count())")
 # PYTORCH backend. On CUDA, unset this to default to TRITON for ~3-5x speedup.
 export HSTU_HAMMER_KERNEL=${HSTU_HAMMER_KERNEL:-PYTORCH}
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+
+# --- GPU clock sanity guard ---------------------------------------------------
+# Leftover node state once pinned all 8 GPUs into `perf_determinism` at half
+# clock (1093 vs 2200 MHz max). That uniformly slowed every Triton kernel ~1.9x
+# and silently masked real perf changes for an entire debugging session. Always
+# log the perf level + a live sclk sample so a capped run is obvious from the
+# log, and try to restore boost. Fully non-fatal (rocm-smi may be absent or
+# lack permission inside the container — in that case reset from the host).
+if command -v rocm-smi >/dev/null 2>&1; then
+  echo "[$(date)] GPU perf-level check:" | tee -a "$LOG"
+  rocm-smi --showperflevel 2>/dev/null | grep -iE "GPU\[[0-9]+\]" | tee -a "$LOG" || true
+  if rocm-smi --showperflevel 2>/dev/null | grep -iqE "Performance Level: *(perf_determinism|manual|low)"; then
+    echo "[$(date)] WARNING: GPUs not in 'auto' perf level — attempting --setperflevel auto" | tee -a "$LOG"
+    rocm-smi --setperflevel auto 2>/dev/null | grep -iE "set to auto" | tee -a "$LOG" \
+      || echo "[$(date)] WARNING: could not set perf level (no permission?). Run 'rocm-smi --setperflevel auto' on the HOST before benchmarking — clocks may be capped." | tee -a "$LOG"
+  fi
+  echo "[$(date)] sclk sample (GPU0):$(rocm-smi -d 0 --showclocks 2>/dev/null | grep -i 'sclk clock level' | sed -E 's/.*sclk clock level//')" | tee -a "$LOG" || true
+fi
+# -----------------------------------------------------------------------------
+
 echo "[$(date)] launching train_ranker with WORLD_SIZE=$WORLD_SIZE" | tee -a "$LOG"
 
 python -m generative_recommenders.dlrm_v3.train.train_ranker \
