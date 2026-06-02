@@ -684,28 +684,28 @@ def get_embedding_table_config(
         assert dataset in ["yambda-5b"]
         tables: Dict[str, EmbeddingConfig] = {
             "item_id": EmbeddingConfig(
-                num_embeddings=9_390_000,
+                num_embeddings=9_390_624,
                 embedding_dim=DIM,
                 name="item_id",
                 data_type=DataType.FP32,
                 feature_names=["item_id", "item_candidate_id"],
             ),
             "artist_id": EmbeddingConfig(
-                num_embeddings=1_290_000,
+                num_embeddings=1_293_395,
                 embedding_dim=DIM,
                 name="artist_id",
                 data_type=DataType.FP32,
                 feature_names=["artist_id", "item_candidate_artist_id"],
             ),
             "album_id": EmbeddingConfig(
-                num_embeddings=3_370_000,
+                num_embeddings=3_367_692,
                 embedding_dim=DIM,
                 name="album_id",
                 data_type=DataType.FP32,
                 feature_names=["album_id", "item_candidate_album_id"],
             ),
             "uid": EmbeddingConfig(
-                num_embeddings=1_000_000,
+                num_embeddings=1_000_001,
                 embedding_dim=DIM,
                 name="uid",
                 data_type=DataType.FP32,

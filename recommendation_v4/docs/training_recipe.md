@@ -49,8 +49,6 @@ From `generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin`:
 
 | parameter | value | gin binding |
 |---|---|---|
-| batch_size (train) | 32 | `make_train_test_dataloaders.batch_size` |
-| eval_batch_size | 32 | `make_train_test_dataloaders.eval_batch_size` |
 | num_workers (dataloader) | 4 | `make_train_test_dataloaders.num_workers` |
 | prefetch_factor | 8 | `make_train_test_dataloaders.prefetch_factor` |
 | num_blocks | 1 | `make_train_test_dataloaders.num_blocks` |
