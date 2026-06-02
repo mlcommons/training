@@ -2152,7 +2152,7 @@ def split_2D_jagged_w_prefix_multirow(
 
 @triton_autotune(
     configs=pinned_or_full(
-        [triton.Config({"BLOCK_N": 1}, num_warps=2)],
+        [triton.Config({"BLOCK_N": 8}, num_warps=1)],
         _get_split_concat_2d_jagged_multirow_configs_wrapper,
     ),
     key=["BLOCK_D"],
