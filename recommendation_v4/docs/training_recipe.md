@@ -29,13 +29,34 @@ the ROCm-matched build used by triton/fbgemm.
 
 ### Dependency versions
 
+Two stacks validated; both land at the same ~52 ms/step steady state with the
+pinned triton autotune configs.
+
+**Stack A — image-native torch (default, no torch swap):**
+
 | package | version | notes |
 |---|---|---|
 | **torch** | `2.10.0+git94c6e04` | native to the image; not reinstalled |
-| **triton** | `3.6.0` | native to the image; same major as B200 path |
-| **fbgemm_gpu** | `fbgemm_gpu_nightly_rocm-2026.6.1` (built from FBGEMM commit `1509423`, 2026-06-01) for `gfx950` | image ships `2026.5.14`; rebuild from source gives a measurable boost from the TBE-forward V2 grid-striding (#5669) + warpSize 32/64 unified build (#5739) + `__syncthreads` cleanup (#5744). Build command: `python setup.py -j 32 bdist_wheel --build-target=default --build-variant=rocm -DHIP_ROOT_DIR=/opt/rocm -DAMDGPU_TARGETS=gfx950` |
-| **torchrec** | `1.4.0` | matches B200 |
+| **triton** | `3.6.0` | native to the image |
+| **fbgemm_gpu** | `fbgemm_gpu_nightly_rocm-2026.6.1` (built from FBGEMM commit `1509423`, 2026-06-01 `main`) for `gfx950` | image ships `2026.5.14`; rebuild from source gives a measurable boost from the TBE-forward V2 grid-striding (#5669) + warpSize 32/64 unified build (#5739) + `__syncthreads` cleanup (#5744). Build command: `python setup.py -j 32 bdist_wheel --build-target=default --build-variant=rocm -DHIP_ROOT_DIR=/opt/rocm -DAMDGPU_TARGETS=gfx950` |
+| **torchrec** | `1.4.0` | image native |
 | **polars-u64-idx** | `1.33.1` | 64-bit row index — `yambda-5b` has > 4.29 B rows. Installed from a pre-staged local tarball by `scripts/launch_smoke_8gpu.sh` (reserved nodes have no outbound DNS) |
+
+**Stack B — torch 2.12 / torchrec 1.7 (B200-aligned):**
+
+| package | version | install |
+|---|---|---|
+| **torch** | `2.12.0+rocm7.2` | `pip install --upgrade --no-deps --index-url https://download.pytorch.org/whl/rocm7.2 torch==2.12.0+rocm7.2` |
+| **torchvision** | `0.27.0+rocm7.2` | `pip install --upgrade --no-deps --index-url https://download.pytorch.org/whl/rocm7.2 torchvision` — ABI must match torch 2.12 |
+| **torchaudio** | `2.11.0+rocm7.2` | `pip install --upgrade --no-deps --index-url https://download.pytorch.org/whl/rocm7.2 torchaudio` — ABI must match torch 2.12 |
+| **triton** | `3.6.0` | image native, unchanged |
+| **fbgemm_gpu** | `fbgemm_gpu_nightly_rocm-2026.6.1` (rebuilt against torch 2.12) | same FBGEMM commit `1509423`, same build command as Stack A — must rebuild after the torch swap |
+| **torchrec** | `1.7.0a0+bf55480` (git tag `v2026.06.01.00`) | `pip install --force-reinstall --no-deps "git+https://github.com/pytorch/torchrec.git@v2026.06.01.00"` |
+| **polars-u64-idx** | `1.33.1` | as above |
+
+Both stacks use the same pinned triton configs; perf is parity. Stack A is
+the lower-risk path; Stack B aligns the active torch / torchrec versions
+with the B200 path below.
 
 ### Training configuration
 
