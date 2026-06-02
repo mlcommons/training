@@ -1,4 +1,4 @@
-batch_size = 32
+batch_size = 1024
 num_workers = 4
 prefetch_factor = 8
 dataset = "yambda-5b"
@@ -42,7 +42,7 @@ data/env_path.default = "/apps/chcai/dlrm_data"
 
 # dataloader configs
 make_train_test_dataloaders.batch_size = %batch_size
-make_train_test_dataloaders.eval_batch_size = 32
+make_train_test_dataloaders.eval_batch_size = 1024
 make_train_test_dataloaders.dataset_type = %dataset
 make_train_test_dataloaders.train_split_percentage = 0.90
 make_train_test_dataloaders.new_path_prefix = %DATA_PATH

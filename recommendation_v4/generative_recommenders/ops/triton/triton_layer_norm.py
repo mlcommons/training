@@ -308,7 +308,10 @@ def _layer_norm_bwd_dx(
 
 @triton_autotune(
     configs=pinned_or_full(
-        [triton.Config({"BLOCK_N": 1}, num_warps=1)],
+        [
+            triton.Config({"BLOCK_N": 1}, num_warps=1),  # bs=32 winner
+            triton.Config({"BLOCK_N": 8}, num_warps=1),  # bs=1024 winner
+        ],
         _get_layer_norm_fwd_configs,
     ),
     key=["BLOCK_D"],
