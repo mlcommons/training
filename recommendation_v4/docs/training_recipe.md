@@ -43,11 +43,6 @@ torchrec / fbgemm_gpu are all replaced; only the image's triton stays.
 | **torchrec** | `1.7.0a0+bf55480` (git tag `v2026.06.01.00`) | `pip install --force-reinstall --no-deps "git+https://github.com/pytorch/torchrec.git@v2026.06.01.00"` |
 | **polars-u64-idx** | `1.33.1` | 64-bit row index — `yambda-5b` has > 4.29 B rows. Installed from a pre-staged local tarball by `scripts/launch_smoke_8gpu.sh` |
 
-**Caveat:** the `HSTU_HAMMER_KERNEL=PYTORCH` fallback path regresses on
-torch 2.12 (~169 ms/step vs ~107 ms on torch 2.10). The default TRITON
-HSTU backend is unaffected — only matters if you intentionally force
-PYTORCH for debugging.
-
 ### Training configuration
 
 From `generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin`:
