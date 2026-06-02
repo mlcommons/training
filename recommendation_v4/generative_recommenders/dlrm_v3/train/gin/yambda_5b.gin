@@ -6,6 +6,11 @@ dataset = "yambda-5b"
 # model parameters
 make_model.dataset = %dataset
 make_model.bf16_training = True
+# HSTU attention/compute backend: "TRITON" (fused, flash-style — low HBM) or
+# "PYTORCH" (unfused; materializes the dense [B,H,N,N] score tensor, ~32 GiB at
+# N=2048/bs=1024). TRITON validated on MI350/ROCm. The HSTU_HAMMER_KERNEL env
+# var, if set, overrides this binding for one-off runs.
+make_model.hammer_kernel = "TRITON"
 
 # False = use pinned triton kernel configs (deterministic; whether that's
 # the fast or slow equilibrium depends on which config was pinned for the
@@ -85,6 +90,10 @@ train_eval_loop.eval_frequency = 5000
 train_eval_loop.num_eval_batches = 500
 train_eval_loop.checkpoint_frequency = 1000000000  # disable mid-training checkpoints (disk-full guard)
 train_eval_loop.output_trace = True
+# 3-stage TorchRec pipeline: overlaps the embedding all-to-all (the dominant
+# exposed-comm bottleneck) with dense fwd/bwd. Set False to fall back to the
+# sequential fwd/bwd loop.
+train_eval_loop.use_pipeline = False
 
 # Run name → recommendation_v4/results/<run_name>/ (override via $RUN_NAME env).
 RUN_NAME = @run/env_path()

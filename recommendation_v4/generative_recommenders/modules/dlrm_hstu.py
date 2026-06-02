@@ -52,7 +52,18 @@ from torchrec.modules.embedding_modules import EmbeddingCollection
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+def fx_total_targets(num_candidates: torch.Tensor) -> int:
+    """Sum a per-sample candidate-count tensor to a Python int.
+
+    Wrapped with ``torch.fx.wrap`` so ``TrainPipelineSparseDist``'s symbolic
+    trace treats it as an opaque leaf instead of recursing into the data-
+    dependent ``int(Proxy.sum().item())`` (which raises during tracing).
+    """
+    return int(num_candidates.sum().item())
+
+
 torch.fx.wrap("fx_infer_max_len")
+torch.fx.wrap("fx_total_targets")
 torch.fx.wrap("len")
 
 
@@ -129,6 +140,12 @@ class DlrmHSTU(HammerModule):
     ) -> None:
         super().__init__(is_inference=is_inference)
         logger.info(f"Initialize HSTU module with configs {hstu_configs}")
+        # When True, forward() takes the whole `Samples` batch as its single
+        # positional arg and reads the pre-merged sparse KJT off it. This keeps
+        # the EmbeddingCollection's input a plain getattr on the batch placeholder
+        # so TorchRec's TrainPipelineSparseDist can pipeline its input_dist. Set
+        # by build_train_pipeline(); leave False for eager / inference / eval.
+        self._pipeline_mode: bool = False
         self._hstu_configs = hstu_configs
         self._bf16_training: bool = bf16_training
         set_static_max_seq_lens([self._hstu_configs.max_seq_len])
@@ -345,7 +362,7 @@ class DlrmHSTU(HammerModule):
             kernel=self.hammer_kernel(),
         ).squeeze(-1)
         if total_targets is None:
-            total_targets = int(num_candidates.sum().item())
+            total_targets = fx_total_targets(num_candidates)
         if total_uih_len is None:
             total_uih_len = source_timestamps.numel() - total_targets
         embedding = seq_embeddings[
@@ -415,6 +432,7 @@ class DlrmHSTU(HammerModule):
         self,
         uih_features: KeyedJaggedTensor,
         candidates_features: KeyedJaggedTensor,
+        merged_sparse_features: Optional[KeyedJaggedTensor] = None,
     ) -> Tuple[
         Dict[str, SequenceEmbedding],
         Dict[str, torch.Tensor],
@@ -423,18 +441,25 @@ class DlrmHSTU(HammerModule):
         int,
         torch.Tensor,
     ]:
-        # embedding lookup for uih and candidates
-        merged_sparse_features = KeyedJaggedTensor.from_lengths_sync(
-            keys=uih_features.keys() + candidates_features.keys(),
-            values=torch.cat(
-                [uih_features.values(), candidates_features.values()],
-                dim=0,
-            ),
-            lengths=torch.cat(
-                [uih_features.lengths(), candidates_features.lengths()],
-                dim=0,
-            ),
-        )
+        # Embedding lookup for uih + candidates. When the caller (the pipeline
+        # path) supplies the pre-merged KJT from the batch, feed it straight to
+        # the EmbeddingCollection: that keeps the lookup's input a plain getattr
+        # off the batch so TorchRec's TrainPipelineSparseDist can hoist its
+        # input_dist into the prefetch stage. Building it here (cat +
+        # from_lengths_sync's .sync()) is an "input modification" that makes
+        # TorchRec skip pipelining the embedding collection.
+        if merged_sparse_features is None:
+            merged_sparse_features = KeyedJaggedTensor.from_lengths_sync(
+                keys=uih_features.keys() + candidates_features.keys(),
+                values=torch.cat(
+                    [uih_features.values(), candidates_features.values()],
+                    dim=0,
+                ),
+                lengths=torch.cat(
+                    [uih_features.lengths(), candidates_features.lengths()],
+                    dim=0,
+                ),
+            )
         seq_embeddings_dict = self._embedding_collection(merged_sparse_features)
         num_candidates = fx_mark_length_features(
             candidates_features.lengths().view(len(candidates_features.keys()), -1)
@@ -593,7 +618,8 @@ class DlrmHSTU(HammerModule):
     def forward(
         self,
         uih_features: KeyedJaggedTensor,
-        candidates_features: KeyedJaggedTensor,
+        candidates_features: Optional[KeyedJaggedTensor] = None,
+        merged_sparse_features: Optional[KeyedJaggedTensor] = None,
     ) -> Tuple[
         torch.Tensor,
         torch.Tensor,
@@ -602,6 +628,18 @@ class DlrmHSTU(HammerModule):
         Optional[torch.Tensor],
         Optional[torch.Tensor],
     ]:
+        # Pipeline mode: TorchRec fx-traces this forward (via DMP.module) and the
+        # pipeline calls it with the single `Samples` batch. Unpacking the KJTs
+        # here — rather than in the wrapper — makes the EmbeddingCollection's
+        # input `batch.merged_sparse_features` a getattr off the batch placeholder,
+        # which is what lets TrainPipelineSparseDist hoist the embedding input_dist
+        # into the prefetch stage. Guarded from TorchScript (inference path).
+        if not torch.jit.is_scripting() and self._pipeline_mode:
+            batch = uih_features
+            uih_features = batch.uih_features_kjt
+            candidates_features = batch.candidates_features_kjt
+            merged_sparse_features = batch.merged_sparse_features
+
         with record_function("## preprocess ##"):
             (
                 seq_embeddings,
@@ -613,6 +651,7 @@ class DlrmHSTU(HammerModule):
             ) = self.preprocess(
                 uih_features=uih_features,
                 candidates_features=candidates_features,
+                merged_sparse_features=merged_sparse_features,
             )
 
         with record_function("## main_forward ##"):
