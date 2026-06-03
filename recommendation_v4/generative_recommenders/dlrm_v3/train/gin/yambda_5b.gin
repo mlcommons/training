@@ -82,12 +82,56 @@ get_dataset.history_length = 2039
 # `history_length + contextual + candidate` would overflow.
 get_hstu_configs.max_seq_len = 2048
 
-# train-eval loop variables (yambda is non-streaming)
+# --- streaming (temporal-order) training -------------------------------------
+# Only consumed under `--mode streaming-train-eval`; the default train-eval
+# path above is unaffected. Trains time window T then evals window T+1,
+# advancing forward in wall-clock time (no future leakage). Window size is the
+# temporal-ordering granularity knob (default 1 day). num_train_ts is clamped
+# to the dataset's available window count at runtime; override via $NUM_TRAIN_TS.
+get_dataset.streaming_window_seconds = 86400
+get_dataset.streaming_sort_within_window = False
+make_streaming_dataloader.batch_size = %batch_size
+make_streaming_dataloader.num_workers = %num_workers
+make_streaming_dataloader.prefetch_factor = %prefetch_factor
+make_persistent_streaming_dataloader.batch_size = %batch_size
+make_persistent_streaming_dataloader.num_workers = %num_workers
+make_persistent_streaming_dataloader.prefetch_factor = %prefetch_factor
+streaming_train_eval_loop.num_train_ts = @nts/env_int()
+nts/env_int.key = "NUM_TRAIN_TS"
+nts/env_int.default = 30
+# Anchors need >= history_length prior events, so the first ~130 daily windows
+# are near-empty warm-up; start at a dense window. Override via $START_TS.
+streaming_train_eval_loop.start_ts = @sts/env_int()
+sts/env_int.key = "START_TS"
+sts/env_int.default = 150
+streaming_train_eval_loop.metric_log_frequency = 50
+# Trace on by default: reuses the shared Profiler.* bindings below (5-step
+# window at step 52). The streaming step counter advances across train+eval
+# batches, so step 52 lands in the first (train) window's compute.
+streaming_train_eval_loop.output_trace = True
+# Reuse one DataLoader (persistent workers) across windows instead of respawning
+# per window. Skip eval to isolate window-reset cost. Override via env.
+streaming_train_eval_loop.persistent_loader = @pl/env_int()
+pl/env_int.key = "PERSISTENT_LOADER"
+pl/env_int.default = 1
+streaming_train_eval_loop.eval_each_window = @ev/env_int()
+ev/env_int.key = "EVAL_EACH_WINDOW"
+ev/env_int.default = 1
+# Double-buffer windows: prepare the next window (index mask + first-batch
+# prefetch) in a background thread during the current window's compute, hiding
+# the per-window reset. Needs persistent_loader=1. Override via env.
+streaming_train_eval_loop.double_buffer = @db/env_int()
+db/env_int.key = "DOUBLE_BUFFER"
+db/env_int.default = 1
+# num_train_batches / num_eval_batches unset => consume each full window.
+# Set them (e.g. via gin) to cap per-window steps for short experiments.
+
+# Default (non-streaming) train-eval loop variables; used unless
+# `--mode streaming-train-eval` selects the temporal-order path configured above.
 train_eval_loop.num_epochs = 1
-train_eval_loop.output_trace = False
 train_eval_loop.metric_log_frequency = 50
-train_eval_loop.eval_frequency = 5000
-train_eval_loop.num_eval_batches = 500
+train_eval_loop.eval_frequency = 500
+train_eval_loop.num_eval_batches = 200
 train_eval_loop.checkpoint_frequency = 1000000000  # disable mid-training checkpoints (disk-full guard)
 train_eval_loop.output_trace = True
 # 3-stage TorchRec pipeline: overlaps the embedding all-to-all (the dominant

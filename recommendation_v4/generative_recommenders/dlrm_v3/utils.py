@@ -188,10 +188,17 @@ def _on_trace_ready_fn(
                 sort_by="self_cuda_time_total"
             )
         )
-        p.export_chrome_trace(path)
-        logger.warning(f"Trace written to: {path}")
-        if keep_n_active is not None and keep_n_active > 0:
-            _trim_warmup_from_trace(path, keep_n_active)
+        # Tracing is best-effort: a write/trim failure (permissions, disk full,
+        # malformed export) must never crash the training run. Degrade to a
+        # warning so the loop continues — especially important since streaming
+        # enables output_trace by default.
+        try:
+            p.export_chrome_trace(path)
+            logger.warning(f"Trace written to: {path}")
+            if keep_n_active is not None and keep_n_active > 0:
+                _trim_warmup_from_trace(path, keep_n_active)
+        except Exception as exc:
+            logger.warning(f"Trace export/trim failed for {path}: {exc!r} (skipping)")
 
     return handle_fn
 
@@ -689,7 +696,13 @@ def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
 
 
 @gin.configurable
-def get_dataset(name: str, new_path_prefix: str = "", history_length: Optional[int] = None):
+def get_dataset(
+    name: str,
+    new_path_prefix: str = "",
+    history_length: Optional[int] = None,
+    streaming_window_seconds: int = 86400,
+    streaming_sort_within_window: bool = False,
+):
     """
     Get dataset class and configuration by name.
 
@@ -815,6 +828,10 @@ def get_dataset(name: str, new_path_prefix: str = "", history_length: Optional[i
                 "history_length": history_length if history_length is not None else 4096,
                 "scan_window": 20000,
                 "cross_specs": YAMBDA_5B_CROSS_SPECS,
+                # Temporal-streaming knobs (only used under --mode
+                # streaming-train-eval; ignored by the default train-eval path).
+                "streaming_window_seconds": streaming_window_seconds,
+                "streaming_sort_within_window": streaming_sort_within_window,
             },
         )
     if name == "sampled-streaming-100b":

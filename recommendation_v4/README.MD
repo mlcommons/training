@@ -131,6 +131,91 @@ The `like` cap of 679 is unreachable for yambda data — at the 1.9% global like
 
 This means the model sees on average ~1,402 UIH events per sample, not the theoretical 2,037. With the TRITON jagged-attention backend the GPU only does work for the actual events, so the under-fill costs **sequence budget but not GPU compute** — no wasted attention work, just less context per sample than the budget suggests.
 
-## 5. License
+## 5. Streaming (temporal-order) training
+
+`scripts/launch_smoke_8gpu.sh` defaults to `--mode streaming-train-eval`, which
+trains Yambda in strict wall-clock order instead of shuffling the whole corpus.
+The timeline is sliced into fixed-duration **windows** (default 1 day,
+`get_dataset.streaming_window_seconds = 86400`), and the loop walks them forward:
+
+```
+window T:    train          window T+1:  eval (then train)   window T+2: eval (then train) ...
+   └─ train window T ─┐
+                      └─ eval window T+1 ─┐
+                                          └─ train window T+1 ─┐
+                                                               └─ eval window T+2 ...
+```
+
+i.e. for each step it **trains window T, then evaluates window T+1** before
+advancing — always predicting the immediate future from the past.
+
+### 5.1 Temporal guarantee
+
+The streaming path enforces **no future leakage** at two levels:
+
+1. **Across windows** — a window is the set of anchors whose *target/candidate*
+   timestamp falls in `[t_min + T·W, t_min + (T+1)·W)`. Training only ever sees
+   windows `≤ T`; the evaluation window `T+1` is strictly in the future of every
+   training anchor it is scored against. Eval always leads train by exactly one
+   window, so reported eval NE/AUC is genuine next-period generalization, never
+   an in-sample measurement.
+2. **Within an anchor** — history is still gathered **causally**: the UIH scan
+   is `scan_start:flat_pos` (events strictly before the anchor), so even though a
+   long user history may reach back across earlier windows, no event at or after
+   the anchor's timestamp can enter its features. Forward-time windowing and
+   causal history are independent guarantees, and both hold simultaneously.
+
+Note this is a *temporal* split on the training stream — distinct from the
+preprocessing GTS split (§2) that carves off the final test day. Windows are
+indexed off the per-anchor target timestamp via a lazily-built, mmap'd
+`anchor_ts_L{H}.npy` cache (built once on first use; the default non-streaming
+path never touches it).
+
+### 5.2 Knobs
+
+All configurable via gin ([yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin))
+with env overrides:
+
+| env | gin | default | meaning |
+|---|---|---|---|
+| `START_TS` | `streaming_train_eval_loop.start_ts` | 150 | first window (early windows are near-empty warm-up; start dense) |
+| `NUM_TRAIN_TS` | `streaming_train_eval_loop.num_train_ts` | 30 | number of train windows (clamped to available) |
+| `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows (no per-window respawn) |
+| `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread during compute |
+| `EVAL_EACH_WINDOW` | `streaming_train_eval_loop.eval_each_window` | 1 | eval window T+1 after training window T |
+| — | `streaming_train_eval_loop.num_train_batches` / `num_eval_batches` | unset | cap per-window steps (unset = consume full window) |
+
+### 5.3 Hiding the window-reset overhead
+
+Advancing to a new window has a fixed cost — selecting the window's anchor
+indices and warming the dataloader's first batch — that, done naively, stalls
+training at every window boundary. Three layers drive it to ~0:
+
+1. **Persistent loader** (`persistent_loader=1`). The naive path recreates a
+   `DataLoader` per window, re-forking workers and paying first-batch warmup
+   each time (~11 s/window). Instead we build **one** `DataLoader` backed by a
+   stateful `StreamingWindowSampler` whose index set is swapped per window
+   (`set_window`), so workers fork once and persist. This removes the respawn
+   but still pays the index-mask + first-batch stall (~3.6 s/window).
+2. **Double buffering** (`double_buffer=1`). Two pre-forked worker pools
+   ping-pong: while the current window trains on pool A, the *next* window's
+   index mask (`window_indices`, a GIL-releasing NumPy `np.where`) and
+   first-batch prefetch are prepared on pool B in a **background thread**, so
+   that work overlaps GPU compute. The boundary train batch then arrives warm —
+   measured train first-batch data-wait drops to **~1–3 ms**. Pools are forked
+   up front on the main thread (never inside the background thread), so a forking
+   worker can never race a thread holding a lock.
+3. **Eval prefetch one window ahead.** With `eval_each_window=1` the eval window
+   (`T+1`) is prepared *before* training window `T` runs, so the idle eval pool
+   prefetches its first batches concurrently with train compute. This hides the
+   eval-side first-batch stall (**~0.55 s → ~2 ms**). It is safe because a
+   sample's content depends only on the sampler's window indices, not on any
+   train/eval flag.
+
+Net effect: steady-state throughput matches the non-streaming baseline and the
+per-window reset is effectively free; the only remaining one-time cost is the
+process cold start (CUDA-graph capture + the first lazy `anchor_ts` mmap).
+
+## 6. License
 
 Apache 2.0 (inherited from upstream).
