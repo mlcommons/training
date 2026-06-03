@@ -143,6 +143,227 @@ def _trim_warmup_from_trace(path: str, keep_n_active: int) -> None:
     )
 
 
+# GPU activity categories used to detect GPU stream rows and their busy time.
+_GPU_KERNEL_CATS = frozenset({"kernel", "gpu_memcpy", "gpu_memset"})
+
+
+def _is_rocm() -> bool:
+    """True on ROCm/AMD builds (``torch.version.hip`` set), False on CUDA/B200.
+
+    The ProfilerStep-layout normalization and the sub-us kernel de-overlap are
+    workarounds for how roctracer projects annotations/kernels onto HIP streams;
+    CUDA/CUPTI traces don't have those artifacts, so these passes must be skipped
+    on NVIDIA to avoid touching otherwise-correct traces.
+    """
+    return getattr(torch.version, "hip", None) is not None
+
+
+def _normalize_profilerstep_layout(path: str) -> None:
+    """Collapse fragmented GPU-side ``ProfilerStep#N`` spans into one span/step.
+
+    ``torch.profiler`` emits ``ProfilerStep#N`` as a CPU ``user_annotation`` that
+    Kineto projects onto the GPU timeline as ``gpu_user_annotation`` spans. On
+    CUDA the blocking H2D copy shares the compute stream, so each step projects
+    onto a single GPU stream and renders as one full-width span. On ROCm a
+    blocking H2D copy lands on HIP's null stream (a different stream than the
+    non-null compute stream), so the step splits across two GPU rows and looks
+    truncated in Perfetto — a pure rendering artifact (every kernel is still
+    captured, and the underlying GPU is busy for the whole step).
+
+    This rewrites each per-step GPU ``ProfilerStep`` annotation to a single span
+    on the rank's busiest (compute) GPU stream, covering the kernel extent inside
+    that step's CPU window. Works on a raw per-rank trace (GPU streams are tids
+    under one pid) by keying the busiest stream on ``(pid, tid)``. No-op when the
+    annotation already lives on a single GPU stream (the CUDA case), so it is
+    safe to run on every platform. Mutates the file in place.
+    """
+    import json as _json
+
+    with open(path) as f:
+        d = _json.load(f)
+    events = d.get("traceEvents", [])
+
+    # Per (pid,tid) GPU busy time -> identify the busiest = compute stream.
+    stream_busy: Dict[tuple, int] = {}
+    for e in events:
+        if e.get("ph") == "X" and e.get("cat") in _GPU_KERNEL_CATS:
+            dur = e.get("dur", 0)
+            if dur > 0:
+                key = (e.get("pid"), e.get("tid"))
+                stream_busy[key] = stream_busy.get(key, 0) + dur
+    if not stream_busy:
+        return
+    busiest = max(stream_busy, key=lambda k: stream_busy[k])
+
+    # Existing GPU-side ProfilerStep spans and the streams they sit on.
+    gpu_ps_streams = set()
+    template = None
+    for e in events:
+        if e.get("cat") == "gpu_user_annotation" and str(
+            e.get("name", "")
+        ).startswith("ProfilerStep"):
+            gpu_ps_streams.add((e.get("pid"), e.get("tid")))
+            if template is None:
+                template = e
+    # No fragmentation (single stream or none) -> leave the trace untouched.
+    if len(gpu_ps_streams) <= 1:
+        return
+
+    # CPU ProfilerStep windows: step name -> [min ts, max end].
+    cpu_win: Dict[str, list] = {}
+    for e in events:
+        if (
+            e.get("cat") == "user_annotation"
+            and e.get("ph") == "X"
+            and str(e.get("name", "")).startswith("ProfilerStep")
+        ):
+            ts = e.get("ts", 0)
+            end = ts + e.get("dur", 0)
+            w = cpu_win.get(e["name"])
+            if w is None:
+                cpu_win[e["name"]] = [ts, end]
+            else:
+                w[0] = min(w[0], ts)
+                w[1] = max(w[1], end)
+
+    # GPU kernel extents (any stream) for clamping each step's span.
+    gpu_kernels = [
+        (e.get("ts", 0), e.get("ts", 0) + e.get("dur", 0))
+        for e in events
+        if e.get("ph") == "X"
+        and e.get("cat") in _GPU_KERNEL_CATS
+        and e.get("dur", 0) > 0
+    ]
+
+    new_spans = []
+    for sname, (cs, ce) in cpu_win.items():
+        ks = [(ts, end) for ts, end in gpu_kernels if end > cs and ts < ce]
+        if not ks:
+            continue
+        gmin = min(ts for ts, _ in ks)
+        gmax = max(end for _, end in ks)
+        span = dict(template) if template else {}
+        span.update(
+            {
+                "ph": "X",
+                "cat": "gpu_user_annotation",
+                "name": sname,
+                "pid": busiest[0],
+                "tid": busiest[1],
+                "ts": gmin,
+                "dur": gmax - gmin,
+                "args": {"normalized_profilerstep": True},
+            }
+        )
+        new_spans.append(span)
+
+    if not new_spans:
+        return
+
+    out = [
+        e
+        for e in events
+        if not (
+            e.get("cat") == "gpu_user_annotation"
+            and str(e.get("name", "")).startswith("ProfilerStep")
+        )
+    ]
+    dropped = len(events) - len(out)
+    out.extend(new_spans)
+    d["traceEvents"] = out
+    with open(path, "w") as f:
+        _json.dump(d, f)
+    logger.warning(
+        f"Normalized GPU ProfilerStep layout in {path}: dropped {dropped} "
+        f"fragmented span(s) across {len(gpu_ps_streams)} stream(s), wrote "
+        f"{len(new_spans)} span(s) on busiest stream pid={busiest[0]} "
+        f"tid={busiest[1]}"
+    )
+
+
+def _deoverlap_gpu_slices(path: str, max_snap_us: float = 5.0) -> None:
+    """Remove sub-microsecond kernel overlaps that break Perfetto's renderer.
+
+    Perfetto draws all ``ph=="X"`` slices on a single track (one ``(pid, tid)``)
+    as a strict nested stack ordered by start time: a slice that *opens* while a
+    previous slice on the same track is still open is treated as that slice's
+    child and is **clipped to the parent's end**. ROCm's roctracer reports
+    per-stream kernel timestamps at ns granularity, so two back-to-back kernels
+    on the same compute stream occasionally overlap by a fraction of a
+    microsecond (e.g. an 88 ns ``elementwise`` epilogue ending 0.075 us *after*
+    the next 21 ms ``_hstu_attn_bwd`` kernel begins). Perfetto then nests the
+    long kernel inside the tiny one and clips it to a sub-pixel sliver, so the
+    kernel "disappears" from the timeline even though it is fully present in the
+    JSON.
+
+    This pulls each slice's end back to just *before* the next slice's start
+    whenever they overlap by less than ``max_snap_us`` (a measurement artifact,
+    not real concurrency — kernels on one stream are serialized), leaving genuine
+    nesting (a small kernel fully contained in a larger one) untouched. The
+    adjustment is sub-microsecond and does not change any reported duration
+    meaningfully. Mutates the file in place; best-effort.
+
+    Critically, the slices are separated by a tiny ``_GAP_US`` (~1 ns) rather
+    than snapped to an *exactly equal* end==start timestamp. A coincident
+    end==start is just as fatal as an overlap in Perfetto: it nests the next
+    slice inside the previous one and clips it to zero width (this is the ~1 ns
+    gap that roctracer leaves between cleanly-rendered back-to-back kernels). So
+    we also fix exact-touch (``a_end == b.ts``) boundaries, not just overlaps.
+    """
+    import json as _json
+    from collections import defaultdict
+
+    # ~1 ns. Matches the natural inter-kernel gap roctracer leaves between
+    # back-to-back kernels that Perfetto already renders correctly. Must be
+    # strictly > 0 so end != start after the nudge.
+    _GAP_US = 0.001
+
+    with open(path) as f:
+        d = _json.load(f)
+    events = d.get("traceEvents", [])
+
+    tracks: Dict[tuple, list] = defaultdict(list)
+    for e in events:
+        if (
+            e.get("ph") == "X"
+            and e.get("cat") in _GPU_KERNEL_CATS
+            and e.get("dur", 0) > 0
+        ):
+            tracks[(e.get("pid"), e.get("tid"))].append(e)
+
+    snapped = 0
+    max_clip = 0.0
+    for sl in tracks.values():
+        # Sort by start, then longest-first so a container precedes the slices
+        # it nests; consecutive pairs are then either disjoint, properly nested,
+        # or a tiny artifact overlap.
+        sl.sort(key=lambda e: (e["ts"], -e["dur"]))
+        for i in range(len(sl) - 1):
+            a = sl[i]
+            b = sl[i + 1]
+            a_end = a["ts"] + a["dur"]
+            b_end = b["ts"] + b["dur"]
+            # Touching (a_end == b.ts) or partial overlap (a ends inside b) both
+            # break rendering; true containment (a_end >= b_end) is valid nesting
+            # and is left alone.
+            if b["ts"] <= a_end < b_end:
+                desired_end = b["ts"] - _GAP_US
+                clip = a_end - desired_end
+                if a["ts"] < desired_end and 0 < clip < max_snap_us:
+                    a["dur"] = desired_end - a["ts"]
+                    snapped += 1
+                    if clip > max_clip:
+                        max_clip = clip
+
+    if snapped:
+        with open(path, "w") as f:
+            _json.dump(d, f)
+        logger.warning(
+            f"De-overlapped GPU slices in {path}: snapped {snapped} sub-us "
+            f"overlap(s) (max {max_clip:.3f}us) so Perfetto renders every kernel"
+        )
+
+
 def _on_trace_ready_fn(
     rank: Optional[int] = None,
     trace_dir: str = "/tmp/dlrm_v3_traces",
@@ -197,6 +418,17 @@ def _on_trace_ready_fn(
             logger.warning(f"Trace written to: {path}")
             if keep_n_active is not None and keep_n_active > 0:
                 _trim_warmup_from_trace(path, keep_n_active)
+            # ROCm/AMD-only rendering fixes. CUDA/CUPTI (e.g. B200) traces don't
+            # exhibit the fragmented-ProfilerStep or sub-us kernel-overlap
+            # artifacts, so skip entirely on NVIDIA to avoid touching otherwise
+            # correct traces. Best-effort like trim above.
+            if _is_rocm():
+                # Normalize the GPU-side ProfilerStep layout so ROCm traces
+                # render with one full-width step span per stream like CUDA.
+                _normalize_profilerstep_layout(path)
+                # Snap roctracer's sub-us kernel overlaps so Perfetto doesn't
+                # mis-nest and hide long kernels.
+                _deoverlap_gpu_slices(path)
         except Exception as exc:
             logger.warning(f"Trace export/trim failed for {path}: {exc!r} (skipping)")
 
