@@ -158,4 +158,9 @@ Profiler.trace_dir = @run_results_dir()
 MetricsLogger.tensorboard_log_path = "/tmp/tb/yambda_5b/"
 MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = 0.80275
-save_dmp_checkpoint.path = "/apps/chcai/ckpts/yambda_5b/"
+# Checkpointing disabled by default — a full DMP checkpoint is ~100s of GB and
+# the streaming loop always saves on the final window. save_dmp_checkpoint
+# no-ops on the empty path. Set $CKPT_PATH to a directory to re-enable.
+save_dmp_checkpoint.path = @ckpt/env_path()
+ckpt/env_path.key     = "CKPT_PATH"
+ckpt/env_path.default = ""
