@@ -15,6 +15,8 @@
 # pyre-strict
 import logging
 import os
+import threading
+import time
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import (
@@ -424,6 +426,12 @@ def make_streaming_dataloader(
     dataset.dataset.set_ts(ts)  # pyre-ignore [16]
     total_items = dataset.dataset.get_item_count()
     subset = torch.utils.data.Subset(dataset, range(total_items))
+    # shuffle=False keeps temporal order within the window: a non-shuffling
+    # DistributedSampler hands rank r the strided slice indices[r::num_replicas]
+    # (round-robin), so all ranks stay on the same time front and consume the
+    # window in index order. Fork ctx mirrors the train path (COW-share the
+    # mmap'd store instead of pickling it into every worker).
+    mp_ctx = "fork" if num_workers and num_workers > 0 else None
     dataloader = DataLoader(
         dataset=subset,
         batch_size=batch_size,
@@ -432,9 +440,126 @@ def make_streaming_dataloader(
         drop_last=True,
         num_workers=num_workers,
         prefetch_factor=prefetch_factor,
-        sampler=DistributedSampler(subset, drop_last=True),
+        sampler=DistributedSampler(subset, shuffle=False, drop_last=True),
+        multiprocessing_context=mp_ctx,
     )
     return dataloader
+
+
+class StreamingWindowSampler(torch.utils.data.Sampler):
+    """Per-rank sampler whose index list is swapped each window.
+
+    Yields this rank's round-robin slice of the active window's GLOBAL anchor
+    indices (into the dataset's ``_positions``). Because indices are global, a
+    single DataLoader with ``persistent_workers=True`` can be reused across all
+    windows: the main process re-iterates this sampler each window and ships the
+    new indices to the already-forked workers, which map any global index via
+    the shared mmap. No per-window worker respawn / dataset re-pickle.
+
+    Round-robin striding (rank r gets ``indices[r::world_size]``) over the
+    time-sorted window keeps every rank on the same time front; the window is
+    truncated to a multiple of ``world_size`` so all ranks get equal counts
+    (required for DDP collective lockstep).
+    """
+
+    def __init__(self, rank: int, world_size: int) -> None:
+        self._rank: int = rank
+        self._world_size: int = world_size
+        self._indices: List[int] = []
+
+    def set_window(self, global_indices) -> None:
+        n = (len(global_indices) // self._world_size) * self._world_size
+        self._indices = global_indices[:n][self._rank :: self._world_size].tolist()
+
+    def __iter__(self):
+        return iter(self._indices)
+
+    def __len__(self) -> int:
+        return len(self._indices)
+
+
+@gin.configurable
+def make_persistent_streaming_dataloader(
+    dataset: HammerToTorchDataset,
+    sampler: StreamingWindowSampler,
+    batch_size: int,
+    num_workers: int,
+    prefetch_factor: int,
+) -> DataLoader:
+    """One reusable DataLoader for the whole streaming run. ``sampler`` is
+    mutated per window via ``set_window``; workers persist across windows."""
+    use_workers = bool(num_workers and num_workers > 0)
+    return DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_fn,
+        drop_last=True,
+        num_workers=num_workers,
+        prefetch_factor=prefetch_factor if use_workers else None,
+        sampler=sampler,
+        persistent_workers=use_workers,
+        multiprocessing_context="fork" if use_workers else None,
+    )
+
+
+class _PrefetchingWindowLoader:
+    """Double-buffered window loader for the persistent streaming path.
+
+    Holds ``n_buffers`` pre-forked persistent worker pools that ping-pong: while
+    the current window trains on one pool, the *next* window's index selection
+    (``window_indices``) and first-batch prefetch are prepared on another pool
+    in a background thread. By the time training advances, that window is warm,
+    so the per-window reset (mask + first-batch stall) is hidden behind GPU
+    compute (~0 dead time at the boundary).
+
+    Worker pools are forked once on the main thread at the start of ``stream``;
+    afterwards only iterator resets happen (no forks), so background-thread
+    preparation cannot fork while other threads hold locks.
+    """
+
+    def __init__(
+        self,
+        dataset: "HammerToTorchDataset",
+        sampler_factory,
+        dl_factory,
+        n_buffers: int = 2,
+    ) -> None:
+        self._dataset = dataset
+        self._n = n_buffers
+        self._samplers = [sampler_factory() for _ in range(n_buffers)]
+        self._dls = [dl_factory(s) for s in self._samplers]
+        self._iters: List[Optional[object]] = [None] * n_buffers
+
+    def _prepare(self, buf: int, ts: int) -> None:
+        # window_indices() is the O(N) mask; numpy releases the GIL for it, so it
+        # overlaps the main thread's GPU dispatch. iter() then kicks off this
+        # pool's background prefetch.
+        self._samplers[buf].set_window(self._dataset.dataset.window_indices(ts))
+        self._iters[buf] = iter(self._dls[buf])
+
+    def stream(self, ts_list: List[int]):
+        n = len(ts_list)
+        if n == 0:
+            return
+        threads: List[Optional[threading.Thread]] = [None] * self._n
+        # Prime the first n_buffers windows on the main thread (forks all pools).
+        for b in range(min(self._n, n)):
+            self._prepare(b, ts_list[b])
+        for i in range(n):
+            buf = i % self._n
+            if threads[buf] is not None:
+                threads[buf].join()
+                threads[buf] = None
+            yield ts_list[i], self._iters[buf]
+            # This pool is now free; prefetch the window n_buffers ahead.
+            j = i + self._n
+            if j < n:
+                th = threading.Thread(
+                    target=self._prepare, args=(buf, ts_list[j]), daemon=True
+                )
+                th.start()
+                threads[buf] = th
 
 
 @gin.configurable
@@ -903,6 +1028,10 @@ def streaming_train_eval_loop(
     output_trace: bool = False,
     metric_log_frequency: int = 1,
     checkpoint_frequency: int = 100,
+    start_ts: int = 0,
+    persistent_loader: bool = False,
+    eval_each_window: bool = True,
+    double_buffer: bool = False,
 ) -> None:
     profiler = Profiler(rank) if output_trace else None
     dataset_class, kwargs = get_dataset()
@@ -910,16 +1039,55 @@ def streaming_train_eval_loop(
     dataset = HammerToTorchDataset(
         dataset=dataset_class(hstu_config=hstu_config, is_inference=False, **kwargs)
     )
-    for train_ts in range(num_train_ts):
-        train_batch_idx: int = 0
-        train_dataloader = make_streaming_dataloader(dataset=dataset, ts=train_ts)
-        train_data_iterator = iter(train_dataloader)
+    # Persistent path: build ONE DataLoader + a stateful sampler whose indices
+    # are swapped per window, so workers fork once and are reused across all
+    # windows (eliminates the per-window dataloader respawn + first-batch
+    # warmup). The non-persistent path recreates a DataLoader per window.
+    window_sampler: Optional[StreamingWindowSampler] = None
+    persistent_dl: Optional[DataLoader] = None
+    if persistent_loader:
+        world_size = (
+            torch.distributed.get_world_size()
+            if torch.distributed.is_initialized()
+            else 1
+        )
+        window_sampler = StreamingWindowSampler(rank=rank, world_size=world_size)
+        persistent_dl = make_persistent_streaming_dataloader(
+            dataset=dataset, sampler=window_sampler
+        )
+
+    def _window_iter(ts: int):
+        if persistent_loader:
+            assert window_sampler is not None and persistent_dl is not None
+            window_sampler.set_window(dataset.dataset.window_indices(ts))  # pyre-ignore [16]
+            return iter(persistent_dl)
+        return iter(make_streaming_dataloader(dataset=dataset, ts=ts))
+    # Windows are [start_ts, start_ts + num_train_ts); each step trains window T
+    # then evals window T+1, so the last eval window is start_ts + num_train_ts,
+    # which must be < num_windows(). Anchors require >= history_length prior
+    # events, so the earliest windows are near-empty warm-up — use start_ts to
+    # begin at a dense window. Clamp instead of failing.
+    if hasattr(dataset.dataset, "num_windows"):
+        available = dataset.dataset.num_windows()  # pyre-ignore [16]
+        max_count = max(0, available - 1 - start_ts)
+        if num_train_ts > max_count:
+            logger.warning(
+                f"start_ts={start_ts} + num_train_ts={num_train_ts} exceeds "
+                f"available windows ({available}); clamping num_train_ts to {max_count}."
+            )
+            num_train_ts = max_count
+    def _run_train_window(train_data_iterator, label: Optional[str] = None) -> None:
+        train_batch_idx = 0
+        first_wait: Optional[float] = None
         while True:
             model.train()
+            _t_next = time.perf_counter() if (label and rank == 0) else None
             try:
                 sample = next(train_data_iterator)
             except StopIteration:
                 break
+            if _t_next is not None and first_wait is None:
+                first_wait = time.perf_counter() - _t_next
             optimizer.zero_grad()
             sample.to(device)
             (
@@ -958,18 +1126,25 @@ def streaming_train_eval_loop(
                 profiler.step()
             if num_train_batches is not None and train_batch_idx >= num_train_batches:
                 break
-        eval_ts = train_ts + 1
-        dataset.dataset.is_eval = True  # pyre-ignore [16]
+        if label and rank == 0 and first_wait is not None:
+            logger.info(
+                f"[boundary] {label} train first-batch data-wait={first_wait * 1000:.1f}ms"
+            )
+
+    def _run_eval_window(eval_data_iterator, label: Optional[str] = None) -> None:
         model.eval()
-        eval_batch_idx: int = 0
-        eval_dataloader = make_streaming_dataloader(dataset=dataset, ts=eval_ts)
-        eval_data_iterator = iter(eval_dataloader)
+        eval_batch_idx = 0
+        first_wait: Optional[float] = None
+        _t_enter = time.perf_counter() if (label and rank == 0) else None
         with torch.no_grad():
             while True:
+                _t_next = time.perf_counter() if (label and rank == 0) else None
                 try:
                     sample = next(eval_data_iterator)
                 except StopIteration:
                     break
+                if _t_next is not None and first_wait is None:
+                    first_wait = time.perf_counter() - _t_next
                 sample.to(device)
                 (
                     _,
@@ -1001,9 +1176,18 @@ def streaming_train_eval_loop(
                     break
             for k, v in metric_logger.compute(mode="eval").items():
                 print(f"{k}: {v}")
+        if label and rank == 0 and _t_enter is not None:
+            _eval_total = time.perf_counter() - _t_enter
+            _fw = (first_wait * 1000) if first_wait is not None else float("nan")
+            logger.info(
+                f"[boundary] {label} eval first-batch data-wait={_fw:.1f}ms "
+                f"total_eval={_eval_total * 1000:.1f}ms batches={eval_batch_idx}"
+            )
+
+    def _maybe_checkpoint(train_ts: int) -> None:
         if (
             train_ts % checkpoint_frequency == 0 and train_ts > 0
-        ) or train_ts == num_train_ts - 1:
+        ) or train_ts == start_ts + num_train_ts - 1:
             save_dmp_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -1011,6 +1195,64 @@ def streaming_train_eval_loop(
                 rank=rank,
                 batch_idx=train_ts,
             )
+
+    train_ts_list = list(range(start_ts, start_ts + num_train_ts))
+    if persistent_loader and double_buffer:
+        # Double-buffered: next window prepared in the background during the
+        # current window's compute. Eval (if enabled) uses its own pre-forked
+        # pool, primed up front on the main thread so no fork races a bg thread.
+        prefetcher = _PrefetchingWindowLoader(
+            dataset=dataset,
+            sampler_factory=lambda: StreamingWindowSampler(rank, world_size),
+            dl_factory=lambda s: make_persistent_streaming_dataloader(
+                dataset=dataset, sampler=s
+            ),
+        )
+        eval_sampler: Optional[StreamingWindowSampler] = None
+        eval_dl: Optional[DataLoader] = None
+        # Eval iterator is built one window ahead: the eval pool (idle while the
+        # current train window runs) prefetches the eval window's first batches
+        # concurrently with train compute, so eval starts warm (hides the
+        # ~0.5s eval first-batch stall). yambda's sample content depends only on
+        # the sampler window, not is_eval, so prefetching during train is safe.
+        eval_iter: Optional[Iterator] = None
+        if eval_each_window and len(train_ts_list) > 0:
+            eval_sampler = StreamingWindowSampler(rank, world_size)
+            eval_dl = make_persistent_streaming_dataloader(
+                dataset=dataset, sampler=eval_sampler
+            )
+            # Fork the eval pool now (main thread, before any prefetch thread)
+            # and kick off prefetch of the first eval window (train_ts_list[0]+1).
+            eval_sampler.set_window(
+                dataset.dataset.window_indices(train_ts_list[0] + 1)  # pyre-ignore [16]
+            )
+            eval_iter = iter(eval_dl)
+        n_train = len(train_ts_list)
+        for i, (train_ts, train_data_iterator) in enumerate(
+            prefetcher.stream(train_ts_list)
+        ):
+            dataset.dataset.is_eval = False  # pyre-ignore [16]
+            _run_train_window(train_data_iterator, label=f"train_ts={train_ts}")
+            if eval_each_window:
+                dataset.dataset.is_eval = True  # pyre-ignore [16]
+                assert eval_sampler is not None and eval_dl is not None
+                _run_eval_window(eval_iter, label=f"eval_ts={train_ts + 1}")
+                # Re-arm the eval pool for the next window so it prefetches
+                # during the upcoming train window.
+                if i + 1 < n_train:
+                    eval_sampler.set_window(
+                        dataset.dataset.window_indices(train_ts + 2)  # pyre-ignore [16]
+                    )
+                    eval_iter = iter(eval_dl)
+            _maybe_checkpoint(train_ts)
+    else:
+        for train_ts in train_ts_list:
+            dataset.dataset.is_eval = False  # pyre-ignore [16]
+            _run_train_window(_window_iter(train_ts))
+            if eval_each_window:
+                dataset.dataset.is_eval = True  # pyre-ignore [16]
+                _run_eval_window(_window_iter(train_ts + 1))
+            _maybe_checkpoint(train_ts)
 
     eval_ts = num_train_ts
     dataset.dataset.is_eval = True

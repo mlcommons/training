@@ -185,6 +185,8 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         cross_specs: Optional[Sequence[Tuple[str, Sequence[str], int, int]]] = None,
         cache_dir: Optional[str] = None,
         is_inference: bool = False,
+        streaming_window_seconds: int = 86400,
+        streaming_sort_within_window: bool = False,
         *args,
         **kwargs,
     ) -> None:
@@ -193,6 +195,17 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self._metadata_dir: str = metadata_dir
         self._history_length: int = history_length
         self._scan_window: int = scan_window
+        # Streaming/temporal-order state. Everything here is LAZY: nothing is
+        # built or read until the first set_ts()/num_windows() call (only the
+        # streaming-train-eval loop does that), so the default train-eval path
+        # is byte-for-byte unaffected.
+        self._streaming_window_seconds: int = streaming_window_seconds
+        self._streaming_sort_within_window: bool = streaming_sort_within_window
+        self._active: Optional[np.ndarray] = None
+        self.is_eval: bool = False
+        self._anchor_ts: Optional[np.ndarray] = None
+        self._t_min: Optional[int] = None
+        self._t_max: Optional[int] = None
         self._cache_dir: Optional[str] = cache_dir
         self._cross_specs: List[Tuple[str, Tuple[str, ...], int, int]] = [
             (name, tuple(keys), n, s) for (name, keys, n, s) in (cross_specs or [])
@@ -409,10 +422,103 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self.num_items: int = n_items
 
     def get_item_count(self) -> int:
+        # Streaming mode restricts the active set to the current time window;
+        # otherwise the full (user-major) anchor list is used (train-eval).
+        if self._active is not None:
+            return int(len(self._active))
         return int(len(self._positions))
 
     def iloc(self, idx: int) -> int:
+        if self._active is not None:
+            return int(self._positions[self._active[idx]])
         return int(self._positions[idx])
+
+    def _ensure_streaming_index(self) -> None:
+        """Lazily build + mmap the per-anchor target-timestamp array used for
+        time-windowed streaming.
+
+        Built only on the first ``set_ts()``/``num_windows()`` call, so the
+        default train-eval path never reads timestamps or writes a new file.
+        Multi-rank safe via an exclusive file lock + atomic rename; all ranks
+        then mmap the result read-only (shared physical pages, ~0 anon).
+        """
+        if self._anchor_ts is not None:
+            return
+        import fcntl
+
+        assert self._cache_dir is not None
+        anchor_path = os.path.join(
+            self._cache_dir, f"anchor_ts_L{self._history_length}.npy"
+        )
+        if not os.path.exists(anchor_path):
+            lock_path = os.path.join(self._cache_dir, "_anchor_ts_lock")
+            with open(lock_path, "w") as lf:
+                logger.info(f"Acquiring anchor-ts build lock for {anchor_path}...")
+                fcntl.flock(lf, fcntl.LOCK_EX)
+                if not os.path.exists(anchor_path):
+                    logger.info(
+                        f"Building {anchor_path}: target ts for "
+                        f"{len(self._positions):,} anchors"
+                    )
+                    anchor_ts = self.store.flat_timestamps[self._positions]
+                    tmp = anchor_path + ".tmp.npy"
+                    np.save(tmp, anchor_ts)
+                    os.replace(tmp, anchor_path)
+                    del anchor_ts
+        self._anchor_ts = _load_npy_readonly(anchor_path)
+        self._t_min = int(self._anchor_ts.min())
+        self._t_max = int(self._anchor_ts.max())
+
+    def num_windows(self) -> int:
+        """Number of fixed-duration windows spanning [t_min, t_max]."""
+        self._ensure_streaming_index()
+        assert self._t_min is not None and self._t_max is not None
+        span = self._t_max - self._t_min + 1
+        w = self._streaming_window_seconds
+        return int((span + w - 1) // w)
+
+    def window_indices(
+        self, ts: int, sort_by_time: Optional[bool] = None
+    ) -> np.ndarray:
+        """Global anchor indices (into ``_positions``) whose target timestamp is
+        in window ``ts``: ``[t_min + ts*W, t_min + (ts+1)*W)``.
+
+        Returned in ascending global-index order (user-major), which keeps the
+        per-sample history scans page-local in the mmap'd event arrays. Used by
+        the per-window path (via ``set_ts``) and the persistent path (shipped to
+        workers through the sampler). ``sort_by_time`` defaults to
+        ``streaming_sort_within_window``.
+
+        Note: an O(log N) variant using a cached argsort of the timestamps was
+        evaluated but rejected — it doubles resident mmap (sorted-ts + order
+        permutation, ~52 GB) and that extra residency evicts the event-array
+        page cache, stalling dataloader workers (NCCL watchdog timeouts). The
+        O(N) mask here keeps only one ~26 GB array resident and is robust.
+        """
+        self._ensure_streaming_index()
+        assert self._anchor_ts is not None and self._t_min is not None
+        w = self._streaming_window_seconds
+        lo = self._t_min + ts * w
+        hi = lo + w
+        idx = np.where((self._anchor_ts >= lo) & (self._anchor_ts < hi))[0]
+        do_sort = (
+            self._streaming_sort_within_window if sort_by_time is None else sort_by_time
+        )
+        if do_sort and idx.size > 0:
+            idx = idx[np.argsort(self._anchor_ts[idx], kind="stable")]
+        logger.warning(f"window_indices({ts}): [{lo}, {hi}) -> {idx.size:,} anchors")
+        return idx.astype(np.int64)
+
+    def set_ts(self, ts: int) -> None:
+        """Restrict the active sample set to anchors in window ``ts`` (used by
+        the per-window-DataLoader path, where ``iloc``/``get_item_count`` index
+        through ``_active``).
+
+        Forward-only temporal slicing for streaming train/eval. History for any
+        anchor is still gathered causally (``scan_start:flat_pos``) and may span
+        earlier windows, so there is no feature leakage from future events.
+        """
+        self._active = self.window_indices(ts)
 
     def load_query_samples(self, sample_list) -> None:
         max_num_candidates = (
