@@ -24,9 +24,6 @@ mixed-precision training.
 rocm/primus:v26.3
 ```
 
-The image's native PyTorch is kept as-is and must not be reinstalled — it is
-the ROCm-matched build used by triton/fbgemm.
-
 ### Dependency versions
 
 Aligned with the B200 path: same torch major.minor, same torchrec commit,
