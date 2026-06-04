@@ -98,6 +98,12 @@ JOBID=11367
 CONTAINER=yambda_primus
 REPO=/home/chcai/training/recommendation_v4
 
+# Direct-SSH fallback so the supervisor can probe the node even while the SLURM
+# control plane is unreachable — a transient controller outage must NOT be
+# mistaken for node death (which would needlessly tear down a healthy run).
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+LAST_NODE=""   # last known node hostname for $JOBID (cached for direct probes)
+
 # Defaults are sized from measurement: ~560 GB/checkpoint, ~83 s/save (blocking,
 # attributed to the step it fires on), ~650 ms/train step @ global batch 8192,
 # ~1465 steps (~16 min) per full ~12M-anchor window, full-holdout eval
@@ -117,6 +123,12 @@ NUM_TRAIN_BATCHES=0     # 0 = full window (only capped for validation/tests)
 NUM_EVAL_BATCHES=0      # 0 = full holdout eval (only capped for validation)
 DIE_AT_STEP=-1          # >=0 = test-only failure injection
 IN_WINDOW_FREQ=0        # >0 = also save every N batches within a window
+ATTACH=0                # 1 = (re)attach to an already-running trainer without
+                        #     killing it or truncating its log — used to restore
+                        #     supervision over a trainer that outlived a previous
+                        #     supervisor (e.g. one a control-plane outage killed).
+CTRL_WAIT_MAX=3600      # max seconds to wait for an unreachable SLURM controller
+                        # to recover before concluding failover is needed.
 
 # --- node failover ----------------------------------------------------------
 # If the current allocation/node goes away, acquire a FRESH node, (re)provision
@@ -157,6 +169,8 @@ while [[ $# -gt 0 ]]; do
         --num-eval-batches) NUM_EVAL_BATCHES="$2"; shift 2;;
         --die-at-step) DIE_AT_STEP="$2"; shift 2;;
         --in-window-freq) IN_WINDOW_FREQ="$2"; shift 2;;
+        --attach) ATTACH="$2"; shift 2;;
+        --ctrl-wait-max) CTRL_WAIT_MAX="$2"; shift 2;;
         --min-free-gib) MIN_FREE_GIB="$2"; shift 2;;
         --stall-s) STALL_S="$2"; shift 2;;
         --partition) PARTITION="$2"; shift 2;;
@@ -174,8 +188,46 @@ SUP_LOG="${LOG%.log}.supervisor.log"
 
 sup() { echo "[$(date '+%F %T')] [supervisor] $*" | tee -a "$SUP_LOG"; }
 
-# Run a command inside the allocation's container, capturing its stdout.
-cexec() { srun --jobid="$JOBID" --overlap docker exec "$CONTAINER" bash -lc "$1" 2>/dev/null; }
+# Run a command inside the allocation's container, capturing its stdout. Wrapped
+# in `timeout` so a hung control plane / NFS can never wedge the supervisor.
+cexec() { timeout 90 srun --jobid="$JOBID" --overlap docker exec "$CONTAINER" bash -lc "$1" 2>/dev/null; }
+
+# Is the SLURM control plane reachable right now?
+controller_up() { timeout 12 sinfo -h -o '%P' >/dev/null 2>&1; }
+
+# Refresh + echo the node hostname for $JOBID (cached in LAST_NODE for direct
+# probes that must work even while the controller is down).
+refresh_node() {
+    local n; n=$(timeout 12 squeue -h -j "$JOBID" -o '%N' 2>/dev/null | head -1)
+    [[ -n "$n" ]] && LAST_NODE="$n"
+    echo "$LAST_NODE"
+}
+
+# Run a (simple) command in the container by SSHing the node DIRECTLY, bypassing
+# SLURM — the only way to observe the trainer during a controller outage. Needs a
+# previously-cached LAST_NODE. Keep "$1" free of embedded double quotes.
+dexec() {
+    [[ -z "$LAST_NODE" ]] && return 1
+    timeout 40 ssh $SSH_OPTS "$LAST_NODE" "docker exec $CONTAINER bash -lc '$1'" 2>/dev/null
+}
+
+# Block (with backoff) until the controller is reachable again, up to
+# CTRL_WAIT_MAX. A controller outage leaves RUNNING jobs running, so waiting it
+# out is almost always preferable to abandoning a healthy node.
+wait_for_controller() {
+    local waited=0
+    controller_up && return 0
+    while ! controller_up; do
+        if (( waited >= CTRL_WAIT_MAX )); then
+            sup "controller still unreachable after ${waited}s (max ${CTRL_WAIT_MAX}s) — proceeding."
+            return 1
+        fi
+        sup "SLURM controller unreachable; waiting for recovery (${waited}s/${CTRL_WAIT_MAX}s)…"
+        sleep 30; waited=$((waited + 30))
+    done
+    sup "SLURM controller reachable again after ${waited}s."
+    return 0
+}
 
 cleanup_workers() {
     # The trainer spawns 8 rank processes + dataloader workers whose cmdlines
@@ -207,7 +259,7 @@ alloc_healthy() {
 
 # Can we actually exec in the training container on this allocation?
 container_up() {
-    srun --jobid="$1" --overlap docker exec "$CONTAINER" true >/dev/null 2>&1
+    timeout 30 srun --jobid="$1" --overlap docker exec "$CONTAINER" true >/dev/null 2>&1
 }
 
 # (Re)create + dep-install the container on the given allocation's node.
@@ -251,7 +303,11 @@ acquire_node() {
 # fresh provisioned node if not. Resume is automatic: the latest checkpoint is
 # on shared NFS, reachable from whatever node we end up on.
 ensure_ready() {
+    # A controller outage leaves RUNNING jobs running; wait it out before deciding
+    # anything is wrong, so we never abandon a healthy node over a transient blip.
+    wait_for_controller || true
     if alloc_healthy "$JOBID"; then
+        refresh_node >/dev/null
         if container_up "$JOBID"; then return 0; fi
         sup "alloc $JOBID healthy but container '$CONTAINER' not up — (re)provisioning"
         provision_node "$JOBID" && return 0
@@ -276,10 +332,16 @@ release_acquired() {
     done
 }
 
-# Returns 0 (true) if a trainer process is alive in the container.
+# Returns 0 (true) if a trainer process is alive in the container. Uses SLURM
+# (srun) when the controller is up, else falls back to a direct SSH probe so a
+# control-plane outage can't make a live trainer look dead.
 trainer_alive() {
     local n
-    n=$(cexec "pgrep -f generative_recommenders | wc -l" | tr -d ' ')
+    if controller_up; then
+        n=$(cexec "pgrep -f generative_recommenders | wc -l" | tr -d ' ')
+    else
+        n=$(dexec "pgrep -f generative_recommenders | wc -l" | tr -d ' ')
+    fi
     [[ "${n:-0}" -gt 0 ]]
 }
 
@@ -341,9 +403,14 @@ cexec "mkdir -p '$CKPT_PATH' '/apps/chcai/tb/$RUN_NAME'"
 # Initialize this run's metrics log ONCE. launch_smoke_8gpu.sh appends (tee -a),
 # so every relaunch attempt accumulates into this single file — the full-run
 # NE/AUC history survives crashes and node failover instead of being truncated
-# on each relaunch. (Starting the supervisor = starting a fresh run.)
-cexec ": > '$LOG'"
-sup "metrics log initialized (relaunch-append): $LOG"
+# on each relaunch. (Starting the supervisor = starting a fresh run.) In ATTACH
+# mode we are adopting an already-running trainer, so we KEEP its existing log.
+if [[ "$ATTACH" == "1" ]]; then
+    sup "ATTACH mode: adopting existing run — keeping metrics log intact: $LOG"
+else
+    cexec ": > '$LOG'"
+    sup "metrics log initialized (relaunch-append): $LOG"
+fi
 sup "tensorboard (NFS): /apps/chcai/tb/$RUN_NAME/"
 
 attempt=0
@@ -357,16 +424,33 @@ while (( attempt < MAX_RELAUNCH )); do
         sup "FATAL: could not secure a healthy allocation (failover failed)."
         exit 4
     fi
-    if ! disk_guard; then exit 3; fi
-    cleanup_workers
+    refresh_node >/dev/null   # cache LAST_NODE for direct probes during outages
 
-    # Mark current end of log so we only read sentinels produced by THIS attempt.
-    start_line=$(cexec "wc -l < '$LOG' 2>/dev/null" | tr -d ' '); start_line=${start_line:-0}
-    start_line=$((start_line + 1))
+    # ATTACH (first attempt only): if a trainer is already running for this run,
+    # adopt it in place — DON'T disk-guard (its sweep would delete an in-flight
+    # .tmp save), DON'T cleanup_workers (would kill it), DON'T launch. Just begin
+    # monitoring. Any subsequent relaunch is a normal launch from the checkpoint.
+    adopt=0
+    if [[ "$ATTACH" == "1" ]] && trainer_alive; then
+        adopt=1; ATTACH=0
+        sup "ATTACH mode: trainer already alive on ${LAST_NODE:-node} — monitoring in place (no relaunch/kill/sweep)."
+    fi
 
-    sup "launching (reading sentinels from log line $start_line)"
-    launch
-    sleep 15  # let docker exec spin up the process
+    if (( adopt )); then
+        # Mark current end of log so we only read sentinels produced from here on.
+        start_line=$(cexec "wc -l < '$LOG' 2>/dev/null" | tr -d ' '); start_line=${start_line:-0}
+        start_line=$((start_line + 1))
+        sup "monitoring adopted run (reading sentinels from log line $start_line)"
+    else
+        if ! disk_guard; then exit 3; fi
+        cleanup_workers
+        # Mark current end of log so we only read sentinels produced by THIS attempt.
+        start_line=$(cexec "wc -l < '$LOG' 2>/dev/null" | tr -d ' '); start_line=${start_line:-0}
+        start_line=$((start_line + 1))
+        sup "launching (reading sentinels from log line $start_line)"
+        launch
+        sleep 15  # let docker exec spin up the process
+    fi
 
     # Monitor loop.
     last_size=0
@@ -378,8 +462,20 @@ while (( attempt < MAX_RELAUNCH )); do
         # will fail over to a fresh node and resume from the latest checkpoint.
         hb=$((hb + 1))
         if (( hb % 4 == 0 )) && ! alloc_healthy "$JOBID"; then
-            sup "allocation $JOBID lost mid-run (node down/job ended) — relaunching with failover."
-            break
+            if ! controller_up; then
+                # Control plane unreachable != node down. If the trainer is still
+                # alive on the node (direct SSH probe), this is a transient blip —
+                # keep monitoring rather than tearing down a healthy run.
+                if trainer_alive; then
+                    sup "control plane unreachable but trainer still alive on ${LAST_NODE:-node} — transient; continuing to monitor."
+                else
+                    sup "control plane unreachable AND trainer absent on ${LAST_NODE:-node} — relaunching with failover."
+                    break
+                fi
+            else
+                sup "allocation $JOBID lost mid-run (node down/job ended) — relaunching with failover."
+                break
+            fi
         fi
 
         rc=$(last_exit_since "$start_line")
