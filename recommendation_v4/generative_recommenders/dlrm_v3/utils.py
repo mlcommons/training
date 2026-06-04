@@ -1032,6 +1032,21 @@ def env_int(key: str = "", default: int = 0) -> int:
 
 
 @gin.configurable
+def env_float(key: str = "", default: float = 0.0) -> float:
+    """Resolve a float from os.environ[key], falling back to `default`.
+
+    Companion to `env_int` for fractional/duration overrides (e.g. a
+    checkpoint time interval in seconds). Example gin usage:
+
+        streaming_train_eval_loop.checkpoint_time_interval_s = @env_float()
+        env_float.key     = "CKPT_TIME_INTERVAL_S"
+        env_float.default = 3600.0
+    """
+    raw = os.environ.get(key) if key else None
+    return float(raw) if raw else default
+
+
+@gin.configurable
 def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
     """Resolve ``<recommendation_v4>/<subdir>/<run_name>`` from this file's location.
 

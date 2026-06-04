@@ -111,8 +111,16 @@ def _main_func(
         device=device,
         rank=rank,
     )
-    load_dmp_checkpoint(
-        model=model, optimizer=optimizer, metric_logger=metrics, device=device
+    # Capture streaming resume hint (None for cold start / non-streaming
+    # checkpoints). For the streaming-train-eval mode, we forward this into
+    # streaming_train_eval_loop so it can advance past the last completed
+    # window OR re-enter the partial window and skip already-trained batches.
+    resume_train_ts, resume_batch_idx_in_window = load_dmp_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        metric_logger=metrics,
+        device=device,
+        rank=rank,
     )
 
     # train loop
@@ -161,6 +169,8 @@ def _main_func(
                 device=device,
                 hstu_config=model_configs,
                 embedding_table_configs=embedding_table_configs,
+                resume_train_ts=resume_train_ts,
+                resume_batch_idx_in_window=resume_batch_idx_in_window,
             )
     except Exception as e:
         logger.info(traceback.format_exc())

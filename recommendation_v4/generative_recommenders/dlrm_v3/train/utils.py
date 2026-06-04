@@ -35,7 +35,7 @@ from typing import (
 import gin
 import torch
 import torchrec
-from generative_recommenders.dlrm_v3.checkpoint import save_dmp_checkpoint
+from generative_recommenders.dlrm_v3.checkpoint import save_dmp_checkpoint, WINDOW_COMPLETE
 from generative_recommenders.dlrm_v3.configs import (
     get_embedding_table_config,
     get_hstu_configs,
@@ -467,9 +467,27 @@ class StreamingWindowSampler(torch.utils.data.Sampler):
         self._world_size: int = world_size
         self._indices: List[int] = []
 
-    def set_window(self, global_indices) -> None:
+    def set_window(self, global_indices, skip_samples: int = 0) -> None:
+        """Install this window's per-rank index list, optionally fast-forwarding.
+
+        ``skip_samples`` drops the first N per-rank samples from the list so the
+        next ``__iter__`` starts at sample N+1 in this rank's slice. Used on
+        resume to skip batches that were already trained: pass
+        ``skip_samples = batch_size * batches_completed`` and the dataloader
+        emits batches starting at exactly the next unseen batch.
+
+        The skip is safe because the sample order is fully deterministic given
+        (global_indices, rank, world_size): we re-derive the same per-rank list
+        as the pre-crash run, just hand back a tail slice of it.
+        """
         n = (len(global_indices) // self._world_size) * self._world_size
-        self._indices = global_indices[:n][self._rank :: self._world_size].tolist()
+        per_rank = global_indices[:n][self._rank :: self._world_size].tolist()
+        if skip_samples < 0 or skip_samples > len(per_rank):
+            raise ValueError(
+                f"skip_samples={skip_samples} out of [0, {len(per_rank)}] "
+                f"for rank={self._rank} world_size={self._world_size}"
+            )
+        self._indices = per_rank[skip_samples:]
 
     def __iter__(self):
         return iter(self._indices)
@@ -531,21 +549,29 @@ class _PrefetchingWindowLoader:
         self._dls = [dl_factory(s) for s in self._samplers]
         self._iters: List[Optional[object]] = [None] * n_buffers
 
-    def _prepare(self, buf: int, ts: int) -> None:
+    def _prepare(self, buf: int, ts: int, skip_samples: int = 0) -> None:
         # window_indices() is the O(N) mask; numpy releases the GIL for it, so it
         # overlaps the main thread's GPU dispatch. iter() then kicks off this
         # pool's background prefetch.
-        self._samplers[buf].set_window(self._dataset.dataset.window_indices(ts))
+        # `skip_samples` is non-zero only for the very first window after a
+        # mid-window resume; subsequent windows always start at 0.
+        self._samplers[buf].set_window(
+            self._dataset.dataset.window_indices(ts), skip_samples=skip_samples
+        )
         self._iters[buf] = iter(self._dls[buf])
 
-    def stream(self, ts_list: List[int]):
+    def stream(self, ts_list: List[int], first_skip_samples: int = 0):
+        """Stream (ts, iterator) pairs. `first_skip_samples` is applied ONLY to
+        the first ts in ``ts_list`` (the mid-window-resumed window); every
+        subsequent window starts at sample 0 of its own per-rank list."""
         n = len(ts_list)
         if n == 0:
             return
         threads: List[Optional[threading.Thread]] = [None] * self._n
         # Prime the first n_buffers windows on the main thread (forks all pools).
         for b in range(min(self._n, n)):
-            self._prepare(b, ts_list[b])
+            skip = first_skip_samples if b == 0 else 0
+            self._prepare(b, ts_list[b], skip_samples=skip)
         for i in range(n):
             buf = i % self._n
             if threads[buf] is not None:
@@ -553,6 +579,8 @@ class _PrefetchingWindowLoader:
                 threads[buf] = None
             yield ts_list[i], self._iters[buf]
             # This pool is now free; prefetch the window n_buffers ahead.
+            # No skip on subsequent windows — only the first prepared window
+            # carries `first_skip_samples`.
             j = i + self._n
             if j < n:
                 th = threading.Thread(
@@ -1009,8 +1037,54 @@ def train_eval_loop(
                     for k, v in metric_logger.compute(mode="eval").items():
                         print(f"{k}: {v}")
                 model.train()
-            if num_train_batches is not None and train_batch_idx >= num_train_batches:
+            # `num_train_batches` cap: None or 0 = run the whole window. >0 caps
+            # batches per window (mostly the streaming-resume test driver uses
+            # this to keep test windows short).
+            if num_train_batches and train_batch_idx >= num_train_batches:
                 break
+
+
+def select_in_window_checkpoint_reason(
+    *,
+    train_batch_idx: int,
+    global_step: int,
+    elapsed_since_last_save: float,
+    in_window_checkpoint_frequency: int,
+    checkpoint_step_frequency: int,
+    checkpoint_time_interval_s: float,
+) -> Optional[str]:
+    """Decide which (if any) in-window checkpoint cadence fires this batch.
+
+    Pure / distributed-agnostic so it can be unit-tested without a real run.
+    The caller computes `elapsed_since_last_save` (broadcast from rank 0 in the
+    streaming loop) so all ranks pass the same value and reach the same verdict.
+
+    Precedence (at most one save per batch): per-window-local batch count >
+    monotonic global step > wall-clock interval. Returns the trigger reason
+    string, or None when no cadence fires. A cadence is disabled when its
+    frequency/interval is 0 / 0.0.
+
+    Counter conventions match the loop: `train_batch_idx` is already
+    post-incremented (>=1 on the first batch), and `global_step` is guarded
+    >0 so step 0 doesn't trivially satisfy `% N == 0`.
+    """
+    if (
+        in_window_checkpoint_frequency > 0
+        and train_batch_idx % in_window_checkpoint_frequency == 0
+    ):
+        return "in_window_batch"
+    if (
+        checkpoint_step_frequency > 0
+        and global_step > 0
+        and global_step % checkpoint_step_frequency == 0
+    ):
+        return "global_step"
+    if (
+        checkpoint_time_interval_s > 0
+        and elapsed_since_last_save >= checkpoint_time_interval_s
+    ):
+        return "time_interval"
+    return None
 
 
 @gin.configurable
@@ -1032,7 +1106,55 @@ def streaming_train_eval_loop(
     persistent_loader: bool = False,
     eval_each_window: bool = True,
     double_buffer: bool = False,
+    # --- resume / mid-window-exact-once knobs ---
+    resume_train_ts: Optional[int] = None,
+    resume_batch_idx_in_window: int = WINDOW_COMPLETE,
+    in_window_checkpoint_frequency: int = 0,
+    # --- global step / wall-clock checkpoint cadences ---
+    checkpoint_step_frequency: int = 0,
+    checkpoint_time_interval_s: float = 0.0,
+    # --- test-only failure injection knob ---
+    die_at_step: int = -1,
 ) -> None:
+    """Streaming train+eval loop with per-window (and optionally mid-window)
+    checkpoints.
+
+    Resume semantics (set by train_ranker after `load_dmp_checkpoint` returns):
+      - resume_train_ts=None: cold start; honor `start_ts` as-is.
+      - resume_train_ts=N, resume_batch_idx_in_window=WINDOW_COMPLETE(-1):
+        previous run finished window N cleanly. Start at N+1 from sample 0.
+      - resume_train_ts=N, resume_batch_idx_in_window=K (K>=0): previous run
+        crashed mid-window after K completed batches. Re-enter window N and
+        skip the first K batches of THIS rank's per-rank sample list (deterministic
+        slice since `window_indices(N)` is a pure function of the anchor_ts cache).
+
+    Checkpoint cadences (all independent; any combination may be enabled):
+      - `checkpoint_frequency`: window-granularity. End-of-window save every
+        Nth train_ts (and always on the final window). Uses WINDOW_COMPLETE.
+      - `in_window_checkpoint_frequency`: per-window-local batch count. Fires
+        every N batches *within* a window (counter resets each window).
+      - `checkpoint_step_frequency`: global-step granularity. Fires whenever
+        the monotonic `metric_logger.global_step['train']` hits a multiple of
+        N — i.e. a true "every 1000 steps" trigger that spans windows and
+        survives resume (global_step is restored from the checkpoint).
+      - `checkpoint_time_interval_s`: wall-clock granularity. Fires when at
+        least this many seconds have elapsed since the last save (e.g. 3600
+        for hourly). Rank 0 owns the clock and broadcasts the decision so all
+        ranks save together (avoids the collective barrier in
+        `save_dmp_checkpoint` deadlocking on a split decision).
+
+    All in-window triggers (`in_window_checkpoint_frequency`,
+    `checkpoint_step_frequency`, `checkpoint_time_interval_s`) route through
+    `_save_mid_window`, which stamps `batch_idx_in_window=K` so a crash leaves
+    a resumable partial-window checkpoint. End-of-window saves
+    (`checkpoint_frequency`) always use the WINDOW_COMPLETE sentinel. 0 / 0.0
+    disables a given cadence (the default for all three fine-grained ones).
+
+    `die_at_step` is a test-only hook: when `metric_logger.global_step['train']`
+    reaches this value, the process exits with code 42 right after the in-window
+    save fires. Used by the failure-injection test to crash at a deterministic
+    boundary and then resume.
+    """
     profiler = Profiler(rank) if output_trace else None
     dataset_class, kwargs = get_dataset()
     kwargs["embedding_config"] = embedding_table_configs
@@ -1045,22 +1167,73 @@ def streaming_train_eval_loop(
     # warmup). The non-persistent path recreates a DataLoader per window.
     window_sampler: Optional[StreamingWindowSampler] = None
     persistent_dl: Optional[DataLoader] = None
+    world_size = (
+        torch.distributed.get_world_size()
+        if torch.distributed.is_initialized()
+        else 1
+    )
     if persistent_loader:
-        world_size = (
-            torch.distributed.get_world_size()
-            if torch.distributed.is_initialized()
-            else 1
-        )
         window_sampler = StreamingWindowSampler(rank=rank, world_size=world_size)
         persistent_dl = make_persistent_streaming_dataloader(
             dataset=dataset, sampler=window_sampler
         )
 
-    def _window_iter(ts: int):
+    # Apply resume hint: advance start_ts past the last completed window, or
+    # re-enter the partial window with a per-rank skip on its first iter.
+    # Shrink num_train_ts by the same amount so the resumed run finishes at
+    # the same final timestamp (start_ts + num_train_ts) as a fresh run would
+    # — i.e. resumed and uninterrupted produce identical total work.
+    first_skip_samples = 0
+    if resume_train_ts is not None:
+        original_end_ts = start_ts + num_train_ts
+        if resume_batch_idx_in_window == WINDOW_COMPLETE:
+            new_start = resume_train_ts + 1
+            if rank == 0:
+                logger.info(
+                    "Resuming from completed train_ts=%d → start_ts=%d "
+                    "(num_train_ts %d → %d)",
+                    resume_train_ts, new_start,
+                    num_train_ts, max(0, original_end_ts - new_start),
+                )
+            start_ts = new_start
+        else:
+            if rank == 0:
+                logger.info(
+                    "Resuming mid-window at train_ts=%d batch_idx_in_window=%d "
+                    "(skipping batches already trained)",
+                    resume_train_ts,
+                    resume_batch_idx_in_window,
+                )
+            start_ts = resume_train_ts
+            # `batch_size` is per-rank from the persistent dataloader (set via
+            # gin `make_persistent_streaming_dataloader.batch_size`). The
+            # skip-samples-per-rank below maps "K batches done" → "K * bs
+            # samples in this rank's index list", since each batch draws bs
+            # samples from this rank's deterministic round-robin slice.
+            assert persistent_dl is not None, (
+                "Mid-window resume requires persistent_loader=True"
+            )
+            first_skip_samples = resume_batch_idx_in_window * persistent_dl.batch_size
+        num_train_ts = max(0, original_end_ts - start_ts)
+        if num_train_ts == 0 and rank == 0:
+            logger.info(
+                "Resume target already reached (end_ts=%d, start_ts=%d) — "
+                "no further training windows; skipping straight to final eval.",
+                original_end_ts, start_ts,
+            )
+
+    def _window_iter(ts: int, skip_samples: int = 0):
         if persistent_loader:
             assert window_sampler is not None and persistent_dl is not None
-            window_sampler.set_window(dataset.dataset.window_indices(ts))  # pyre-ignore [16]
+            window_sampler.set_window(
+                dataset.dataset.window_indices(ts),  # pyre-ignore [16]
+                skip_samples=skip_samples,
+            )
             return iter(persistent_dl)
+        if skip_samples != 0:
+            raise NotImplementedError(
+                "skip_samples>0 requires persistent_loader=True"
+            )
         return iter(make_streaming_dataloader(dataset=dataset, ts=ts))
     # Windows are [start_ts, start_ts + num_train_ts); each step trains window T
     # then evals window T+1, so the last eval window is start_ts + num_train_ts,
@@ -1076,8 +1249,54 @@ def streaming_train_eval_loop(
                 f"available windows ({available}); clamping num_train_ts to {max_count}."
             )
             num_train_ts = max_count
-    def _run_train_window(train_data_iterator, label: Optional[str] = None) -> None:
-        train_batch_idx = 0
+    # Wall-clock anchor for time-based checkpointing. Mutable single-element
+    # list so the nested train loop can reset it after each save. Starts at
+    # loop entry so the first time-trigger fires ~interval seconds in.
+    last_ckpt_time = [time.time()]
+
+    def _broadcast_elapsed() -> float:
+        """Seconds since the last save, owned by rank 0 and broadcast to all
+        ranks. save_dmp_checkpoint runs a collective barrier, so every rank must
+        feed the same wall-clock value into the cadence decision — otherwise a
+        split verdict (rank 0 saves, rank 1 doesn't) would deadlock. Broadcasting
+        rank 0's elapsed keeps the (pure) decision identical everywhere."""
+        elapsed = time.time() - last_ckpt_time[0]
+        if torch.distributed.is_initialized() and world_size > 1:
+            t = torch.tensor([elapsed], device=device, dtype=torch.float64)
+            torch.distributed.broadcast(t, src=0)
+            elapsed = float(t.item())
+        return elapsed
+
+    def _save_mid_window(train_ts: int, batch_idx_in_window: int) -> None:
+        """In-window checkpoint helper. Snapshots the same state as the
+        end-of-window save but stamps `batch_idx_in_window=K` instead of
+        WINDOW_COMPLETE so the resume path knows to skip K batches.
+        Uses train_ts as the numeric subdir name — every save into the same
+        train_ts overwrites the previous in-window snapshot (via atomic
+        replace), so disk stays bounded to keep_last_n train_ts dirs."""
+        save_dmp_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            metric_logger=metric_logger,
+            rank=rank,
+            batch_idx=train_ts,
+            train_ts=train_ts,
+            batch_idx_in_window=batch_idx_in_window,
+            device=device,
+        )
+
+    def _run_train_window(
+        train_data_iterator,
+        train_ts: int,
+        start_batch_idx: int = 0,
+        label: Optional[str] = None,
+    ) -> None:
+        # `start_batch_idx` is set when we're re-entering a window that was
+        # interrupted mid-way (in_window resume); the dataloader iterator was
+        # already advanced past those batches via the sampler skip, and we
+        # account for them in the local counter so in-window saves and the
+        # die_at_step hook fire at the right relative offsets.
+        train_batch_idx = start_batch_idx
         first_wait: Optional[float] = None
         while True:
             model.train()
@@ -1124,7 +1343,65 @@ def streaming_train_eval_loop(
             if output_trace:
                 assert profiler is not None
                 profiler.step()
-            if num_train_batches is not None and train_batch_idx >= num_train_batches:
+            # Fine-grained in-window checkpoint triggers. All stamp
+            # batch_idx_in_window so a crash here leaves a resumable partial
+            # checkpoint, and all fire AFTER the metric update so restored
+            # state reflects the just-completed batch. Triggers are mutually
+            # short-circuited (one save per batch max) but evaluated on the
+            # same deterministic counters across all ranks, so the collective
+            # inside save_dmp_checkpoint stays in lockstep.
+            gstep = metric_logger.global_step["train"]
+            # Wall-clock elapsed is broadcast from rank 0 so every rank feeds
+            # the same value into the (otherwise pure) cadence decision.
+            elapsed = (
+                _broadcast_elapsed() if checkpoint_time_interval_s > 0 else 0.0
+            )
+            save_reason = select_in_window_checkpoint_reason(
+                train_batch_idx=train_batch_idx,
+                global_step=gstep,
+                elapsed_since_last_save=elapsed,
+                in_window_checkpoint_frequency=in_window_checkpoint_frequency,
+                checkpoint_step_frequency=checkpoint_step_frequency,
+                checkpoint_time_interval_s=checkpoint_time_interval_s,
+            )
+            if save_reason is not None:
+                if rank == 0:
+                    logger.info(
+                        "checkpoint trigger=%s train_ts=%d batch=%d global_step=%d",
+                        save_reason,
+                        train_ts,
+                        train_batch_idx,
+                        gstep,
+                    )
+                _save_mid_window(train_ts, train_batch_idx)
+                # Reset the wall-clock anchor on ANY save so the next time
+                # trigger is measured from the most recent checkpoint.
+                last_ckpt_time[0] = time.time()
+            # Test-only: deterministic crash for the failure-injection test.
+            # Triggered AFTER the save above, so on resume we re-enter at
+            # batch_idx_in_window=train_batch_idx and emit batches [K+1, end).
+            if (
+                die_at_step >= 0
+                and metric_logger.global_step["train"] >= die_at_step
+            ):
+                if rank == 0:
+                    logger.warning(
+                        "die_at_step=%d hit at train_ts=%d batch=%d global_step=%d "
+                        "→ sys.exit(42)",
+                        die_at_step,
+                        train_ts,
+                        train_batch_idx,
+                        metric_logger.global_step["train"],
+                    )
+                # Distributed barrier so all ranks exit together rather than
+                # leaving a few ranks hanging on NCCL ops.
+                torch.distributed.barrier()
+                import sys
+                sys.exit(42)
+            # `num_train_batches` cap: None or 0 = run the whole window. >0 caps
+            # batches per window (mostly the streaming-resume test driver uses
+            # this to keep test windows short).
+            if num_train_batches and train_batch_idx >= num_train_batches:
                 break
         if label and rank == 0 and first_wait is not None:
             logger.info(
@@ -1188,14 +1465,24 @@ def streaming_train_eval_loop(
         if (
             train_ts % checkpoint_frequency == 0 and train_ts > 0
         ) or train_ts == start_ts + num_train_ts - 1:
+            # End-of-window save: stamp WINDOW_COMPLETE so resume advances past
+            # this train_ts. `device` enables per-rank RNG snapshot for
+            # bit-equal resume of dropout-bearing modules.
             save_dmp_checkpoint(
                 model=model,
                 optimizer=optimizer,
                 metric_logger=metric_logger,
                 rank=rank,
                 batch_idx=train_ts,
+                train_ts=train_ts,
+                batch_idx_in_window=WINDOW_COMPLETE,
+                device=device,
             )
+            last_ckpt_time[0] = time.time()
 
+    # Apply start_ts shift from resume (may have moved past the original start).
+    # num_train_ts is the requested *count*; preserve it so the loop runs for
+    # the same total number of windows post-resume as a fresh run would have.
     train_ts_list = list(range(start_ts, start_ts + num_train_ts))
     if persistent_loader and double_buffer:
         # Double-buffered: next window prepared in the background during the
@@ -1229,10 +1516,27 @@ def streaming_train_eval_loop(
             eval_iter = iter(eval_dl)
         n_train = len(train_ts_list)
         for i, (train_ts, train_data_iterator) in enumerate(
-            prefetcher.stream(train_ts_list)
+            # Only the FIRST window after a mid-window resume needs the skip
+            # (handed via prefetcher.stream's first_skip_samples). The skip is
+            # zero on cold start (resume_train_ts is None → first_skip_samples=0)
+            # and on completed-window resume (mid-window slice is 0 too).
+            prefetcher.stream(train_ts_list, first_skip_samples=first_skip_samples)
         ):
             dataset.dataset.is_eval = False  # pyre-ignore [16]
-            _run_train_window(train_data_iterator, label=f"train_ts={train_ts}")
+            # First iteration after a mid-window resume carries
+            # resume_batch_idx_in_window so in-window saves and the die_at_step
+            # hook keep accurate counters; otherwise count from 0.
+            start_batch = (
+                resume_batch_idx_in_window
+                if i == 0 and resume_batch_idx_in_window > 0
+                else 0
+            )
+            _run_train_window(
+                train_data_iterator,
+                train_ts=train_ts,
+                start_batch_idx=start_batch,
+                label=f"train_ts={train_ts}",
+            )
             if eval_each_window:
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 assert eval_sampler is not None and eval_dl is not None
@@ -1246,9 +1550,19 @@ def streaming_train_eval_loop(
                     eval_iter = iter(eval_dl)
             _maybe_checkpoint(train_ts)
     else:
-        for train_ts in train_ts_list:
+        for i, train_ts in enumerate(train_ts_list):
             dataset.dataset.is_eval = False  # pyre-ignore [16]
-            _run_train_window(_window_iter(train_ts))
+            skip = first_skip_samples if i == 0 else 0
+            start_batch = (
+                resume_batch_idx_in_window
+                if i == 0 and resume_batch_idx_in_window > 0
+                else 0
+            )
+            _run_train_window(
+                _window_iter(train_ts, skip_samples=skip),
+                train_ts=train_ts,
+                start_batch_idx=start_batch,
+            )
             if eval_each_window:
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 _run_eval_window(_window_iter(train_ts + 1))
