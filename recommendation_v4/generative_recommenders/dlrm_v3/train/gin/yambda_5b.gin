@@ -167,7 +167,13 @@ Profiler.active = 5
 Profiler.trace_dir = @run_results_dir()
 
 # logger variables
-MetricsLogger.tensorboard_log_path = "/tmp/tb/yambda_5b/"
+# TensorBoard event dir. Default lives on shared NFS (not container-local /tmp,
+# which is wiped on node failover) so the NE/AUC scalars survive relaunches and
+# failover. Override per-run via $TENSORBOARD_LOG_PATH (the supervisor sets it
+# to /apps/chcai/tb/$RUN_NAME/).
+MetricsLogger.tensorboard_log_path = @tbp/env_path()
+tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
+tbp/env_path.default = "/apps/chcai/tb/yambda_5b/"
 MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = 0.80275
 # Checkpointing disabled by default — a full DMP checkpoint is ~100s of GB and

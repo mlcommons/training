@@ -316,6 +316,7 @@ launch() {
         DIE_AT_STEP=$DIE_AT_STEP \
         METRIC_LOG_FREQ=50 \
         RUN_NAME=$RUN_NAME \
+        TENSORBOARD_LOG_PATH=/apps/chcai/tb/$RUN_NAME/ \
         LOG=$LOG \
         bash scripts/launch_smoke_8gpu.sh;
         echo \"E2E_RUN_EXIT=\$? \$(date '+%F %T')\" >> $LOG
@@ -335,7 +336,14 @@ sup "start_ts=$START_TS num_train_ts=$NUM_TRAIN_TS eval_every=$EVAL_EVERY"
 sup "ckpt_path=$CKPT_PATH keep_last_n=$KEEP_LAST_N ckpt_time_interval=${CKPT_TIME_INTERVAL}s in_window_freq=$IN_WINDOW_FREQ"
 sup "log=$LOG num_train_batches=$NUM_TRAIN_BATCHES die_at_step=$DIE_AT_STEP max_relaunch=$MAX_RELAUNCH"
 
-cexec "mkdir -p '$CKPT_PATH'"
+cexec "mkdir -p '$CKPT_PATH' '/apps/chcai/tb/$RUN_NAME'"
+# Initialize this run's metrics log ONCE. launch_smoke_8gpu.sh appends (tee -a),
+# so every relaunch attempt accumulates into this single file — the full-run
+# NE/AUC history survives crashes and node failover instead of being truncated
+# on each relaunch. (Starting the supervisor = starting a fresh run.)
+cexec ": > '$LOG'"
+sup "metrics log initialized (relaunch-append): $LOG"
+sup "tensorboard (NFS): /apps/chcai/tb/$RUN_NAME/"
 
 attempt=0
 while (( attempt < MAX_RELAUNCH )); do

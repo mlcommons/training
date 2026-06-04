@@ -8,7 +8,11 @@ REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO_ROOT"
 
 LOG=${LOG:-/apps/chcai/yambda_5b_8gpu.log}
-echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee "$LOG"
+# Append (not truncate): under the streaming-e2e supervisor a run may relaunch
+# many times into the SAME $LOG, and we want the full NE/AUC history preserved
+# across attempts. The supervisor initializes ($LOG) once at run start. For a
+# standalone invocation, set a fresh $LOG (or truncate it yourself) per run.
+echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee -a "$LOG"
 
 # polars-u64-idx (NOT stock polars) — yambda parquet's flat-explode overruns
 # 32-bit row index. Reserved node has no outbound DNS, so we install from a
