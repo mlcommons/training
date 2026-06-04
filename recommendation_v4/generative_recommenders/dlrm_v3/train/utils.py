@@ -1105,6 +1105,7 @@ def streaming_train_eval_loop(
     start_ts: int = 0,
     persistent_loader: bool = False,
     eval_each_window: bool = True,
+    eval_every_n_windows: int = 1,
     double_buffer: bool = False,
     # --- resume / mid-window-exact-once knobs ---
     resume_train_ts: Optional[int] = None,
@@ -1156,6 +1157,14 @@ def streaming_train_eval_loop(
     boundary and then resume.
     """
     profiler = Profiler(rank) if output_trace else None
+    # Normalize the per-window caps: <=0 (the env-binding default) means "no cap
+    # = consume the full window". The eval-break check below is `is not None and
+    # eval_batch_idx >= num_eval_batches`, so a literal 0 would (wrongly) break
+    # after the first batch — map it to None instead for the full-holdout eval.
+    if num_eval_batches is not None and num_eval_batches <= 0:
+        num_eval_batches = None
+    if num_train_batches is not None and num_train_batches <= 0:
+        num_train_batches = None
     dataset_class, kwargs = get_dataset()
     kwargs["embedding_config"] = embedding_table_configs
     dataset = HammerToTorchDataset(
@@ -1484,6 +1493,21 @@ def streaming_train_eval_loop(
     # num_train_ts is the requested *count*; preserve it so the loop runs for
     # the same total number of windows post-resume as a fresh run would have.
     train_ts_list = list(range(start_ts, start_ts + num_train_ts))
+    n_train = len(train_ts_list)
+
+    def _should_eval(i: int) -> bool:
+        """Whether to run the full-holdout eval after training window index `i`.
+
+        `eval_every_n_windows<=1` (default) preserves the per-window cadence.
+        For K>1 we eval on windows 0, K, 2K, ... and ALWAYS on the final window
+        so the trajectory ends with an eval point. Gated by `eval_each_window`.
+        """
+        if not eval_each_window:
+            return False
+        if eval_every_n_windows <= 1:
+            return True
+        return i % eval_every_n_windows == 0 or i == n_train - 1
+
     if persistent_loader and double_buffer:
         # Double-buffered: next window prepared in the background during the
         # current window's compute. Eval (if enabled) uses its own pre-forked
@@ -1498,23 +1522,30 @@ def streaming_train_eval_loop(
         eval_sampler: Optional[StreamingWindowSampler] = None
         eval_dl: Optional[DataLoader] = None
         # Eval iterator is built one window ahead: the eval pool (idle while the
-        # current train window runs) prefetches the eval window's first batches
-        # concurrently with train compute, so eval starts warm (hides the
-        # ~0.5s eval first-batch stall). yambda's sample content depends only on
-        # the sampler window, not is_eval, so prefetching during train is safe.
+        # current train window runs) prefetches the next eval window's first
+        # batches concurrently with train compute, so eval starts warm. yambda's
+        # sample content depends only on the sampler window, not is_eval, so
+        # prefetching during train is safe.
         eval_iter: Optional[Iterator] = None
         if eval_each_window and len(train_ts_list) > 0:
             eval_sampler = StreamingWindowSampler(rank, world_size)
             eval_dl = make_persistent_streaming_dataloader(
                 dataset=dataset, sampler=eval_sampler
             )
-            # Fork the eval pool now (main thread, before any prefetch thread)
-            # and kick off prefetch of the first eval window (train_ts_list[0]+1).
+            # CRITICAL: fork the eval worker pool HERE, on the main thread,
+            # BEFORE prefetcher.stream() below spins up its background prep
+            # thread. The pool is persistent_workers=True, so this first iter()
+            # is the ONLY fork; every later iter() merely resets and reuses these
+            # workers (no fork), so it can never deadlock against the background
+            # thread holding an allocator/GIL-released lock. (Deferring this
+            # first fork into the loop — as a sparse-eval cadence naively might —
+            # hangs the run.) _should_eval(0) is always True when eval is enabled
+            # (0 % K == 0), so the first eval window is always train_ts_list[0]+1;
+            # arm it now so it prefetches during the i=0 train window.
             eval_sampler.set_window(
                 dataset.dataset.window_indices(train_ts_list[0] + 1)  # pyre-ignore [16]
             )
             eval_iter = iter(eval_dl)
-        n_train = len(train_ts_list)
         for i, (train_ts, train_data_iterator) in enumerate(
             # Only the FIRST window after a mid-window resume needs the skip
             # (handed via prefetcher.stream's first_skip_samples). The skip is
@@ -1537,15 +1568,22 @@ def streaming_train_eval_loop(
                 start_batch_idx=start_batch,
                 label=f"train_ts={train_ts}",
             )
-            if eval_each_window:
+            if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 assert eval_sampler is not None and eval_dl is not None
                 _run_eval_window(eval_iter, label=f"eval_ts={train_ts + 1}")
-                # Re-arm the eval pool for the next window so it prefetches
-                # during the upcoming train window.
-                if i + 1 < n_train:
+                # Re-arm the (already-forked) eval pool for the NEXT window that
+                # will eval (i+1 in dense mode, i+K in sparse mode), so it warms
+                # up during the upcoming train window(s). iter() reuses the
+                # persistent workers — no fork, safe alongside the bg thread.
+                next_eval_i = next(
+                    (j for j in range(i + 1, n_train) if _should_eval(j)), None
+                )
+                if next_eval_i is not None:
                     eval_sampler.set_window(
-                        dataset.dataset.window_indices(train_ts + 2)  # pyre-ignore [16]
+                        dataset.dataset.window_indices(  # pyre-ignore [16]
+                            train_ts_list[next_eval_i] + 1
+                        )
                     )
                     eval_iter = iter(eval_dl)
             _maybe_checkpoint(train_ts)
@@ -1563,7 +1601,7 @@ def streaming_train_eval_loop(
                 train_ts=train_ts,
                 start_batch_idx=start_batch,
             )
-            if eval_each_window:
+            if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 _run_eval_window(_window_iter(train_ts + 1))
             _maybe_checkpoint(train_ts)

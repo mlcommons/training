@@ -122,6 +122,13 @@ pl/env_int.default = 1
 streaming_train_eval_loop.eval_each_window = @ev/env_int()
 ev/env_int.key = "EVAL_EACH_WINDOW"
 ev/env_int.default = 1
+# Full-holdout eval cadence: run eval every Nth train window (and always on the
+# final window) instead of every window. 1 (default) = eval every window (no
+# behavior change). Set >1 (e.g. 5 via $EVAL_EVERY_N_WINDOWS) to amortize the
+# cost of consuming the full next-day eval window over several train windows.
+streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
+evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
+evn/env_int.default = 1
 # Double-buffer windows: prepare the next window (index mask + first-batch
 # prefetch) in a background thread during the current window's compute, hiding
 # the per-window reset. Needs persistent_loader=1. Override via env.
@@ -202,6 +209,12 @@ ctis/env_float.default = 0.0
 streaming_train_eval_loop.num_train_batches = @ntb/env_int()
 ntb/env_int.key     = "NUM_TRAIN_BATCHES"
 ntb/env_int.default = 0
+# Cap each eval (full-holdout) window's batch count. Unset / <=0 = consume the
+# full eval window (the genuine full-holdout NE/AUC; this is what the long run
+# uses). Set >0 via $NUM_EVAL_BATCHES to subsample eval for fast validation.
+streaming_train_eval_loop.num_eval_batches = @neb/env_int()
+neb/env_int.key     = "NUM_EVAL_BATCHES"
+neb/env_int.default = 0
 # Test-only failure injection: when >=0 and metric_logger.global_step['train']
 # reaches this, the process exits with code 42 right after the in-window save
 # fires. Used by the streaming resume test harness (train/tests/) to verify resume.
