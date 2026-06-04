@@ -204,7 +204,7 @@ ntb/env_int.key     = "NUM_TRAIN_BATCHES"
 ntb/env_int.default = 0
 # Test-only failure injection: when >=0 and metric_logger.global_step['train']
 # reaches this, the process exits with code 42 right after the in-window save
-# fires. Used by `scripts/streaming_resume_test.sh` to verify resume.
+# fires. Used by the streaming resume test harness (train/tests/) to verify resume.
 streaming_train_eval_loop.die_at_step = @das/env_int()
 das/env_int.key     = "DIE_AT_STEP"
 das/env_int.default = -1

@@ -16,7 +16,7 @@
 #   CKPT_PATH / KEEP_LAST_N / EVAL_EACH_WINDOW
 #
 # Usage:
-#   bash scripts/streaming_resume_test.sh --jobid <slurm-jobid>
+#   bash generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh --jobid <slurm-jobid>
 #       [--container yambda_primus]
 #       [--num-train-batches 200]
 #       [--die-at-step 350]

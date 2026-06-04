@@ -20,7 +20,7 @@ Validates the four resume features end-to-end on the yambda-5b stack:
   3. Auto-detect-latest checkpoint subdir
   4. keep_last_n retention (default 1)
 
-Test flow (driven by `scripts/streaming_resume_test.sh`):
+Test flow (driven by the sibling `streaming_resume_test.sh`):
   Phase 1 (baseline): Run streaming-train-eval for N=2 train_ts × K batches/window
     with die_at_step=-1. Capture per-batch window_ne / window_auc into traj_baseline.json.
   Phase 2 (interrupt): Same config but die_at_step=M (M mid-window-2). Expect
