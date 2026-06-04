@@ -364,6 +364,128 @@ def _deoverlap_gpu_slices(path: str, max_snap_us: float = 5.0) -> None:
         )
 
 
+def _deoverlap_gpu_annotations(path: str, max_snap_us: float = 5.0) -> None:
+    """Separate touching/overlapping *sibling* GPU annotations so Perfetto draws
+    each one full width (the B200-style stacked layout).
+
+    Same root cause as :func:`_deoverlap_gpu_slices`, but at the annotation
+    boundary instead of the kernel boundary. The forward/backward phase
+    annotations Kineto projects onto the GPU stream (``## item_forward ##``,
+    ``## user_forward ##``, ``## multitask_module ##``, the ``## stu_* ##``
+    pairs, ...) are emitted as a chain of siblings laid end-to-end: each is meant
+    to end exactly where the next begins. Perfetto stores timestamps as int64 ns,
+    and the absolute step timestamps are ~5.4e12 us where a float64's quantum is
+    already ~1 ns, so a sibling boundary that should be coincident instead lands
+    a few ns off. When the earlier sibling's end falls *at or after* the next
+    sibling's start, Perfetto nests the next sibling inside it and clips it to a
+    sub-pixel sliver — so e.g. the 100+ ms ``## user_forward ##`` span vanishes on
+    some ranks/steps and renders on others purely by rounding luck.
+
+    Unlike kernels (all flat on one stream), annotations form a real nesting
+    hierarchy — ``## user_forward ##`` legitimately *contains* the ``## stu_* ##``
+    spans and their kernels — so this cannot blindly snap consecutive slices. It
+    walks the per-track slice stack (sorted by start, longest-first) and only
+    snaps a slice ``a`` back when the next slice ``b`` is **not** contained in it
+    (``b`` extends beyond ``a``'s end), i.e. they are siblings rather than
+    parent/child. Real containment is left untouched, and a snap is skipped if it
+    would clip into ``a``'s own descendants (kernels or child annotations).
+    Mutates the file in place; best-effort. Run after :func:`_deoverlap_gpu_slices`
+    so kernel boundaries are already clean.
+    """
+    import json as _json
+    from collections import defaultdict
+
+    # ~2 ns. The annotation boundaries sit at ~5.4e12 us where a float64's
+    # quantum is ~0.98 ns, so a 1 ns nudge can round back onto the neighbour's
+    # timestamp (an exact touch, which Perfetto still nests+clips). 2 ns (~2
+    # quanta) reliably separates them and is still far below any visible width.
+    _GAP_US = 0.002
+
+    with open(path) as f:
+        d = _json.load(f)
+    events = d.get("traceEvents", [])
+
+    # Stack the full per-track hierarchy over BOTH kernels and annotations so a
+    # parent annotation knows the extent of its descendants (the snap guard),
+    # but only annotation slices are ever trimmed.
+    _ANN = "gpu_user_annotation"
+    tracks: Dict[tuple, list] = defaultdict(list)
+    for e in events:
+        if (
+            e.get("ph") == "X"
+            and e.get("dur", 0) > 0
+            and (e.get("cat") in _GPU_KERNEL_CATS or e.get("cat") == _ANN)
+        ):
+            tracks[(e.get("pid"), e.get("tid"))].append(e)
+
+    snapped = 0
+    max_clip = 0.0
+    for sl in tracks.values():
+        # Longest-first on ties so a container precedes the slices it nests.
+        sl.sort(key=lambda e: (e["ts"], -e["dur"]))
+        # Each frame: [event, max_descendant_end]. The stack holds the chain of
+        # currently-open ancestors for the slice being placed.
+        stack: list = []
+        for b in sl:
+            b_ts = b["ts"]
+            b_end = b_ts + b["dur"]
+            while stack:
+                a = stack[-1][0]
+                a_end = a["ts"] + a["dur"]
+                if a_end < b_ts:
+                    # a closed strictly before b begins -> disjoint sibling, pop.
+                    frame = stack.pop()
+                    eff = frame[0]["ts"] + frame[0]["dur"]
+                    if stack:
+                        stack[-1][1] = max(stack[-1][1], eff, frame[1])
+                    continue
+                if a_end < b_end:
+                    # b starts at/inside a but extends past a's end => they are
+                    # siblings (not parent/child), and a's tail nests+clips b in
+                    # Perfetto. Snap a's end to just before b. This fires for both
+                    # annotation tails (## item_forward ## overhanging
+                    # ## user_forward ##) and kernel tails that straddle an
+                    # annotation boundary (a layer-norm kernel ending a few ns
+                    # past the start of the next phase span) -- both are sub-us
+                    # roctracer/rounding artifacts, since kernels on one stream
+                    # are serialized and phase spans are sequential.
+                    desired_end = b_ts - _GAP_US
+                    clip = a_end - desired_end
+                    # Guard: only snap when a's deepest descendant ends at or
+                    # before b's start. If a child (kernel or nested span)
+                    # actually extends *past* b.ts, trimming a wouldn't fix b's
+                    # clipping (the child would still nest b) and could drop a
+                    # real child into b's territory, so leave it. A descendant
+                    # ending exactly at the boundary is itself rounding noise and
+                    # is clipped by <=1 ns, which is fine.
+                    if (
+                        a["ts"] < desired_end
+                        and stack[-1][1] <= b_ts
+                        and 0 < clip < max_snap_us
+                    ):
+                        a["dur"] = desired_end - a["ts"]
+                        snapped += 1
+                        if clip > max_clip:
+                            max_clip = clip
+                    frame = stack.pop()
+                    eff = frame[0]["ts"] + frame[0]["dur"]
+                    if stack:
+                        stack[-1][1] = max(stack[-1][1], eff, frame[1])
+                    continue
+                # a_end >= b_end: a fully contains b -> b is a child, stop.
+                break
+            stack.append([b, b_ts])
+
+    if snapped:
+        with open(path, "w") as f:
+            _json.dump(d, f)
+        logger.warning(
+            f"De-overlapped GPU annotations in {path}: snapped {snapped} sub-us "
+            f"sibling overlap(s) (max {max_clip:.3f}us) so Perfetto renders every "
+            f"annotation full width"
+        )
+
+
 def _on_trace_ready_fn(
     rank: Optional[int] = None,
     trace_dir: str = "/tmp/dlrm_v3_traces",
@@ -429,6 +551,9 @@ def _on_trace_ready_fn(
                 # Snap roctracer's sub-us kernel overlaps so Perfetto doesn't
                 # mis-nest and hide long kernels.
                 _deoverlap_gpu_slices(path)
+                # Same fix at the annotation-sibling boundary so phase spans
+                # (## user_forward ##, ## stu_* ##, ...) render full width.
+                _deoverlap_gpu_annotations(path)
         except Exception as exc:
             logger.warning(f"Trace export/trim failed for {path}: {exc!r} (skipping)")
 
