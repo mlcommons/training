@@ -21,16 +21,28 @@ including both sparse (embedding) and dense (non-embedding) components.
 """
 
 import gc
+import logging
 import os
+import random
+import shutil
 from datetime import datetime
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, Tuple
 
 import gin
+import numpy as np
 import torch
 from generative_recommenders.dlrm_v3.utils import MetricsLogger
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.optim.optimizer import Optimizer
 from torchrec.distributed.types import ShardedTensor
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+# Sentinel meaning "the saved window completed in full" — when the loop reads
+# this back it advances start_ts past the saved train_ts. Anything >=0 means the
+# saved checkpoint stopped mid-window after K batches; resume continues that
+# window at batch K.
+WINDOW_COMPLETE: int = -1
 
 
 class SparseState(Stateful):
@@ -86,6 +98,114 @@ def load_dense_state_dict(model: torch.nn.Module, state_dict: Dict[str, Any]) ->
         own_state[name].copy_(param)
 
 
+def _rng_state(device: torch.device) -> Dict[str, Any]:
+    """Snapshot every RNG source bit-equal training depends on.
+
+    HSTU has stochastic dropout (input_dropout=0.2, linear_dropout_rate=0.1)
+    consuming the per-device CUDA RNG cycle each step. Without round-tripping
+    these, a resumed run draws different dropout masks and the resumed AUC
+    trajectory diverges from the uninterrupted run within a few steps.
+    """
+    return {
+        "cpu": torch.get_rng_state(),
+        "cuda": torch.cuda.get_rng_state(device),
+        "numpy": np.random.get_state(),
+        "random": random.getstate(),
+    }
+
+
+def _restore_rng_state(state: Dict[str, Any], device: torch.device) -> None:
+    torch.set_rng_state(state["cpu"])
+    torch.cuda.set_rng_state(state["cuda"], device)
+    np.random.set_state(state["numpy"])
+    random.setstate(state["random"])
+
+
+def _list_numeric_subdirs(base_path: str) -> list[str]:
+    """Return subdir names of `base_path` that look like an int, sorted ascending.
+
+    Filters out `*.tmp` (orphaned in-progress saves), `*.sparse/` and any other
+    non-numeric entries.
+    """
+    if not os.path.isdir(base_path):
+        return []
+    out: list[str] = []
+    for name in os.listdir(base_path):
+        if name.isdigit():
+            out.append(name)
+    return sorted(out, key=int)
+
+
+def _resolve_latest_subdir(path: str) -> str:
+    """Map a base ckpt dir → its highest-numbered numeric subdir.
+
+    Used so users can set `load_dmp_checkpoint.path = "<base>"` (or
+    `CKPT_PATH=<base>`) and automatically pick up the most recent save without
+    needing to know which step number to point at.     If `path` already names a leaf save (numeric basename) it's returned
+    unchanged. If the base dir has no numeric subdirs yet — the cold-start case
+    where ``CKPT_PATH`` is configured but nothing has been saved (e.g. the
+    interrupt phase of the resume test starts from a freshly-cleaned dir) — we
+    return ``""`` so ``load_*_checkpoint`` no-ops instead of asserting on a
+    missing ``sparse/.metadata``.
+    """
+    if not path:
+        return path
+    base = path.rstrip("/")
+    leaf = os.path.basename(base)
+    if leaf.isdigit():
+        return base  # already a leaf, caller knows what it wants
+    subs = _list_numeric_subdirs(base)
+    if not subs:
+        logger.info("No checkpoint subdirs under %s — cold start (no load).", base)
+        return ""  # nothing to load → load_*_checkpoint short-circuits
+    resolved = os.path.join(base, subs[-1])
+    logger.info("Auto-latest checkpoint: %s → %s", base, resolved)
+    return resolved
+
+
+def _prune_old_checkpoints(base_path: str, keep_last_n: int, just_saved_subdir: str) -> None:
+    """Delete numeric subdirs older than the keep_last_n most recent.
+
+    Defensive: never prune `just_saved_subdir` even if it would be evicted by
+    the keep_last_n window (shouldn't happen since we just wrote it, but
+    catches off-by-one bugs). Skipped entirely when keep_last_n<=0.
+    """
+    if keep_last_n <= 0:
+        return
+    subs = _list_numeric_subdirs(base_path)
+    if len(subs) <= keep_last_n:
+        return
+    to_prune = subs[:-keep_last_n]
+    for name in to_prune:
+        full = os.path.join(base_path, name)
+        if os.path.realpath(full) == os.path.realpath(just_saved_subdir):
+            continue
+        try:
+            shutil.rmtree(full)
+            logger.info("Pruned old checkpoint: %s", full)
+        except OSError as e:
+            logger.warning("Failed to prune %s: %s", full, e)
+
+
+def _cleanup_stale_tmps(base_path: str) -> None:
+    """Remove `*.tmp`/`*.old` subdirs left by a crashed prior save attempt.
+
+    `*.tmp` = an interrupted write; `*.old` = an interrupted atomic-overwrite
+    swap (see the promotion step in save_dmp_checkpoint). Both are non-numeric
+    so `_resolve_latest_subdir` already ignores them; this just reclaims disk.
+    """
+    if not os.path.isdir(base_path):
+        return
+    for name in os.listdir(base_path):
+        if name.endswith(".tmp") or name.endswith(".old"):
+            full = os.path.join(base_path, name)
+            try:
+                shutil.rmtree(full)
+                logger.warning("Removed stale checkpoint dir: %s", full)
+            except OSError as e:
+                logger.warning("Failed to remove stale dir %s: %s", full, e)
+
+
 @gin.configurable
 def save_dmp_checkpoint(
     model: torch.nn.Module,
@@ -94,32 +214,64 @@ def save_dmp_checkpoint(
     rank: int,
     batch_idx: int,
     path: str = "",
+    keep_last_n: int = 1,
+    train_ts: Optional[int] = None,
+    batch_idx_in_window: int = WINDOW_COMPLETE,
+    device: Optional[torch.device] = None,
 ) -> None:
     """
     Save a distributed model checkpoint including sparse and dense components.
 
-    Saves the model's sparse tensors using distributed checkpointing and dense
-    tensors, optimizer state, and metrics using standard PyTorch serialization.
+    Writes into a per-rank-coordinated atomic layout:
+        <path>/<batch_idx>.tmp/   ← directory written into during save
+        <path>/<batch_idx>/       ← atomically renamed from .tmp on success
+
+    A crash mid-save leaves the `.tmp/` orphan, which `_cleanup_stale_tmps`
+    sweeps on the next save attempt and which `_resolve_latest_subdir` ignores
+    (non-numeric basename). The previous successful `<N-K>/` remains valid.
 
     Args:
         model: The model to checkpoint.
         optimizer: The optimizer whose state should be saved.
         metric_logger: The metrics logger containing training/eval metrics.
         rank: The current process rank in distributed training.
-        batch_idx: The current batch index (used for checkpoint naming).
+        batch_idx: Subdir name (for streaming we set this == train_ts so the
+            on-disk layout monotonically increases).
         path: Base path for saving the checkpoint. If empty, no checkpoint is saved.
+        keep_last_n: Number of most-recent numeric subdirs to retain after a
+            successful save. Set 1 (default) for disk-bounded long runs;
+            <=0 disables pruning.
+        train_ts: For streaming-train-eval, the current train timestamp.
+            Stored in non_sparse.ckpt so resume knows which window to enter.
+        batch_idx_in_window: For streaming-train-eval, batches completed within
+            train_ts. WINDOW_COMPLETE (-1) means the window finished; resume
+            advances to train_ts+1. >=0 means crash happened mid-window; resume
+            re-enters train_ts at batch_idx_in_window.
+        device: CUDA device for the per-rank RNG snapshot. Required for
+            bit-equal trajectories across resume (HSTU dropout consumes the
+            per-device RNG cycle).
     """
     if path == "":
         return
-    now = datetime.now()
-    formatted_datetime = now.strftime("%Y_%m_%d_%H_%M_%S")
-    path = f"{path}/{batch_idx}"
-    if not os.path.exists(path) and rank == 0:
-        os.makedirs(path)
-    sparse_path = f"{path}/sparse/"
-    if not os.path.exists(sparse_path) and rank == 0:
-        os.makedirs(sparse_path)
-    non_sparse_ckpt = f"{path}/non_sparse.ckpt"
+    base_path = path
+    # Atomic-save layout: write to .tmp, rename to final, prune older.
+    tmp_subdir = f"{base_path}/{batch_idx}.tmp"
+    final_subdir = f"{base_path}/{batch_idx}"
+
+    if rank == 0:
+        _cleanup_stale_tmps(base_path)
+        # Always (re)write into a fresh .tmp. An existing `final_subdir` with the
+        # same batch_idx (e.g. a later in-window save for the same train_ts, or a
+        # deterministic re-run at the same step) is overwritten atomically at the
+        # promotion step below — NOT skipped here. Skipping would desync ranks:
+        # the collective barrier/checkpoint.save calls below run on *every* rank,
+        # so a rank-0-only early return deadlocks ranks 1..N on the next barrier.
+        shutil.rmtree(tmp_subdir, ignore_errors=True)
+        os.makedirs(tmp_subdir, exist_ok=True)
+        os.makedirs(f"{tmp_subdir}/sparse/", exist_ok=True)
+    torch.distributed.barrier()
+    sparse_path = f"{tmp_subdir}/sparse/"
+    non_sparse_ckpt = f"{tmp_subdir}/non_sparse.ckpt"
 
     sparse_tensor_keys = {
         k for k, v in model.state_dict().items() if isinstance(v, ShardedTensor)
@@ -148,9 +300,20 @@ def save_dmp_checkpoint(
                 "reg_metrics": regression_metric_state_dict,
                 "global_step": metric_logger.global_step,
                 "sparse_tensor_keys": sparse_tensor_keys,
+                # Streaming resume fields. Defaulted on load so old checkpoints
+                # (pre-streaming-resume) still load as a normal restart.
+                "train_ts": train_ts,
+                "batch_idx_in_window": batch_idx_in_window,
             },
             non_sparse_ckpt,
         )
+
+    # Per-rank RNG snapshot. Written even on a single rank because dropout's
+    # randomness comes from the CUDA generator which differs across devices.
+    if device is not None:
+        rng_path = f"{tmp_subdir}/rng_rank{rank}.pt"
+        torch.save(_rng_state(device), rng_path)
+
     torch.distributed.barrier()
     sparse_dict = {"sparse_dict": SparseState(model, sparse_tensor_keys)}
     torch.distributed.checkpoint.save(
@@ -158,7 +321,25 @@ def save_dmp_checkpoint(
         storage_writer=torch.distributed.checkpoint.FileSystemWriter(sparse_path),
     )
     torch.distributed.barrier()
-    print("checkpoint successfully saved")
+    # Promote .tmp → final, then prune. Done on rank 0 only since the directory
+    # operations are global filesystem state.
+    if rank == 0:
+        if os.path.exists(final_subdir):
+            # POSIX rename() refuses to replace a non-empty directory, so we
+            # can't os.replace(tmp, final) directly. Swap the old snapshot aside
+            # (instant rename), move the new one into place, then delete the old.
+            # The `.old` name is non-numeric → ignored by _resolve_latest_subdir
+            # and swept by _cleanup_stale_tmps on the next save if we crash mid-swap.
+            old_aside = f"{final_subdir}.old"
+            shutil.rmtree(old_aside, ignore_errors=True)
+            os.replace(final_subdir, old_aside)
+            os.replace(tmp_subdir, final_subdir)
+            shutil.rmtree(old_aside, ignore_errors=True)
+        else:
+            os.replace(tmp_subdir, final_subdir)
+        _prune_old_checkpoints(base_path, keep_last_n, final_subdir)
+        logger.info("checkpoint successfully saved → %s", final_subdir)
+    torch.distributed.barrier()
 
 
 @gin.configurable
@@ -190,24 +371,30 @@ def load_nonsparse_checkpoint(
     optimizer: Optional[Optimizer] = None,
     metric_logger: Optional[MetricsLogger] = None,
     path: str = "",
-) -> None:
+    rank: int = 0,
+) -> Tuple[Optional[int], int]:
     """
     Load non-sparse (dense) components from a checkpoint.
 
     Loads dense model parameters, and optionally optimizer state and metrics.
+    Also restores per-rank RNG state if a matching `rng_rank{rank}.pt` is found
+    next to `non_sparse.ckpt`.
 
-    Args:
-        model: The model to load dense parameters into.
-        device: The device to load tensors onto.
-        optimizer: Optional optimizer to restore state for.
-        metric_logger: Optional metrics logger to restore state for.
-        path: Base path of the checkpoint. If empty, no loading is performed.
+    Returns:
+        (train_ts, batch_idx_in_window) — the streaming resume hint stored at
+        save time. `(None, WINDOW_COMPLETE)` if not a streaming checkpoint or
+        no path supplied.
     """
     if path == "":
-        return
+        return None, WINDOW_COMPLETE
     non_sparse_ckpt = f"{path}/non_sparse.ckpt"
 
-    non_sparse_state_dict = torch.load(non_sparse_ckpt, map_location=device)
+    # weights_only=False: these are our own trusted checkpoints, and they hold
+    # non-tensor objects (optimizer/metric state dicts, numpy-backed RNG state)
+    # that PyTorch>=2.6's weights_only=True default refuses to unpickle.
+    non_sparse_state_dict = torch.load(
+        non_sparse_ckpt, map_location=device, weights_only=False
+    )
     load_dense_state_dict(model, non_sparse_state_dict["dense_dict"])
     print("dense checkpoint successfully loaded")
     if optimizer is not None:
@@ -226,6 +413,21 @@ def load_nonsparse_checkpoint(
         for i, m in enumerate(metric_logger.regression_metrics["eval"]):
             m.load_state_dict(regression_metric_state_dict["eval"][i])
 
+    # Per-rank RNG restore. Missing file = bit-equal trajectory not requested at
+    # save time; we silently continue (the test harness checks for both).
+    rng_path = f"{path}/rng_rank{rank}.pt"
+    if os.path.exists(rng_path):
+        # weights_only=False: RNG state is numpy/Python tuples, not tensors.
+        rng_state = torch.load(rng_path, map_location="cpu", weights_only=False)
+        _restore_rng_state(rng_state, device)
+        logger.info("RNG state restored from %s", rng_path)
+
+    train_ts = non_sparse_state_dict.get("train_ts")
+    batch_idx_in_window = non_sparse_state_dict.get(
+        "batch_idx_in_window", WINDOW_COMPLETE
+    )
+    return train_ts, batch_idx_in_window
+
 
 @gin.configurable
 def load_dmp_checkpoint(
@@ -234,25 +436,27 @@ def load_dmp_checkpoint(
     metric_logger: MetricsLogger,
     device: torch.device,
     path: str = "",
-) -> None:
+    rank: int = 0,
+) -> Tuple[Optional[int], int]:
     """
     Load a complete distributed model checkpoint (both sparse and dense components).
 
-    This is a convenience function that calls both load_sparse_checkpoint and
-    load_nonsparse_checkpoint.
+    `path` is auto-resolved: if it points at a directory containing numeric
+    subdirs (e.g. CKPT_PATH=<base>/), the highest-numbered subdir is used. If it
+    already names a leaf save (e.g. <base>/300), it's used as-is. Empty string =
+    no load.
 
-    Args:
-        model: The model to load the checkpoint into.
-        optimizer: The optimizer to restore state for.
-        metric_logger: The metrics logger to restore state for.
-        device: The device to load tensors onto.
-        path: Base path of the checkpoint. If empty, no loading is performed.
+    Returns:
+        (train_ts, batch_idx_in_window) — streaming resume hint. Callers that
+        don't need it can ignore.
     """
-    load_sparse_checkpoint(model=model, path=path)
-    load_nonsparse_checkpoint(
+    resolved = _resolve_latest_subdir(path)
+    load_sparse_checkpoint(model=model, path=resolved)
+    return load_nonsparse_checkpoint(
         model=model,
         optimizer=optimizer,
         metric_logger=metric_logger,
-        path=path,
+        path=resolved,
         device=device,
+        rank=rank,
     )

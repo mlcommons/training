@@ -104,7 +104,12 @@ nts/env_int.default = 30
 streaming_train_eval_loop.start_ts = @sts/env_int()
 sts/env_int.key = "START_TS"
 sts/env_int.default = 150
-streaming_train_eval_loop.metric_log_frequency = 50
+# Per-step metric logging cadence. Default 50 (one compute_and_log GPU->CPU
+# sync per 50 batches). The streaming-resume test sets METRIC_LOG_FREQ=1 so
+# every step emits a parseable "Step N metrics" line for trajectory comparison.
+streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
+mlf/env_int.key     = "METRIC_LOG_FREQ"
+mlf/env_int.default = 50
 # Trace on by default: reuses the shared Profiler.* bindings below (5-step
 # window at step 52). The streaming step counter advances across train+eval
 # batches, so step 52 lands in the first (train) window's compute.
@@ -160,7 +165,46 @@ MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = 0.80275
 # Checkpointing disabled by default — a full DMP checkpoint is ~100s of GB and
 # the streaming loop always saves on the final window. save_dmp_checkpoint
-# no-ops on the empty path. Set $CKPT_PATH to a directory to re-enable.
+# no-ops on the empty path. Set $CKPT_PATH to a directory to re-enable; the
+# load path auto-resolves to the highest-numbered numeric subdir inside it.
 save_dmp_checkpoint.path = @ckpt/env_path()
 ckpt/env_path.key     = "CKPT_PATH"
 ckpt/env_path.default = ""
+load_dmp_checkpoint.path = @ckpt/env_path()
+# Retention: keep only the most-recent N numeric subdirs after each successful
+# save (atomic rename + prune-older). Override via $KEEP_LAST_N.
+save_dmp_checkpoint.keep_last_n = @kln/env_int()
+kln/env_int.key     = "KEEP_LAST_N"
+kln/env_int.default = 1
+# In-window checkpoint cadence for streaming-train-eval. 0 (default) = end-of-
+# window only; on crash mid-window the partial progress is lost. Set N>0 (e.g.
+# via $IN_WINDOW_CKPT_FREQ) for batch-granularity exact-once-on-resume — paired
+# with the auto-latest load above, the resumed run skips the K already-trained
+# batches of the partial window and continues with bit-equal trajectory.
+streaming_train_eval_loop.in_window_checkpoint_frequency = @iwcf/env_int()
+iwcf/env_int.key     = "IN_WINDOW_CKPT_FREQ"
+iwcf/env_int.default = 0
+# Global-step checkpoint cadence: save whenever the monotonic train global_step
+# crosses a multiple of N (a true "every 1000 steps" trigger that spans windows
+# and survives resume). 0 (default) = off. Override via $CKPT_STEP_FREQ.
+streaming_train_eval_loop.checkpoint_step_frequency = @csf/env_int()
+csf/env_int.key     = "CKPT_STEP_FREQ"
+csf/env_int.default = 0
+# Wall-clock checkpoint cadence in seconds: save when >= this many seconds have
+# elapsed since the last save (e.g. 3600 for hourly). Rank 0 owns the clock and
+# broadcasts the decision so all ranks save together. 0.0 (default) = off.
+# Override via $CKPT_TIME_INTERVAL_S.
+streaming_train_eval_loop.checkpoint_time_interval_s = @ctis/env_float()
+ctis/env_float.key     = "CKPT_TIME_INTERVAL_S"
+ctis/env_float.default = 0.0
+# Cap each train_ts window's batch count (mostly for the resume test driver).
+# Unset / 0 = use the full window.
+streaming_train_eval_loop.num_train_batches = @ntb/env_int()
+ntb/env_int.key     = "NUM_TRAIN_BATCHES"
+ntb/env_int.default = 0
+# Test-only failure injection: when >=0 and metric_logger.global_step['train']
+# reaches this, the process exits with code 42 right after the in-window save
+# fires. Used by `scripts/streaming_resume_test.sh` to verify resume.
+streaming_train_eval_loop.die_at_step = @das/env_int()
+das/env_int.key     = "DIE_AT_STEP"
+das/env_int.default = -1
