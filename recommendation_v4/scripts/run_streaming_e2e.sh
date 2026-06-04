@@ -128,10 +128,11 @@ ALLOW_FAILOVER=1                      # 0 = never acquire a new node
 PROVISION_SCRIPT=/home/chcai/_provision_yambda_primus.sh
 
 # Disk guard: require at least this many GiB free on the ckpt volume before a
-# (re)launch. One checkpoint is ~600 GB; with keep_last_n the existing copies
-# are already counted as used, so we only need room for one new in-flight .tmp
-# plus margin (~800 GiB). The volume has ~3.7 TB free.
-MIN_FREE_GIB=800
+# (re)launch. One checkpoint is ~560 GB. A save writes a fresh .tmp BEFORE the
+# old copy is pruned, so peak transient usage is (keep_last_n + 1) copies. With
+# keep_last_n=1 that is ~1120 GB; require ~1200 GiB free at launch so the run
+# never wedges mid-save on a near-full shared NFS volume.
+MIN_FREE_GIB=1200
 # Stall watchdog: if the log hasn't grown AND no trainer process is alive for
 # this many seconds with no exit sentinel, treat it as a silent death. Comfortably
 # exceeds one blocking checkpoint save (~83 s); and because a save keeps the
