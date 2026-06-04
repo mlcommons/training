@@ -62,10 +62,26 @@ _PERF_RE = re.compile(
     r"train - Step (\d+) perf: local_sps=([-0-9.eE+]+) global_sps=([-0-9.eE+]+) "
     r"step_ms=([-0-9.eE+]+) elapsed_sec=([-0-9.eE+]+) total_samples=(\d+)"
 )
+# `[boundary] eval_ts=181 eval first-batch ...` — marks the start of a full-holdout
+# eval block; the eval runs at whatever the latest train global step was, so we use
+# it to anchor each eval's metrics onto the shared train-global-step x-axis.
+_EVAL_BOUNDARY_RE = re.compile(r"\[boundary\] eval_ts=(\d+) eval first-batch")
 
 # Metrics we surface in the trajectory (others are still captured if present).
 _KEEP = ("window_ne", "lifetime_ne", "window_auc", "lifetime_auc",
          "window_accuracy", "lifetime_accuracy", "window_gauc", "lifetime_gauc")
+
+
+def _parse_metrics(body: str, task: str) -> Dict[str, float]:
+    row: Dict[str, float] = {}
+    for name, tname, val in _METRIC_RE.findall(body):
+        if tname != task:
+            continue
+        try:
+            row[name] = float(val)
+        except ValueError:
+            continue
+    return row
 
 
 def parse_log(
@@ -73,11 +89,36 @@ def parse_log(
 ) -> Tuple[Dict[str, Dict[int, Dict[str, float]]], List[Dict[str, float]]]:
     """Return ({'train': {step: {metric: val}}, 'eval': {...}}, perf_rows).
 
-    For a given (mode, step) the LAST occurrence wins — duplicate per-rank prints
-    are identical, and within an eval window later steps carry more aggregation.
+    Train is keyed by train global step (last write wins — duplicate per-rank
+    prints are identical). Eval uses a per-rank-resetting internal step counter
+    that restarts every eval window, so we instead anchor each eval window onto
+    the *train global step at which it ran* (the loop trains window T then evals
+    window T+1, so the eval's anchor is the last train step before it). Each eval
+    window collapses to a single point carrying its final, most-aggregated
+    full-holdout metrics, plus `eval_window` (the eval_ts) for reference.
     """
     out: Dict[str, Dict[int, Dict[str, float]]] = {"train": {}, "eval": {}}
     perf: List[Dict[str, float]] = []
+
+    last_train_step = 0
+    cur_anchor: Optional[int] = None   # train global step this eval block runs at
+    cur_ts: Optional[int] = None       # eval window id (eval_ts)
+    cur_row: Optional[Dict[str, float]] = None  # final row of the current block
+    cur_internal: Optional[int] = None  # last eval internal step (reset detection)
+
+    def flush_eval() -> None:
+        nonlocal cur_anchor, cur_ts, cur_row, cur_internal
+        if cur_row:
+            anchor = cur_anchor if cur_anchor is not None else last_train_step
+            row = dict(cur_row)
+            if cur_ts is not None:
+                row["eval_window"] = float(cur_ts)
+            key = anchor
+            while key in out["eval"]:  # keep distinct evals from colliding
+                key += 1
+            out["eval"][key] = row
+        cur_anchor = cur_ts = cur_row = cur_internal = None
+
     with open(log_path, "r", errors="replace") as f:
         for line in f:
             pm = _PERF_RE.search(line)
@@ -91,21 +132,40 @@ def parse_log(
                     "total_samples": int(pm.group(6)),
                 })
                 continue
+            bm = _EVAL_BOUNDARY_RE.search(line)
+            if bm:
+                # The boundary line (a different logger) can interleave before OR
+                # after this eval's metric lines, so don't use it to delimit the
+                # block — just tag the current block with its eval_ts. Block
+                # boundaries come from eval-step resets / training resuming.
+                if cur_anchor is None:
+                    cur_anchor = last_train_step
+                cur_ts = int(bm.group(1))
+                continue
             m = _STEP_RE.search(line)
             if not m:
                 continue
             mode, step_s, body = m.group(1), m.group(2), m.group(3)
             step = int(step_s)
-            row: Dict[str, float] = {}
-            for name, tname, val in _METRIC_RE.findall(body):
-                if tname != task:
-                    continue
-                try:
-                    row[name] = float(val)
-                except ValueError:
-                    continue
-            if row:
-                out[mode][step] = row  # last write wins
+            row = _parse_metrics(body, task)
+            if mode == "train":
+                last_train_step = step
+                if cur_anchor is not None or cur_row is not None:
+                    flush_eval()  # an eval block ends when training resumes
+                if row:
+                    out["train"][step] = row  # last write wins
+            else:  # eval — accumulate into the current block (last = most aggregated)
+                # Fallback for logs without a boundary marker: a drop in the eval
+                # internal step counter signals a fresh eval window.
+                if (cur_internal is not None and step < cur_internal
+                        and cur_anchor is None):
+                    flush_eval()
+                if cur_anchor is None:
+                    cur_anchor = last_train_step
+                cur_internal = step
+                if row:
+                    cur_row = row
+    flush_eval()
     return out, perf
 
 
@@ -173,7 +233,8 @@ def _maybe_plot(
     for metric, marker in (("window_ne", "o"), ("lifetime_ne", "s")):
         xs, ys = series("eval", metric)
         if xs:
-            ax_ne.plot(xs, ys, marker, ms=4, ls="", label=f"eval/{metric}")
+            ax_ne.plot(xs, ys, marker=marker, ms=5, ls="-", lw=1.0, alpha=0.9,
+                       label=f"eval/{metric}")
     ax_ne.set_ylabel("NE (normalized entropy)")
     ax_ne.set_title(f"yambda-5b streaming train+eval trajectory — task={task}")
     ax_ne.grid(True, alpha=0.3)
@@ -186,9 +247,10 @@ def _maybe_plot(
     for metric, marker in (("window_auc", "o"), ("lifetime_auc", "s")):
         xs, ys = series("eval", metric)
         if xs:
-            ax_auc.plot(xs, ys, marker, ms=4, ls="", label=f"eval/{metric}")
+            ax_auc.plot(xs, ys, marker=marker, ms=5, ls="-", lw=1.0, alpha=0.9,
+                        label=f"eval/{metric}")
     ax_auc.set_ylabel("AUC")
-    ax_auc.set_xlabel("train global step")
+    ax_auc.set_xlabel("train global step (eval points anchored to the step they ran at)")
     ax_auc.grid(True, alpha=0.3)
     ax_auc.legend(fontsize=8, ncol=2)
 
