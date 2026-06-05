@@ -693,7 +693,22 @@ class MetricsLogger:
         tensorboard_log_path: str = "",
         world_size: int = 1,
         auc_threshold: Optional[float] = None,
+        num_flops_per_sample: float = 0.0,
+        gpu_peak_flops: float = 0.0,
+        model: Optional[torch.nn.Module] = None,
     ) -> None:
+        # tflops/mfu reporting state (optional — when both num_flops_per_sample
+        # and gpu_peak_flops are set, the train perf line gains tflops_algo/gpu,
+        # mfu, tflops_real/gpu, hfu, fill. The jagged ("real") numbers come
+        # from `model._last_jagged_flops_per_sample` stashed by DlrmHSTU.main_forward.
+        self._num_flops_per_sample: float = max(0.0, float(num_flops_per_sample))
+        self._gpu_peak_flops: float = max(0.0, float(gpu_peak_flops))
+        self._model_ref: Optional[torch.nn.Module] = model
+        if rank == 0 and self._num_flops_per_sample > 0 and self._gpu_peak_flops > 0:
+            logger.info(
+                f"FLOPS reporting enabled: {self._num_flops_per_sample / 1e9:.1f} "
+                f"GFLOP/sample (dense fwd+bwd), GPU peak {self._gpu_peak_flops / 1e12:.0f} TFLOPS"
+            )
         self.multitask_configs: List[TaskConfig] = multitask_configs
         all_classification_tasks: List[str] = [
             task.task_name
@@ -940,10 +955,44 @@ class MetricsLogger:
             self.tb_logger.add_scalar(
                 "perf/train_elapsed_sec", elapsed, global_step=step
             )
+            # TFLOPS / MFU reporting (algo = dense yardstick, real = jagged).
+            #   tflops_algo/gpu, mfu  — uses max_seq_len^2 attention work (the
+            #     MFU yardstick: the FLOPs the workload would do if every
+            #     user's UIH filled the padded seq length).
+            #   tflops_real/gpu, hfu — uses this batch's mean(s_i^2) (actual
+            #     GPU work; hardware utilization).
+            #   fill                  — real / algo as a percent; how much of
+            #     the algo budget the model actually executed this batch.
+            # The jagged stash is read from the inner model; the model ref may
+            # be a DMP wrapper, so unwrap via .module if present.
+            tflops_str = ""
+            if self._num_flops_per_sample > 0 and self._gpu_peak_flops > 0:
+                local_flops = self._num_flops_per_sample * local_sps
+                tflops_algo = local_flops / 1e12
+                mfu = 100.0 * local_flops / self._gpu_peak_flops
+                self.tb_logger.add_scalar("perf/train_tflops_algo_gpu", tflops_algo, global_step=step)
+                self.tb_logger.add_scalar("perf/train_mfu_pct", mfu, global_step=step)
+                tflops_str = f" tflops_algo/gpu={tflops_algo:.1f} mfu={mfu:.1f}%"
+                jagged_t = None
+                m = self._model_ref
+                if m is not None:
+                    inner = m.module if hasattr(m, "module") else m
+                    jagged_t = getattr(inner, "_last_jagged_flops_per_sample", None)
+                if jagged_t is not None:
+                    jagged = float(jagged_t.item())
+                    if 0 < jagged < self._num_flops_per_sample:
+                        tflops_real = jagged * local_sps / 1e12
+                        hfu = 100.0 * jagged * local_sps / self._gpu_peak_flops
+                        fill = 100.0 * jagged / self._num_flops_per_sample
+                        self.tb_logger.add_scalar("perf/train_tflops_real_gpu", tflops_real, global_step=step)
+                        self.tb_logger.add_scalar("perf/train_hfu_pct", hfu, global_step=step)
+                        self.tb_logger.add_scalar("perf/train_fill_pct", fill, global_step=step)
+                        tflops_str += f" tflops_real/gpu={tflops_real:.1f} hfu={hfu:.1f}% fill={fill:.1f}%"
             logger.info(
                 f"train - Step {step} perf: local_sps={local_sps:.1f} "
                 f"global_sps={global_sps:.1f} step_ms={step_ms:.2f} "
                 f"elapsed_sec={elapsed:.1f} total_samples={self._perf_total_samples}"
+                + tflops_str
             )
             self._perf_t_window = now
             self._perf_steps_in_window = 0
@@ -1044,6 +1093,38 @@ def env_float(key: str = "", default: float = 0.0) -> float:
     """
     raw = os.environ.get(key) if key else None
     return float(raw) if raw else default
+
+
+_GPU_PEAK_FLOPS_TABLE: Dict[str, Dict[str, float]] = {
+    # Per-GPU peak TFLOPS by dtype. Values from vendor datasheets / Primus-DLRM
+    # peak_table. Used as the denominator in MFU/HFU. Keyed by case-insensitive
+    # substring of torch.cuda.get_device_name(0).
+    "MI355X": {"bf16": 2300e12, "fp32": 575e12},
+    "MI350X": {"bf16": 2300e12, "fp32": 575e12},
+    "MI300X": {"bf16": 1300e12, "fp32": 653e12},
+    "MI325X": {"bf16": 1300e12, "fp32": 653e12},
+    "B200":   {"bf16": 2250e12, "fp32": 1125e12},
+    "H100":   {"bf16": 990e12,  "fp32": 67e12},
+    "A100":   {"bf16": 312e12,  "fp32": 19.5e12},
+}
+
+
+def get_gpu_peak_flops(dtype: str = "bf16") -> float:
+    """Peak FLOPS for the current GPU at the given dtype.
+
+    Falls back to MI350X's number with a warning when the device name doesn't
+    match any table entry — better to over-report MFU than to silently skip.
+    """
+    if not torch.cuda.is_available():
+        return 0.0
+    name = torch.cuda.get_device_name(0)
+    for gpu_key, peaks in _GPU_PEAK_FLOPS_TABLE.items():
+        if gpu_key in name:
+            return peaks.get(dtype, peaks["bf16"])
+    logger.warning(
+        f"Unknown GPU for peak FLOPS: {name}; defaulting to MI350X bf16 (2300 TF)"
+    )
+    return _GPU_PEAK_FLOPS_TABLE["MI350X"]["bf16"]
 
 
 @gin.configurable

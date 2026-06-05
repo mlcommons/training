@@ -81,7 +81,10 @@ def _main_func(
         train_eval_loop,
         train_loop,
     )
-    from generative_recommenders.dlrm_v3.utils import MetricsLogger
+    from generative_recommenders.dlrm_v3.utils import (
+        MetricsLogger,
+        get_gpu_peak_flops,
+    )
 
     setup(
         rank=rank,
@@ -104,12 +107,28 @@ def _main_func(
         hstu_config=model_configs,
         embedding_table_configs=embedding_table_configs,
     )
+    # TFLOPS/MFU reporting: query the model's static dense estimate +
+    # current GPU's peak FLOPS. Both default to 0 if the model doesn't
+    # expose get_num_flops_per_sample, in which case MetricsLogger silently
+    # drops the tflops fields from the perf line.
+    inner_model = model.module if hasattr(model, "module") else model
+    num_flops_per_sample = (
+        float(inner_model.get_num_flops_per_sample())
+        if hasattr(inner_model, "get_num_flops_per_sample")
+        else 0.0
+    )
+    gpu_peak_flops = get_gpu_peak_flops(
+        "bf16" if getattr(model_configs, "bf16_training", True) else "fp32"
+    )
     metrics = MetricsLogger(
         multitask_configs=model_configs.multitask_configs,
         batch_size=train_dataloader.batch_size,
         window_size=2500,
         device=device,
         rank=rank,
+        num_flops_per_sample=num_flops_per_sample,
+        gpu_peak_flops=gpu_peak_flops,
+        model=model,
     )
     # Capture streaming resume hint (None for cold start / non-streaming
     # checkpoints). For the streaming-train-eval mode, we forward this into

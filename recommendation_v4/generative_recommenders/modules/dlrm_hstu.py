@@ -148,6 +148,11 @@ class DlrmHSTU(HammerModule):
         self._pipeline_mode: bool = False
         self._hstu_configs = hstu_configs
         self._bf16_training: bool = bf16_training
+        # Last batch's jagged FLOPs/sample (0-d tensor on GPU). Populated by
+        # main_forward; MetricsLogger reads + .item()s on each compute_and_log
+        # to compute tflops_real/gpu and hfu (vs dense yardstick from
+        # get_num_flops_per_sample()).
+        self._last_jagged_flops_per_sample: Optional[torch.Tensor] = None
         set_static_max_seq_lens([self._hstu_configs.max_seq_len])
 
         if not is_dense:
@@ -283,6 +288,81 @@ class DlrmHSTU(HammerModule):
             ),
             LayerNorm(hstu_configs.hstu_transducer_embedding_dim),
         ).apply(init_mlp_weights_optional_bias)
+
+    # -- FLOPs estimation -----------------------------------------------------
+    # Convention matches TorchTitan / Primus-DLRM: matmul = 6 × M × N × K
+    # (×3 fwd+bwd, ×2 FMA), attention = 2 matmuls (Q·K^T + att·V).
+    # Embedding lookups excluded — they're memory-bound, not compute.
+    #
+    # HSTU vs OneTrans: HSTU collapses attention + FFN into a single UVQK
+    # projection plus SiLU(U) ⊙ y elementwise gating. There is NO separate
+    # FFN block (which dominates FLOPs in a standard transformer), so HSTU
+    # is intentionally compute-leaner per layer for the same N.
+    def _hstu_layer_flops(
+        self, n_tokens_linear: float, n_tokens_attn_sq: float
+    ) -> float:
+        """Per-layer FLOPs given linear-op token count and attention-token²
+        count. Dense estimate uses ``N`` and ``N²``; jagged estimate
+        substitutes ``mean(s_i)`` and ``mean(s_i²)``."""
+        cfg = self._hstu_configs
+        D = cfg.hstu_embedding_table_dim
+        H = cfg.hstu_num_heads
+        hd = cfg.hstu_attn_linear_dim  # V/U head dim
+        qd = cfg.hstu_attn_qk_dim       # Q/K head dim
+        uvqk = 6 * n_tokens_linear * D * (2 * hd + 2 * qd) * H
+        attn = 6 * n_tokens_attn_sq * H * (qd + hd)  # Q·K^T + att·V
+        out = 6 * n_tokens_linear * (3 * H * hd) * D
+        return uvqk + attn + out
+
+    def get_num_flops_per_sample(self) -> float:
+        """Dense-equivalent fwd+bwd FLOPs per sample at ``max_seq_len``.
+
+        Used as the MFU yardstick (peak utilization the workload could
+        theoretically reach if every sample's sequence were the full padded
+        length). The actual ``tflops_real``/``hfu`` reported per step uses
+        the jagged estimate stashed by ``main_forward``.
+        """
+        cfg = self._hstu_configs
+        N = float(cfg.max_seq_len)
+        n_layers = cfg.hstu_attn_num_layers
+        flops = n_layers * self._hstu_layer_flops(
+            n_tokens_linear=N, n_tokens_attn_sq=N * N
+        )
+        # Multitask head (Linear(D, n_tasks)) — negligible but cheap to add.
+        n_tasks = len(self._multitask_configs)
+        if n_tasks > 0:
+            flops += 6 * n_tasks * cfg.hstu_embedding_table_dim
+        return float(flops)
+
+    def _compute_jagged_flops_per_sample(
+        self,
+        uih_seq_lengths: torch.Tensor,
+        num_candidates: torch.Tensor,
+    ) -> torch.Tensor:
+        """Jagged fwd+bwd FLOPs per sample for THIS batch's actual lengths.
+
+        Per-sample merged sequence length s_i = uih_seq_lengths[i] +
+        num_candidates[i]. Returns a 0-d tensor on the batch's device;
+        caller should ``.item()`` it (one D→H sync per logging interval).
+        """
+        s = (uih_seq_lengths + num_candidates).float()
+        mean_s = s.mean()
+        mean_s_sq = (s * s).mean()
+        cfg = self._hstu_configs
+        n_layers = cfg.hstu_attn_num_layers
+        flops = n_layers * (
+            6 * mean_s * cfg.hstu_embedding_table_dim
+              * (2 * cfg.hstu_attn_linear_dim + 2 * cfg.hstu_attn_qk_dim)
+              * cfg.hstu_num_heads
+            + 6 * mean_s_sq * cfg.hstu_num_heads
+              * (cfg.hstu_attn_qk_dim + cfg.hstu_attn_linear_dim)
+            + 6 * mean_s * (3 * cfg.hstu_num_heads * cfg.hstu_attn_linear_dim)
+              * cfg.hstu_embedding_table_dim
+        )
+        n_tasks = len(self._multitask_configs)
+        if n_tasks > 0:
+            flops = flops + 6 * n_tasks * cfg.hstu_embedding_table_dim
+        return flops
 
     def _construct_payload(
         self,
@@ -542,6 +622,18 @@ class DlrmHSTU(HammerModule):
         Optional[torch.Tensor],
         Optional[torch.Tensor],
     ]:
+        # Stash this batch's jagged FLOPs/sample for MetricsLogger to read.
+        # No D->H sync: the .item() happens once per metric_log_frequency in
+        # the trainer, not on every step. Eval-mode batches also produce a
+        # stash but the trainer only consumes it on train batches.
+        if not torch.jit.is_scripting():
+            self._last_jagged_flops_per_sample = (
+                self._compute_jagged_flops_per_sample(
+                    uih_seq_lengths=uih_seq_lengths,
+                    num_candidates=num_candidates,
+                )
+            )
+
         # merge uih and candidates embeddings
         for (
             uih_feature_name,
