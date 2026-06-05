@@ -75,12 +75,21 @@ get_dataset.new_path_prefix = %DATA_PATH
 # average (not 679) — TRITON's jagged attention skips the unfilled slots,
 # so the under-fill costs sequence budget but not GPU compute.
 # Cache is keyed by L on disk under <processed_dir>/hstu_cache_L<N>/;
-# switching L reuses an existing cache or builds a new one (~5 min).
-get_dataset.history_length = 2039
+# switching L reuses an existing cache or builds a new one (~5 min). Override
+# via $HISTORY_LENGTH (default 2039 keeps the existing single-task cache hot).
+get_dataset.history_length = @hl/env_int()
+hl/env_int.key     = "HISTORY_LENGTH"
+hl/env_int.default = 2039
 
 # Model-side attention budget. Dataset truncates UIH to fit this value if
-# `history_length + contextual + candidate` would overflow.
-get_hstu_configs.max_seq_len = 2048
+# `history_length + contextual + candidate` would overflow. Override via
+# $MAX_SEQ_LEN (default 2048 preserves the production single-task shape).
+# Pair MAX_SEQ_LEN=4096 with HISTORY_LENGTH=4086 for the 4k-no-truncation
+# analog (3*1362+9=4095 ≤ 4096); pair with HISTORY_LENGTH=4096 to reuse the
+# existing hstu_cache_L4096/ cache with ~8 events of trailing truncation.
+get_hstu_configs.max_seq_len = @msl/env_int()
+msl/env_int.key     = "MAX_SEQ_LEN"
+msl/env_int.default = 2048
 
 # --- streaming (temporal-order) training -------------------------------------
 # Only consumed under `--mode streaming-train-eval`; the default train-eval
