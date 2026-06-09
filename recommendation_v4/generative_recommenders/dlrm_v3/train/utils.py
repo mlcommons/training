@@ -418,12 +418,23 @@ def make_optimizer_and_shard(
 @gin.configurable
 def make_streaming_dataloader(
     dataset: HammerToTorchDataset,
-    ts: int,
-    batch_size: int,
-    num_workers: int,
-    prefetch_factor: int,
+    ts: Optional[int] = None,
+    batch_size: int = 0,
+    num_workers: int = 0,
+    prefetch_factor: int = 0,
+    train_only: bool = False,
+    indices: Optional["np.ndarray"] = None,
 ) -> DataLoader:
-    dataset.dataset.set_ts(ts)  # pyre-ignore [16]
+    # `indices` (explicit anchor index array) is used by the eval path to
+    # iterate the FIXED user-holdout set, which spans a window range rather than
+    # a single ts. Otherwise restrict to window `ts`; train_only=True drops
+    # held-out eval users so the non-persistent TRAIN loader never trains on
+    # them (no-leakage guarantee).
+    if indices is not None:
+        dataset.dataset.set_active_indices(indices)  # pyre-ignore [16]
+    else:
+        assert ts is not None, "make_streaming_dataloader needs ts or indices"
+        dataset.dataset.set_ts(ts, train_only=train_only)  # pyre-ignore [16]
     total_items = dataset.dataset.get_item_count()
     subset = torch.utils.data.Subset(dataset, range(total_items))
     # shuffle=False keeps temporal order within the window: a non-shuffling
@@ -550,13 +561,14 @@ class _PrefetchingWindowLoader:
         self._iters: List[Optional[object]] = [None] * n_buffers
 
     def _prepare(self, buf: int, ts: int, skip_samples: int = 0) -> None:
-        # window_indices() is the O(N) mask; numpy releases the GIL for it, so it
-        # overlaps the main thread's GPU dispatch. iter() then kicks off this
-        # pool's background prefetch.
-        # `skip_samples` is non-zero only for the very first window after a
-        # mid-window resume; subsequent windows always start at 0.
+        # train_window_indices() is the O(N) mask (+ uid-hash filter for the
+        # holdout); numpy releases the GIL for it, so it overlaps the main
+        # thread's GPU dispatch. iter() then kicks off this pool's background
+        # prefetch. This is a TRAIN-only loader, so held-out eval users are
+        # excluded here. `skip_samples` is non-zero only for the very first
+        # window after a mid-window resume; subsequent windows always start at 0.
         self._samplers[buf].set_window(
-            self._dataset.dataset.window_indices(ts), skip_samples=skip_samples
+            self._dataset.dataset.train_window_indices(ts), skip_samples=skip_samples
         )
         self._iters[buf] = iter(self._dls[buf])
 
@@ -1087,6 +1099,58 @@ def select_in_window_checkpoint_reason(
     return None
 
 
+def _validate_split_contract(
+    saved: Optional[Dict[str, Any]],
+    live: Dict[str, Any],
+    rank: int,
+) -> None:
+    """Guarantee the train:eval split (and the inputs the resume skip-offset
+    depends on) are unchanged across a crash/resume.
+
+    `saved` is the contract recovered from the checkpoint (None on cold start or
+    legacy pre-holdout checkpoints). Any mismatch is fatal: continuing would
+    either desync the mid-window skip (duplicate/skip batches) or reassign users
+    so that previously held-out eval users get trained (leakage). Set
+    ALLOW_SPLIT_MISMATCH=1 to override (e.g. intentionally resuming a legacy
+    checkpoint into a holdout run, accepting the risk).
+    """
+    allow = os.environ.get("ALLOW_SPLIT_MISMATCH", "0") == "1"
+    if saved is None:
+        # Legacy / cold-start checkpoint with no recorded contract. Only a
+        # problem if this run actually holds users out (tsp < 1.0): we cannot
+        # prove the earlier run used the same split.
+        if live.get("train_split_percentage", 1.0) < 1.0 and not allow:
+            raise RuntimeError(
+                "Resuming a checkpoint with NO saved split contract into a "
+                f"user-holdout run (train_split_percentage="
+                f"{live['train_split_percentage']}). The earlier run's split "
+                "cannot be verified, so held-out eval users may have been "
+                "trained. Set ALLOW_SPLIT_MISMATCH=1 to override."
+            )
+        return
+    mismatches = {
+        k: (saved.get(k), live.get(k))
+        for k in live
+        if saved.get(k) != live.get(k)
+    }
+    if mismatches:
+        msg = (
+            "Split/resume contract mismatch between checkpoint and current run: "
+            + ", ".join(
+                f"{k}: checkpoint={s!r} current={c!r}" for k, (s, c) in mismatches.items()
+            )
+            + ". Resuming would desync the skip offset and/or leak held-out "
+            "users into training."
+        )
+        if allow:
+            if rank == 0:
+                logger.warning("%s ALLOW_SPLIT_MISMATCH=1 set — continuing anyway.", msg)
+        else:
+            raise RuntimeError(msg + " Set ALLOW_SPLIT_MISMATCH=1 to override.")
+    elif rank == 0:
+        logger.info("Split/resume contract verified against checkpoint: %s", live)
+
+
 @gin.configurable
 def streaming_train_eval_loop(
     rank: int,
@@ -1107,9 +1171,22 @@ def streaming_train_eval_loop(
     eval_each_window: bool = True,
     eval_every_n_windows: int = 1,
     double_buffer: bool = False,
+    # --- fixed user-holdout eval set ---
+    # Window range the fixed eval set is drawn from. None -> default to
+    # original_end_ts (start_ts + num_train_ts), the window just past training.
+    eval_holdout_ts: Optional[int] = None,
+    eval_holdout_num_windows: int = 1,
     # --- resume / mid-window-exact-once knobs ---
     resume_train_ts: Optional[int] = None,
     resume_batch_idx_in_window: int = WINDOW_COMPLETE,
+    # Split contract recovered from the checkpoint (None on cold start or
+    # legacy checkpoints). Validated below against the live split so a resumed
+    # run cannot silently train a different user-split (would leak).
+    resume_split_contract: Optional[Dict[str, Any]] = None,
+    # True iff no checkpoint was loaded (genuine fresh run). Distinguishes a
+    # cold start (safe to establish a new split) from a resume that merely lacks
+    # a contract (legacy/non-streaming checkpoint), which the guard must reject.
+    resume_cold_start: bool = False,
     in_window_checkpoint_frequency: int = 0,
     # --- global step / wall-clock checkpoint cadences ---
     checkpoint_step_frequency: int = 0,
@@ -1187,6 +1264,47 @@ def streaming_train_eval_loop(
             dataset=dataset, sampler=window_sampler
         )
 
+    # The fixed user-holdout eval is yambda-specific (needs window_indices +
+    # the split API). Other streaming datasets (synthetic) keep the legacy
+    # per-window eval. Detect support once.
+    supports_holdout = hasattr(dataset.dataset, "eval_holdout_indices")
+
+    # Fixed eval-holdout window range. Captured from the REQUESTED (start_ts,
+    # num_train_ts) BEFORE the resume block mutates them, so it is identical on
+    # cold start and on every resume (the supervisor relaunches with the same
+    # START_TS / NUM_TRAIN_TS). Defaults to the window just past training.
+    requested_end_ts = start_ts + num_train_ts
+    # None (Python default) or <0 (the env-binding default) both mean "use the
+    # window just past training", which is stable across resume.
+    eval_holdout_ts_resolved = (
+        eval_holdout_ts
+        if (eval_holdout_ts is not None and eval_holdout_ts >= 0)
+        else requested_end_ts
+    )
+
+    # The split is an immutable run contract: a silent change across resume
+    # would both desync the mid-window skip offset AND turn held-out eval users
+    # into trained users (leakage). Build the live contract and validate the
+    # one recovered from the checkpoint against it; abort on any mismatch unless
+    # ALLOW_SPLIT_MISMATCH=1 is set (e.g. deliberately resuming a legacy run).
+    live_split_contract: Optional[Dict[str, Any]] = None
+    if supports_holdout:
+        live_split_contract = {
+            "train_split_percentage": dataset.dataset._train_split_percentage,  # pyre-ignore[16]
+            "split_salt": dataset.dataset._split_salt,  # pyre-ignore[16]
+            "eval_holdout_ts": eval_holdout_ts_resolved,
+            "eval_holdout_num_windows": eval_holdout_num_windows,
+            "batch_size": persistent_dl.batch_size if persistent_dl is not None else None,
+            "world_size": world_size,
+        }
+        # Only validate on an actual resume. On a genuine cold start there is no
+        # prior split to verify and establishing this run's split is always safe;
+        # validating there would wrongly reject every fresh holdout run. A resume
+        # that lacks a contract (legacy/non-streaming checkpoint) is NOT a cold
+        # start and is still validated (and rejected) below.
+        if not resume_cold_start:
+            _validate_split_contract(resume_split_contract, live_split_contract, rank)
+
     # Apply resume hint: advance start_ts past the last completed window, or
     # re-enter the partial window with a per-rank skip on its first iter.
     # Shrink num_train_ts by the same amount so the resumed run finishes at
@@ -1232,10 +1350,13 @@ def streaming_train_eval_loop(
             )
 
     def _window_iter(ts: int, skip_samples: int = 0):
+        # TRAIN-only iterator: both branches exclude held-out eval users via
+        # train_window_indices / set_ts(train_only=True). (Eval uses the fixed
+        # holdout set, never this helper.)
         if persistent_loader:
             assert window_sampler is not None and persistent_dl is not None
             window_sampler.set_window(
-                dataset.dataset.window_indices(ts),  # pyre-ignore [16]
+                dataset.dataset.train_window_indices(ts),  # pyre-ignore [16]
                 skip_samples=skip_samples,
             )
             return iter(persistent_dl)
@@ -1243,7 +1364,9 @@ def streaming_train_eval_loop(
             raise NotImplementedError(
                 "skip_samples>0 requires persistent_loader=True"
             )
-        return iter(make_streaming_dataloader(dataset=dataset, ts=ts))
+        return iter(
+            make_streaming_dataloader(dataset=dataset, ts=ts, train_only=True)
+        )
     # Windows are [start_ts, start_ts + num_train_ts); each step trains window T
     # then evals window T+1, so the last eval window is start_ts + num_train_ts,
     # which must be < num_windows(). Anchors require >= history_length prior
@@ -1292,6 +1415,7 @@ def streaming_train_eval_loop(
             train_ts=train_ts,
             batch_idx_in_window=batch_idx_in_window,
             device=device,
+            split_contract=live_split_contract,
         )
 
     def _run_train_window(
@@ -1418,7 +1542,20 @@ def streaming_train_eval_loop(
             )
 
     def _run_eval_window(eval_data_iterator, label: Optional[str] = None) -> None:
+        # DO NOT add a checkpoint trigger anywhere inside this function. The eval
+        # data iterator's position is not serializable, so a checkpoint taken
+        # mid-eval could not be resumed deterministically. `_maybe_checkpoint`
+        # only fires after a completed eval window or mid-train-window, so any
+        # restored state always sits on a completed-eval boundary -- which is
+        # also why the eval reset below is safe across resume.
         model.eval()
+        # Reset eval metrics so each pass reports a clean number over the FIXED
+        # holdout set. Without this, lifetime/window eval metrics would keep
+        # accumulating across eval steps (the old behavior, made worse now that
+        # every step sees the identical set), making the eval-AUC trajectory
+        # uninterpretable. With the reset, each eval point == AUC over the whole
+        # fixed holdout at that train step -> directly comparable across steps.
+        metric_logger.reset(mode="eval")
         eval_batch_idx = 0
         first_wait: Optional[float] = None
         _t_enter = time.perf_counter() if (label and rank == 0) else None
@@ -1486,6 +1623,7 @@ def streaming_train_eval_loop(
                 train_ts=train_ts,
                 batch_idx_in_window=WINDOW_COMPLETE,
                 device=device,
+                split_contract=live_split_contract,
             )
             last_ckpt_time[0] = time.time()
 
@@ -1507,6 +1645,26 @@ def streaming_train_eval_loop(
         if eval_every_n_windows <= 1:
             return True
         return i % eval_every_n_windows == 0 or i == n_train - 1
+
+    # Fixed eval set: held-out users' anchors over the resolved holdout window
+    # range, computed ONCE and reused at every eval step. Same anchors every
+    # step -> stable, comparable eval-AUC curve, and bounded eval time
+    # (~(1 - train_split_percentage) of a window). Cached inside the dataset so
+    # re-deriving it (e.g. on resume) returns the identical set. None for
+    # datasets without holdout support (synthetic) -> legacy per-window eval.
+    eval_global_indices: Optional["np.ndarray"] = None
+    if supports_holdout:
+        eval_global_indices = dataset.dataset.eval_holdout_indices(  # pyre-ignore [16]
+            eval_holdout_ts_resolved, eval_holdout_num_windows
+        )
+        if rank == 0:
+            logger.info(
+                "Fixed eval holdout: ts=[%d, %d) -> %d anchors (train_split_percentage=%s)",
+                eval_holdout_ts_resolved,
+                eval_holdout_ts_resolved + eval_holdout_num_windows,
+                len(eval_global_indices),
+                dataset.dataset._train_split_percentage,  # pyre-ignore[16]
+            )
 
     if persistent_loader and double_buffer:
         # Double-buffered: next window prepared in the background during the
@@ -1540,11 +1698,10 @@ def streaming_train_eval_loop(
             # thread holding an allocator/GIL-released lock. (Deferring this
             # first fork into the loop — as a sparse-eval cadence naively might —
             # hangs the run.) _should_eval(0) is always True when eval is enabled
-            # (0 % K == 0), so the first eval window is always train_ts_list[0]+1;
-            # arm it now so it prefetches during the i=0 train window.
-            eval_sampler.set_window(
-                dataset.dataset.window_indices(train_ts_list[0] + 1)  # pyre-ignore [16]
-            )
+            # (0 % K == 0). The eval set is the FIXED holdout (same every step),
+            # so we install it on the sampler ONCE here; later evals just call
+            # iter() again to replay the identical set (no set_window churn).
+            eval_sampler.set_window(eval_global_indices)
             eval_iter = iter(eval_dl)
         for i, (train_ts, train_data_iterator) in enumerate(
             # Only the FIRST window after a mid-window resume needs the skip
@@ -1571,20 +1728,15 @@ def streaming_train_eval_loop(
             if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 assert eval_sampler is not None and eval_dl is not None
-                _run_eval_window(eval_iter, label=f"eval_ts={train_ts + 1}")
-                # Re-arm the (already-forked) eval pool for the NEXT window that
-                # will eval (i+1 in dense mode, i+K in sparse mode), so it warms
-                # up during the upcoming train window(s). iter() reuses the
+                _run_eval_window(eval_iter, label=f"eval_holdout@train_ts={train_ts}")
+                # Re-arm the (already-forked) eval pool for the NEXT eval. The
+                # holdout set is fixed, so the sampler window is unchanged; we
+                # only need a fresh iter() to replay it. iter() reuses the
                 # persistent workers — no fork, safe alongside the bg thread.
                 next_eval_i = next(
                     (j for j in range(i + 1, n_train) if _should_eval(j)), None
                 )
                 if next_eval_i is not None:
-                    eval_sampler.set_window(
-                        dataset.dataset.window_indices(  # pyre-ignore [16]
-                            train_ts_list[next_eval_i] + 1
-                        )
-                    )
                     eval_iter = iter(eval_dl)
             _maybe_checkpoint(train_ts)
     else:
@@ -1603,49 +1755,37 @@ def streaming_train_eval_loop(
             )
             if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
-                _run_eval_window(_window_iter(train_ts + 1))
+                if eval_global_indices is not None:
+                    _run_eval_window(
+                        iter(
+                            make_streaming_dataloader(
+                                dataset=dataset, indices=eval_global_indices
+                            )
+                        ),
+                        label=f"eval_holdout@train_ts={train_ts}",
+                    )
+                else:
+                    # Legacy per-window eval (datasets without user holdout).
+                    _run_eval_window(
+                        iter(make_streaming_dataloader(dataset=dataset, ts=train_ts + 1))
+                    )
             _maybe_checkpoint(train_ts)
 
-    eval_ts = num_train_ts
-    dataset.dataset.is_eval = True
-    model.eval()
-    eval_batch_idx: int = 0
-    eval_dataloader = make_streaming_dataloader(dataset=dataset, ts=eval_ts)
-    eval_data_iterator = iter(eval_dataloader)
-    with torch.no_grad():
-        while True:
-            try:
-                sample = next(eval_data_iterator)
-            except StopIteration:
-                break
-            sample.to(device)
-            (
-                _,
-                _,
-                _,
-                mt_target_preds,
-                mt_target_labels,
-                mt_target_weights,
-            ) = model.forward(
-                sample.uih_features_kjt,
-                sample.candidates_features_kjt,
-            )
-            metric_logger.update(
-                mode="eval",
-                predictions=mt_target_preds,
-                labels=mt_target_labels,
-                weights=mt_target_weights,
-                num_candidates=sample.candidates_features_kjt.lengths().view(
-                    len(sample.candidates_features_kjt.keys()), -1
-                )[0],
-            )
-            eval_batch_idx += 1
-            if output_trace:
-                assert profiler is not None
-                profiler.step()
-            if eval_batch_idx % metric_log_frequency == 0:
-                metric_logger.compute_and_log(mode="eval")
-            if num_eval_batches is not None and eval_batch_idx >= num_eval_batches:
-                break
+    # Final eval over the SAME fixed user-holdout set (consistent with the
+    # per-window evals above). Reuses _run_eval_window so metrics are reset and
+    # reported the same way. Falls back to the legacy final-window eval for
+    # datasets without user holdout.
+    dataset.dataset.is_eval = True  # pyre-ignore [16]
+    if eval_global_indices is not None:
+        _run_eval_window(
+            iter(make_streaming_dataloader(dataset=dataset, indices=eval_global_indices)),
+            label="eval_holdout@final",
+        )
+    else:
+        _run_eval_window(
+            iter(make_streaming_dataloader(dataset=dataset, ts=num_train_ts)),
+            label="eval@final",
+        )
+    if rank == 0:
         for k, v in metric_logger.compute(mode="eval").items():
             print(f"{k}: {v}")

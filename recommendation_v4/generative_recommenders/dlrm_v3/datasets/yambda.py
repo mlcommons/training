@@ -57,6 +57,28 @@ def _load_npy_readonly(path: Union[str, Path]) -> np.ndarray:
     arr.flags.writeable = False
     return arr
 
+
+def _uid_unit_hash(uids: np.ndarray, salt: int) -> np.ndarray:
+    """Deterministic uniform-in-[0,1) hash of user ids (splitmix64 finalizer).
+
+    Pure function of (uid, salt): the same uid always maps to the same value,
+    so the train/eval user split is identical across processes, ranks, and
+    crash/resume — the property the no-leakage holdout relies on. Vectorized
+    uint64 arithmetic wraps mod 2**64 (defined for unsigned), so we silence the
+    benign overflow warnings.
+    """
+    GOLDEN = np.uint64(0x9E3779B97F4A7C15)
+    M1 = np.uint64(0xBF58476D1CE4E5B9)
+    M2 = np.uint64(0x94D049BB133111EB)
+    s30, s27, s31 = np.uint64(30), np.uint64(27), np.uint64(31)
+    with np.errstate(over="ignore"):
+        z = uids.astype(np.uint64) + GOLDEN + np.uint64(salt & 0xFFFFFFFFFFFFFFFF)
+        z = (z ^ (z >> s30)) * M1
+        z = (z ^ (z >> s27)) * M2
+        z = z ^ (z >> s31)
+    # Top 53 bits -> uniform [0, 1) double (same trick numpy uses for randoms).
+    return (z >> np.uint64(11)).astype(np.float64) * (1.0 / 9007199254740992.0)
+
 # Yambda event-type encoding written by preprocess_public_data.py.
 LISTEN_TYPE = 0
 LIKE_TYPE = 1
@@ -187,6 +209,8 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         is_inference: bool = False,
         streaming_window_seconds: int = 86400,
         streaming_sort_within_window: bool = False,
+        train_split_percentage: float = 1.0,
+        split_salt: int = 0,
         *args,
         **kwargs,
     ) -> None:
@@ -201,6 +225,18 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         # is byte-for-byte unaffected.
         self._streaming_window_seconds: int = streaming_window_seconds
         self._streaming_sort_within_window: bool = streaming_sort_within_window
+        # User-level train:eval split. `train_split_percentage >= 1.0` means no
+        # holdout (legacy behavior: every anchor is trainable). Otherwise the
+        # top `1 - train_split_percentage` fraction of users (by a deterministic
+        # hash of `uid + split_salt`) are held out: NEVER trained, used only to
+        # build the fixed eval set. The split is a pure function of (uid, salt),
+        # so it is identical across crash/resume (no leakage on failover).
+        self._train_split_percentage: float = train_split_percentage
+        self._split_salt: int = split_salt
+        # Cache only the (small) fixed eval-holdout index list; the per-window
+        # train filter is computed on the fly to avoid a full-length mask.
+        self._eval_holdout_cache: Optional[np.ndarray] = None
+        self._eval_holdout_cache_key: Optional[Tuple[int, int]] = None
         self._active: Optional[np.ndarray] = None
         self.is_eval: bool = False
         self._anchor_ts: Optional[np.ndarray] = None
@@ -509,16 +545,79 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         logger.warning(f"window_indices({ts}): [{lo}, {hi}) -> {idx.size:,} anchors")
         return idx.astype(np.int64)
 
-    def set_ts(self, ts: int) -> None:
+    def _eval_anchor_mask(self, anchor_idx: np.ndarray) -> np.ndarray:
+        """Bool mask (aligned to ``anchor_idx``) marking held-out eval users.
+
+        Computed on the fly for just this slice of anchors (a window is ~tens of
+        millions, not the full ~3B ``_positions``), so we never materialize a
+        full-length mask. ``uid``-hash >= ``train_split_percentage`` -> eval.
+        """
+        uids = self.store.flat_uid[self._positions[anchor_idx]]
+        return _uid_unit_hash(uids, self._split_salt) >= self._train_split_percentage
+
+    def train_window_indices(self, ts: int) -> np.ndarray:
+        """Global anchor indices for TRAIN in window ``ts``: ``window_indices``
+        with held-out eval users removed. Identical across resume because both
+        ``window_indices`` and the uid hash are pure functions, so the per-rank
+        round-robin slice (and the mid-window skip offset) stay consistent."""
+        idx = self.window_indices(ts)
+        if self._train_split_percentage >= 1.0:
+            return idx
+        kept = idx[~self._eval_anchor_mask(idx)]
+        logger.warning(
+            f"train_window_indices({ts}): {idx.size:,} -> {kept.size:,} anchors "
+            f"(holdout tsp={self._train_split_percentage}, salt={self._split_salt})"
+        )
+        return kept
+
+    def eval_holdout_indices(self, start_ts: int, num_windows: int = 1) -> np.ndarray:
+        """Fixed eval set: held-out users' anchors over windows
+        ``[start_ts, start_ts + num_windows)``. Computed once and cached, so the
+        SAME anchors are evaluated at every eval step (stable, comparable curve).
+        With no holdout (tsp>=1.0) this falls back to the full window(s)."""
+        key = (int(start_ts), int(num_windows))
+        if self._eval_holdout_cache is not None and self._eval_holdout_cache_key == key:
+            return self._eval_holdout_cache
+        parts: List[np.ndarray] = []
+        for ts in range(start_ts, start_ts + max(1, num_windows)):
+            idx = self.window_indices(ts)
+            if self._train_split_percentage < 1.0:
+                idx = idx[self._eval_anchor_mask(idx)]
+            parts.append(idx)
+        holdout = (
+            np.concatenate(parts).astype(np.int64)
+            if parts
+            else np.empty(0, dtype=np.int64)
+        )
+        logger.warning(
+            f"eval_holdout_indices(start_ts={start_ts}, num_windows={num_windows}): "
+            f"{holdout.size:,} held-out anchors (tsp={self._train_split_percentage})"
+        )
+        self._eval_holdout_cache = holdout
+        self._eval_holdout_cache_key = key
+        return holdout
+
+    def set_ts(self, ts: int, train_only: bool = False) -> None:
         """Restrict the active sample set to anchors in window ``ts`` (used by
         the per-window-DataLoader path, where ``iloc``/``get_item_count`` index
         through ``_active``).
 
-        Forward-only temporal slicing for streaming train/eval. History for any
-        anchor is still gathered causally (``scan_start:flat_pos``) and may span
-        earlier windows, so there is no feature leakage from future events.
+        ``train_only=True`` removes held-out eval users so the non-persistent
+        TRAIN loader never sees them (closes the leakage path). Forward-only
+        temporal slicing for streaming train/eval. History for any anchor is
+        still gathered causally (``scan_start:flat_pos``) and may span earlier
+        windows, so there is no feature leakage from future events.
         """
-        self._active = self.window_indices(ts)
+        self._active = (
+            self.train_window_indices(ts) if train_only else self.window_indices(ts)
+        )
+
+    def set_active_indices(self, indices: np.ndarray) -> None:
+        """Restrict the active sample set to an explicit array of global anchor
+        indices (into ``_positions``). Used by the non-persistent eval path to
+        iterate the fixed user-holdout set (which spans a window range, not a
+        single ``ts``)."""
+        self._active = np.asarray(indices, dtype=np.int64)
 
     def load_query_samples(self, sample_list) -> None:
         max_num_candidates = (
