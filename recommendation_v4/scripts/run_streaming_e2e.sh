@@ -49,12 +49,16 @@
 #                            never false-trip this.)
 #
 # NODE FAILOVER (case 3, the --allow-failover path)
-#   ensure_ready -> acquire_node: `salloc --no-shell --exclusive` a fresh node on
-#   $PARTITION, wait for RUNNING, then provision_node runs $PROVISION_SCRIPT on
-#   it (docker pull + container create + dep install; ~15 min on a cold node).
-#   Allocations WE create are tracked and `scancel`ed (container removed first)
-#   on success via release_acquired; the user's original --jobid is never
-#   cancelled. Checkpoints on shared NFS make the resume seamless.
+#   ensure_ready -> acquire_node: submit an `sbatch` hold job (`--wrap "sleep
+#   infinity"`, bounded by --time=$ALLOC_TIME) for a fresh exclusive node on
+#   $PARTITION, optionally from --reservation $RESERVATION; wait for RUNNING,
+#   then provision_node runs $PROVISION_SCRIPT on it via `srun --jobid --overlap`
+#   (docker pull + container create + dep install; ~15 min on a cold node).
+#   sbatch (not salloc) because interactive salloc on some partitions (e.g.
+#   meta64) is capped at 240 min, which a multi-day hold would exceed. Jobs WE
+#   create are tracked and `scancel`ed (container removed first) on success via
+#   release_acquired; the user's original --jobid is never cancelled.
+#   Checkpoints on shared NFS make the resume seamless.
 #
 # CHECKPOINTS / DISK
 #   The trainer saves atomically (write to <ts>.tmp, fsync, rename to <ts>) and
@@ -67,7 +71,8 @@
 #   ckpt:        --ckpt-path --keep-last-n --ckpt-time-interval --in-window-freq
 #   logging:     --run-name --log
 #   resilience:  --max-relaunch --min-free-gib --stall-s
-#   failover:    --partition --alloc-time --allow-failover --provision-script
+#   failover:    --partition --reservation --alloc-time --allow-failover
+#                --provision-script --acquire-wait-max
 #   validation:  --num-train-batches --num-eval-batches  (>0 caps batches/window
 #                for fast tests; 0 = full window / full-holdout eval)
 #   test-only:   --die-at-step  (>=0 injects a crash at that global step)
@@ -85,11 +90,15 @@
 #
 # EXAMPLE
 #   nohup bash scripts/run_streaming_e2e.sh \
+#       --jobid 12074 \
 #       --ckpt-path /apps/chcai/ckpts/yambda_5b_e2e \
 #       --run-name yambda_5b_e2e --log /apps/chcai/yambda_5b_e2e.log \
 #       --start-ts 150 --num-train-ts 149 --eval-every 10 \
-#       --ckpt-time-interval 7200 --keep-last-n 2 --max-relaunch 50 \
+#       --ckpt-time-interval 3600 --keep-last-n 1 --max-relaunch 100 \
+#       --reservation NAN_issue_debug \
 #       > /apps/chcai/yambda_5b_e2e.supervisor.console.log 2>&1 &
+#   (--reservation makes node-death failover re-acquire from that reservation;
+#    omit it to fall back to the open $PARTITION pool.)
 # =============================================================================
 
 set -uo pipefail
@@ -143,9 +152,15 @@ CTRL_WAIT_MAX=3600      # max seconds to wait for an unreachable SLURM controlle
 # the container on it, and resume — checkpoints + code live on shared NFS
 # (/apps/chcai, /home/chcai), so any node in the partition can continue.
 PARTITION=meta64
-ALLOC_TIME=7-00:00:00                 # SLURM --time for a failover allocation
+RESERVATION=""                        # if set, failover acquires from this SLURM
+                                      # reservation (e.g. NAN_issue_debug) so a
+                                      # replacement node comes from the same pool.
+ALLOC_TIME=7-00:00:00                 # SLURM --time for a failover hold job
 ALLOW_FAILOVER=1                      # 0 = never acquire a new node
 PROVISION_SCRIPT=/home/chcai/_provision_yambda_primus.sh
+ACQUIRE_WAIT_MAX=1800                 # max seconds to wait for a failover sbatch
+                                      # hold job to reach RUNNING (tolerates brief
+                                      # queueing before the node is granted).
 
 # Disk guard: require at least this many GiB free on the ckpt volume before a
 # (re)launch. One checkpoint is ~560 GB. A save writes a fresh .tmp BEFORE the
@@ -182,9 +197,11 @@ while [[ $# -gt 0 ]]; do
         --min-free-gib) MIN_FREE_GIB="$2"; shift 2;;
         --stall-s) STALL_S="$2"; shift 2;;
         --partition) PARTITION="$2"; shift 2;;
+        --reservation) RESERVATION="$2"; shift 2;;
         --alloc-time) ALLOC_TIME="$2"; shift 2;;
         --allow-failover) ALLOW_FAILOVER="$2"; shift 2;;
         --provision-script) PROVISION_SCRIPT="$2"; shift 2;;
+        --acquire-wait-max) ACQUIRE_WAIT_MAX="$2"; shift 2;;
         *) echo "Unknown arg: $1"; exit 1;;
     esac
 done
@@ -280,27 +297,37 @@ provision_node() {
 }
 
 # Acquire a fresh exclusive node on $PARTITION; sets global JOBID on success.
+# Uses `sbatch` (not `salloc`): interactive salloc on some partitions (meta64)
+# is capped at 240 min, which an $ALLOC_TIME multi-day hold exceeds. The batch
+# job merely pins the node (`sleep infinity`, bounded by --time); the container
+# is provisioned afterward by provision_node via `srun --jobid --overlap`.
+# Honors --reservation so failover re-acquires from the SAME reservation pool.
 acquire_node() {
     if [[ "$ALLOW_FAILOVER" != "1" ]]; then
         sup "failover disabled (--allow-failover 0); cannot acquire a new node"; return 1
     fi
-    sup "requesting a fresh node on partition=$PARTITION (exclusive, time=$ALLOC_TIME)"
-    local out jid
-    out=$(salloc --no-shell --partition="$PARTITION" --nodes=1 --exclusive \
-                 --time="$ALLOC_TIME" --job-name=e2e_failover 2>&1)
-    jid=$(echo "$out" | grep -oiE "Granted job allocation [0-9]+" | grep -oE "[0-9]+" | head -1)
-    if [[ -z "$jid" ]]; then
-        sup "FATAL: salloc did not grant a node: $out"; return 1
+    local resv_arg=""
+    [[ -n "$RESERVATION" ]] && resv_arg="--reservation=$RESERVATION"
+    sup "requesting a fresh node via sbatch (partition=$PARTITION${RESERVATION:+ reservation=$RESERVATION}, exclusive, time=$ALLOC_TIME)"
+    local jid
+    jid=$(sbatch --parsable --partition="$PARTITION" $resv_arg --nodes=1 --exclusive \
+                 --time="$ALLOC_TIME" --job-name=e2e_failover \
+                 --output="${LOG%.log}.failover_hold.%j.log" \
+                 --wrap="echo \"[failover-hold] node=\$(hostname) jobid=\$SLURM_JOB_ID start=\$(date -Is)\"; sleep infinity" 2>&1)
+    # --parsable => "<jobid>" or "<jobid>;<cluster>"; strip whitespace + cluster.
+    jid=$(echo "$jid" | tr -d ' ' | cut -d';' -f1)
+    if ! [[ "$jid" =~ ^[0-9]+$ ]]; then
+        sup "FATAL: sbatch did not return a jobid: $jid"; return 1
     fi
     ACQUIRED_JOBIDS+=("$jid")
-    sup "granted new allocation jobid=$jid; waiting for RUNNING"
+    sup "submitted failover hold job jobid=$jid; waiting for RUNNING (max ${ACQUIRE_WAIT_MAX}s)"
     local waited=0
-    while (( waited < 600 )); do
+    while (( waited < ACQUIRE_WAIT_MAX )); do
         [[ "$(squeue -h -j "$jid" -o '%T' 2>/dev/null | head -1)" == "RUNNING" ]] && break
         sleep 10; waited=$((waited + 10))
     done
     if [[ "$(squeue -h -j "$jid" -o '%T' 2>/dev/null | head -1)" != "RUNNING" ]]; then
-        sup "FATAL: new allocation $jid never reached RUNNING (waited ${waited}s)"; return 1
+        sup "FATAL: failover hold job $jid never reached RUNNING (waited ${waited}s)"; return 1
     fi
     JOBID="$jid"
     sup "new node ready: jobid=$JOBID node=$(squeue -h -j "$JOBID" -o '%N' 2>/dev/null | head -1)"
@@ -410,6 +437,7 @@ sup "jobid=$JOBID container=$CONTAINER repo=$REPO"
 sup "start_ts=$START_TS num_train_ts=$NUM_TRAIN_TS eval_every=$EVAL_EVERY"
 sup "ckpt_path=$CKPT_PATH keep_last_n=$KEEP_LAST_N ckpt_time_interval=${CKPT_TIME_INTERVAL}s in_window_freq=$IN_WINDOW_FREQ"
 sup "log=$LOG num_train_batches=$NUM_TRAIN_BATCHES die_at_step=$DIE_AT_STEP max_relaunch=$MAX_RELAUNCH"
+sup "failover: allow=$ALLOW_FAILOVER partition=$PARTITION reservation=${RESERVATION:-<none>} alloc_time=$ALLOC_TIME"
 
 cexec "mkdir -p '$CKPT_PATH' '/apps/chcai/tb/$RUN_NAME'"
 # Initialize this run's metrics log ONCE. launch_smoke_8gpu.sh appends (tee -a),
