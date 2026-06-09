@@ -77,29 +77,30 @@ get_dataset.new_path_prefix = %DATA_PATH
 # across 3 behaviour pools (listen+ / like / skip) at L//3 events each.
 # Per-sample sequence the model sees =
 #     3 × (L // 3) + 8 contextual + 1 candidate
-# Choosing 2039 makes 3 × 679 + 9 = 2046, the largest value that fits
-# get_hstu_configs.max_seq_len = 2048 with no dataset-side truncation.
+# Choosing 4086 makes 3 × 1362 + 9 = 4095, the largest value that fits
+# get_hstu_configs.max_seq_len = 4096 with no dataset-side truncation (the
+# 4k analog of the previous 2039/2048 shape, where 3×679+9=2046 ≤ 2048).
 # Larger L overflows the budget; the dataset truncates UIH events to fit.
 # Note: like events are only 1.9% of the yambda corpus and max user lifetime
 # is ~28k events, so the like pool fills to ~105 events per anchor on
-# average (not 679) — TRITON's jagged attention skips the unfilled slots,
+# average (not 1362) — TRITON's jagged attention skips the unfilled slots,
 # so the under-fill costs sequence budget but not GPU compute.
 # Cache is keyed by L on disk under <processed_dir>/hstu_cache_L<N>/;
-# switching L reuses an existing cache or builds a new one (~5 min). Override
-# via $HISTORY_LENGTH (default 2039 keeps the existing single-task cache hot).
+# switching L reuses an existing cache or builds a new one. Override via
+# $HISTORY_LENGTH (default 4086 = the 4k-no-truncation shape; use 2039 with
+# MAX_SEQ_LEN=2048 to reuse the previous 2k single-task cache).
 get_dataset.history_length = @hl/env_int()
 hl/env_int.key     = "HISTORY_LENGTH"
-hl/env_int.default = 2039
+hl/env_int.default = 4086
 
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow. Override via
-# $MAX_SEQ_LEN (default 2048 preserves the production single-task shape).
-# Pair MAX_SEQ_LEN=4096 with HISTORY_LENGTH=4086 for the 4k-no-truncation
-# analog (3*1362+9=4095 ≤ 4096); pair with HISTORY_LENGTH=4096 to reuse the
-# existing hstu_cache_L4096/ cache with ~8 events of trailing truncation.
+# $MAX_SEQ_LEN (default 4096, the 4k-no-truncation shape paired with
+# HISTORY_LENGTH=4086: 3*1362+9=4095 ≤ 4096). Set MAX_SEQ_LEN=2048 with
+# HISTORY_LENGTH=2039 for the previous 2k production single-task shape.
 get_hstu_configs.max_seq_len = @msl/env_int()
 msl/env_int.key     = "MAX_SEQ_LEN"
-msl/env_int.default = 2048
+msl/env_int.default = 4096
 
 # --- streaming (temporal-order) training -------------------------------------
 # Only consumed under `--mode streaming-train-eval`; the default train-eval
