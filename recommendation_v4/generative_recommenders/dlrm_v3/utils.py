@@ -22,7 +22,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import gin
 import tensorboard  # @manual=//tensorboard:lib  # noqa: F401 - required implicit dep when using torch.utils.tensorboard
@@ -57,7 +57,31 @@ from torchrec.metrics.rec_metric import (
 
 
 class LifetimeAUCMetricComputation(AUCMetricComputation):
-    """AUC over all predictions seen so far (uncapped buffer); emits with the LIFETIME prefix."""
+    """AUC over a 10M-sample (~5.5 eval-window) trailing buffer; emits with the
+    LIFETIME prefix.
+
+    NOTE: despite the name, this is NOT an uncapped since-step-0 AUC. The parent
+    ``AUCMetricComputation`` evicts the prediction/label/weight buffers down to
+    ``window_size`` in ``update()``; we instantiate it with
+    ``window_size=10_000_000``, so "lifetime" is a ~10M-sample trailing window.
+    Raise ``window_size`` (accepting unbounded buffer growth) if true cumulative
+    AUC is ever required.
+
+    Checkpoint correctness: torchrec registers the PREDICTIONS/LABELS/WEIGHTS
+    buffers with ``persistent=False`` (so the default ``state_dict()`` drops
+    them) and tracks a separate ``self._num_samples`` counter. Without the
+    overrides below, every checkpoint resume would silently restart this metric
+    from an empty buffer. We therefore serialize the buffers AND ``_num_samples``
+    explicitly; restoring ``_num_samples`` is mandatory, since leaving it at 0
+    makes the next ``update()`` take the init-sentinel branch and desync the
+    windowed eviction. These buffers are per-rank-local (cross-rank gather only
+    happens transiently at compute time), so the checkpoint layer MUST persist
+    and restore them per-rank — see ``checkpoint.py``.
+    """
+
+    # Prefix used for the explicitly-serialized non-persistent buffers so the
+    # keys can't collide with any persistent state the parent might register.
+    _LIFETIME_KEY_PREFIX: str = "_lifetime_"
 
     def _compute(self) -> List[MetricComputationReport]:
         from typing import cast as _cast
@@ -75,6 +99,173 @@ class LifetimeAUCMetricComputation(AUCMetricComputation):
                 ),
             )
         ]
+
+    def lifetime_sample_count(self) -> int:
+        """Current number of buffered samples (greppable for sanity logs)."""
+        return int(getattr(self, "_num_samples", 0))
+
+    def state_dict(
+        self,
+        destination: Optional[Dict[str, Any]] = None,
+        prefix: str = "",
+        keep_vars: bool = False,
+    ) -> Dict[str, Any]:
+        from torchrec.metrics.auc import LABELS, PREDICTIONS, WEIGHTS
+
+        destination = super().state_dict(
+            destination=destination, prefix=prefix, keep_vars=keep_vars
+        )
+        # The parent registers these buffers persistent=False, so they are absent
+        # from `destination`. Concatenate each buffer list to one (n_tasks, N)
+        # tensor and serialize it alongside the sample counter.
+        for attr in (PREDICTIONS, LABELS, WEIGHTS):
+            buf = getattr(self, attr)
+            if isinstance(buf, (list, tuple)) and len(buf) > 0:
+                flat = torch.cat([t for t in buf], dim=-1)
+            elif isinstance(buf, torch.Tensor):
+                flat = buf
+            else:
+                flat = torch.empty(0)
+            destination[prefix + self._LIFETIME_KEY_PREFIX + attr] = (
+                flat.detach().cpu().clone()
+            )
+        destination[prefix + self._LIFETIME_KEY_PREFIX + "num_samples"] = (
+            torch.tensor(int(getattr(self, "_num_samples", 0)), dtype=torch.long)
+        )
+        return destination
+
+    def load_state_dict(
+        self,
+        state_dict: Dict[str, Any],
+        strict: bool = True,
+    ) -> Any:
+        from torchrec.metrics.auc import LABELS, PREDICTIONS, WEIGHTS
+
+        # Copy so we can strip our custom keys before delegating to the parent
+        # (whose strict load would otherwise reject them as unexpected).
+        remaining = dict(state_dict)
+        saved_bufs: Dict[str, torch.Tensor] = {}
+        for attr in (PREDICTIONS, LABELS, WEIGHTS):
+            key = self._LIFETIME_KEY_PREFIX + attr
+            if key in remaining:
+                saved_bufs[attr] = remaining.pop(key)
+        num_key = self._LIFETIME_KEY_PREFIX + "num_samples"
+        saved_num = remaining.pop(num_key, None)
+
+        result = super().load_state_dict(remaining, strict=strict)
+
+        if saved_bufs:
+            # Device of the live (init-sentinel) buffers; keep restored buffers
+            # co-located so subsequent update()/compute() stay on-device.
+            existing = getattr(self, PREDICTIONS)
+            dev = (
+                existing[0].device
+                if isinstance(existing, (list, tuple)) and len(existing) > 0
+                else torch.device("cpu")
+            )
+            for attr, val in saved_bufs.items():
+                setattr(self, attr, [val.to(dev)])
+            if saved_num is not None:
+                self._num_samples = int(saved_num.item())
+        return result
+
+
+# Sentinel "window size" used for the FRESH eval metrics so torchrec's windowed
+# eviction never fires within a single eval pass (the per-pass reset bounds the
+# buffer to exactly one full holdout pass). 1<<60 is far above any realistic
+# per-rank sample count and avoids sys.maxsize overflow inside torchrec math.
+UNBOUNDED_WINDOW: int = 1 << 60
+
+
+class BinnedCumulativeAUC(RecMetricComputation):
+    """Cumulative AUC via a fixed-resolution score histogram (LIFETIME prefix).
+
+    Global AUC is a rank statistic, so it has no fixed-size additive sufficient
+    statistic the way NE/Accuracy do - exact cumulative AUC otherwise needs every
+    (score, label) pair retained and sorted (the buffer-based ``AUCMetricComputation``
+    / ``LifetimeAUCMetricComputation``). Instead we keep two weighted histograms of
+    positive/negative mass per score bin. This gives an AUC exact up to bin width
+    with O(num_bins) memory that does NOT grow with sample count, and - because
+    histograms are additive - cross-rank sync is a cheap all-reduce (dist_reduce_fx
+    "sum") rather than all-gathering millions of predictions. The state is truly
+    cumulative across all eval passes (never evicted, never reset on eval).
+
+    Predictions MUST be probabilities in [0, 1] (the same tensor feeds NE, which
+    requires probabilities; the model applies sigmoid in multitask_module). Values
+    are clamped into [0, 1] defensively.
+    """
+
+    def __init__(self, *args, num_bins: int = 100_000, **kwargs) -> None:
+        # window_size is irrelevant here (no windowed state); pass through.
+        super().__init__(*args, **kwargs)
+        self._num_bins: int = int(num_bins)
+        self._add_state(
+            "pos_hist",
+            torch.zeros((self._n_tasks, self._num_bins), dtype=torch.float64),
+            add_window_state=False,
+            dist_reduce_fx="sum",
+            persistent=True,
+        )
+        self._add_state(
+            "neg_hist",
+            torch.zeros((self._n_tasks, self._num_bins), dtype=torch.float64),
+            add_window_state=False,
+            dist_reduce_fx="sum",
+            persistent=True,
+        )
+
+    def cumulative_sample_count(self) -> int:
+        """Total weighted samples in the histograms (greppable for sanity logs)."""
+        return int((self.pos_hist.sum() + self.neg_hist.sum()).item())
+
+    def update(
+        self,
+        *,
+        predictions: Optional[torch.Tensor],
+        labels: torch.Tensor,
+        weights: Optional[torch.Tensor],
+        **kwargs: Dict[str, Any],
+    ) -> None:
+        if predictions is None or weights is None:
+            raise ValueError(
+                "BinnedCumulativeAUC.update requires predictions and weights"
+            )
+        preds = predictions.float().clamp_(0.0, 1.0)  # (n_tasks, n_examples)
+        labels = labels.float()
+        weights = weights.float()
+        # Bin index per example; the top edge (p==1.0) folds into the last bin.
+        idx = (preds * self._num_bins).long().clamp_(0, self._num_bins - 1)
+        pos_w = (weights * labels).to(self.pos_hist.dtype)
+        neg_w = (weights * (1.0 - labels)).to(self.neg_hist.dtype)
+        self.pos_hist.scatter_add_(1, idx, pos_w)
+        self.neg_hist.scatter_add_(1, idx, neg_w)
+
+    def _compute(self) -> List[MetricComputationReport]:
+        # By compute() time torchmetrics has all-reduced (summed) the histograms
+        # across ranks, so these are the global per-bin masses.
+        pos = self.pos_hist  # (n_tasks, num_bins)
+        neg = self.neg_hist
+        total_pos = pos.sum(dim=1)
+        total_neg = neg.sum(dim=1)
+        # Lower bin index == lower score. A positive in bin b outranks every
+        # negative in bins < b (exclusive prefix sum), and ties in bin b score
+        # 0.5. AUC = sum_b pos_b * (neg_below_b + 0.5*neg_b) / (P * N).
+        neg_below = torch.cumsum(neg, dim=1) - neg
+        numerator = (pos * (neg_below + 0.5 * neg)).sum(dim=1)
+        denom = total_pos * total_neg
+        auc = torch.where(
+            denom > 0,
+            numerator / denom,
+            torch.full_like(numerator, 0.5),
+        ).to(torch.float32)
+        return [
+            MetricComputationReport(
+                name=MetricName.AUC,
+                metric_prefix=MetricPrefix.LIFETIME,
+                value=auc,
+            )
+        ]
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("utils")
@@ -696,6 +887,11 @@ class MetricsLogger:
         num_flops_per_sample: float = 0.0,
         gpu_peak_flops: float = 0.0,
         model: Optional[torch.nn.Module] = None,
+        eval_cumulative: bool = False,
+        cumulative_auc_bins: int = 100_000,
+        train_lifetime_auc_mode: str = "binned",
+        eval_lifetime_auc_mode: str = "binned",
+        lifetime_auc_window: int = 10_000_000,
     ) -> None:
         # tflops/mfu reporting state (optional — when both num_flops_per_sample
         # and gpu_peak_flops are set, the train perf line gains tflops_algo/gpu,
@@ -725,75 +921,95 @@ class MetricsLogger:
         ]
         self.task_names: List[str] = all_classification_tasks + all_regression_tasks
 
-        self.class_metrics: Dict[str, List[RecMetricComputation]] = {
-            "train": [],
-            "eval": [],
-        }
-        if all_classification_tasks:
-            for mode in ["train", "eval"]:
-                self.class_metrics[mode].append(
-                    NEMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_classification_tasks),
-                        window_size=window_size,
-                    ).to(device)
-                )
-                self.class_metrics[mode].append(
-                    AccuracyMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_classification_tasks),
-                        window_size=window_size,
-                    ).to(device)
-                )
-                self.class_metrics[mode].append(
-                    GAUCMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_classification_tasks),
-                        window_size=window_size,
-                    ).to(device)
-                )
-                self.class_metrics[mode].append(
-                    AUCMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_classification_tasks),
-                        window_size=window_size,
-                    ).to(device)
-                )
-                self.class_metrics[mode].append(
-                    LifetimeAUCMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_classification_tasks),
-                        window_size=10_000_000,
-                    ).to(device)
-                )
+        # Eval metric semantics:
+        #   eval_cumulative=False (default, legacy / static / non-streaming eval):
+        #     a single eval set with the configured window_size, including a
+        #     lifetime AUC. Unchanged behavior.
+        #   eval_cumulative=True (streaming fixed-holdout eval): a FRESH eval set
+        #     (window_size=UNBOUNDED, reset each pass -> per-pass full-holdout
+        #     "window_*") PLUS a CUMULATIVE set ("eval_cum", never reset ->
+        #     "lifetime_*"). NE/Accuracy/GAUC are cumulative for free via their
+        #     persistent scalar sums; AUC cumulative uses the selected backend.
+        #
+        # Lifetime-AUC backend is configurable independently for train and eval:
+        #   "binned" (default): BinnedCumulativeAUC - exact-cumulative AUC via an
+        #     O(num_bins) score histogram (additive all-reduce, no unbounded
+        #     buffer, memory independent of #samples/#windows).
+        #   "capped": LifetimeAUCMetricComputation - AUC over a trailing buffer of
+        #     `lifetime_auc_window` samples/rank (the legacy approach; per-rank
+        #     buffer all-gathered at compute).
+        self._eval_cumulative: bool = eval_cumulative
+        self._cumulative_auc_bins: int = int(cumulative_auc_bins)
+        self._train_lifetime_auc_mode: str = str(train_lifetime_auc_mode)
+        self._eval_lifetime_auc_mode: str = str(eval_lifetime_auc_mode)
+        self._lifetime_auc_window: int = int(lifetime_auc_window)
+        n_cls = len(all_classification_tasks)
+        n_reg = len(all_regression_tasks)
 
-        self.regression_metrics: Dict[str, List[RecMetricComputation]] = {
-            "train": [],
-            "eval": [],
-        }
+        def _make_lifetime_auc(mode: str) -> RecMetricComputation:
+            if mode == "binned":
+                # window_size=0: no torchrec windowed state; histograms only.
+                return BinnedCumulativeAUC(
+                    my_rank=rank, batch_size=batch_size, n_tasks=n_cls,
+                    window_size=0, num_bins=self._cumulative_auc_bins,
+                ).to(device)
+            if mode == "capped":
+                return LifetimeAUCMetricComputation(
+                    my_rank=rank, batch_size=batch_size, n_tasks=n_cls,
+                    window_size=self._lifetime_auc_window,
+                ).to(device)
+            raise ValueError(
+                f"lifetime_auc_mode must be 'binned' or 'capped', got {mode!r}"
+            )
+
+        def _make_class(ws: int, lifetime_mode: Optional[str]) -> List[RecMetricComputation]:
+            mets: List[RecMetricComputation] = [
+                NEMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=ws).to(device),
+                AccuracyMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=ws).to(device),
+                GAUCMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=ws).to(device),
+                AUCMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=ws).to(device),
+            ]
+            if lifetime_mode is not None:
+                mets.append(_make_lifetime_auc(lifetime_mode))
+            return mets
+
+        def _make_class_cumulative() -> List[RecMetricComputation]:
+            # NE/Accuracy/GAUC: cumulative via persistent lifetime sums (window
+            # value ignored at compute). AUC: selected lifetime backend.
+            return [
+                NEMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=window_size).to(device),
+                AccuracyMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=window_size).to(device),
+                GAUCMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_cls, window_size=window_size).to(device),
+                _make_lifetime_auc(self._eval_lifetime_auc_mode),
+            ]
+
+        def _make_reg(ws: int) -> List[RecMetricComputation]:
+            return [
+                MSEMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_reg, window_size=ws).to(device),
+                MAEMetricComputation(my_rank=rank, batch_size=batch_size, n_tasks=n_reg, window_size=ws).to(device),
+            ]
+
+        self.class_metrics: Dict[str, List[RecMetricComputation]] = {"train": [], "eval": []}
+        self.regression_metrics: Dict[str, List[RecMetricComputation]] = {"train": [], "eval": []}
+        if eval_cumulative:
+            self.class_metrics["eval_cum"] = []
+            self.regression_metrics["eval_cum"] = []
+
+        if all_classification_tasks:
+            self.class_metrics["train"] = _make_class(window_size, lifetime_mode=self._train_lifetime_auc_mode)
+            if eval_cumulative:
+                self.class_metrics["eval"] = _make_class(UNBOUNDED_WINDOW, lifetime_mode=None)
+                self.class_metrics["eval_cum"] = _make_class_cumulative()
+            else:
+                self.class_metrics["eval"] = _make_class(window_size, lifetime_mode=self._eval_lifetime_auc_mode)
+
         if all_regression_tasks:
-            for mode in ["train", "eval"]:
-                self.regression_metrics[mode].append(
-                    MSEMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_regression_tasks),
-                        window_size=window_size,
-                    ).to(device)
-                )
-                self.regression_metrics[mode].append(
-                    MAEMetricComputation(
-                        my_rank=rank,
-                        batch_size=batch_size,
-                        n_tasks=len(all_regression_tasks),
-                        window_size=window_size,
-                    ).to(device)
-                )
+            self.regression_metrics["train"] = _make_reg(window_size)
+            if eval_cumulative:
+                self.regression_metrics["eval"] = _make_reg(UNBOUNDED_WINDOW)
+                self.regression_metrics["eval_cum"] = _make_reg(window_size)
+            else:
+                self.regression_metrics["eval"] = _make_reg(window_size)
 
         self.global_step: Dict[str, int] = {"train": 0, "eval": 0}
         self.tb_logger: Optional[SummaryWriter] = None
@@ -822,10 +1038,15 @@ class MetricsLogger:
         Returns:
             Dictionary mapping mode ('train'/'eval') to list of metric computations.
         """
-        return {
+        out = {
             "train": self.class_metrics["train"] + self.regression_metrics["train"],
             "eval": self.class_metrics["eval"] + self.regression_metrics["eval"],
         }
+        if "eval_cum" in self.class_metrics or "eval_cum" in self.regression_metrics:
+            out["eval_cum"] = self.class_metrics.get(
+                "eval_cum", []
+            ) + self.regression_metrics.get("eval_cum", [])
+        return out
 
     def update(
         self,
@@ -845,7 +1066,12 @@ class MetricsLogger:
             num_candidates: Number of candidates per sample (for GAUC).
             mode: Either 'train' or 'eval'.
         """
-        for metric in self.all_metrics[mode]:
+        # On eval, update BOTH the fresh set and the never-reset cumulative set
+        # (if enabled) from the same batch.
+        update_targets = list(self.all_metrics[mode])
+        if mode == "eval" and "eval_cum" in self.all_metrics:
+            update_targets = update_targets + self.all_metrics["eval_cum"]
+        for metric in update_targets:
             if isinstance(metric, GAUCMetricComputation):
                 metric.update(
                     predictions=predictions,
@@ -880,13 +1106,41 @@ class MetricsLogger:
         """
         all_computed_metrics = {}
 
-        for metric in self.all_metrics[mode]:
-            computed_metrics = metric.compute()
-            for computed in computed_metrics:
-                all_values = computed.value.cpu()
-                for i, task_name in enumerate(self.task_names):
-                    key = f"metric/{str(computed.metric_prefix) + str(computed.name)}/{task_name}"
-                    all_computed_metrics[key] = all_values[i]
+        if mode == "eval" and "eval_cum" in self.all_metrics:
+            # Dual-set eval: `window_*` (fresh per-pass) from the reset-each-pass
+            # set; `lifetime_*` (cumulative across passes) from the never-reset
+            # set. Filter each set to the matching prefix, and drop GAUC's
+            # auxiliary `*_num_samples` reports. Key names are unchanged
+            # (`window_auc`, `lifetime_ne`, ...) so dashboards keep working.
+            def _emit(
+                metrics: List[RecMetricComputation], keep_prefix: str
+            ) -> None:
+                for metric in metrics:
+                    for computed in metric.compute():
+                        pfx = str(computed.metric_prefix)
+                        name = str(computed.name)
+                        if pfx != keep_prefix or name.endswith("num_samples"):
+                            continue
+                        all_values = computed.value.cpu()
+                        for i, task_name in enumerate(self.task_names):
+                            if i >= len(all_values):
+                                break
+                            all_computed_metrics[f"metric/{pfx}{name}/{task_name}"] = (
+                                all_values[i]
+                            )
+
+            _emit(self.all_metrics["eval"], "window_")
+            _emit(self.all_metrics["eval_cum"], "lifetime_")
+        else:
+            for metric in self.all_metrics[mode]:
+                computed_metrics = metric.compute()
+                for computed in computed_metrics:
+                    all_values = computed.value.cpu()
+                    for i, task_name in enumerate(self.task_names):
+                        if i >= len(all_values):
+                            break
+                        key = f"metric/{str(computed.metric_prefix) + str(computed.name)}/{task_name}"
+                        all_computed_metrics[key] = all_values[i]
 
         logger.info(
             f"{mode} - Step {self.global_step[mode]} metrics: {all_computed_metrics}"
@@ -1067,6 +1321,21 @@ def env_path(key: str = "", default: str = "") -> str:
 
 
 @gin.configurable
+def env_str(key: str = "", default: str = "") -> str:
+    """Resolve a string from os.environ[key], falling back to `default`.
+
+    Companion to `env_int`/`env_float` for categorical/string overrides (e.g. a
+    metric backend selector). Example gin usage:
+
+        MetricsLogger.train_lifetime_auc_mode = @tlam/env_str()
+        tlam/env_str.key     = "TRAIN_LIFETIME_AUC_MODE"
+        tlam/env_str.default = "binned"
+    """
+    raw = os.environ.get(key) if key else None
+    return raw if raw else default
+
+
+@gin.configurable
 def env_int(key: str = "", default: int = 0) -> int:
     """Resolve an int from os.environ[key], falling back to `default`.
 
@@ -1155,6 +1424,8 @@ def get_dataset(
     history_length: Optional[int] = None,
     streaming_window_seconds: int = 86400,
     streaming_sort_within_window: bool = False,
+    train_split_percentage: float = 1.0,
+    split_salt: int = 0,
 ):
     """
     Get dataset class and configuration by name.
@@ -1285,6 +1556,11 @@ def get_dataset(
                 # streaming-train-eval; ignored by the default train-eval path).
                 "streaming_window_seconds": streaming_window_seconds,
                 "streaming_sort_within_window": streaming_sort_within_window,
+                # User-level train:eval holdout for the streaming path. 1.0 =
+                # no holdout (legacy). <1.0 holds out (1 - tsp) of users as a
+                # fixed eval set; those users are never trained.
+                "train_split_percentage": train_split_percentage,
+                "split_salt": split_salt,
             },
         )
     if name == "sampled-streaming-100b":

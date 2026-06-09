@@ -31,7 +31,11 @@ from typing import Any, Dict, Optional, Set, Tuple
 import gin
 import numpy as np
 import torch
-from generative_recommenders.dlrm_v3.utils import MetricsLogger
+from generative_recommenders.dlrm_v3.utils import (
+    BinnedCumulativeAUC,
+    LifetimeAUCMetricComputation,
+    MetricsLogger,
+)
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.optim.optimizer import Optimizer
 from torchrec.distributed.types import ShardedTensor
@@ -43,6 +47,93 @@ logger: logging.Logger = logging.getLogger(__name__)
 # saved checkpoint stopped mid-window after K batches; resume continues that
 # window at batch K.
 WINDOW_COMPLETE: int = -1
+
+# Filename (per-rank) holding the lifetime-AUC trailing buffers, mirroring the
+# rng_rank{rank}.pt pattern. The buffers are per-rank-local, so a single
+# rank-0 copy in non_sparse.ckpt would (wrongly) restore 1/world_size of the
+# true history to every rank — hence a dedicated per-rank artifact.
+METRICBUF_FILE_FMT: str = "metricbuf_rank{rank}.pt"
+
+
+def _metric_blob_state_dict(m: torch.nn.Module) -> Dict[str, Any]:
+    """State dict for the shared (rank-0) non_sparse.ckpt metric blob.
+
+    Both lifetime-AUC backends carry per-rank-local state that is persisted
+    authoritatively per-rank in ``metricbuf_rank{rank}.pt``; we must keep it out
+    of the shared blob so a rank's load doesn't inherit rank-0's counts:
+
+    - ``LifetimeAUCMetricComputation``: drop the explicitly-serialized trailing
+      buffer keys (the rest of the blob keys are the parent's persistent state).
+    - ``BinnedCumulativeAUC``: zero the histogram buffers (they are persistent so
+      the keys must remain for a strict load, but the values are neutralized).
+
+    All other metrics serialize normally. In both cases the per-rank file is
+    loaded afterward and is authoritative.
+    """
+    sd = m.state_dict()
+    if isinstance(m, LifetimeAUCMetricComputation):
+        prefix = LifetimeAUCMetricComputation._LIFETIME_KEY_PREFIX
+        sd = {k: v for k, v in sd.items() if not k.startswith(prefix)}
+    elif isinstance(m, BinnedCumulativeAUC):
+        sd = {
+            k: (torch.zeros_like(v) if torch.is_tensor(v) else v)
+            for k, v in sd.items()
+        }
+    return sd
+
+
+def _collect_perrank_metric_state(
+    metric_logger: "MetricsLogger",
+) -> Dict[str, Dict[str, Any]]:
+    """Map "<collection>|<mode>|<idx>" -> state_dict for every metric whose
+    cumulative state is per-rank-local and must be restored per-rank:
+
+    - lifetime-AUC instances (`LifetimeAUCMetricComputation` trailing buffer, or
+      `BinnedCumulativeAUC` histograms) in class_metrics train/eval. Covers the
+      train lifetime AUC and, in legacy single-set eval, the eval lifetime AUC,
+      under either configured backend.
+    - the ENTIRE cumulative eval set (`eval_cum`, both class + regression) used
+      by the streaming dual-set eval: the lifetime-AUC backend state plus the
+      persistent cumulative scalar sums of NE/Accuracy/GAUC/MSE/MAE.
+
+    Selected by structure/isinstance (not a hard index) since metric positions
+    depend on the configured tasks/mode.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    for mode in ("train", "eval"):
+        for idx, m in enumerate(metric_logger.class_metrics.get(mode, [])):
+            if isinstance(m, (LifetimeAUCMetricComputation, BinnedCumulativeAUC)):
+                out[f"class_metrics|{mode}|{idx}"] = m.state_dict()
+    for coll in ("class_metrics", "regression_metrics"):
+        for idx, m in enumerate(getattr(metric_logger, coll).get("eval_cum", [])):
+            out[f"{coll}|eval_cum|{idx}"] = m.state_dict()
+    return out
+
+
+def _restore_perrank_metric_state(
+    metric_logger: "MetricsLogger", state: Dict[str, Dict[str, Any]]
+) -> None:
+    for key, sd in state.items():
+        coll, mode, idx_str = key.split("|")
+        getattr(metric_logger, coll)[mode][int(idx_str)].load_state_dict(sd)
+
+
+def _perrank_sample_counts(metric_logger: "MetricsLogger") -> Dict[str, int]:
+    out: Dict[str, int] = {}
+
+    def _count(m: torch.nn.Module) -> Optional[int]:
+        if isinstance(m, LifetimeAUCMetricComputation):
+            return m.lifetime_sample_count()
+        if isinstance(m, BinnedCumulativeAUC):
+            return m.cumulative_sample_count()
+        return None
+
+    for mode in ("train", "eval", "eval_cum"):
+        for idx, m in enumerate(metric_logger.class_metrics.get(mode, [])):
+            n = _count(m)
+            if n is not None:
+                out[f"class|{mode}|{idx}"] = n
+    return out
 
 
 class SparseState(Stateful):
@@ -218,6 +309,7 @@ def save_dmp_checkpoint(
     train_ts: Optional[int] = None,
     batch_idx_in_window: int = WINDOW_COMPLETE,
     device: Optional[torch.device] = None,
+    split_contract: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Save a distributed model checkpoint including sparse and dense components.
@@ -283,8 +375,14 @@ def save_dmp_checkpoint(
             if not isinstance(v, ShardedTensor)
         }
         class_metric_state_dict = {
-            "train": [m.state_dict() for m in metric_logger.class_metrics["train"]],
-            "eval": [m.state_dict() for m in metric_logger.class_metrics["eval"]],
+            "train": [
+                _metric_blob_state_dict(m)
+                for m in metric_logger.class_metrics["train"]
+            ],
+            "eval": [
+                _metric_blob_state_dict(m)
+                for m in metric_logger.class_metrics["eval"]
+            ],
         }
         regression_metric_state_dict = {
             "train": [
@@ -304,6 +402,13 @@ def save_dmp_checkpoint(
                 # (pre-streaming-resume) still load as a normal restart.
                 "train_ts": train_ts,
                 "batch_idx_in_window": batch_idx_in_window,
+                # Immutable train:eval split + resume-determinism contract
+                # (train_split_percentage, split_salt, eval holdout window,
+                # batch_size, world_size). Validated on resume so a relaunch
+                # cannot silently change the split (which would desync the skip
+                # offset and/or train on held-out eval users). None for
+                # non-holdout / legacy runs.
+                "split_contract": split_contract,
             },
             non_sparse_ckpt,
         )
@@ -313,6 +418,23 @@ def save_dmp_checkpoint(
     if device is not None:
         rng_path = f"{tmp_subdir}/rng_rank{rank}.pt"
         torch.save(_rng_state(device), rng_path)
+
+    # Per-rank cumulative metric state (lifetime-AUC buffers + cumulative-eval
+    # histograms/scalar sums). Written by EVERY rank (outside the rank-0 block)
+    # because this state is per-rank-local; restoring rank-0's copy to all ranks
+    # would lose (world_size-1)/world_size of the history.
+    if metric_logger is not None:
+        perrank_state = _collect_perrank_metric_state(metric_logger)
+        if perrank_state:
+            torch.save(
+                perrank_state,
+                f"{tmp_subdir}/{METRICBUF_FILE_FMT.format(rank=rank)}",
+            )
+            logger.info(
+                "checkpoint save: cumulative metric state rank=%d samples=%s",
+                rank,
+                _perrank_sample_counts(metric_logger),
+            )
 
     torch.distributed.barrier()
     sparse_dict = {"sparse_dict": SparseState(model, sparse_tensor_keys)}
@@ -372,7 +494,7 @@ def load_nonsparse_checkpoint(
     metric_logger: Optional[MetricsLogger] = None,
     path: str = "",
     rank: int = 0,
-) -> Tuple[Optional[int], int]:
+) -> Tuple[Optional[int], int, Optional[Dict[str, Any]]]:
     """
     Load non-sparse (dense) components from a checkpoint.
 
@@ -381,12 +503,13 @@ def load_nonsparse_checkpoint(
     next to `non_sparse.ckpt`.
 
     Returns:
-        (train_ts, batch_idx_in_window) — the streaming resume hint stored at
-        save time. `(None, WINDOW_COMPLETE)` if not a streaming checkpoint or
-        no path supplied.
+        (train_ts, batch_idx_in_window, split_contract) — the streaming resume
+        hint and the saved train:eval split contract (None for legacy / non-
+        holdout checkpoints). `(None, WINDOW_COMPLETE, None)` if not a streaming
+        checkpoint or no path supplied.
     """
     if path == "":
-        return None, WINDOW_COMPLETE
+        return None, WINDOW_COMPLETE, None
     non_sparse_ckpt = f"{path}/non_sparse.ckpt"
 
     # weights_only=False: these are our own trusted checkpoints, and they hold
@@ -404,14 +527,69 @@ def load_nonsparse_checkpoint(
         metric_logger.global_step = non_sparse_state_dict["global_step"]
         class_metric_state_dict = non_sparse_state_dict["class_metrics"]
         regression_metric_state_dict = non_sparse_state_dict["reg_metrics"]
-        for i, m in enumerate(metric_logger.class_metrics["train"]):
-            m.load_state_dict(class_metric_state_dict["train"][i])
-        for i, m in enumerate(metric_logger.class_metrics["eval"]):
-            m.load_state_dict(class_metric_state_dict["eval"][i])
-        for i, m in enumerate(metric_logger.regression_metrics["train"]):
-            m.load_state_dict(regression_metric_state_dict["train"][i])
-        for i, m in enumerate(metric_logger.regression_metrics["eval"]):
-            m.load_state_dict(regression_metric_state_dict["eval"][i])
+        # Length-safe positional restore: if a checkpoint was written with a
+        # different metric set (e.g. tasks added/removed since), restore the
+        # overlap instead of crashing with an IndexError at run end.
+        def _restore_metric_list(
+            live: list, saved: Optional[list], label: str
+        ) -> None:
+            saved = saved or []
+            if len(live) != len(saved):
+                logger.warning(
+                    "metric count mismatch for %s: live=%d saved=%d; "
+                    "restoring overlapping %d",
+                    label,
+                    len(live),
+                    len(saved),
+                    min(len(live), len(saved)),
+                )
+            for i in range(min(len(live), len(saved))):
+                live[i].load_state_dict(saved[i])
+
+        _restore_metric_list(
+            metric_logger.class_metrics["train"],
+            class_metric_state_dict.get("train"),
+            "class/train",
+        )
+        _restore_metric_list(
+            metric_logger.class_metrics["eval"],
+            class_metric_state_dict.get("eval"),
+            "class/eval",
+        )
+        _restore_metric_list(
+            metric_logger.regression_metrics["train"],
+            regression_metric_state_dict.get("train"),
+            "reg/train",
+        )
+        _restore_metric_list(
+            metric_logger.regression_metrics["eval"],
+            regression_metric_state_dict.get("eval"),
+            "reg/eval",
+        )
+
+        # Per-rank cumulative metric state restore. This runs AFTER the generic
+        # load above so it is authoritative: the shared blob carries no lifetime
+        # buffers (stripped at save) nor any eval_cum state, and each rank
+        # restores its OWN cumulative state here. Missing file = legacy/pre-fix
+        # checkpoint; cumulative metrics self-heal (lifetime AUC refills; the
+        # binned-AUC histograms / scalar sums restart from zero).
+        mb_path = f"{path}/{METRICBUF_FILE_FMT.format(rank=rank)}"
+        if os.path.exists(mb_path):
+            perrank_state = torch.load(
+                mb_path, map_location=device, weights_only=False
+            )
+            _restore_perrank_metric_state(metric_logger, perrank_state)
+            logger.info(
+                "checkpoint load: cumulative metric state rank=%d samples=%s",
+                rank,
+                _perrank_sample_counts(metric_logger),
+            )
+        else:
+            logger.info(
+                "checkpoint load: no per-rank cumulative metric state at %s "
+                "(legacy/pre-fix checkpoint); cumulative metrics will refill",
+                mb_path,
+            )
 
     # Per-rank RNG restore. Missing file = bit-equal trajectory not requested at
     # save time; we silently continue (the test harness checks for both).
@@ -426,7 +604,8 @@ def load_nonsparse_checkpoint(
     batch_idx_in_window = non_sparse_state_dict.get(
         "batch_idx_in_window", WINDOW_COMPLETE
     )
-    return train_ts, batch_idx_in_window
+    split_contract = non_sparse_state_dict.get("split_contract")
+    return train_ts, batch_idx_in_window, split_contract
 
 
 @gin.configurable
@@ -437,7 +616,7 @@ def load_dmp_checkpoint(
     device: torch.device,
     path: str = "",
     rank: int = 0,
-) -> Tuple[Optional[int], int]:
+) -> Tuple[Optional[int], int, Optional[Dict[str, Any]], bool]:
     """
     Load a complete distributed model checkpoint (both sparse and dense components).
 
@@ -447,12 +626,17 @@ def load_dmp_checkpoint(
     no load.
 
     Returns:
-        (train_ts, batch_idx_in_window) — streaming resume hint. Callers that
-        don't need it can ignore.
+        (train_ts, batch_idx_in_window, split_contract, cold_start) — streaming
+        resume hint plus the saved split contract, and `cold_start` which is True
+        iff there was nothing to load (no checkpoint resolved). `cold_start`
+        distinguishes a genuine fresh run (no weights loaded) from a resume that
+        merely lacks a split contract (e.g. a legacy/non-streaming checkpoint),
+        which the caller's split-contract guard must still reject.
     """
     resolved = _resolve_latest_subdir(path)
+    cold_start = resolved == ""
     load_sparse_checkpoint(model=model, path=resolved)
-    return load_nonsparse_checkpoint(
+    train_ts, batch_idx_in_window, split_contract = load_nonsparse_checkpoint(
         model=model,
         optimizer=optimizer,
         metric_logger=metric_logger,
@@ -460,3 +644,4 @@ def load_dmp_checkpoint(
         device=device,
         rank=rank,
     )
+    return train_ts, batch_idx_in_window, split_contract, cold_start

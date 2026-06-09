@@ -45,11 +45,21 @@ DATA_PATH = @data/env_path()
 data/env_path.key = "DLRM_DATA_PATH"
 data/env_path.default = "/apps/chcai/dlrm_data"
 
+# Shared train:eval split: fraction of USERS used for training; the remaining
+# (1 - this) fraction are held out as a fixed eval set and NEVER trained.
+# Bound to BOTH the static train-eval path (make_train_test_dataloaders, a
+# positional split) and the streaming path (get_dataset, an explicit by-user
+# hash split), so one value configures the holdout in either mode.
+# 1.0 = no holdout (legacy streaming behavior). Override via $TRAIN_SPLIT_PERCENTAGE.
+TRAIN_SPLIT_PERCENTAGE = @tsp/env_float()
+tsp/env_float.key     = "TRAIN_SPLIT_PERCENTAGE"
+tsp/env_float.default = 0.90
+
 # dataloader configs
 make_train_test_dataloaders.batch_size = %batch_size
 make_train_test_dataloaders.eval_batch_size = 1024
 make_train_test_dataloaders.dataset_type = %dataset
-make_train_test_dataloaders.train_split_percentage = 0.90
+make_train_test_dataloaders.train_split_percentage = %TRAIN_SPLIT_PERCENTAGE
 make_train_test_dataloaders.new_path_prefix = %DATA_PATH
 make_train_test_dataloaders.num_workers = %num_workers
 make_train_test_dataloaders.prefetch_factor = %prefetch_factor
@@ -99,6 +109,15 @@ msl/env_int.default = 2048
 # to the dataset's available window count at runtime; override via $NUM_TRAIN_TS.
 get_dataset.streaming_window_seconds = 86400
 get_dataset.streaming_sort_within_window = False
+# User-level train:eval holdout for the streaming path. With tsp<1.0, the top
+# (1 - tsp) fraction of users (by a deterministic hash of uid+split_salt) are
+# held out as a FIXED eval set and never trained -> no temporal/user leakage,
+# stable comparable eval curve, bounded eval time. split_salt lets you draw a
+# different holdout without changing the ratio. Override salt via $SPLIT_SALT.
+get_dataset.train_split_percentage = %TRAIN_SPLIT_PERCENTAGE
+get_dataset.split_salt = @ssalt/env_int()
+ssalt/env_int.key     = "SPLIT_SALT"
+ssalt/env_int.default = 0
 make_streaming_dataloader.batch_size = %batch_size
 make_streaming_dataloader.num_workers = %num_workers
 make_streaming_dataloader.prefetch_factor = %prefetch_factor
@@ -144,6 +163,16 @@ evn/env_int.default = 1
 streaming_train_eval_loop.double_buffer = @db/env_int()
 db/env_int.key = "DOUBLE_BUFFER"
 db/env_int.default = 1
+# Fixed eval-holdout window range (held-out users' anchors over these windows
+# form the eval set evaluated at EVERY eval step). EVAL_HOLDOUT_TS<0 (default)
+# resolves at runtime to start_ts+num_train_ts (the window just past training),
+# which is stable across resume. EVAL_HOLDOUT_NUM_WINDOWS widens the eval span.
+streaming_train_eval_loop.eval_holdout_ts = @eht/env_int()
+eht/env_int.key     = "EVAL_HOLDOUT_TS"
+eht/env_int.default = -1
+streaming_train_eval_loop.eval_holdout_num_windows = @ehnw/env_int()
+ehnw/env_int.key     = "EVAL_HOLDOUT_NUM_WINDOWS"
+ehnw/env_int.default = 1
 # num_train_batches / num_eval_batches unset => consume each full window.
 # Set them (e.g. via gin) to cap per-window steps for short experiments.
 
@@ -185,6 +214,29 @@ tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
 tbp/env_path.default = "/apps/chcai/tb/yambda_5b/"
 MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = 0.80275
+# Lifetime-AUC backend, selectable independently for the train cumulative AUC and
+# the eval cumulative ("lifetime_*") AUC. Both default to "binned":
+#   "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an O(bins) score
+#     histogram (additive all-reduce, memory independent of #samples/#windows).
+#   "capped" = LifetimeAUCMetricComputation: AUC over a trailing buffer of
+#     `lifetime_auc_window` samples/rank (legacy; per-rank buffer all-gathered).
+# Override per-run via $TRAIN_LIFETIME_AUC_MODE / $EVAL_LIFETIME_AUC_MODE.
+MetricsLogger.train_lifetime_auc_mode = @tlam/env_str()
+tlam/env_str.key     = "TRAIN_LIFETIME_AUC_MODE"
+tlam/env_str.default = "binned"
+MetricsLogger.eval_lifetime_auc_mode = @elam/env_str()
+elam/env_str.key     = "EVAL_LIFETIME_AUC_MODE"
+elam/env_str.default = "binned"
+# Score-histogram resolution for the "binned" backend. Higher = finer AUC
+# resolution at O(bins) memory. Override via $CUMULATIVE_AUC_BINS.
+MetricsLogger.cumulative_auc_bins = @cab/env_int()
+cab/env_int.key     = "CUMULATIVE_AUC_BINS"
+cab/env_int.default = 100000
+# Trailing-buffer size (samples/rank) for the "capped" backend. Override via
+# $LIFETIME_AUC_WINDOW. Ignored when the backend is "binned".
+MetricsLogger.lifetime_auc_window = @law/env_int()
+law/env_int.key     = "LIFETIME_AUC_WINDOW"
+law/env_int.default = 10000000
 # Checkpointing disabled by default — a full DMP checkpoint is ~100s of GB and
 # the streaming loop always saves on the final window. save_dmp_checkpoint
 # no-ops on the empty path. Set $CKPT_PATH to a directory to re-enable; the

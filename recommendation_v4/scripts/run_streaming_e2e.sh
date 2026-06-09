@@ -114,7 +114,7 @@ NUM_TRAIN_TS=149
 START_TS=150
 EVAL_EVERY=5
 CKPT_TIME_INTERVAL=7200
-KEEP_LAST_N=2
+KEEP_LAST_N=1
 CKPT_PATH=/apps/chcai/ckpts/yambda_5b_e2e
 RUN_NAME=yambda_5b_e2e
 LOG=/apps/chcai/yambda_5b_e2e.log
@@ -122,6 +122,14 @@ MAX_RELAUNCH=50
 NUM_TRAIN_BATCHES=0     # 0 = full window (only capped for validation/tests)
 NUM_EVAL_BATCHES=0      # 0 = full holdout eval (only capped for validation)
 DIE_AT_STEP=-1          # >=0 = test-only failure injection
+# Train:eval split (fraction of USERS trained; 1 - this held out as a FIXED,
+# never-trained eval set). Passed on EVERY relaunch so the split stays an
+# immutable run contract — a changed split would abort on resume (validated in
+# the loop) to prevent skip-offset desync and held-out users leaking into train.
+TRAIN_SPLIT_PERCENTAGE=0.90
+SPLIT_SALT=0
+EVAL_HOLDOUT_TS=-1          # <0 = window just past training (start_ts+num_train_ts)
+EVAL_HOLDOUT_NUM_WINDOWS=1
 IN_WINDOW_FREQ=0        # >0 = also save every N batches within a window
 ATTACH=0                # 1 = (re)attach to an already-running trainer without
                         #     killing it or truncating its log — used to restore
@@ -377,6 +385,10 @@ launch() {
         NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES \
         NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES \
         DIE_AT_STEP=$DIE_AT_STEP \
+        TRAIN_SPLIT_PERCENTAGE=$TRAIN_SPLIT_PERCENTAGE \
+        SPLIT_SALT=$SPLIT_SALT \
+        EVAL_HOLDOUT_TS=$EVAL_HOLDOUT_TS \
+        EVAL_HOLDOUT_NUM_WINDOWS=$EVAL_HOLDOUT_NUM_WINDOWS \
         METRIC_LOG_FREQ=50 \
         RUN_NAME=$RUN_NAME \
         TENSORBOARD_LOG_PATH=/apps/chcai/tb/$RUN_NAME/ \

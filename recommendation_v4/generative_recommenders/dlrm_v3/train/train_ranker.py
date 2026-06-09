@@ -120,6 +120,9 @@ def _main_func(
     gpu_peak_flops = get_gpu_peak_flops(
         "bf16" if getattr(model_configs, "bf16_training", True) else "fp32"
     )
+    # Streaming fixed-holdout eval uses the dual fresh/cumulative metric sets:
+    # window_* = fresh per-pass full-holdout, lifetime_* = cumulative across
+    # passes (AUC via O(bins) histogram). Other modes keep the legacy single set.
     metrics = MetricsLogger(
         multitask_configs=model_configs.multitask_configs,
         batch_size=train_dataloader.batch_size,
@@ -129,17 +132,24 @@ def _main_func(
         num_flops_per_sample=num_flops_per_sample,
         gpu_peak_flops=gpu_peak_flops,
         model=model,
+        eval_cumulative=(mode == "streaming-train-eval"),
+        # Lifetime-AUC backend + bins/window come from gin (see yambda_5b.gin:
+        # MetricsLogger.{train,eval}_lifetime_auc_mode / cumulative_auc_bins /
+        # lifetime_auc_window), env-overridable. eval_cumulative stays explicit
+        # because it is runtime-mode dependent, not a config knob.
     )
     # Capture streaming resume hint (None for cold start / non-streaming
     # checkpoints). For the streaming-train-eval mode, we forward this into
     # streaming_train_eval_loop so it can advance past the last completed
     # window OR re-enter the partial window and skip already-trained batches.
-    resume_train_ts, resume_batch_idx_in_window = load_dmp_checkpoint(
-        model=model,
-        optimizer=optimizer,
-        metric_logger=metrics,
-        device=device,
-        rank=rank,
+    resume_train_ts, resume_batch_idx_in_window, resume_split_contract, resume_cold_start = (
+        load_dmp_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            metric_logger=metrics,
+            device=device,
+            rank=rank,
+        )
     )
 
     # train loop
@@ -190,6 +200,8 @@ def _main_func(
                 embedding_table_configs=embedding_table_configs,
                 resume_train_ts=resume_train_ts,
                 resume_batch_idx_in_window=resume_batch_idx_in_window,
+                resume_split_contract=resume_split_contract,
+                resume_cold_start=resume_cold_start,
             )
     except Exception as e:
         logger.info(traceback.format_exc())

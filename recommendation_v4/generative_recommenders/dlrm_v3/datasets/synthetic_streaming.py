@@ -269,12 +269,15 @@ class DLRMv3SyntheticStreamingDataset(DLRMv3RandomDataset):
     ) -> List[int]:
         return [1] * size
 
-    def set_ts(self, ts: int) -> None:
+    def set_ts(self, ts: int, train_only: bool = False) -> None:
         """
         Set the current timestamp and load associated request data.
 
         Args:
             ts: Timestamp index to set.
+            train_only: Accepted for API parity with the yambda dataset (which
+                supports a user-level train:eval holdout). This synthetic
+                dataset has no holdout, so the flag is ignored.
         """
         logger.warning(f"Streaming dataset ts set to {ts}")
         if ts == self.ts:
