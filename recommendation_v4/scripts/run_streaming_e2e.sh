@@ -72,7 +72,11 @@
 #   logging:     --run-name --log
 #   resilience:  --max-relaunch --min-free-gib --stall-s
 #   failover:    --partition --reservation --alloc-time --allow-failover
-#                --provision-script --acquire-wait-max
+#                --provision-script --acquire-wait-max --resv-wait-max
+#                --orig-recover-wait
+#                (failover holds <=1 reservation node: stray/leaked e2e_failover
+#                 holds are reaped, and a lost ORIGINAL job is waited on for SLURM
+#                 requeue and reused before a SEPARATE node is acquired.)
 #   validation:  --num-train-batches --num-eval-batches  (>0 caps batches/window
 #                for fast tests; 0 = full window / full-holdout eval)
 #   test-only:   --die-at-step  (>=0 injects a crash at that global step)
@@ -167,6 +171,13 @@ RESV_WAIT_MAX=300                     # max seconds to wait for a RESERVATION
                                       # Short, since a free reservation node
                                       # starts ~immediately; a longer wait just
                                       # means the reservation is currently full.
+ORIG_RECOVER_WAIT=600                 # when the user's ORIGINAL reservation job
+                                      # is lost, wait this long for SLURM to
+                                      # auto-requeue it back to RUNNING before
+                                      # acquiring a SEPARATE node. Reusing the
+                                      # requeued original keeps us at <=1
+                                      # reservation node and skips a redundant
+                                      # acquire (observed requeue latency ~2 min).
 
 # Disk guard: require at least this many GiB free on the ckpt volume before a
 # (re)launch. One checkpoint is ~560 GB. A save writes a fresh .tmp BEFORE the
@@ -209,6 +220,7 @@ while [[ $# -gt 0 ]]; do
         --provision-script) PROVISION_SCRIPT="$2"; shift 2;;
         --acquire-wait-max) ACQUIRE_WAIT_MAX="$2"; shift 2;;
         --resv-wait-max) RESV_WAIT_MAX="$2"; shift 2;;
+        --orig-recover-wait) ORIG_RECOVER_WAIT="$2"; shift 2;;
         *) echo "Unknown arg: $1"; exit 1;;
     esac
 done
@@ -342,6 +354,10 @@ acquire_node() {
     if [[ "$ALLOW_FAILOVER" != "1" ]]; then
         sup "failover disabled (--allow-failover 0); cannot acquire a new node"; return 1
     fi
+    # Release any prior/leaked failover hold BEFORE grabbing a new one, so we
+    # never transiently pin two reservation nodes (e.g. a dead tier-1 hold + the
+    # replacement we are about to submit).
+    reap_failover_holds ""
     local jid
 
     # --- tier 1: reservation (preferred) -------------------------------------
@@ -395,6 +411,17 @@ ensure_ready() {
         sup "provisioning on $JOBID failed; will try a fresh node"
     else
         sup "current allocation $JOBID unavailable (job not RUNNING or node down/drained)"
+        # Prefer the SLURM-requeued original over acquiring a SEPARATE node, so we
+        # stay at <=1 reservation node. (No-op once we've already failed over off
+        # the original.)
+        if wait_for_original_recover; then
+            JOBID="$ORIGINAL_JOBID"
+            refresh_node >/dev/null
+            if container_up "$JOBID"; then sup "reusing recovered original jobid=$JOBID"; return 0; fi
+            sup "recovered original $JOBID up but container '$CONTAINER' not present — (re)provisioning"
+            provision_node "$JOBID" && return 0
+            sup "provisioning recovered original $JOBID failed; will acquire a fresh node"
+        fi
     fi
     acquire_node || return 1
     provision_node "$JOBID" || { sup "provisioning new node $JOBID failed"; return 1; }
@@ -413,15 +440,65 @@ release_acquired() {
     done
 }
 
+# Enforce "at most ONE reservation node held by this run at a time" and reap
+# orphans. Every node WE acquire is an `sbatch --job-name=e2e_failover` hold, so
+# all our holds are discoverable by name even across a supervisor restart — which
+# is how a previous supervisor that died mid-failover (e.g. on a provisioning
+# error) can leave a hold pinning a second reservation node. Cancels every
+# e2e_failover hold owned by us EXCEPT $1 (the one to keep) and the user's
+# ORIGINAL_JOBID (never ours to cancel). Containers are removed before the node
+# is freed so they don't linger for the next tenant.
+reap_failover_holds() {
+    local keep="${1:-}" me jid
+    me=$(id -un 2>/dev/null)
+    [[ -z "$me" ]] && return 0
+    while read -r jid; do
+        [[ -z "$jid" ]] && continue
+        [[ "$jid" == "$keep" || "$jid" == "$ORIGINAL_JOBID" ]] && continue
+        sup "reaping stray failover hold $jid (enforcing <=1 reservation node held by this run)"
+        srun --jobid="$jid" --overlap docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+        scancel "$jid" 2>/dev/null || true
+    done < <(squeue -h -u "$me" -n e2e_failover -o '%i' 2>/dev/null)
+}
+
+# When the user's ORIGINAL reservation job is lost, SLURM typically auto-requeues
+# it back onto a (fresh) reservation node within a couple of minutes. Waiting for
+# that and REUSING it — rather than immediately acquiring a SEPARATE node — is
+# what keeps us at <=1 reservation node (the alternative is the original requeue
+# AND a failover hold both pinning reservation nodes) and skips a redundant
+# acquire+provision. Only meaningful while we are still on the original job.
+wait_for_original_recover() {
+    [[ "$JOBID" != "$ORIGINAL_JOBID" ]] && return 1
+    local waited=0
+    while (( waited < ORIG_RECOVER_WAIT )); do
+        if alloc_healthy "$ORIGINAL_JOBID"; then
+            sup "original job $ORIGINAL_JOBID is RUNNING again (SLURM requeue) after ${waited}s — reusing it (no second node)"
+            return 0
+        fi
+        sup "waiting for original job $ORIGINAL_JOBID to requeue before acquiring a separate node (${waited}s/${ORIG_RECOVER_WAIT}s)…"
+        sleep 15; waited=$((waited + 15))
+    done
+    sup "original job $ORIGINAL_JOBID did not recover within ${ORIG_RECOVER_WAIT}s — acquiring a fresh node"
+    return 1
+}
+
 # Returns 0 (true) if a trainer process is alive in the container. Uses SLURM
 # (srun) when the controller is up, else falls back to a direct SSH probe so a
 # control-plane outage can't make a live trainer look dead.
 trainer_alive() {
     local n
+    # `set -f; pgrep -f [g]enerative...` is the classic self-match guard: the
+    # probe shell's OWN cmdline contains the pattern, so a naive `pgrep -f
+    # generative_recommenders` ALWAYS matches itself and returns >=1 even when
+    # the trainer is dead — which would defeat the stall watchdog and make
+    # ATTACH mode falsely "adopt" a nonexistent trainer. The [g] char-class
+    # matches "generative" in real trainer cmdlines but NOT the literal
+    # "[g]enerative" in the probe's cmdline; `set -f` keeps the bracket from
+    # being glob-expanded (works under both bash -lc wrappers, no quotes).
     if controller_up; then
-        n=$(cexec "pgrep -f generative_recommenders | wc -l" | tr -d ' ')
+        n=$(cexec "set -f; pgrep -f [g]enerative_recommenders | wc -l" | tr -d ' ')
     else
-        n=$(dexec "pgrep -f generative_recommenders | wc -l" | tr -d ' ')
+        n=$(dexec "set -f; pgrep -f [g]enerative_recommenders | wc -l" | tr -d ' ')
     fi
     [[ "${n:-0}" -gt 0 ]]
 }
@@ -484,6 +561,11 @@ sup "start_ts=$START_TS num_train_ts=$NUM_TRAIN_TS eval_every=$EVAL_EVERY"
 sup "ckpt_path=$CKPT_PATH keep_last_n=$KEEP_LAST_N ckpt_time_interval=${CKPT_TIME_INTERVAL}s in_window_freq=$IN_WINDOW_FREQ"
 sup "log=$LOG num_train_batches=$NUM_TRAIN_BATCHES die_at_step=$DIE_AT_STEP max_relaunch=$MAX_RELAUNCH"
 sup "failover: allow=$ALLOW_FAILOVER partition=$PARTITION reservation=${RESERVATION:-<none>} alloc_time=$ALLOC_TIME"
+
+# Reap any failover hold(s) leaked by a PREVIOUS supervisor that died mid-failover
+# (e.g. exited on a provisioning error before release_acquired could run). Without
+# this, such an orphan keeps pinning a second reservation node indefinitely.
+reap_failover_holds ""
 
 cexec "mkdir -p '$CKPT_PATH' '/apps/chcai/tb/$RUN_NAME'"
 # Initialize this run's metrics log ONCE. launch_smoke_8gpu.sh appends (tee -a),
