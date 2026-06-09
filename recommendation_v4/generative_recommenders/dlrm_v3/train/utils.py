@@ -1274,6 +1274,13 @@ def streaming_train_eval_loop(
     # cold start and on every resume (the supervisor relaunches with the same
     # START_TS / NUM_TRAIN_TS). Defaults to the window just past training.
     requested_end_ts = start_ts + num_train_ts
+    # Eval-cadence anchor: the ORIGINAL requested start_ts, captured BEFORE the
+    # resume block rebases start_ts. `_should_eval` keys the every-N-windows
+    # cadence off the absolute window ts relative to THIS anchor, so the eval
+    # grid (e.g. 150,160,170,...) is identical on cold start and on every resume.
+    # (Keying off the per-call loop index instead would re-anchor the grid to
+    # whatever window a mid-run resume happens to restart from.)
+    eval_anchor_ts = start_ts
     # None (Python default) or <0 (the env-binding default) both mean "use the
     # window just past training", which is stable across resume.
     eval_holdout_ts_resolved = (
@@ -1637,14 +1644,19 @@ def streaming_train_eval_loop(
         """Whether to run the full-holdout eval after training window index `i`.
 
         `eval_every_n_windows<=1` (default) preserves the per-window cadence.
-        For K>1 we eval on windows 0, K, 2K, ... and ALWAYS on the final window
-        so the trajectory ends with an eval point. Gated by `eval_each_window`.
+        For K>1 we eval when the ABSOLUTE window ts is on the grid anchored at
+        `eval_anchor_ts` (the original start_ts), i.e. ts in {anchor, anchor+K,
+        anchor+2K, ...}, and ALWAYS on the final window so the trajectory ends
+        with an eval point. Anchoring to the absolute ts (not the per-call loop
+        index `i`) keeps the eval grid (e.g. 150,160,170,...) stable across a
+        mid-run resume, which rebases start_ts/`train_ts_list` to the resume
+        window. Gated by `eval_each_window`.
         """
         if not eval_each_window:
             return False
         if eval_every_n_windows <= 1:
             return True
-        return i % eval_every_n_windows == 0 or i == n_train - 1
+        return (train_ts_list[i] - eval_anchor_ts) % eval_every_n_windows == 0 or i == n_train - 1
 
     # Fixed eval set: held-out users' anchors over the resolved holdout window
     # range, computed ONCE and reused at every eval step. Same anchors every
