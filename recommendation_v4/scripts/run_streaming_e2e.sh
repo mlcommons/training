@@ -158,9 +158,15 @@ RESERVATION=""                        # if set, failover acquires from this SLUR
 ALLOC_TIME=7-00:00:00                 # SLURM --time for a failover hold job
 ALLOW_FAILOVER=1                      # 0 = never acquire a new node
 PROVISION_SCRIPT=/home/chcai/_provision_yambda_primus.sh
-ACQUIRE_WAIT_MAX=1800                 # max seconds to wait for a failover sbatch
-                                      # hold job to reach RUNNING (tolerates brief
-                                      # queueing before the node is granted).
+ACQUIRE_WAIT_MAX=1800                 # max seconds to wait for the OPEN-POOL
+                                      # (tier-2) failover hold job to reach
+                                      # RUNNING (tolerates brief queueing).
+RESV_WAIT_MAX=300                     # max seconds to wait for a RESERVATION
+                                      # (tier-1) node before giving up on it and
+                                      # falling back to the open $PARTITION pool.
+                                      # Short, since a free reservation node
+                                      # starts ~immediately; a longer wait just
+                                      # means the reservation is currently full.
 
 # Disk guard: require at least this many GiB free on the ckpt volume before a
 # (re)launch. One checkpoint is ~560 GB. A save writes a fresh .tmp BEFORE the
@@ -202,6 +208,7 @@ while [[ $# -gt 0 ]]; do
         --allow-failover) ALLOW_FAILOVER="$2"; shift 2;;
         --provision-script) PROVISION_SCRIPT="$2"; shift 2;;
         --acquire-wait-max) ACQUIRE_WAIT_MAX="$2"; shift 2;;
+        --resv-wait-max) RESV_WAIT_MAX="$2"; shift 2;;
         *) echo "Unknown arg: $1"; exit 1;;
     esac
 done
@@ -296,42 +303,81 @@ provision_node() {
     container_up "$jid"
 }
 
-# Acquire a fresh exclusive node on $PARTITION; sets global JOBID on success.
-# Uses `sbatch` (not `salloc`): interactive salloc on some partitions (meta64)
-# is capped at 240 min, which an $ALLOC_TIME multi-day hold exceeds. The batch
-# job merely pins the node (`sleep infinity`, bounded by --time); the container
-# is provisioned afterward by provision_node via `srun --jobid --overlap`.
-# Honors --reservation so failover re-acquires from the SAME reservation pool.
-acquire_node() {
-    if [[ "$ALLOW_FAILOVER" != "1" ]]; then
-        sup "failover disabled (--allow-failover 0); cannot acquire a new node"; return 1
-    fi
-    local resv_arg=""
-    [[ -n "$RESERVATION" ]] && resv_arg="--reservation=$RESERVATION"
-    sup "requesting a fresh node via sbatch (partition=$PARTITION${RESERVATION:+ reservation=$RESERVATION}, exclusive, time=$ALLOC_TIME)"
-    local jid
-    jid=$(sbatch --parsable --partition="$PARTITION" $resv_arg --nodes=1 --exclusive \
+# Submit an sbatch hold job that merely pins one exclusive node (`sleep
+# infinity`, bounded by --time=$ALLOC_TIME); echoes the jobid. $1 = extra sbatch
+# args (e.g. "--reservation=NAN_issue_debug" or ""). sbatch (not salloc) because
+# interactive salloc on some partitions (meta64) is capped at 240 min, which an
+# $ALLOC_TIME multi-day hold exceeds. The container is provisioned afterward by
+# provision_node via `srun --jobid --overlap`.
+_submit_hold_job() {
+    local extra="$1" out
+    out=$(sbatch --parsable --partition="$PARTITION" $extra --nodes=1 --exclusive \
                  --time="$ALLOC_TIME" --job-name=e2e_failover \
                  --output="${LOG%.log}.failover_hold.%j.log" \
                  --wrap="echo \"[failover-hold] node=\$(hostname) jobid=\$SLURM_JOB_ID start=\$(date -Is)\"; sleep infinity" 2>&1)
     # --parsable => "<jobid>" or "<jobid>;<cluster>"; strip whitespace + cluster.
-    jid=$(echo "$jid" | tr -d ' ' | cut -d';' -f1)
-    if ! [[ "$jid" =~ ^[0-9]+$ ]]; then
-        sup "FATAL: sbatch did not return a jobid: $jid"; return 1
-    fi
-    ACQUIRED_JOBIDS+=("$jid")
-    sup "submitted failover hold job jobid=$jid; waiting for RUNNING (max ${ACQUIRE_WAIT_MAX}s)"
-    local waited=0
-    while (( waited < ACQUIRE_WAIT_MAX )); do
-        [[ "$(squeue -h -j "$jid" -o '%T' 2>/dev/null | head -1)" == "RUNNING" ]] && break
+    echo "$out" | tr -d ' ' | cut -d';' -f1
+}
+
+# Wait up to $2 seconds for job $1 to reach RUNNING. Returns 0 if RUNNING.
+_wait_running() {
+    local jid="$1" max="$2" waited=0 st
+    while (( waited < max )); do
+        st=$(squeue -h -j "$jid" -o '%T' 2>/dev/null | head -1)
+        [[ "$st" == "RUNNING" ]] && return 0
         sleep 10; waited=$((waited + 10))
     done
-    if [[ "$(squeue -h -j "$jid" -o '%T' 2>/dev/null | head -1)" != "RUNNING" ]]; then
-        sup "FATAL: failover hold job $jid never reached RUNNING (waited ${waited}s)"; return 1
+    return 1
+}
+
+# Acquire a fresh exclusive node and set global JOBID on success. Two-tier:
+#   tier 1 (preferred): the SLURM --reservation $RESERVATION, if configured.
+#     Waited on for only RESV_WAIT_MAX — a free reservation node starts almost
+#     immediately, so a longer wait means the reservation is currently full.
+#   tier 2 (fallback): the open $PARTITION pool (no reservation), waited on for
+#     ACQUIRE_WAIT_MAX. Used when no reservation is set, or the reservation had
+#     no node free within RESV_WAIT_MAX (the pending reservation job is
+#     cancelled before we resubmit so we never end up holding two nodes).
+acquire_node() {
+    if [[ "$ALLOW_FAILOVER" != "1" ]]; then
+        sup "failover disabled (--allow-failover 0); cannot acquire a new node"; return 1
     fi
-    JOBID="$jid"
-    sup "new node ready: jobid=$JOBID node=$(squeue -h -j "$JOBID" -o '%N' 2>/dev/null | head -1)"
-    return 0
+    local jid
+
+    # --- tier 1: reservation (preferred) -------------------------------------
+    if [[ -n "$RESERVATION" ]]; then
+        sup "failover tier-1: requesting a node from reservation=$RESERVATION (exclusive, time=$ALLOC_TIME)"
+        jid=$(_submit_hold_job "--reservation=$RESERVATION")
+        if [[ "$jid" =~ ^[0-9]+$ ]]; then
+            ACQUIRED_JOBIDS+=("$jid")   # track for cleanup even if it never starts
+            sup "reservation hold job jobid=$jid submitted; waiting up to ${RESV_WAIT_MAX}s for RUNNING"
+            if _wait_running "$jid" "$RESV_WAIT_MAX"; then
+                JOBID="$jid"
+                sup "new node ready (reservation $RESERVATION): jobid=$JOBID node=$(squeue -h -j "$JOBID" -o '%N' 2>/dev/null | head -1)"
+                return 0
+            fi
+            sup "reservation $RESERVATION has no free node within ${RESV_WAIT_MAX}s — cancelling pending $jid and falling back to open pool"
+            scancel "$jid" 2>/dev/null || true
+        else
+            sup "reservation sbatch did not return a jobid ($jid) — falling back to open pool"
+        fi
+    fi
+
+    # --- tier 2: open partition pool (fallback) ------------------------------
+    sup "failover tier-2: requesting a node from open partition=$PARTITION (exclusive, time=$ALLOC_TIME)"
+    jid=$(_submit_hold_job "")
+    if ! [[ "$jid" =~ ^[0-9]+$ ]]; then
+        sup "FATAL: open-pool sbatch did not return a jobid: $jid"; return 1
+    fi
+    ACQUIRED_JOBIDS+=("$jid")
+    sup "open-pool hold job jobid=$jid submitted; waiting up to ${ACQUIRE_WAIT_MAX}s for RUNNING"
+    if _wait_running "$jid" "$ACQUIRE_WAIT_MAX"; then
+        JOBID="$jid"
+        sup "new node ready (open $PARTITION): jobid=$JOBID node=$(squeue -h -j "$JOBID" -o '%N' 2>/dev/null | head -1)"
+        return 0
+    fi
+    sup "FATAL: open-pool hold job $jid never reached RUNNING (waited ${ACQUIRE_WAIT_MAX}s)"
+    return 1
 }
 
 # Ensure $JOBID is a healthy allocation with the container up, failing over to a
