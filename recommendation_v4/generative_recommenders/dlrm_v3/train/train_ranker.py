@@ -49,14 +49,27 @@ SUPPORTED_CONFIGS = {
 
 
 def _main_func(
-    rank: int,
+    local_rank: int,
     world_size: int,
+    node_rank: int,
+    gpus_per_node: int,
+    master_addr: str,
     master_port: int,
     gin_file: str,
     mode: str,
 ) -> None:
-    device = torch.device(f"cuda:{rank}")
-    logger.info(f"rank: {rank}, world_size: {world_size}, device: {device}")
+    # `local_rank` is the index handed out by mp.start_processes (0..gpus_per_node-1)
+    # and indexes this node's GPUs. The GLOBAL rank is what every downstream
+    # consumer wants (data sharding via StreamingWindowSampler, checkpoint I/O,
+    # metrics), so derive it once and pass it through as `rank`. Only the CUDA
+    # device must be node-local. Single-node (node_rank=0) → rank == local_rank,
+    # exactly as before.
+    rank = node_rank * gpus_per_node + local_rank
+    device = torch.device(f"cuda:{local_rank}")
+    logger.info(
+        f"rank: {rank} (node_rank={node_rank} local_rank={local_rank}), "
+        f"world_size: {world_size}, device: {device}"
+    )
     # Phase 1: parse gin early with skip_unknown=True so env-bootstrap
     # bindings take effect BEFORE any module-level @gin.configurable
     # discovers itself. This is required because triton @triton.autotune
@@ -89,6 +102,7 @@ def _main_func(
     setup(
         rank=rank,
         world_size=world_size,
+        master_addr=master_addr,
         master_port=master_port,
         device=device,
     )
@@ -101,7 +115,10 @@ def _main_func(
 
     model, model_configs, embedding_table_configs = make_model()
     model, optimizer = make_optimizer_and_shard(
-        model=model, device=device, world_size=world_size
+        model=model,
+        device=device,
+        world_size=world_size,
+        local_world_size=gpus_per_node,
     )
     train_dataloader, test_dataloader = make_train_test_dataloaders(
         hstu_config=model_configs,
@@ -129,6 +146,10 @@ def _main_func(
         window_size=2500,
         device=device,
         rank=rank,
+        # Pass the live world_size so metric normalization is correct at any
+        # node count; the gin's MetricsLogger.world_size default (=8) is only a
+        # single-node fallback and would mis-normalize a multi-node run.
+        world_size=world_size,
         num_flops_per_sample=num_flops_per_sample,
         gpu_peak_flops=gpu_peak_flops,
         model=model,
@@ -171,6 +192,7 @@ def _main_func(
                 window_size=1000,
                 device=device,
                 rank=rank,
+                world_size=world_size,
             )
             eval_loop(
                 rank=rank,
@@ -236,14 +258,38 @@ def main() -> None:
         "train-eval",
         "streaming-train-eval",
     ], f"Unsupported mode: {args.mode}"
-    WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
-    MASTER_PORT = str(get_free_port())
+    # Distributed topology (single-node defaults reproduce the legacy behavior):
+    #   GPUS_PER_NODE  local procs to spawn on THIS node (default: all visible GPUs)
+    #   NNODES/NODE_RANK  multi-node fan-out, set by the SLURM launcher
+    #   WORLD_SIZE     global rank count = NNODES * GPUS_PER_NODE
+    #   MASTER_ADDR/PORT  rank-0 rendezvous; the port MUST match across nodes, so
+    #                     honor it from the env when set and only fall back to a
+    #                     random free port for the standalone single-node path.
+    GPUS_PER_NODE = int(os.environ.get("GPUS_PER_NODE", 0)) or torch.cuda.device_count()
+    NNODES = int(os.environ.get("NNODES", 1))
+    NODE_RANK = int(os.environ.get("NODE_RANK", 0))
+    WORLD_SIZE = NNODES * GPUS_PER_NODE
+    MASTER_ADDR = os.environ.get("MASTER_ADDR", "localhost")
+    MASTER_PORT = str(os.environ.get("MASTER_PORT") or get_free_port())
     gin_path = f"{os.path.dirname(__file__)}/gin/{SUPPORTED_CONFIGS[args.dataset]}"
+    logger.info(
+        f"launching: nnodes={NNODES} node_rank={NODE_RANK} "
+        f"gpus_per_node={GPUS_PER_NODE} world_size={WORLD_SIZE} "
+        f"master={MASTER_ADDR}:{MASTER_PORT}"
+    )
 
     mp.start_processes(
         _main_func,
-        args=(WORLD_SIZE, MASTER_PORT, gin_path, args.mode),
-        nprocs=WORLD_SIZE,
+        args=(
+            WORLD_SIZE,
+            NODE_RANK,
+            GPUS_PER_NODE,
+            MASTER_ADDR,
+            MASTER_PORT,
+            gin_path,
+            args.mode,
+        ),
+        nprocs=GPUS_PER_NODE,
         join=True,
         start_method="spawn",
     )

@@ -1,0 +1,475 @@
+#!/bin/bash
+#SBATCH --job-name=yambda_slurm
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --exclusive
+#SBATCH --partition=meta64          # [CLUSTER-SPECIFIC] partition name
+#SBATCH --time=01:10:00
+#SBATCH --output=/apps/chcai/yambda_slurm.%j.out
+# =============================================================================
+# launch_slurm.sh — single entry point for the yambda-5b trainer on N>=1 nodes.
+#
+# Consolidates what used to be three separate files so multi-node enablement is
+# ONE committable script (plus the train_ranker.py / utils.py python changes):
+#   * sbatch_smoke_multinode.sh   -> the `orchestrate` phase (host SLURM glue)
+#   * _provision_yambda_primus.sh -> the `provision`   phase (container + RDMA)
+#   * launch_smoke_8gpu.sh        -> the `worker`      phase (in-container train)
+#
+# PHASES (auto-detected from context; force with LAUNCH_SLURM_PHASE=<phase>):
+#   orchestrate  Runs on the SLURM batch host (no /.dockerenv). Resolves the
+#                rendezvous (MASTER_ADDR/PORT), ensures the container on every
+#                node (provision phase), then `docker exec`s the worker phase on
+#                every node, one task per node.
+#   provision    Runs on a compute-node host. Ensures the `yambda_primus`
+#                container is up (loads the pre-baked image if present — no
+#                internet/pip — else builds from the base image) and stages the
+#                host RDMA userspace overlay on shared NFS.
+#   worker       Runs INSIDE the container. Sets the distributed topology +
+#                NCCL/RDMA env and spawns this node's GPU ranks via train_ranker.
+#                N==1 transparently uses the legacy single-node path (localhost,
+#                node_rank 0), byte-for-byte as before, so the streaming-e2e
+#                supervisor's direct `bash scripts/launch_slurm.sh` is unchanged.
+#
+# USAGE
+#   Multi-node (N>=1):  sbatch --nodes=2 scripts/launch_slurm.sh
+#   Single-node direct: bash scripts/launch_slurm.sh   (already inside container;
+#                       what run_streaming_e2e.sh invokes per relaunch)
+#   Perf pair:
+#     LOG=/apps/chcai/perf_1node.log NUM_TRAIN_BATCHES=200 NUM_EVAL_BATCHES=0 \
+#       EVAL_EACH_WINDOW=0 METRIC_LOG_FREQ=20 \
+#       sbatch --nodes=1 --job-name=y1 scripts/launch_slurm.sh
+#     LOG=/apps/chcai/perf_2node.log NUM_TRAIN_BATCHES=200 NUM_EVAL_BATCHES=0 \
+#       EVAL_EACH_WINDOW=0 METRIC_LOG_FREQ=20 \
+#       sbatch --nodes=2 --job-name=y2 scripts/launch_slurm.sh
+#     # then: bash scripts/compare_node_perf.sh /apps/chcai/perf_1node.log /apps/chcai/perf_2node.log
+#
+# ONE-TIME IMAGE BAKE (so fresh nodes skip the multi-GB torch download + pip):
+#   BAKE_IMAGE=1 LAUNCH_SLURM_PHASE=provision bash scripts/launch_slurm.sh
+#   (commits the deps-installed container to $BAKED_IMAGE and `docker save`s it to
+#    $BAKED_TAR on NFS; subsequent provisions `docker load` it offline.)
+#
+# -----------------------------------------------------------------------------
+# PORTABILITY — what to change for a DIFFERENT cluster / network / hardware.
+# Every such knob is also tagged inline with "[CLUSTER-SPECIFIC]" (grep for it).
+# All are env-overridable, so you can adapt without editing this file.
+#
+#  A) SLURM / scheduler
+#     - #SBATCH --partition=meta64  : partition name. CHANGE per cluster.
+#     - #SBATCH --time / --exclusive : policy; adjust to taste.
+#
+#  B) Filesystems (must be shared/NFS across ALL nodes — this script re-invokes
+#     itself and reads the overlay + data from these paths cluster-wide)
+#     - /home/chcai (repo + this script) and /apps/chcai (scratch: logs, overlay,
+#       baked tar, data, pip tarball). CHANGE both the bind mounts in the
+#       `docker run` (provision) and the default LOG/BAKED_TAR/OVERLAY/PIP_* paths.
+#
+#  C) Container image / GPU software stack (tied to the GPU arch + ROCm version)
+#     - IMAGE=rocm/primus:v26.3        : base image. ROCm/AMD-specific.
+#     - docker run --device=/dev/kfd --device=/dev/dri --group-add video : AMD ROCm
+#       device passthrough. For NVIDIA this is --gpus all / nvidia runtime instead.
+#     - --ulimit memlock=-1 : REQUIRED for RDMA QP registration (do not drop).
+#     - TORCH_IDX (rocm7.2), torch/vision/audio ==*+rocm7.2, FBGEMM_WHL (a gfx950
+#       wheel), torchrec pin : the whole deps set is arch/ROCm-version-specific.
+#
+#  D) Network fabric — THE trickiest part; defaults are PROVEN on meta64 cv350
+#     (Broadcom bnxt_re RoCEv2). On a different fabric these almost certainly change
+#     (see the worker-phase block for the full rationale):
+#     - NCCL_SOCKET_IFNAME=fenic0 : the ONE routable host NIC for TCP bootstrap.
+#       Find yours with `ip -br addr`; the per-GPU RDMA NICs are usually NOT
+#       routable for plain TCP, so auto-detect hangs init — you MUST pin this.
+#     - NCCL_IB_HCA=bnxt_re0..7 : the RDMA HCA device names. List with `ibv_devices`.
+#       Different NIC vendor (e.g. mlx5_*, ionic_*) => different names AND a
+#       different userspace provider, which changes the RDMA overlay below.
+#     - NCCL_IB_GID_INDEX=3 : RoCEv2 IPv4 GID index. Check `show_gids`; v1/v2 and
+#       IPv4/IPv6 live at different indices per port.
+#     - NCCL_IB_TC=104 : RoCE lossless (PFC) traffic class. Fabric/switch-specific.
+#     - RDMA overlay (provision phase): only needed when the CONTAINER's rdma-core
+#       is older than the HOST kernel driver's uapi (our bnxt_re v34-vs-v59 case).
+#       Different NIC/host => different /usr/lib64 provider .so to stage, or the
+#       overlay may be unnecessary entirely (set RDMA_OVERLAY= to disable). If RDMA
+#       can't be made to work, NCCL_NET_TRANSPORT=socket falls back to TCP.
+#
+#  E) Not cluster-specific (auto-derived): GPUS_PER_NODE (torch.cuda.device_count),
+#     NNODES/NODE_RANK/MASTER_ADDR (from SLURM), WORLD_SIZE.
+# =============================================================================
+set -uo pipefail
+
+# Absolute path to THIS script so the orchestrate phase can re-invoke it on every
+# node (home is shared NFS, so the same path resolves cluster-wide).
+SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
+# ---- phase detection --------------------------------------------------------
+PHASE="${LAUNCH_SLURM_PHASE:-}"
+if [ -z "$PHASE" ]; then
+  if [ -f /.dockerenv ]; then PHASE=worker; else PHASE=orchestrate; fi
+fi
+
+# ---- shared config (env-overridable) ----------------------------------------
+CONTAINER=${CONTAINER:-yambda_primus}
+REPO=${REPO:-$REPO_ROOT}                       # repo path inside the container
+IMAGE=${IMAGE:-rocm/primus:v26.3}              # [CLUSTER-SPECIFIC] ROCm/arch base image
+BAKED_IMAGE=${BAKED_IMAGE:-yambda_primus_baked:latest}
+BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFIC] shared-NFS path
+USE_BAKED=${USE_BAKED:-1}
+OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay
+
+# =============================================================================
+# PHASE: orchestrate  (SLURM batch host)
+# =============================================================================
+orchestrate() {
+  # When run as the SLURM batch script, $0 is the node-local staged copy
+  # (/var/spool/slurmd/job<ID>/slurm_script), so $SELF / $REPO_ROOT are WRONG
+  # here (they don't exist on other nodes). Resolve the REAL shared-NFS script
+  # path + repo root from SLURM so we can re-invoke this script on every node and
+  # `cd` to the right repo inside the container.
+  SCRIPT_PATH=$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -oP 'Command=\K\S+')
+  [ -f "${SCRIPT_PATH:-}" ] || SCRIPT_PATH="${SLURM_SUBMIT_DIR:-$REPO_ROOT}/scripts/launch_slurm.sh"
+  [ -f "$SCRIPT_PATH" ] || SCRIPT_PATH="$SELF"
+  REPO=$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)
+
+  LOG=${LOG:-/apps/chcai/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
+
+  # Smoke defaults — override via env for a perf run (see header USAGE).
+  MODE=${MODE:-streaming-train-eval}
+  START_TS=${START_TS:-150}
+  NUM_TRAIN_TS=${NUM_TRAIN_TS:-1}
+  NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
+  NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
+  EVAL_EACH_WINDOW=${EVAL_EACH_WINDOW:-1}
+  EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
+  METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
+  FORCE_PROVISION=${FORCE_PROVISION:-0}
+
+  : > "$LOG"
+  echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
+  echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
+  echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
+
+  # Rendezvous resolved on the HOST (the container image has no SLURM client).
+  MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" 2>/dev/null | head -1)
+  MASTER_ADDR=${MASTER_ADDR:-localhost}
+  MASTER_PORT=$(( 20000 + ${SLURM_JOB_ID:-0} % 20000 ))
+  echo "[$(date)] rendezvous: MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT" | tee -a "$LOG"
+
+  # Optional NCCL/RCCL fabric overrides — forwarded into the container only when
+  # set at submit time (docker exec does NOT inherit the srun task env). The
+  # worker phase applies its own validated multi-node bnxt_re defaults when these
+  # are unset. Common: NCCL_NET_TRANSPORT=socket (TCP fallback), NCCL_DEBUG=INFO.
+  NCCL_ENV_ARGS=""
+  for v in NCCL_NET_TRANSPORT NCCL_DEBUG NCCL_SOCKET_IFNAME NCCL_IB_HCA NCCL_IB_GID_INDEX \
+           NCCL_IB_TC NCCL_IB_TIMEOUT NCCL_IGNORE_CPU_AFFINITY RCCL_MSCCL_ENABLE NCCL_NET_GDR_LEVEL \
+           NCCL_IB_PCI_RELAXED_ORDERING NCCL_IB_USE_INLINE NCCL_IB_QPS_PER_CONNECTION \
+           NCCL_IB_ECE_ENABLE NCCL_DMABUF_ENABLE NCCL_GDRCOPY_ENABLE NCCL_GDR_FLUSH_DISABLE \
+           NCCL_PXN_DISABLE NCCL_CHECKS_DISABLE NCCL_CROSS_NIC RDMA_OVERLAY; do
+    eval "val=\${$v:-}"
+    if [ -n "$val" ]; then NCCL_ENV_ARGS="$NCCL_ENV_ARGS -e $v=$val"; fi
+  done
+
+  # TRICKY — variable expansion inside the `srun ... bash -c "..."` blocks below:
+  # the string is double-quoted, so PLAIN $VAR expands NOW on the batch host (e.g.
+  # $MASTER_ADDR, $CONTAINER, $SCRIPT_PATH — values computed above), while
+  # BACKSLASH-escaped \$VAR is passed through literally and expands LATER on each
+  # compute node inside the srun task (e.g. \$SLURM_NODEID, \$(hostname)) where the
+  # per-node SLURM_* env actually lives. Mixing these up sends every rank the
+  # wrong node id or breaks the docker exec — keep the \$ on per-node values.
+
+  # --- step 1: ensure the container is up on every node ----------------------
+  echo "[$(date)] ensuring container '$CONTAINER' on all nodes (force=$FORCE_PROVISION)" | tee -a "$LOG"
+  srun --ntasks-per-node=1 bash -c "
+    if [ \"$FORCE_PROVISION\" = \"1\" ] || ! docker exec $CONTAINER true >/dev/null 2>&1; then
+      echo \"[\$(hostname)] (re)provisioning container\"
+      LAUNCH_SLURM_PHASE=provision CONTAINER=$CONTAINER IMAGE=$IMAGE \
+        BAKED_IMAGE=$BAKED_IMAGE BAKED_TAR=$BAKED_TAR USE_BAKED=$USE_BAKED \
+        BAKE_IMAGE=${BAKE_IMAGE:-0} RDMA_OVERLAY=$OVERLAY REPO=$REPO bash $SCRIPT_PATH
+    else
+      echo \"[\$(hostname)] container already up\"
+    fi
+  " 2>&1 | tee -a "$LOG"
+
+  # --- step 2: launch the worker (trainer) inside the container on every node -
+  echo "[$(date)] launching trainer (worker phase) on all nodes" | tee -a "$LOG"
+  srun --ntasks-per-node=1 bash -c "
+    docker exec \
+      -e LAUNCH_SLURM_PHASE=worker \
+      -e SLURM_NNODES=\$SLURM_NNODES \
+      -e SLURM_NODEID=\$SLURM_NODEID \
+      -e SLURM_PROCID=\$SLURM_PROCID \
+      -e SLURM_JOB_NODELIST=\"\$SLURM_JOB_NODELIST\" \
+      -e SLURM_JOB_ID=\$SLURM_JOB_ID \
+      -e MASTER_ADDR=$MASTER_ADDR \
+      -e MASTER_PORT=$MASTER_PORT \
+      -e HSTU_HAMMER_KERNEL=${HSTU_HAMMER_KERNEL:-TRITON} \
+      -e MODE=$MODE \
+      -e START_TS=$START_TS \
+      -e NUM_TRAIN_TS=$NUM_TRAIN_TS \
+      -e EVAL_EACH_WINDOW=$EVAL_EACH_WINDOW \
+      -e EVAL_EVERY_N_WINDOWS=$EVAL_EVERY_N_WINDOWS \
+      -e NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES \
+      -e NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES \
+      -e METRIC_LOG_FREQ=$METRIC_LOG_FREQ \
+      -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-0.90} \
+      -e SPLIT_SALT=${SPLIT_SALT:-0} \
+      -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
+      -e EVAL_HOLDOUT_NUM_WINDOWS=${EVAL_HOLDOUT_NUM_WINDOWS:-1} \
+      ${RUN_NAME:+-e RUN_NAME=$RUN_NAME} \
+      ${TENSORBOARD_LOG_PATH:+-e TENSORBOARD_LOG_PATH=$TENSORBOARD_LOG_PATH} \
+      ${CKPT_PATH:+-e CKPT_PATH=$CKPT_PATH} \
+      -e LOG=$LOG \
+      $NCCL_ENV_ARGS \
+      $CONTAINER bash -lc 'cd $REPO && LAUNCH_SLURM_PHASE=worker bash scripts/launch_slurm.sh'
+  " 2>&1 | tee -a "$LOG"
+  rc=${PIPESTATUS[0]}
+  echo "[$(date)] launch_slurm/orchestrate finished rc=$rc" | tee -a "$LOG"
+  exit $rc
+}
+
+# =============================================================================
+# PHASE: provision  (compute-node host)
+# =============================================================================
+provision() {
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+  DOCKER=$(command -v docker 2>/dev/null || true); DOCKER=${DOCKER:-/usr/bin/docker}
+  FBGEMM_WHL=${FBGEMM_WHL:-/apps/chcai/FBGEMM/fbgemm_gpu/dist/fbgemm_gpu_nightly_rocm-2026.6.2-cp312-cp312-linux_x86_64.whl}  # [CLUSTER-SPECIFIC] gfx950/ROCm wheel
+  TORCH_IDX=${TORCH_IDX:-https://download.pytorch.org/whl/rocm7.2}  # [CLUSTER-SPECIFIC] ROCm version index
+  echo "[provision] host=$(hostname) container=$CONTAINER docker=$DOCKER"
+
+  # Resolve which image to run + whether deps must be installed. Prefer a pre-baked
+  # image (deps already installed) to skip the multi-GB torch download + pip /
+  # torchrec-from-git build on every fresh node:
+  #   1) baked image in this node's docker -> use it, skip deps
+  #   2) baked image tar on NFS            -> docker load (local, no internet)
+  #   3) neither                           -> base image + pip (slow path, which
+  #                                           can then be baked via BAKE_IMAGE=1)
+  NEED_DEPS=1
+  RUN_IMAGE="$IMAGE"
+  if [ "$USE_BAKED" = "1" ]; then
+    if "$DOCKER" image inspect "$BAKED_IMAGE" >/dev/null 2>&1; then
+      echo "[provision] using baked image $BAKED_IMAGE (deps preinstalled, no download)"
+      RUN_IMAGE="$BAKED_IMAGE"; NEED_DEPS=0
+    elif [ -f "$BAKED_TAR" ]; then
+      echo "[provision] loading baked image from $BAKED_TAR (local, no internet)..."
+      if "$DOCKER" load -i "$BAKED_TAR" >/dev/null 2>&1 && "$DOCKER" image inspect "$BAKED_IMAGE" >/dev/null 2>&1; then
+        RUN_IMAGE="$BAKED_IMAGE"; NEED_DEPS=0; echo "[provision] baked image loaded"
+      else
+        echo "[provision] WARNING: docker load failed; falling back to base-image + pip"
+      fi
+    fi
+  fi
+  if ! "$DOCKER" image inspect "$RUN_IMAGE" >/dev/null 2>&1; then
+    echo "[provision] pulling $RUN_IMAGE (this can take a while)..."; "$DOCKER" pull "$RUN_IMAGE"
+  fi
+
+  echo "[provision] (re)starting container $CONTAINER from $RUN_IMAGE"
+  "$DOCKER" rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  "$DOCKER" run -d --name "$CONTAINER" \
+    --network=host --ipc=host --shm-size=64g \
+    --device=/dev/kfd --device=/dev/dri --group-add video \
+    `# [CLUSTER-SPECIFIC] AMD ROCm device passthrough; NVIDIA uses --gpus all / nvidia runtime` \
+    --cap-add=SYS_PTRACE --cap-add=CAP_SYS_ADMIN --cap-add=IPC_LOCK \
+    --ulimit memlock=-1:-1 --ulimit stack=67108864:67108864 \
+    `# memlock=-1 is REQUIRED for RDMA QP memory registration — do not drop` \
+    --security-opt seccomp=unconfined --privileged \
+    -v /home/chcai:/home/chcai \
+    -v /apps/chcai:/apps/chcai \
+    `# [CLUSTER-SPECIFIC] shared-NFS bind mounts: repo + scratch (overlay/logs/data)` \
+    -w "$REPO" \
+    "$RUN_IMAGE" sleep infinity
+
+  # --- RDMA userspace overlay for in-container RCCL (bnxt_re) -----------------
+  # The image (rocm/primus, rdma-core 50/libbnxt_re-rdmav34) ships an OLDER RDMA
+  # userspace than the host kernel bnxt_re driver. The stock v34 provider faults
+  # RCCL's deep-queue create_qp (max_send_wr=256) against the newer kernel uapi
+  # -> "ibv_create_qp ... Bad address". Fix: stage the host's matched rdma-core
+  # (libibverbs v61 + libbnxt_re-rdmav59 + libnl) on NFS so the worker phase makes
+  # RCCL load it via LD_PRELOAD + LD_LIBRARY_PATH. The UNVERSIONED libibverbs.so
+  # symlink is essential (import torch pulls the unversioned soname; without it
+  # the lookup falls through to the container v34 lib and the fix regresses).
+  if [ "${FORCE_OVERLAY:-0}" != "1" ] && ls "$OVERLAY/lib/libibverbs/"libbnxt_re-rdmav*.so >/dev/null 2>&1 && [ -L "$OVERLAY/lib/libibverbs.so" ]; then
+    echo "[provision] host RDMA overlay already staged at $OVERLAY (shared NFS) — skipping"
+  else
+    echo "[provision] staging host RDMA userspace overlay -> $OVERLAY"
+    rm -rf "${OVERLAY}.tmp" 2>/dev/null
+    mkdir -p "${OVERLAY}.tmp/lib/libibverbs" "${OVERLAY}.tmp/libibverbs.d"
+    cp -L /usr/lib64/libibverbs.so.1 /usr/lib64/libnl-3.so.200 /usr/lib64/libnl-route-3.so.200 "${OVERLAY}.tmp/lib/" 2>/dev/null || true
+    ln -sf libibverbs.so.1 "${OVERLAY}.tmp/lib/libibverbs.so"
+    cp -L /usr/lib64/libibverbs/*.so "${OVERLAY}.tmp/lib/libibverbs/" 2>/dev/null || true
+    cp /etc/libibverbs.d/*.driver "${OVERLAY}.tmp/libibverbs.d/" 2>/dev/null || true
+    if ls "${OVERLAY}.tmp/lib/libibverbs/"libbnxt_re-rdmav*.so >/dev/null 2>&1; then
+      rm -rf "$OVERLAY" 2>/dev/null
+      mv "${OVERLAY}.tmp" "$OVERLAY" 2>/dev/null || { mkdir -p "$OVERLAY"; cp -a "${OVERLAY}.tmp/." "$OVERLAY/"; }
+      echo "[provision] host RDMA overlay staged: $(ls "$OVERLAY/lib/libibverbs" | wc -l) providers + libibverbs.so symlink"
+    else
+      echo "[provision] WARNING: host bnxt_re provider not found at /usr/lib64/libibverbs — multi-node RDMA will fail 'Bad address'; use NCCL_NET_TRANSPORT=socket"
+    fi
+  fi
+
+  if [ "$NEED_DEPS" = "0" ]; then
+    echo "[provision] baked image — deps preinstalled; verifying imports only"
+    "$DOCKER" exec "$CONTAINER" bash -lc '
+python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; print(\"imports OK,\", torch.__version__, torch.version.hip, torch.cuda.device_count(), \"gpus\")"
+' || echo "[provision] WARNING: baked-image import smoke failed"
+  else
+    echo "[provision] installing recipe deps (base image, slow path)"
+    # Install misc deps FIRST, then pin the rocm torch stack + fbgemm + torchrec
+    # LAST with --no-deps so nothing pulls a CUDA torch over the rocm build.
+    "$DOCKER" exec "$CONTAINER" bash -lc '
+set -e
+echo "=== native torch ==="; python -c "import torch;print(torch.__version__)" || true
+echo "=== misc python deps ==="
+pip install --no-cache-dir polars-u64-idx pyarrow pyyaml tqdm psutil numba xxhash gin-config \
+  absl-py pandas tensorboard torchmetrics tensordict pyre-extensions iopath typing-inspect 2>&1 | tail -3 || true
+echo "=== rocm torch stack (force, no-deps, LAST) ==="
+pip install --force-reinstall --no-deps --index-url '"$TORCH_IDX"' \
+  torch==2.12.0+rocm7.2 torchvision==0.27.0+rocm7.2 torchaudio==2.11.0+rocm7.2
+echo "=== fbgemm (local gfx950 wheel) ==="
+pip install --force-reinstall --no-deps '"$FBGEMM_WHL"'
+echo "=== torchrec v2026.06.01.00 (force, no-deps) ==="
+pip install --force-reinstall --no-deps "git+https://github.com/pytorch/torchrec.git@v2026.06.01.00"
+echo "=== import smoke ==="
+python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; print(\"imports OK,\", torch.__version__, torch.version.hip, torch.cuda.device_count(), \"gpus\")"
+'
+  fi
+
+  # --- one-time bake: snapshot the deps-installed container into a reusable image
+  # and save it to NFS so future nodes skip the download/pip path entirely.
+  if [ "${BAKE_IMAGE:-0}" = "1" ]; then
+    echo "[provision] baking: docker commit $CONTAINER -> $BAKED_IMAGE"
+    if "$DOCKER" commit "$CONTAINER" "$BAKED_IMAGE" >/dev/null; then
+      echo "[provision] saving $BAKED_IMAGE -> $BAKED_TAR (one-time, tens of GB)"
+      if "$DOCKER" save "$BAKED_IMAGE" -o "${BAKED_TAR}.tmp.$$" && mv -f "${BAKED_TAR}.tmp.$$" "$BAKED_TAR"; then
+        echo "[provision] bake done: $(ls -lh "$BAKED_TAR" 2>/dev/null | awk '{print $5}')"
+      else
+        echo "[provision] WARNING: docker save failed"; rm -f "${BAKED_TAR}.tmp.$$" 2>/dev/null
+      fi
+    else
+      echo "[provision] WARNING: docker commit failed"
+    fi
+  fi
+  echo "[provision] DONE"
+}
+
+# =============================================================================
+# PHASE: worker  (inside the container)
+# =============================================================================
+worker() {
+  cd "$REPO_ROOT"
+  LOG=${LOG:-/apps/chcai/yambda_5b_8gpu.log}
+  # Append (not truncate): under the streaming-e2e supervisor a run may relaunch
+  # many times into the SAME $LOG; the supervisor initializes it once at run start.
+  echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee -a "$LOG"
+
+  # polars-u64-idx (NOT stock polars) — yambda parquet's flat-explode overruns
+  # 32-bit row index. Reserved node has no outbound DNS, so install from a
+  # pre-staged tarball under /apps/chcai/. Override PIP_LOCAL_TGZ for other hosts.
+  PIP_LOCAL_TGZ=${PIP_LOCAL_TGZ:-/apps/chcai/pip_local_yambda.tgz}   # [CLUSTER-SPECIFIC] shared-NFS path
+  PIP_LOCAL_DIR=${PIP_LOCAL_DIR:-/tmp/pip_local}
+  if [ ! -f "$PIP_LOCAL_DIR/lib/python3.12/site-packages/polars/__init__.py" ]; then
+    rm -rf "$PIP_LOCAL_DIR"
+    mkdir -p "$PIP_LOCAL_DIR" && tar xzf "$PIP_LOCAL_TGZ" -C "$(dirname "$PIP_LOCAL_DIR")" 2>&1 | tail -3 | tee -a "$LOG"
+  fi
+
+  export PYTHONPATH="$PIP_LOCAL_DIR/lib/python3.12/site-packages:$REPO_ROOT:${PYTHONPATH:-}"
+  export HOME=${HOME:-/tmp}
+  echo "[$(date)] PYTHONPATH=$PYTHONPATH" | tee -a "$LOG"
+  python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; print('imports OK,', torch.__version__, torch.cuda.device_count(),'gpus')" 2>&1 | tee -a "$LOG"
+
+  export HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
+  export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
+
+  # --- distributed topology ---------------------------------------------------
+  GPUS_PER_NODE=$(python -c "import torch; print(torch.cuda.device_count())")
+  # Multi-node when launched one-task-per-node under SLURM (SLURM_NNODES>1);
+  # otherwise fall through to legacy single-node defaults (localhost, node_rank 0).
+  if [ "${SLURM_NNODES:-1}" -gt 1 ] && [ -n "${SLURM_JOB_NODELIST:-}" ]; then
+    NNODES=${SLURM_NNODES}
+    NODE_RANK=${SLURM_NODEID:-${SLURM_PROCID:-0}}
+    # PREFER a MASTER_ADDR/PORT forwarded from the orchestrate phase (resolved on
+    # the host, which has scontrol); the container image carries no SLURM client.
+    if [ -z "${MASTER_ADDR:-}" ]; then
+      MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" 2>/dev/null | head -1)
+      MASTER_ADDR=${MASTER_ADDR:-localhost}
+    fi
+    MASTER_PORT=${MASTER_PORT:-$(( 20000 + ${SLURM_JOB_ID:-0} % 20000 ))}
+  else
+    NNODES=${NNODES:-1}
+    NODE_RANK=${NODE_RANK:-0}
+    MASTER_ADDR=${MASTER_ADDR:-localhost}
+    MASTER_PORT=${MASTER_PORT:-}     # empty => train_ranker picks a free port
+  fi
+  export NNODES NODE_RANK GPUS_PER_NODE MASTER_ADDR MASTER_PORT
+  export WORLD_SIZE=$(( NNODES * GPUS_PER_NODE ))
+  echo "[$(date)] topology: nnodes=$NNODES node_rank=$NODE_RANK gpus_per_node=$GPUS_PER_NODE world_size=$WORLD_SIZE master=$MASTER_ADDR:${MASTER_PORT:-<auto>}" | tee -a "$LOG"
+
+  # RCCL/NCCL cross-node knobs (multi-node only; single-node leaves auto-detect).
+  # The container is --network=host so RCCL sees ALL host interfaces; split the
+  # two planes explicitly: TCP bootstrap over the routable fenic0, RDMA data over
+  # the 8 Broadcom bnxt_re RoCE HCAs (the per-GPU benic* 192.168.x/31 links are
+  # NOT node-routable for TCP — auto-detect there hangs init).
+  if [ "$NNODES" -gt 1 ]; then
+    # [CLUSTER-SPECIFIC] routable host NIC for TCP bootstrap (find via `ip -br addr`).
+    export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
+    NCCL_NET_TRANSPORT=${NCCL_NET_TRANSPORT:-ib}
+    if [ "$NCCL_NET_TRANSPORT" = "socket" ]; then
+      export NCCL_IB_DISABLE=1
+      echo "[$(date)] NCCL: IB disabled — allreduce over TCP (fenic0). Functional, not RDMA-fast." | tee -a "$LOG"
+    else
+      # bnxt_re userspace provider ABI overlay (REQUIRED for RCCL). The stock v34
+      # provider faults RCCL's create_qp (256 WRs) against the host kernel uapi
+      # ("Bad address"); the host v61/v59 set staged by the provision phase works.
+      # The libibverbs.so (UNVERSIONED) symlink + LD_PRELOAD are both required so
+      # the torch process maps ONLY the host lib (see provision phase comment).
+      if [ -e "$OVERLAY/lib/libibverbs.so.1" ]; then
+        [ -e "$OVERLAY/lib/libibverbs.so" ] || ln -sf libibverbs.so.1 "$OVERLAY/lib/libibverbs.so" 2>/dev/null || true
+        export LD_LIBRARY_PATH="$OVERLAY/lib:$OVERLAY/lib/libibverbs:${LD_LIBRARY_PATH:-}"
+        export LD_PRELOAD="$OVERLAY/lib/libibverbs.so.1${LD_PRELOAD:+:$LD_PRELOAD}"
+        echo "[$(date)] NCCL: bnxt_re provider overlay -> $OVERLAY (host rdma-core v61/v59; symlink+LD_PRELOAD so RCCL binds the host lib for QP creation)" | tee -a "$LOG"
+      else
+        echo "[$(date)] WARNING: RDMA overlay $OVERLAY missing — RCCL QP creation will fail 'Bad address' on stock v34 provider; set RDMA_OVERLAY or use NCCL_NET_TRANSPORT=socket" | tee -a "$LOG"
+      fi
+      # MINIMAL bnxt_re set PROVEN on these meta64 cv350 nodes (cmcknigh RCCL
+      # benchmarks + confirmed e2e here). NCCL_IB_TC=104 (RoCE lossless PFC class)
+      # is required; do NOT add the ionic-AINIC QPS/ECE/DMABUF block.
+      # [CLUSTER-SPECIFIC] RDMA HCA names (`ibv_devices`); other vendors => mlx5_*/ionic_*
+      export NCCL_IB_HCA=${NCCL_IB_HCA:-bnxt_re0,bnxt_re1,bnxt_re2,bnxt_re3,bnxt_re4,bnxt_re5,bnxt_re6,bnxt_re7}
+      export NCCL_IB_GID_INDEX=${NCCL_IB_GID_INDEX:-3}    # [CLUSTER-SPECIFIC] RoCEv2 IPv4 GID idx (`show_gids`)
+      export NCCL_IB_TC=${NCCL_IB_TC:-104}                # [CLUSTER-SPECIFIC] RoCE lossless/PFC traffic class
+      export NCCL_IB_TIMEOUT=${NCCL_IB_TIMEOUT:-14}
+      export NCCL_IGNORE_CPU_AFFINITY=${NCCL_IGNORE_CPU_AFFINITY:-1}
+      export RCCL_MSCCL_ENABLE=${RCCL_MSCCL_ENABLE:-0}
+      # GPU-Direct RDMA needs DMABUF/peermem (neither in-container here) — leave
+      # GDR off so RCCL stages through host memory (still real RDMA over bnxt_re).
+      export NCCL_NET_GDR_LEVEL=${NCCL_NET_GDR_LEVEL:-0}
+      echo "[$(date)] NCCL: RDMA over bnxt_re (GID idx ${NCCL_IB_GID_INDEX}, TC ${NCCL_IB_TC}, GDR_LEVEL=${NCCL_NET_GDR_LEVEL}; meta64 bnxt_re config, validated)" | tee -a "$LOG"
+    fi
+  fi
+  export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
+  export HSTU_HAMMER_KERNEL=${HSTU_HAMMER_KERNEL:-}
+  export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+
+  # --- GPU clock sanity guard -------------------------------------------------
+  # A leftover perf_determinism cap (half clock) silently slows every kernel ~1.9x.
+  # Log the perf level + a live sclk sample and try to restore boost (non-fatal).
+  if command -v rocm-smi >/dev/null 2>&1; then
+    echo "[$(date)] GPU perf-level check:" | tee -a "$LOG"
+    rocm-smi --showperflevel 2>/dev/null | grep -iE "GPU\[[0-9]+\]" | tee -a "$LOG" || true
+    if rocm-smi --showperflevel 2>/dev/null | grep -iqE "Performance Level: *(perf_determinism|manual|low)"; then
+      echo "[$(date)] WARNING: GPUs not in 'auto' perf level — attempting --setperflevel auto" | tee -a "$LOG"
+      rocm-smi --setperflevel auto 2>/dev/null | grep -iE "set to auto" | tee -a "$LOG" \
+        || echo "[$(date)] WARNING: could not set perf level (no permission?). Run 'rocm-smi --setperflevel auto' on the HOST before benchmarking — clocks may be capped." | tee -a "$LOG"
+    fi
+    echo "[$(date)] sclk sample (GPU0):$(rocm-smi -d 0 --showclocks 2>/dev/null | grep -i 'sclk clock level' | sed -E 's/.*sclk clock level//')" | tee -a "$LOG" || true
+  fi
+
+  echo "[$(date)] launching train_ranker with WORLD_SIZE=$WORLD_SIZE" | tee -a "$LOG"
+  python -m generative_recommenders.dlrm_v3.train.train_ranker \
+      --dataset yambda-5b --mode "${MODE:-streaming-train-eval}" 2>&1 | tee -a "$LOG"
+}
+
+# ---- dispatch ---------------------------------------------------------------
+case "$PHASE" in
+  orchestrate) orchestrate ;;
+  provision)   provision ;;
+  worker)      worker ;;
+  *) echo "launch_slurm.sh: unknown LAUNCH_SLURM_PHASE='$PHASE'" >&2; exit 2 ;;
+esac

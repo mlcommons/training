@@ -77,9 +77,15 @@ TORCHREC_TYPES: Set[Type[Union[EmbeddingBagCollection, EmbeddingCollection]]] = 
 
 
 def setup(
-    rank: int, world_size: int, master_port: int, device: torch.device
+    rank: int,
+    world_size: int,
+    master_port: int,
+    device: torch.device,
+    master_addr: str = "localhost",
 ) -> dist.ProcessGroup:
-    os.environ["MASTER_ADDR"] = "localhost"
+    # Default "localhost" keeps the single-node path unchanged; multi-node
+    # launches pass the rank-0 host so every node rendezvouses at the same addr.
+    os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = str(master_port)
 
     BACKEND = dist.Backend.NCCL
@@ -339,6 +345,7 @@ def make_optimizer_and_shard(
     model: torch.nn.Module,
     device: torch.device,
     world_size: int,
+    local_world_size: Optional[int] = None,
     hbm_cap_gb: int = 260,
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
@@ -357,9 +364,12 @@ def make_optimizer_and_shard(
                         sparse_opt_cls, [param], sparse_opt_args
                     )
     sharders = get_default_sharders()
+    # local_world_size = GPUs per node so the planner respects the intra-node
+    # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
+    # world_size for the single-node case (no behavior change).
     planner = EmbeddingShardingPlanner(
         topology=Topology(
-            local_world_size=world_size,
+            local_world_size=local_world_size or world_size,
             world_size=world_size,
             compute_device="cuda",
             hbm_cap=hbm_cap_gb * 1024 * 1024 * 1024,
