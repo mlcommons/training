@@ -1424,6 +1424,8 @@ def get_dataset(
     history_length: Optional[int] = None,
     streaming_window_seconds: int = 86400,
     streaming_sort_within_window: bool = False,
+    streaming_shuffle_fraction: float = 0.0,
+    streaming_shuffle_seed: int = 0,
     train_split_percentage: float = 1.0,
     split_salt: int = 0,
 ):
@@ -1556,6 +1558,11 @@ def get_dataset(
                 # streaming-train-eval; ignored by the default train-eval path).
                 "streaming_window_seconds": streaming_window_seconds,
                 "streaming_sort_within_window": streaming_sort_within_window,
+                # In-window shuffle diversity dial in [0,1]: K=round(frac*N) within-
+                # segment shuffle. 0=off/user-major, 1=full. Config-invariant and
+                # deterministic by (seed, ts).
+                "streaming_shuffle_fraction": streaming_shuffle_fraction,
+                "streaming_shuffle_seed": streaming_shuffle_seed,
                 # User-level train:eval holdout for the streaming path. 1.0 =
                 # no holdout (legacy). <1.0 holds out (1 - tsp) of users as a
                 # fixed eval set; those users are never trained.

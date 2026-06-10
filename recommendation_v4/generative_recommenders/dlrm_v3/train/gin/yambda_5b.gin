@@ -1,6 +1,13 @@
 batch_size = 1024
-num_workers = 4
-prefetch_factor = 8
+# Dataloader parallelism. Env-overridable so a perf sweep can probe whether the
+# shuffle steady-state cost is CPU-gather latency (hidden by more workers) vs
+# GPU-side embedding work (not). Defaults preserve prior behavior (4 / 8).
+num_workers = @nw/env_int()
+nw/env_int.key     = "NUM_WORKERS"
+nw/env_int.default = 4
+prefetch_factor = @pf/env_int()
+pf/env_int.key     = "PREFETCH_FACTOR"
+pf/env_int.default = 8
 dataset = "yambda-5b"
 
 # model parameters
@@ -110,6 +117,28 @@ msl/env_int.default = 4096
 # to the dataset's available window count at runtime; override via $NUM_TRAIN_TS.
 get_dataset.streaming_window_seconds = 86400
 get_dataset.streaming_sort_within_window = False
+# In-window shuffle to break user-major batching (consecutive sliding-window
+# anchors otherwise come from the same few users -> few unique embedding reads).
+# Diversity dial in [0,1] -- the AGREED, config-invariant benchmark knob. Maps to
+# a within-segment shuffle with K = round(fraction * per-window train-anchor
+# count): 0 = off (user-major, page-local mmap scans), 1 = full per-element
+# shuffle (max diversity), intermediate = interpolation. Same fraction => same
+# diversity regardless of world_size / #nodes / batch_size.
+#
+# Default 1.0 (full shuffle) so the standard/benchmark run is maximally diverse
+# and, together with the fixed seed below, the in-window order is fully
+# DETERMINISTIC and identical across runs/resumes (pure function of (seed, ts)).
+# Override per-run via $STREAMING_SHUFFLE_FRACTION (e.g. 0.0 for user-major,
+# 0.03 for the diversity/locality sweet spot).
+streaming_shuffle_fraction = 1.0
+get_dataset.streaming_shuffle_fraction = @ssf/env_float()
+ssf/env_float.key     = "STREAMING_SHUFFLE_FRACTION"
+ssf/env_float.default = %streaming_shuffle_fraction
+# Fixed shuffle seed -> reproducible permutation. Exposed as a knob; override via
+# $STREAMING_SHUFFLE_SEED only if you deliberately want a different draw.
+get_dataset.streaming_shuffle_seed = @ssfseed/env_int()
+ssfseed/env_int.key     = "STREAMING_SHUFFLE_SEED"
+ssfseed/env_int.default = 0
 # User-level train:eval holdout for the streaming path. With tsp<1.0, the top
 # (1 - tsp) fraction of users (by a deterministic hash of uid+split_salt) are
 # held out as a FIXED eval set and never trained -> no temporal/user leakage,
@@ -139,10 +168,19 @@ sts/env_int.default = 150
 streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
 mlf/env_int.key     = "METRIC_LOG_FREQ"
 mlf/env_int.default = 50
-# Trace on by default: reuses the shared Profiler.* bindings below (5-step
+# Diagnostic: log per-batch unique/total embedding-id counts on logged steps
+# (rank 0). Quantifies the user-major batching redundancy and the realized
+# diversity from get_dataset.streaming_shuffle_fraction. Off; set $DIAG_UNIQUE_EMB=1.
+streaming_train_eval_loop.streaming_diag_unique_emb = @due/env_int()
+due/env_int.key     = "DIAG_UNIQUE_EMB"
+due/env_int.default = 0
+# Chrome trace capture: reuses the shared Profiler.* bindings below (5-step
 # window at step 52). The streaming step counter advances across train+eval
-# batches, so step 52 lands in the first (train) window's compute.
-streaming_train_eval_loop.output_trace = True
+# batches, so step 52 lands in the first (train) window's compute. Off by
+# default to avoid profiler overhead in production runs; set $OUTPUT_TRACE=1.
+streaming_train_eval_loop.output_trace = @ot/env_int()
+ot/env_int.key     = "OUTPUT_TRACE"
+ot/env_int.default = 0
 # Reuse one DataLoader (persistent workers) across windows instead of respawning
 # per window. Skip eval to isolate window-reset cost. Override via env.
 streaming_train_eval_loop.persistent_loader = @pl/env_int()
