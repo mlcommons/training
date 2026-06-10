@@ -209,6 +209,8 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         is_inference: bool = False,
         streaming_window_seconds: int = 86400,
         streaming_sort_within_window: bool = False,
+        streaming_shuffle_fraction: float = 0.0,
+        streaming_shuffle_seed: int = 0,
         train_split_percentage: float = 1.0,
         split_salt: int = 0,
         *args,
@@ -225,6 +227,17 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         # is byte-for-byte unaffected.
         self._streaming_window_seconds: int = streaming_window_seconds
         self._streaming_sort_within_window: bool = streaming_sort_within_window
+        # In-window shuffle dial in [0, 1] to break user-major batching (default
+        # 0.0 = off, user-major order preserved for page-local mmap scans). Maps to
+        # a within-segment shuffle with K = round(fraction * per-window train-anchor
+        # count): 1.0 = full per-element shuffle (max user diversity per batch),
+        # intermediate = interpolation. Computed from the global anchor count BEFORE
+        # round-robin striding, so a given fraction yields the same diversity
+        # regardless of world_size / #nodes / batch_size (config-invariant). The
+        # permutation is a pure function of (seed, ts) so the per-rank round-robin
+        # slice + mid-window resume skip stay deterministic across restarts.
+        self._streaming_shuffle_fraction: float = streaming_shuffle_fraction
+        self._streaming_shuffle_seed: int = streaming_shuffle_seed
         # User-level train:eval split. `train_split_percentage >= 1.0` means no
         # holdout (legacy behavior: every anchor is trainable). Otherwise the
         # top `1 - train_split_percentage` fraction of users (by a deterministic
@@ -555,20 +568,63 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         uids = self.store.flat_uid[self._positions[anchor_idx]]
         return _uid_unit_hash(uids, self._split_salt) >= self._train_split_percentage
 
+    def _shuffle_window(self, idx: np.ndarray, ts: int) -> np.ndarray:
+        """Optionally break user-major ordering within a train window.
+
+        ``streaming_shuffle_fraction`` (0..1) is the single diversity dial. It
+        maps to a within-segment shuffle with ``K = round(fraction * N)`` where
+        ``N`` is this window's train-anchor count:
+
+          - 0.0  -> off: return ``idx`` unchanged (user-major, page-local scans).
+          - 1.0  -> full per-element shuffle (max user diversity per batch).
+          - else -> permute WITHIN each contiguous size-K segment (segment order
+            preserved). A per-rank batch then draws across a bounded user-major
+            region, so diversity scales with the fraction while the concurrently
+            touched mmap working set stays within ~one K-segment (page locality).
+
+        Because ``N`` is a property of the dataset/window (not the compute layout)
+        and the permutation is applied BEFORE the per-rank round-robin striding, a
+        given fraction yields the same diversity across world_size / #nodes /
+        batch_size (config-invariant).
+
+        The permutation is a pure function of ``(seed, ts)`` via
+        ``np.random.default_rng(seed + ts)``, so every (re)run of this window
+        yields the IDENTICAL order. This keeps the per-rank round-robin slice and
+        the mid-window resume ``skip_samples`` offset consistent across restarts,
+        exactly like the unshuffled path.
+        """
+        frac = self._streaming_shuffle_fraction
+        if idx.size <= 1 or not frac or frac <= 0.0:
+            return idx
+        rng = np.random.default_rng(self._streaming_shuffle_seed + ts)
+        if frac >= 1.0:
+            return idx[rng.permutation(idx.size)]
+        # Within-segment shuffle (K = round(fraction * N)): a single vectorized
+        # lexsort over per-element random keys, stable within each size-K segment
+        # so elements never cross a segment boundary (bounds the working set). O(N
+        # log K), run once per window in the background prep thread.
+        n = idx.size
+        k = max(1, int(round(frac * n)))
+        seg = np.arange(n, dtype=np.int64) // k
+        keys = rng.random(n)
+        order = np.lexsort((keys, seg))
+        return idx[order]
+
     def train_window_indices(self, ts: int) -> np.ndarray:
         """Global anchor indices for TRAIN in window ``ts``: ``window_indices``
-        with held-out eval users removed. Identical across resume because both
-        ``window_indices`` and the uid hash are pure functions, so the per-rank
-        round-robin slice (and the mid-window skip offset) stay consistent."""
+        with held-out eval users removed. Identical across resume because
+        ``window_indices``, the uid hash, and the (seed,ts)-keyed in-window
+        shuffle are all pure functions, so the per-rank round-robin slice (and
+        the mid-window skip offset) stay consistent."""
         idx = self.window_indices(ts)
         if self._train_split_percentage >= 1.0:
-            return idx
+            return self._shuffle_window(idx, ts)
         kept = idx[~self._eval_anchor_mask(idx)]
         logger.warning(
             f"train_window_indices({ts}): {idx.size:,} -> {kept.size:,} anchors "
             f"(holdout tsp={self._train_split_percentage}, salt={self._split_salt})"
         )
-        return kept
+        return self._shuffle_window(kept, ts)
 
     def eval_holdout_indices(self, start_ts: int, num_windows: int = 1) -> np.ndarray:
         """Fixed eval set: held-out users' anchors over windows

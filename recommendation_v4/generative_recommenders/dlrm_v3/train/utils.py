@@ -688,6 +688,38 @@ def make_train_test_dataloaders(
     return train_dataloader, test_dataloader
 
 
+def _log_unique_embedding_diag(sample, rank: int, step: int) -> None:
+    """Diagnostic: log per-batch unique-vs-total embedding-id counts.
+
+    Quantifies the user-major batching concern — when consecutive sliding-window
+    anchors come from the same few users, a batch reads very few UNIQUE embedding
+    rows (low unique/total), so embedding lookups are highly redundant. In-window
+    shuffle should raise this ratio. Rank-0 only, gated by the caller (only fires
+    on logged steps), and fully non-fatal so it can never break training.
+    """
+    if rank != 0:
+        return
+    try:
+        parts = []
+        for tag, kjt in (
+            ("uih", sample.uih_features_kjt),
+            ("cand", sample.candidates_features_kjt),
+        ):
+            for key in kjt.keys():
+                if not key.endswith(("item_id", "artist_id", "album_id")):
+                    continue
+                vals = kjt[key].values()
+                total = int(vals.numel())
+                if total == 0:
+                    continue
+                uniq = int(torch.unique(vals).numel())
+                parts.append(f"{tag}.{key}={uniq}/{total} ({100.0 * uniq / total:.1f}%)")
+        if parts:
+            logger.info(f"emb-diag - Step {step}: unique/total " + " ".join(parts))
+    except Exception as e:  # diagnostic must never break training
+        logger.warning(f"emb-diag failed: {e}")
+
+
 @gin.configurable
 def train_loop(
     rank: int,
@@ -702,6 +734,7 @@ def train_loop(
     metric_log_frequency: int = 1,
     checkpoint_frequency: int = 100,
     start_batch_idx: int = 0,
+    streaming_diag_unique_emb: bool = False,
     # lr_scheduler: to-do: Add a scheduler
 ) -> None:
     model.train()
@@ -711,6 +744,8 @@ def train_loop(
     for epoch in range(num_epochs):
         dataloader.sampler.set_epoch(epoch)  # pyre-ignore [16]
         for sample in dataloader:
+            if streaming_diag_unique_emb and batch_idx % metric_log_frequency == 0:
+                _log_unique_embedding_diag(sample, rank, batch_idx)
             optimizer.zero_grad()
             sample.to(device)
             (
@@ -1201,6 +1236,8 @@ def streaming_train_eval_loop(
     # --- global step / wall-clock checkpoint cadences ---
     checkpoint_step_frequency: int = 0,
     checkpoint_time_interval_s: float = 0.0,
+    # --- diagnostic: log per-batch unique/total embedding-id counts ---
+    streaming_diag_unique_emb: bool = False,
     # --- test-only failure injection knob ---
     die_at_step: int = -1,
 ) -> None:
@@ -1457,6 +1494,8 @@ def streaming_train_eval_loop(
                 break
             if _t_next is not None and first_wait is None:
                 first_wait = time.perf_counter() - _t_next
+            if streaming_diag_unique_emb and train_batch_idx % metric_log_frequency == 0:
+                _log_unique_embedding_diag(sample, rank, train_batch_idx)
             optimizer.zero_grad()
             sample.to(device)
             (
