@@ -543,7 +543,7 @@ launch() {
         RUN_NAME=$RUN_NAME \
         TENSORBOARD_LOG_PATH=/apps/chcai/tb/$RUN_NAME/ \
         LOG=$LOG \
-        bash scripts/launch_smoke_8gpu.sh;
+        bash scripts/launch_slurm.sh;
         echo \"E2E_RUN_EXIT=\$? \$(date '+%F %T')\" >> $LOG
     "
 }
@@ -568,7 +568,7 @@ sup "failover: allow=$ALLOW_FAILOVER partition=$PARTITION reservation=${RESERVAT
 reap_failover_holds ""
 
 cexec "mkdir -p '$CKPT_PATH' '/apps/chcai/tb/$RUN_NAME'"
-# Initialize this run's metrics log ONCE. launch_smoke_8gpu.sh appends (tee -a),
+# Initialize this run's metrics log ONCE. launch_slurm.sh (worker) appends (tee -a),
 # so every relaunch attempt accumulates into this single file — the full-run
 # NE/AUC history survives crashes and node failover instead of being truncated
 # on each relaunch. (Starting the supervisor = starting a fresh run.) In ATTACH

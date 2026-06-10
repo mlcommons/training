@@ -4,19 +4,37 @@ This is a fork of [meta-recsys/generative-recommenders](https://github.com/meta-
 
 For the original repository and the underlying ICML'24 paper (*Actions Speak Louder than Words*), see the upstream README at the link above. This README focuses on what this fork adds: the Yambda data pipeline, the per-pool gather strategy, and how the data feeds into the HSTU `modules/` (dlrm_v3) path.
 
-## 1. Quick start (8-GPU Yambda)
+## 1. Quick start (Yambda, N×8-GPU)
+
+`scripts/launch_slurm.sh` is the single entry point for **N ≥ 1 nodes**. It
+auto-detects its context: run inside the container it takes the single-node
+worker path; submitted via `sbatch` it orchestrates the multi-node run
+(provision + per-node launch). N=1 is byte-for-byte the legacy single-node path.
+
+**Single node (8-GPU), inside the container:**
 
 ```bash
 docker exec yambda_8gpu bash -c \
-  'cd /workspace/recommendation_v4 && bash scripts/launch_smoke_8gpu.sh'
+  'cd /workspace/recommendation_v4 && bash scripts/launch_slurm.sh'
 ```
+
+**Multi-node (N×8-GPU) via SLURM:**
+
+```bash
+sbatch --nodes=2 --partition=meta64 scripts/launch_slurm.sh
+```
+
+Multi-node uses real RDMA (RoCEv2). The fabric/NCCL setup and every
+cluster-specific knob (interfaces, HCAs, GID/TC, RDMA overlay) are documented in
+[docs/multi_node_config.md](docs/multi_node_config.md) — read it before running on
+a different cluster.
 
 Override the data path or run name without editing the gin:
 
 ```bash
 DLRM_DATA_PATH=/apps/chcai/dlrm_data \
 RUN_NAME=my_experiment \
-bash scripts/launch_smoke_8gpu.sh
+bash scripts/launch_slurm.sh
 ```
 
 Data path resolves at runtime via `env_path` gin macros (see [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)). Traces and any per-run outputs land in `results/<RUN_NAME>/`.
@@ -133,7 +151,7 @@ This means the model sees on average ~1,402 UIH events per sample, not the theor
 
 ## 5. Streaming (temporal-order) training
 
-`scripts/launch_smoke_8gpu.sh` defaults to `--mode streaming-train-eval`, which
+`scripts/launch_slurm.sh` defaults to `--mode streaming-train-eval`, which
 trains Yambda in strict wall-clock order instead of shuffling the whole corpus.
 The timeline is sliced into fixed-duration **windows** (default 1 day,
 `get_dataset.streaming_window_seconds = 86400`), and the loop walks them forward:

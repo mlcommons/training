@@ -67,7 +67,7 @@ rocm-smi -d 0 --showclocks        # expect sclk ~2000+ MHz under load
 rocm-smi --setperflevel auto      # restore boost
 ```
 
-`scripts/launch_smoke_8gpu.sh` now logs the perf level + a live `sclk` sample on
+`scripts/launch_slurm.sh` (worker phase) now logs the perf level + a live `sclk` sample on
 every launch, auto-restores `auto` if it finds a `perf_determinism`/`manual`/`low`
 lock, and warns (to reset from the host) if it lacks permission inside the
 container. **Always sanity-check `sclk ≈ 2000+ MHz` before trusting a benchmark.**
