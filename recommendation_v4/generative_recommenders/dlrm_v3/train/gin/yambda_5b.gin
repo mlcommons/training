@@ -206,13 +206,15 @@ Profiler.active = 5
 Profiler.trace_dir = @run_results_dir()
 
 # logger variables
-# TensorBoard event dir. Default lives on shared NFS (not container-local /tmp,
-# which is wiped on node failover) so the NE/AUC scalars survive relaunches and
-# failover. Override per-run via $TENSORBOARD_LOG_PATH (the supervisor sets it
-# to /apps/chcai/tb/$RUN_NAME/).
+# TensorBoard event dir, driven by $TENSORBOARD_LOG_PATH. launch_slurm.sh (worker)
+# always sets it to a writable NFS scratch path ($SCRATCH/tb/...) and the e2e
+# supervisor pins a per-run path, so this literal default is only a last-resort
+# fallback for a bare `train_ranker` invocation. It is RELATIVE on purpose (lands
+# under the trainer's cwd = the repo, which is writable) so no user/site path is
+# baked into the gin; set $TENSORBOARD_LOG_PATH for anything else.
 MetricsLogger.tensorboard_log_path = @tbp/env_path()
 tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
-tbp/env_path.default = "/apps/chcai/tb/yambda_5b/"
+tbp/env_path.default = "tb/yambda_5b/"
 MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = 0.80275
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and
