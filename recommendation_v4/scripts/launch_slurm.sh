@@ -5,7 +5,10 @@
 #SBATCH --exclusive
 #SBATCH --partition=meta64          # [CLUSTER-SPECIFIC] partition name
 #SBATCH --time=01:10:00
-#SBATCH --output=/apps/chcai/yambda_slurm.%j.out
+#SBATCH --output=yambda_slurm.%j.out
+# ^ relative to the submit dir (SLURM parses #SBATCH before any shell runs, so it
+#   cannot expand env vars). The real consolidated run log is $LOG (see below),
+#   which defaults under $SCRATCH; this file just captures the batch stdout.
 # =============================================================================
 # launch_slurm.sh — single entry point for the yambda-5b trainer on N>=1 nodes.
 #
@@ -59,9 +62,10 @@
 #
 #  B) Filesystems (must be shared/NFS across ALL nodes — this script re-invokes
 #     itself and reads the overlay + data from these paths cluster-wide)
-#     - /home/chcai (repo + this script) and /apps/chcai (scratch: logs, overlay,
-#       baked tar, data, pip tarball). CHANGE both the bind mounts in the
-#       `docker run` (provision) and the default LOG/BAKED_TAR/OVERLAY/PIP_* paths.
+#     - REPO_MOUNT (repo + this script, e.g. /home/suachong) is bind-mounted rw;
+#       DATA_MOUNT (e.g. /apps/chcai) holds the read-only dataset + overlay +
+#       baked tar + pip tarball; SCRATCH (e.g. /home/suachong/yambda_runs) is the
+#       writable log/output root. Override any via env — nothing is user-hardwired.
 #
 #  C) Container image / GPU software stack (tied to the GPU arch + ROCm version)
 #     - IMAGE=rocm/primus:v26.3        : base image. ROCm/AMD-specific.
@@ -106,13 +110,24 @@ if [ -z "$PHASE" ]; then
 fi
 
 # ---- shared config (env-overridable) ----------------------------------------
-CONTAINER=${CONTAINER:-yambda_primus}
+CONTAINER=${CONTAINER:-yambda_${USER:-$(id -un)}}   # per-user container name (do NOT reuse another user's container — its bind mounts differ)
 REPO=${REPO:-$REPO_ROOT}                       # repo path inside the container
 IMAGE=${IMAGE:-rocm/primus:v26.3}              # [CLUSTER-SPECIFIC] ROCm/arch base image
 BAKED_IMAGE=${BAKED_IMAGE:-yambda_primus_baked:latest}
-BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFIC] shared-NFS path
+BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFIC] shared-NFS path (read-only build asset)
 USE_BAKED=${USE_BAKED:-1}
-OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay
+OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay (read-only, already staged)
+
+# Bind mounts + scratch — all on shared NFS, identical path on every node.
+#   REPO_MOUNT : NFS home root that contains THIS repo (bind-mounted rw).
+#   DATA_MOUNT : NFS root with the (shared, read-only) dataset + RDMA overlay +
+#                pip/fbgemm build assets. Kept as-is so the dataset is NOT
+#                duplicated. You only need read access here.
+#   SCRATCH    : this run's WRITABLE output root (logs / tb / traces).
+# All env-overridable, so nothing is hardwired to one user's home.
+REPO_MOUNT=${REPO_MOUNT:-$HOME}              # NFS home holding the repo (must contain $REPO); override if your repo lives elsewhere
+DATA_MOUNT=${DATA_MOUNT:-/apps/chcai}        # shared dataset + RDMA overlay + pip/fbgemm assets (read-only)
+SCRATCH=${SCRATCH:-$HOME/yambda_runs}        # writable output root (logs / tb / traces)
 
 # =============================================================================
 # PHASE: orchestrate  (SLURM batch host)
@@ -128,7 +143,8 @@ orchestrate() {
   [ -f "$SCRIPT_PATH" ] || SCRIPT_PATH="$SELF"
   REPO=$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)
 
-  LOG=${LOG:-/apps/chcai/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
+  mkdir -p "$SCRATCH" 2>/dev/null || true
+  LOG=${LOG:-$SCRATCH/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
 
   # Smoke defaults — override via env for a perf run (see header USAGE).
   MODE=${MODE:-streaming-train-eval}
@@ -142,6 +158,11 @@ orchestrate() {
   FORCE_PROVISION=${FORCE_PROVISION:-0}
 
   : > "$LOG"
+  # World-writable so the in-container worker (running as root, squashed to
+  # `nobody` over root-squashed NFS) can append via `tee -a $LOG`. Without this
+  # the worker's tee opens the file read-only-denied and exits non-zero, which
+  # pipefail turns into a spurious rc=1 even when training succeeds.
+  chmod 666 "$LOG" 2>/dev/null || true
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
   echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
@@ -181,7 +202,8 @@ orchestrate() {
       echo \"[\$(hostname)] (re)provisioning container\"
       LAUNCH_SLURM_PHASE=provision CONTAINER=$CONTAINER IMAGE=$IMAGE \
         BAKED_IMAGE=$BAKED_IMAGE BAKED_TAR=$BAKED_TAR USE_BAKED=$USE_BAKED \
-        BAKE_IMAGE=${BAKE_IMAGE:-0} RDMA_OVERLAY=$OVERLAY REPO=$REPO bash $SCRIPT_PATH
+        BAKE_IMAGE=${BAKE_IMAGE:-0} RDMA_OVERLAY=$OVERLAY REPO=$REPO \
+        REPO_MOUNT=$REPO_MOUNT DATA_MOUNT=$DATA_MOUNT SCRATCH=$SCRATCH bash $SCRIPT_PATH
     else
       echo \"[\$(hostname)] container already up\"
     fi
@@ -192,6 +214,7 @@ orchestrate() {
   srun --ntasks-per-node=1 bash -c "
     docker exec \
       -e LAUNCH_SLURM_PHASE=worker \
+      -e SCRATCH=$SCRATCH \
       -e SLURM_NNODES=\$SLURM_NNODES \
       -e SLURM_NODEID=\$SLURM_NODEID \
       -e SLURM_PROCID=\$SLURM_PROCID \
@@ -270,9 +293,9 @@ provision() {
     --ulimit memlock=-1:-1 --ulimit stack=67108864:67108864 \
     `# memlock=-1 is REQUIRED for RDMA QP memory registration — do not drop` \
     --security-opt seccomp=unconfined --privileged \
-    -v /home/chcai:/home/chcai \
-    -v /apps/chcai:/apps/chcai \
-    `# [CLUSTER-SPECIFIC] shared-NFS bind mounts: repo + scratch (overlay/logs/data)` \
+    -v "$REPO_MOUNT:$REPO_MOUNT" \
+    -v "$DATA_MOUNT:$DATA_MOUNT" \
+    `# shared-NFS bind mounts: repo home (REPO_MOUNT, rw) + dataset/build assets (DATA_MOUNT)` \
     -w "$REPO" \
     "$RUN_IMAGE" sleep infinity
 
@@ -354,7 +377,11 @@ python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; print(\"impo
 # =============================================================================
 worker() {
   cd "$REPO_ROOT"
-  LOG=${LOG:-/apps/chcai/yambda_5b_8gpu.log}
+  mkdir -p "$SCRATCH" 2>/dev/null || true
+  LOG=${LOG:-$SCRATCH/yambda_5b_8gpu.log}
+  # TensorBoard under the writable scratch root unless the caller (e.g. the e2e
+  # supervisor) pinned a per-run path. Keeps the gin default from ever being used.
+  export TENSORBOARD_LOG_PATH=${TENSORBOARD_LOG_PATH:-$SCRATCH/tb/yambda_5b}
   # Append (not truncate): under the streaming-e2e supervisor a run may relaunch
   # many times into the SAME $LOG; the supervisor initializes it once at run start.
   echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee -a "$LOG"

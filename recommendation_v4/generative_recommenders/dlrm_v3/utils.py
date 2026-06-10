@@ -807,7 +807,7 @@ class Profiler:
 
     All knobs are gin-tunable, e.g. in a gin file::
 
-        Profiler.trace_dir = "/apps/chcai/dlrm_runs/exp42/trace"
+        Profiler.trace_dir = "/path/to/results/exp42/trace"
         Profiler.trace_steps = [500, 1000, 5000]
         Profiler.warmup = 5
         Profiler.active = 10

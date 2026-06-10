@@ -26,8 +26,9 @@
 #   lived docker container ($CONTAINER) on the compute node held by a SLURM
 #   allocation ($JOBID). All control flow is `srun --jobid <id> --overlap
 #   docker exec ...` into that container. The container bind-mounts shared NFS
-#   (/home/chcai = code, /apps/chcai = checkpoints+logs), which is what makes
-#   node failover possible: any node in $PARTITION sees the same code+state.
+#   (REPO_MOUNT = code, e.g. /home/suachong; DATA_MOUNT = dataset/build assets;
+#   SCRATCH = checkpoints+logs), which is what makes node failover possible: any
+#   node in $PARTITION sees the same code+state.
 #
 # MAIN LOOP (state machine, up to --max-relaunch attempts)
 #   for each attempt:
@@ -95,12 +96,12 @@
 # EXAMPLE
 #   nohup bash scripts/run_streaming_e2e.sh \
 #       --jobid 12074 \
-#       --ckpt-path /apps/chcai/ckpts/yambda_5b_e2e \
-#       --run-name yambda_5b_e2e --log /apps/chcai/yambda_5b_e2e.log \
+#       --ckpt-path "$HOME/yambda_runs/ckpts/yambda_5b_e2e" \
+#       --run-name yambda_5b_e2e --log "$HOME/yambda_runs/yambda_5b_e2e.log" \
 #       --start-ts 150 --num-train-ts 149 --eval-every 10 \
 #       --ckpt-time-interval 3600 --keep-last-n 1 --max-relaunch 100 \
 #       --reservation NAN_issue_debug \
-#       > /apps/chcai/yambda_5b_e2e.supervisor.console.log 2>&1 &
+#       > "$HOME/yambda_runs/yambda_5b_e2e.supervisor.console.log" 2>&1 &
 #   (--reservation makes node-death failover re-acquire from that reservation;
 #    omit it to fall back to the open $PARTITION pool.)
 # =============================================================================
@@ -108,8 +109,12 @@
 set -uo pipefail
 
 JOBID=11367
-CONTAINER=yambda_primus
-REPO=/home/chcai/training/recommendation_v4
+CONTAINER=yambda_${USER:-$(id -un)}
+# Repo (NFS path, identical inside the bind-mounted container) and the writable
+# output root. Both derive from $HOME so nothing is hardwired to one user; override
+# REPO/SCRATCH via env if your checkout or scratch lives elsewhere.
+REPO=${REPO:-$HOME/training/recommendation_v4}
+SCRATCH=${SCRATCH:-$HOME/yambda_runs}
 
 # Direct-SSH fallback so the supervisor can probe the node even while the SLURM
 # control plane is unreachable — a transient controller outage must NOT be
@@ -128,9 +133,13 @@ START_TS=150
 EVAL_EVERY=5
 CKPT_TIME_INTERVAL=7200
 KEEP_LAST_N=1
-CKPT_PATH=/apps/chcai/ckpts/yambda_5b_e2e
+# NOTE: a full DMP checkpoint is ~560 GB, which a typical ~100 GB home quota
+# cannot hold — point --ckpt-path at a large writable volume (and lower
+# --min-free-gib accordingly) before relying on checkpointing. The $SCRATCH
+# default below is fine for short/uncheckpointed runs.
+CKPT_PATH=$SCRATCH/ckpts/yambda_5b_e2e
 RUN_NAME=yambda_5b_e2e
-LOG=/apps/chcai/yambda_5b_e2e.log
+LOG=$SCRATCH/yambda_5b_e2e.log
 MAX_RELAUNCH=50
 NUM_TRAIN_BATCHES=0     # 0 = full window (only capped for validation/tests)
 NUM_EVAL_BATCHES=0      # 0 = full holdout eval (only capped for validation)
@@ -154,14 +163,17 @@ CTRL_WAIT_MAX=3600      # max seconds to wait for an unreachable SLURM controlle
 # --- node failover ----------------------------------------------------------
 # If the current allocation/node goes away, acquire a FRESH node, (re)provision
 # the container on it, and resume — checkpoints + code live on shared NFS
-# (/apps/chcai, /home/chcai), so any node in the partition can continue.
+# (SCRATCH + REPO_MOUNT), so any node in the partition can continue.
 PARTITION=meta64
 RESERVATION=""                        # if set, failover acquires from this SLURM
                                       # reservation (e.g. NAN_issue_debug) so a
                                       # replacement node comes from the same pool.
 ALLOC_TIME=7-00:00:00                 # SLURM --time for a failover hold job
 ALLOW_FAILOVER=1                      # 0 = never acquire a new node
-PROVISION_SCRIPT=/home/chcai/_provision_yambda_primus.sh
+# Failover (re)provisioning reuses launch_slurm.sh's own `provision` phase
+# (LAUNCH_SLURM_PHASE=provision, set in provision_node) — no dependency on any
+# out-of-repo provisioning script.
+PROVISION_SCRIPT="$REPO/scripts/launch_slurm.sh"
 ACQUIRE_WAIT_MAX=1800                 # max seconds to wait for the OPEN-POOL
                                       # (tier-2) failover hold job to reach
                                       # RUNNING (tolerates brief queueing).
@@ -311,7 +323,9 @@ provision_node() {
     local jid="$1" node
     node=$(squeue -h -j "$jid" -o '%N' 2>/dev/null | head -1)
     sup "provisioning container '$CONTAINER' on job $jid (node ${node:-?}) — cold node can take ~15 min"
-    srun --jobid="$jid" --overlap bash "$PROVISION_SCRIPT" >> "${LOG%.log}.provision.log" 2>&1
+    srun --jobid="$jid" --overlap env LAUNCH_SLURM_PHASE=provision \
+        CONTAINER="$CONTAINER" REPO="$REPO" bash "$PROVISION_SCRIPT" \
+        >> "${LOG%.log}.provision.log" 2>&1
     container_up "$jid"
 }
 
@@ -541,7 +555,7 @@ launch() {
         EVAL_HOLDOUT_NUM_WINDOWS=$EVAL_HOLDOUT_NUM_WINDOWS \
         METRIC_LOG_FREQ=50 \
         RUN_NAME=$RUN_NAME \
-        TENSORBOARD_LOG_PATH=/apps/chcai/tb/$RUN_NAME/ \
+        TENSORBOARD_LOG_PATH=$SCRATCH/tb/$RUN_NAME/ \
         LOG=$LOG \
         bash scripts/launch_slurm.sh;
         echo \"E2E_RUN_EXIT=\$? \$(date '+%F %T')\" >> $LOG
@@ -567,7 +581,7 @@ sup "failover: allow=$ALLOW_FAILOVER partition=$PARTITION reservation=${RESERVAT
 # this, such an orphan keeps pinning a second reservation node indefinitely.
 reap_failover_holds ""
 
-cexec "mkdir -p '$CKPT_PATH' '/apps/chcai/tb/$RUN_NAME'"
+cexec "mkdir -p '$CKPT_PATH' '$SCRATCH/tb/$RUN_NAME'"
 # Initialize this run's metrics log ONCE. launch_slurm.sh (worker) appends (tee -a),
 # so every relaunch attempt accumulates into this single file — the full-run
 # NE/AUC history survives crashes and node failover instead of being truncated
@@ -579,7 +593,7 @@ else
     cexec ": > '$LOG'"
     sup "metrics log initialized (relaunch-append): $LOG"
 fi
-sup "tensorboard (NFS): /apps/chcai/tb/$RUN_NAME/"
+sup "tensorboard (NFS): $SCRATCH/tb/$RUN_NAME/"
 
 attempt=0
 while (( attempt < MAX_RELAUNCH )); do
