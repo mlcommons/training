@@ -1203,6 +1203,10 @@ def streaming_train_eval_loop(
     checkpoint_time_interval_s: float = 0.0,
     # --- test-only failure injection knob ---
     die_at_step: int = -1,
+    # MLPerf compliance logger (rank-0-gated facade). None disables all MLPerf
+    # event emission; the loop is otherwise unchanged. Supplied by train_ranker
+    # for the streaming-train-eval benchmark path.
+    mlperf_logger: Optional[Any] = None,
 ) -> None:
     """Streaming train+eval loop with per-window (and optionally mid-window)
     checkpoints.
@@ -1558,7 +1562,9 @@ def streaming_train_eval_loop(
                 f"[boundary] {label} train first-batch data-wait={first_wait * 1000:.1f}ms"
             )
 
-    def _run_eval_window(eval_data_iterator, label: Optional[str] = None) -> None:
+    def _run_eval_window(
+        eval_data_iterator, label: Optional[str] = None
+    ) -> Dict[str, float]:
         # DO NOT add a checkpoint trigger anywhere inside this function. The eval
         # data iterator's position is not serializable, so a checkpoint taken
         # mid-eval could not be resumed deterministically. `_maybe_checkpoint`
@@ -1614,7 +1620,8 @@ def streaming_train_eval_loop(
                     metric_logger.compute_and_log(mode="eval")
                 if num_eval_batches is not None and eval_batch_idx >= num_eval_batches:
                     break
-            for k, v in metric_logger.compute(mode="eval").items():
+            eval_metrics = metric_logger.compute(mode="eval")
+            for k, v in eval_metrics.items():
                 print(f"{k}: {v}")
         if label and rank == 0 and _t_enter is not None:
             _eval_total = time.perf_counter() - _t_enter
@@ -1623,6 +1630,7 @@ def streaming_train_eval_loop(
                 f"[boundary] {label} eval first-batch data-wait={_fw:.1f}ms "
                 f"total_eval={_eval_total * 1000:.1f}ms batches={eval_batch_idx}"
             )
+        return eval_metrics
 
     def _maybe_checkpoint(train_ts: int) -> None:
         if (
@@ -1688,6 +1696,152 @@ def streaming_train_eval_loop(
                 dataset.dataset._train_split_percentage,  # pyre-ignore[16]
             )
 
+    # --- MLPerf progress accounting + event helpers ---------------------------
+    # `total_train_samples` is the denominator for the MLPerf samples_count /
+    # epoch_num progress unit: the total GLOBAL trainable samples over the
+    # configured window range. Computed once up-front (one O(N) anchor mask per
+    # window -- the same call the loop makes per window) and logged as
+    # TRAIN_SAMPLES. Skipped entirely when no MLPerf logger is attached, since
+    # the masks are not free. `mlperf_run_stopped` guards single RUN_STOP.
+    total_train_samples = 0
+    mlperf_run_stopped = [False]
+    if mlperf_logger is not None:
+        _twi = getattr(dataset.dataset, "train_window_indices", None)
+        _wi = getattr(dataset.dataset, "window_indices", None)
+        _idx_fn = _twi or _wi
+        if _idx_fn is not None:
+            for _ts in train_ts_list:
+                total_train_samples += int(_idx_fn(_ts).size)
+        if rank == 0:
+            logger.info(
+                "MLPerf: total_train_samples=%d over %d windows",
+                total_train_samples,
+                n_train,
+            )
+        mlperf_logger.event(
+            key=mlperf_logger.constants.TRAIN_SAMPLES, value=total_train_samples
+        )
+        if eval_global_indices is not None:
+            mlperf_logger.event(
+                key=mlperf_logger.constants.EVAL_SAMPLES,
+                value=int(eval_global_indices.size),
+            )
+        # Let MetricsLogger.compute_and_log emit the per-step MLPerf `train_loss`
+        # event (rank-0 gated) at the metric-logging cadence, stamped with the
+        # current base LR. Read param_groups[0] defensively (KeyedOptimizer
+        # exposes it; guard against any optimizer that does not).
+        metric_logger.mlperf_logger = mlperf_logger
+
+        def _current_lr() -> float:
+            return float(optimizer.param_groups[0]["lr"])
+
+        metric_logger.lr_getter = _current_lr
+
+    def _mlperf_progress() -> Dict[str, Any]:
+        samples = metric_logger.cumulative_train_samples
+        epoch_num = (samples / total_train_samples) if total_train_samples > 0 else 0.0
+        return {
+            mlperf_logger.constants.SAMPLES_COUNT: samples,
+            mlperf_logger.constants.EPOCH_NUM: epoch_num,
+        }
+
+    def _lifetime_auc(metrics: Dict[str, float]) -> Optional[float]:
+        # Convergence metric: the cumulative ("lifetime_") listen_plus AUC.
+        # Key format is `metric/{prefix}{name}/{task}` (see MetricsLogger.compute),
+        # e.g. `metric/lifetime_auc/listen_plus`. Match the `lifetime_auc` short
+        # name; ignore GAUC.
+        for key, val in metrics.items():
+            short = key.split("/")[-2] if "/" in key else key
+            if short == "lifetime_auc":
+                return float(val)
+        return None
+
+    def _mlperf_block_start() -> None:
+        if mlperf_logger is not None:
+            mlperf_logger.start(
+                key=mlperf_logger.constants.BLOCK_START, metadata=_mlperf_progress()
+            )
+
+    def _mlperf_block_stop() -> None:
+        if mlperf_logger is not None:
+            mlperf_logger.end(
+                key=mlperf_logger.constants.BLOCK_STOP, metadata=_mlperf_progress()
+            )
+
+    def _mlperf_eval_start() -> None:
+        if mlperf_logger is not None:
+            mlperf_logger.start(
+                key=mlperf_logger.constants.EVAL_START, metadata=_mlperf_progress()
+            )
+
+    def _mlperf_run_stop(status: object) -> None:
+        # Emit RUN_STOP exactly once, with an all-rank barrier so the timestamp
+        # reflects the slowest rank (MLPerf requirement).
+        if mlperf_logger is None or mlperf_run_stopped[0]:
+            return
+        mlperf_logger.end(
+            key=mlperf_logger.constants.RUN_STOP,
+            metadata={mlperf_logger.constants.STATUS: status, **_mlperf_progress()},
+            sync=True,
+        )
+        mlperf_run_stopped[0] = True
+
+    def _mlperf_eval_stop(eval_metrics: Dict[str, float]) -> bool:
+        # Emit EVAL_ACCURACY (lifetime listen_plus AUC) + EVAL_STOP, and drive an
+        # early SUCCESS RUN_STOP when the target threshold is reached. Returns
+        # True iff the run should stop now -- the SAME value on every rank.
+        #
+        # CRITICAL (deadlock avoidance): the cumulative lifetime AUC is produced
+        # by a reduce that is only valid on global rank 0, so a per-rank
+        # `lifetime >= thr` test diverges (only rank 0 sees the value) and the
+        # ranks that "stop" hit the RUN_STOP barrier while the rest march into
+        # the next window's embedding all-to-all -> NCCL collective-timeout hang
+        # (observed: 600s ALLTOALL_BASE watchdog abort). So rank 0 decides and
+        # BROADCASTS the boolean; all ranks then break (or continue) in lockstep.
+        if mlperf_logger is None:
+            return False
+        lifetime = _lifetime_auc(eval_metrics)
+        if lifetime is not None:
+            mlperf_logger.event(
+                key=mlperf_logger.constants.EVAL_ACCURACY,
+                value=lifetime,
+                metadata=_mlperf_progress(),
+            )
+        mlperf_logger.end(
+            key=mlperf_logger.constants.EVAL_STOP, metadata=_mlperf_progress()
+        )
+        thr = metric_logger.auc_threshold
+        decision = torch.zeros(1, device=device)
+        if (
+            rank == 0
+            and not mlperf_run_stopped[0]
+            and lifetime is not None
+            and thr is not None
+            and lifetime >= thr
+        ):
+            decision[0] = 1.0
+        if torch.distributed.is_initialized():
+            torch.distributed.broadcast(decision, src=0)
+        should_stop = bool(decision.item() > 0.5)
+        if should_stop:
+            # All ranks agree -> all reach the RUN_STOP barrier together.
+            _mlperf_run_stop(mlperf_logger.constants.SUCCESS)
+        return should_stop
+
+    def _mlperf_finalize(final_metrics: Dict[str, float]) -> None:
+        # End-of-run RUN_STOP when the threshold was never crossed: SUCCESS iff
+        # the final lifetime AUC meets the target, else ABORTED.
+        if mlperf_logger is None or mlperf_run_stopped[0]:
+            return
+        lifetime = _lifetime_auc(final_metrics)
+        thr = metric_logger.auc_threshold
+        success = lifetime is not None and thr is not None and lifetime >= thr
+        _mlperf_run_stop(
+            mlperf_logger.constants.SUCCESS
+            if success
+            else mlperf_logger.constants.ABORTED
+        )
+
     if persistent_loader and double_buffer:
         # Double-buffered: next window prepared in the background during the
         # current window's compute. Eval (if enabled) uses its own pre-forked
@@ -1741,16 +1895,23 @@ def streaming_train_eval_loop(
                 if i == 0 and resume_batch_idx_in_window > 0
                 else 0
             )
+            _mlperf_block_start()
             _run_train_window(
                 train_data_iterator,
                 train_ts=train_ts,
                 start_batch_idx=start_batch,
                 label=f"train_ts={train_ts}",
             )
+            _mlperf_block_stop()
+            should_stop = False
             if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 assert eval_sampler is not None and eval_dl is not None
-                _run_eval_window(eval_iter, label=f"eval_holdout@train_ts={train_ts}")
+                _mlperf_eval_start()
+                eval_metrics = _run_eval_window(
+                    eval_iter, label=f"eval_holdout@train_ts={train_ts}"
+                )
+                should_stop = _mlperf_eval_stop(eval_metrics)
                 # Re-arm the (already-forked) eval pool for the NEXT eval. The
                 # holdout set is fixed, so the sampler window is unchanged; we
                 # only need a fresh iter() to replay it. iter() reuses the
@@ -1761,6 +1922,9 @@ def streaming_train_eval_loop(
                 if next_eval_i is not None:
                     eval_iter = iter(eval_dl)
             _maybe_checkpoint(train_ts)
+            if should_stop:
+                # MLPerf target reached: RUN_STOP already emitted; stop training.
+                break
     else:
         for i, train_ts in enumerate(train_ts_list):
             dataset.dataset.is_eval = False  # pyre-ignore [16]
@@ -1770,15 +1934,19 @@ def streaming_train_eval_loop(
                 if i == 0 and resume_batch_idx_in_window > 0
                 else 0
             )
+            _mlperf_block_start()
             _run_train_window(
                 _window_iter(train_ts, skip_samples=skip),
                 train_ts=train_ts,
                 start_batch_idx=start_batch,
             )
+            _mlperf_block_stop()
+            should_stop = False
             if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
+                _mlperf_eval_start()
                 if eval_global_indices is not None:
-                    _run_eval_window(
+                    eval_metrics = _run_eval_window(
                         iter(
                             make_streaming_dataloader(
                                 dataset=dataset, indices=eval_global_indices
@@ -1788,26 +1956,43 @@ def streaming_train_eval_loop(
                     )
                 else:
                     # Legacy per-window eval (datasets without user holdout).
-                    _run_eval_window(
+                    eval_metrics = _run_eval_window(
                         iter(make_streaming_dataloader(dataset=dataset, ts=train_ts + 1))
                     )
+                should_stop = _mlperf_eval_stop(eval_metrics)
             _maybe_checkpoint(train_ts)
+            if should_stop:
+                # MLPerf target reached: RUN_STOP already emitted; stop training.
+                break
 
     # Final eval over the SAME fixed user-holdout set (consistent with the
     # per-window evals above). Reuses _run_eval_window so metrics are reset and
     # reported the same way. Falls back to the legacy final-window eval for
-    # datasets without user holdout.
-    dataset.dataset.is_eval = True  # pyre-ignore [16]
-    if eval_global_indices is not None:
-        _run_eval_window(
-            iter(make_streaming_dataloader(dataset=dataset, indices=eval_global_indices)),
-            label="eval_holdout@final",
-        )
-    else:
-        _run_eval_window(
-            iter(make_streaming_dataloader(dataset=dataset, ts=num_train_ts)),
-            label="eval@final",
-        )
-    if rank == 0:
-        for k, v in metric_logger.compute(mode="eval").items():
-            print(f"{k}: {v}")
+    # datasets without user holdout. Skipped if the MLPerf target was already
+    # reached mid-run (RUN_STOP already emitted, run is over).
+    if not mlperf_run_stopped[0]:
+        dataset.dataset.is_eval = True  # pyre-ignore [16]
+        _mlperf_eval_start()
+        if eval_global_indices is not None:
+            final_metrics = _run_eval_window(
+                iter(
+                    make_streaming_dataloader(
+                        dataset=dataset, indices=eval_global_indices
+                    )
+                ),
+                label="eval_holdout@final",
+            )
+        else:
+            final_metrics = _run_eval_window(
+                iter(make_streaming_dataloader(dataset=dataset, ts=num_train_ts)),
+                label="eval@final",
+            )
+        # EVAL_ACCURACY/EVAL_STOP for the final pass (may emit SUCCESS RUN_STOP
+        # if the target was met exactly at the end).
+        _mlperf_eval_stop(final_metrics)
+        if rank == 0:
+            for k, v in final_metrics.items():
+                print(f"{k}: {v}")
+        # End-of-run RUN_STOP: SUCCESS iff the final lifetime AUC met the target,
+        # else ABORTED. No-op if a SUCCESS RUN_STOP already fired above.
+        _mlperf_finalize(final_metrics)

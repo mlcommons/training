@@ -1,0 +1,175 @@
+# Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# pyre-unsafe
+"""MLPerf Training compliance logging for the DLRMv3 streaming-train-eval path.
+
+Thin, rank-0-gated wrapper around ``mlperf_logging.mllog`` so the streaming
+loop can emit the MLPerf event stream (INIT/RUN/BLOCK/EVAL/RUN_STOP) without
+every call site re-checking the rank or guarding against a missing dependency.
+
+Modeled on recommendation_v2/torchrec_dlrm's inline ``submission_info`` but
+extended with rank-0 gating + optional distributed barriers (the NeMo / unet3d
+``sync`` pattern), so a multi-rank run produces exactly one valid log.
+"""
+
+import logging
+import os
+from typing import Any, Dict, Optional
+
+import gin
+import torch
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+try:
+    from mlperf_logging import mllog
+    from mlperf_logging.mllog import constants as mllog_constants
+
+    _MLLOG_AVAILABLE = True
+except Exception as e:  # pragma: no cover - import-time guard
+    mllog = None  # type: ignore[assignment]
+    mllog_constants = None  # type: ignore[assignment]
+    _MLLOG_AVAILABLE = False
+    logger.warning(
+        "mlperf_logging not importable (%s); MLPerf logging disabled. "
+        "Install via `pip install git+https://github.com/mlcommons/logging.git`.",
+        e,
+    )
+
+
+def _rank() -> int:
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_rank()
+    return 0
+
+
+def _barrier() -> None:
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.barrier()
+
+
+class MLPerfLogger:
+    """Rank-0-gated facade over ``mllog``.
+
+    All event methods no-op on non-zero ranks and when ``mlperf_logging`` is not
+    installed, so callers never need to guard. ``sync=True`` inserts an
+    all-rank ``dist.barrier()`` before the (rank-0-only) emission so the logged
+    timestamp reflects the slowest rank reaching the boundary -- required for
+    INIT_STOP/RUN_START/RUN_STOP per the MLPerf rules.
+    """
+
+    def __init__(
+        self,
+        rank: Optional[int] = None,
+        log_path: Optional[str] = None,
+        default_stack_offset: int = 2,
+        benchmark_name: str = "hstu",
+        submitter_name: str = "reference_implementation",
+    ):
+        self.enabled: bool = _MLLOG_AVAILABLE
+        # CRITICAL: use the EXPLICIT global rank passed by the caller, not a
+        # dist.get_rank() lookup. This logger is constructed BEFORE
+        # dist.init_process_group (so the init phase can be timed), at which
+        # point torch.distributed.get_rank() is unavailable and would return 0
+        # for every process -> all 16 ranks would log everything. The caller
+        # (train_ranker) already knows the true global rank
+        # (node_rank * gpus_per_node + local_rank), so trust it. Fall back to a
+        # best-effort dist/zero lookup only when not provided.
+        self.rank: int = rank if rank is not None else _rank()
+        self.benchmark_name: str = benchmark_name
+        self.submitter_name: str = submitter_name
+        self._logger = None
+        if not self.enabled:
+            return
+        if log_path:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            mllog.config(filename=log_path, default_stack_offset=default_stack_offset)
+        else:
+            mllog.config(default_stack_offset=default_stack_offset)
+        self._logger = mllog.get_mllogger()
+
+    @property
+    def constants(self):  # pyre-ignore[3]
+        return mllog_constants
+
+    def event(
+        self,
+        key: str,
+        value: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        sync: bool = False,
+    ) -> None:
+        if sync:
+            _barrier()
+        if self.enabled and self.rank == 0:
+            self._logger.event(key=key, value=value, metadata=metadata or {})
+
+    def start(
+        self,
+        key: str,
+        value: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        sync: bool = False,
+    ) -> None:
+        if sync:
+            _barrier()
+        if self.enabled and self.rank == 0:
+            self._logger.start(key=key, value=value, metadata=metadata or {})
+
+    def end(
+        self,
+        key: str,
+        value: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        sync: bool = False,
+    ) -> None:
+        if sync:
+            _barrier()
+        if self.enabled and self.rank == 0:
+            self._logger.end(key=key, value=value, metadata=metadata or {})
+
+    def submission_info(self, benchmark_name: str, submitter_name: str) -> None:
+        """Emit the five SUBMISSION_* events required for a valid submission."""
+        if not (self.enabled and self.rank == 0):
+            return
+        c = mllog_constants
+        self.event(key=c.SUBMISSION_BENCHMARK, value=benchmark_name)
+        self.event(key=c.SUBMISSION_ORG, value=submitter_name)
+        self.event(key=c.SUBMISSION_DIVISION, value=c.CLOSED)
+        self.event(key=c.SUBMISSION_STATUS, value=c.ONPREM)
+        self.event(key=c.SUBMISSION_PLATFORM, value=submitter_name)
+
+
+@gin.configurable
+def get_mlperf_logger(
+    rank: int = 0,
+    log_path: str = "",
+    benchmark_name: str = "hstu",
+    submitter_name: str = "reference_implementation",
+) -> MLPerfLogger:
+    """Build a configured :class:`MLPerfLogger`.
+
+    ``benchmark_name`` / ``submitter_name`` are gin-configurable (and the path is
+    env-overridable via ``$MLPERF_LOG_PATH``) so a submission can stamp its own
+    benchmark string without code changes. The log path defaults to
+    ``$MLPERF_LOG_PATH`` when set, else ``""`` (mllog logs to stdout).
+    """
+    resolved_path = os.environ.get("MLPERF_LOG_PATH", log_path)
+    return MLPerfLogger(
+        rank=rank,
+        log_path=resolved_path,
+        benchmark_name=benchmark_name,
+        submitter_name=submitter_name,
+    )

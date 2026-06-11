@@ -216,7 +216,14 @@ MetricsLogger.tensorboard_log_path = @tbp/env_path()
 tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
 tbp/env_path.default = "tb/yambda_5b/"
 MetricsLogger.world_size = 8
-MetricsLogger.auc_threshold = 0.80275
+# Time-to-target AUC threshold. Doubles as the MLPerf convergence target: when
+# the cumulative ("lifetime_") listen_plus eval AUC first reaches this value the
+# streaming-train-eval run emits a SUCCESS RUN_STOP and terminates gracefully.
+# Override via $AUC_THRESHOLD (e.g. 0.5 to smoke-test the early-stop path on a
+# short run). MLPerf's DLRM-DCNv2 reference uses 0.80275.
+MetricsLogger.auc_threshold = @at/env_float()
+at/env_float.key     = "AUC_THRESHOLD"
+at/env_float.default = 0.80275
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and
 # the eval cumulative ("lifetime_*") AUC. Both default to "binned":
 #   "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an O(bins) score

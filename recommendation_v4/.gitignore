@@ -157,3 +157,11 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# SLURM batch stdout + local run artifacts (run logs are never committed;
+# the real run logs / MLPerf compliance logs live under $SCRATCH, outside the
+# repo). The trainer's #SBATCH --output lands in the submit dir as
+# yambda_slurm.<jobid>.out.
+yambda_slurm.*.out
+yambda_slurm.*.log
+compliance_checker.log

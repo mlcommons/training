@@ -1012,6 +1012,21 @@ class MetricsLogger:
                 self.regression_metrics["eval"] = _make_reg(window_size)
 
         self.global_step: Dict[str, int] = {"train": 0, "eval": 0}
+        # Monotonic, resume-safe count of GLOBAL trained samples (summed across
+        # ranks), used as the MLPerf `samples_count` progress unit. Distinct from
+        # the perf-only `_perf_total_samples` below (per-rank, not checkpointed):
+        # this one is persisted/restored alongside `global_step` so a resumed
+        # streaming run continues the convergence-progress count.
+        self.cumulative_train_samples: int = 0
+        self._rank: int = int(rank)
+        # Optional MLPerf logger + learning-rate accessor, wired by the streaming
+        # loop (kept duck-typed -- expects `.event(key, value, metadata)` and
+        # `.constants` -- to avoid a train-module import cycle). When set,
+        # compute_and_log emits a POINT_IN_TIME `train_loss` event (rank-0 gated
+        # inside the logger) at the metric-logging cadence, mirroring the per-step
+        # MLPerf train_loss readout other benchmarks log.
+        self.mlperf_logger: Optional[Any] = None
+        self.lr_getter: Optional[Callable[[], float]] = None
         self.tb_logger: Optional[SummaryWriter] = None
         if tensorboard_log_path != "":
             self.tb_logger = SummaryWriter(log_dir=tensorboard_log_path, purge_step=0)
@@ -1029,6 +1044,13 @@ class MetricsLogger:
         self._perf_samples_counter: torch.Tensor = torch.zeros(
             1, dtype=torch.long, device=device
         )
+
+    @property
+    def auc_threshold(self) -> Optional[float]:
+        """Configured time-to-target AUC threshold (None if unset). Exposed so
+        the streaming loop can drive the MLPerf SUCCESS RUN_STOP off the same
+        target without reaching into the private attribute."""
+        return self._auc_threshold
 
     @property
     def all_metrics(self) -> Dict[str, List[RecMetricComputation]]:
@@ -1093,6 +1115,12 @@ class MetricsLogger:
                 self._perf_samples_counter.dtype
             )
             self._perf_steps_in_window += 1
+            # MLPerf progress counter: global trained samples this step. Local
+            # batch sample count (num_candidates is per-rank) scaled by world
+            # size approximates the global count without an extra collective;
+            # accumulated on CPU as a plain int so it serializes trivially into
+            # the checkpoint (see save/load_nonsparse_checkpoint).
+            self.cumulative_train_samples += int(num_candidates.numel()) * self._world_size
 
     def compute(self, mode: str = "train") -> Dict[str, float]:
         """
@@ -1181,6 +1209,53 @@ class MetricsLogger:
                         f"{tag}/{mode}_{data_name}",
                         data_value.detach().clone().cpu(),
                         global_step=self.global_step[mode],
+                    )
+
+        # Train-loss readout: surface a single GLOBAL (cross-rank mean) training
+        # loss on the regular console logger every `metric_log_frequency` batches,
+        # so progress is visible from step 0 instead of only at the first
+        # end-of-window eval. The per-loss-term breakdown already goes to
+        # TensorBoard above (losses/train_*); here we add the combined scalar.
+        # The all-reduce is a cheap 1-element collective run by EVERY rank at the
+        # same deterministic steps (this method is called in lockstep), so it
+        # cannot desync. Set METRIC_LOG_FREQ low (e.g. 1-5) to see it per step.
+        if mode == "train" and additional_logs is not None and "losses" in additional_logs:
+            loss_terms = additional_logs["losses"]
+            if loss_terms:
+                loss_t = torch.stack(
+                    [v.detach().float().sum() for v in loss_terms.values()]
+                ).sum()
+                if torch.distributed.is_available() and torch.distributed.is_initialized():
+                    torch.distributed.all_reduce(
+                        loss_t, op=torch.distributed.ReduceOp.SUM
+                    )
+                    loss_t = loss_t / self._world_size
+                train_loss = float(loss_t)
+                self.tb_logger.add_scalar(
+                    "train_loss", train_loss, global_step=self.global_step["train"]
+                )
+                if self._rank == 0:
+                    logger.info(
+                        f"train - Step {self.global_step['train']} "
+                        f"train_loss={train_loss:.5f}"
+                    )
+                # MLPerf POINT_IN_TIME train_loss (rank-0 gated in the logger).
+                # samples_count = cumulative GLOBAL trained samples (the same
+                # progress unit as block/eval events); lr = current base LR.
+                if self.mlperf_logger is not None:
+                    c = self.mlperf_logger.constants
+                    md: Dict[str, Any] = {
+                        c.SAMPLES_COUNT: self.cumulative_train_samples,
+                    }
+                    if self.lr_getter is not None:
+                        try:
+                            md["lr"] = float(self.lr_getter())
+                        except Exception:
+                            pass
+                    self.mlperf_logger.event(
+                        key=getattr(c, "TRAIN_LOSS", "train_loss"),
+                        value=train_loss,
+                        metadata=md,
                     )
 
         # Throughput metrics (train only). One GPU->CPU sync per call.
