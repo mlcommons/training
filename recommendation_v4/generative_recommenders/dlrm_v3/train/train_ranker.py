@@ -76,9 +76,32 @@ def _main_func(
     # decorators in generative_recommenders.ops.triton.* read env vars at
     # module import time, and the heavy imports below pull those in.
     from generative_recommenders.dlrm_v3.train._env_bootstrap import apply_env_bootstrap
+    from generative_recommenders.dlrm_v3.train.mlperf_logging_utils import (
+        get_mlperf_logger,
+    )
 
     gin.parse_config_file(gin_file, skip_unknown=True)
     apply_env_bootstrap()
+
+    # MLPerf compliance logging is only wired for the streaming-train-eval
+    # (yambda-5b) benchmark path. Build the rank-0-gated logger now. No-ops on
+    # non-zero ranks and when mlperf_logging is not installed.
+    mlperf_logger = (
+        get_mlperf_logger(rank=rank) if mode == "streaming-train-eval" else None
+    )
+    # Emit the init-start boundary before setup so the init phase is measured,
+    # but ONLY when this is guaranteed to be a cold start. CKPT_PATH unset means
+    # checkpoints are disabled (the default + submission config) -> always cold
+    # start. When CKPT_PATH is set (resumable / e2e-supervisor runs) we defer the
+    # decision to resume_cold_start below and skip the pre-setup markers, so a
+    # resume relaunch never emits an orphaned INIT_START/RUN_START. The whole
+    # downstream sequence (INIT_STOP/RUN_START/blocks/eval/RUN_STOP) is gated on
+    # this flag so the log is always balanced.
+    mlperf_init_logged = False
+    if mlperf_logger is not None and not os.environ.get("CKPT_PATH", ""):
+        mlperf_logger.event(key=mlperf_logger.constants.CACHE_CLEAR, value=True)
+        mlperf_logger.start(key=mlperf_logger.constants.INIT_START)
+        mlperf_init_logged = True
 
     # Phase 2: heavy imports. Triton kernel modules evaluate their autotune
     # decorators here, using the env vars set above.
@@ -173,6 +196,62 @@ def _main_func(
         )
     )
 
+    # MLPerf: submission info + hyperparameters, then the init/run boundary.
+    # Gated on (init markers emitted AND genuine cold start) so the e2e
+    # supervisor's resume relaunches don't restart the INIT/RUN markers
+    # mid-stream (which would invalidate the single-run log), and so the log is
+    # never left with an INIT_STOP that has no matching INIT_START.
+    mlperf_run_active = (
+        mlperf_logger is not None and mlperf_init_logged and resume_cold_start
+    )
+    if mlperf_run_active:
+        c = mlperf_logger.constants
+        mlperf_logger.submission_info(
+            benchmark_name=mlperf_logger.benchmark_name,
+            submitter_name=mlperf_logger.submitter_name,
+        )
+
+        def _gin_param(name: str, default: object) -> object:
+            try:
+                return gin.query_parameter(name)
+            except (ValueError, KeyError):
+                return default
+
+        global_batch_size = world_size * int(train_dataloader.batch_size)
+        mlperf_logger.event(key=c.GLOBAL_BATCH_SIZE, value=global_batch_size)
+        mlperf_logger.event(key=c.GRADIENT_ACCUMULATION_STEPS, value=1)
+        # Seed is fixed in setup() (_SEED = 1); kept in sync here.
+        mlperf_logger.event(key=c.SEED, value=1)
+        # Dense (Adam) + sparse (RowWiseAdagrad) optimizer hyperparameters,
+        # read from the active gin bindings.
+        mlperf_logger.event(
+            key=c.OPT_NAME,
+            value=_gin_param(
+                "dense_optimizer_factory_and_class.optimizer_name", "Adam"
+            ),
+        )
+        mlperf_logger.event(
+            key=c.OPT_BASE_LR,
+            value=_gin_param(
+                "dense_optimizer_factory_and_class.learning_rate", None
+            ),
+        )
+        mlperf_logger.event(
+            key="opt_sparse_name",
+            value=_gin_param(
+                "sparse_optimizer_factory_and_class.optimizer_name",
+                "RowWiseAdagrad",
+            ),
+        )
+        mlperf_logger.event(
+            key="opt_sparse_base_learning_rate",
+            value=_gin_param(
+                "sparse_optimizer_factory_and_class.learning_rate", None
+            ),
+        )
+        mlperf_logger.end(key=c.INIT_STOP, sync=True)
+        mlperf_logger.start(key=c.RUN_START, sync=True)
+
     # train loop
     try:
         if mode == "train":
@@ -224,6 +303,9 @@ def _main_func(
                 resume_batch_idx_in_window=resume_batch_idx_in_window,
                 resume_split_contract=resume_split_contract,
                 resume_cold_start=resume_cold_start,
+                # Only pass the logger when the run boundaries were emitted, so
+                # the loop never produces orphan block/eval events.
+                mlperf_logger=mlperf_logger if mlperf_run_active else None,
             )
     except Exception as e:
         logger.info(traceback.format_exc())

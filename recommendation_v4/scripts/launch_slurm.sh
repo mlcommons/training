@@ -232,11 +232,13 @@ orchestrate() {
       -e NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES \
       -e METRIC_LOG_FREQ=$METRIC_LOG_FREQ \
       -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-0.90} \
+      -e AUC_THRESHOLD=${AUC_THRESHOLD:-0.80275} \
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
       -e EVAL_HOLDOUT_NUM_WINDOWS=${EVAL_HOLDOUT_NUM_WINDOWS:-1} \
       ${RUN_NAME:+-e RUN_NAME=$RUN_NAME} \
       ${TENSORBOARD_LOG_PATH:+-e TENSORBOARD_LOG_PATH=$TENSORBOARD_LOG_PATH} \
+      ${MLPERF_LOG_PATH:+-e MLPERF_LOG_PATH=$MLPERF_LOG_PATH} \
       ${CKPT_PATH:+-e CKPT_PATH=$CKPT_PATH} \
       -e LOG=$LOG \
       $NCCL_ENV_ARGS \
@@ -382,8 +384,18 @@ worker() {
   # TensorBoard under the writable scratch root unless the caller (e.g. the e2e
   # supervisor) pinned a per-run path. Keeps the gin default from ever being used.
   export TENSORBOARD_LOG_PATH=${TENSORBOARD_LOG_PATH:-$SCRATCH/tb/yambda_5b}
-  # Append (not truncate): under the streaming-e2e supervisor a run may relaunch
-  # many times into the SAME $LOG; the supervisor initializes it once at run start.
+  # MLPerf Training compliance log (streaming-train-eval path). Lands beside the
+  # other run outputs under scratch unless the caller pins it. Rank 0 writes it;
+  # check it post-run with:
+  #   python -m mlperf_logging.compliance_checker --usage training \
+  #     --ruleset 5.0.0 "$MLPERF_LOG_PATH"
+  # Default to a PER-JOB filename so each standalone `sbatch` gets a clean
+  # compliance log: mllog opens the file in APPEND mode, so a fixed name would
+  # accumulate events across runs and fail the compliance_checker (duplicate
+  # INIT_START/RUN_START). The streaming-e2e supervisor pins MLPERF_LOG_PATH
+  # explicitly (and inits it once at run start), so its relaunch-into-same-file
+  # append semantics are preserved untouched.
+  export MLPERF_LOG_PATH=${MLPERF_LOG_PATH:-$SCRATCH/mlperf/yambda_5b_mlperf.${SLURM_JOB_ID:-manual}.log}
   echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee -a "$LOG"
 
   # polars-u64-idx (NOT stock polars) — yambda parquet's flat-explode overruns
