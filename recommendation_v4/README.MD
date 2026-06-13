@@ -100,7 +100,7 @@ The `like` pool is roughly **30× rarer** than `lp` — important context for th
 
 ## 4. How data is fed to HSTU
 
-For every training anchor (a LISTEN event with ≥ `history_length` prior events), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
+For every training anchor (a LISTEN event with ≥ `min_history` prior events — default `1`, i.e. ~all users; set `$MIN_HISTORY=4086` for the legacy "full `history_length` of context required" filter that dropped ~60% of users), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
 
 ```
 UIH (User Interaction History):
@@ -186,8 +186,10 @@ The streaming path enforces **no future leakage** at two levels:
 Note this is a *temporal* split on the training stream — distinct from the
 preprocessing GTS split (§2) that carves off the final test day. Windows are
 indexed off the per-anchor target timestamp via a lazily-built, mmap'd
-`anchor_ts_L{H}.npy` cache (built once on first use; the default non-streaming
-path never touches it).
+`anchor_ts_L{H}[_m{MIN_HISTORY}].npy` cache (built once on first use; the
+default non-streaming path never touches it). The anchor `positions` and
+`anchor_ts` arrays are keyed by `(history_length, min_history)` so different
+floors don't collide and the expensive flat store is shared across them.
 
 ### 5.2 Knobs
 
@@ -201,6 +203,7 @@ with env overrides:
 | `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows (no per-window respawn) |
 | `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread during compute |
 | `EVAL_EACH_WINDOW` | `streaming_train_eval_loop.eval_each_window` | 1 | eval window T+1 after training window T |
+| `MIN_HISTORY` | `get_dataset.min_history` | 1 | anchor-eligibility floor: min prior events for a LISTEN to be a sample (1 = ~all users; 4086 = legacy full-history filter) |
 | — | `streaming_train_eval_loop.num_train_batches` / `num_eval_batches` | unset | cap per-window steps (unset = consume full window) |
 
 ### 5.3 Hiding the window-reset overhead
