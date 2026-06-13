@@ -173,7 +173,10 @@ make_persistent_streaming_dataloader.num_workers = %num_workers
 make_persistent_streaming_dataloader.prefetch_factor = %prefetch_factor
 streaming_train_eval_loop.num_train_ts = @nts/env_int()
 nts/env_int.key = "NUM_TRAIN_TS"
-nts/env_int.default = 30
+# 149 daily windows -> with start_ts=150 the run sweeps ts=150..298, the full
+# dense range of the corpus (matches the long e2e runs). Clamped to the
+# dataset's available window count at runtime. Override via $NUM_TRAIN_TS.
+nts/env_int.default = 149
 # Anchors need >= history_length prior events, so the first ~130 daily windows
 # are near-empty warm-up; start at a dense window. Override via $START_TS.
 streaming_train_eval_loop.start_ts = @sts/env_int()
