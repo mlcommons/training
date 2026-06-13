@@ -110,12 +110,12 @@ hl/env_int.default = 4086
 # is only the gather/truncation cap) — jagged attention handles short UIH, so we
 # no longer need a full history_length of context to include a sample. The legacy
 # behavior (require a full history_length, which dropped ~60% of users) is
-# MIN_HISTORY=4086; the default below (1) includes ~all users with any history.
-# Positions/anchor-ts caches are keyed by (L, MIN_HISTORY) so floors don't
-# collide. Override via $MIN_HISTORY.
+# MIN_HISTORY=4086; the default below (0) includes ~all users AND their
+# cold-start first event (zero prior context). Positions/anchor-ts caches are
+# keyed by (L, MIN_HISTORY) so floors don't collide. Override via $MIN_HISTORY.
 get_dataset.min_history = @mh/env_int()
 mh/env_int.key     = "MIN_HISTORY"
-mh/env_int.default = 1
+mh/env_int.default = 0
 
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow. Override via
