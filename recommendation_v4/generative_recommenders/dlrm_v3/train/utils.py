@@ -1316,7 +1316,6 @@ def streaming_train_eval_loop(
     checkpoint_frequency: int = 100,
     start_ts: int = 0,
     persistent_loader: bool = False,
-    eval_each_window: bool = True,
     eval_every_n_windows: int = 1,
     double_buffer: bool = False,
     # --- fixed user-holdout eval set ---
@@ -1838,18 +1837,21 @@ def streaming_train_eval_loop(
     def _should_eval(i: int) -> bool:
         """Whether to run the full-holdout eval after training window index `i`.
 
-        `eval_every_n_windows<=1` (default) preserves the per-window cadence.
-        For K>1 we eval when the ABSOLUTE window ts is on the grid anchored at
-        `eval_anchor_ts` (the original start_ts), i.e. ts in {anchor, anchor+K,
-        anchor+2K, ...}, and ALWAYS on the final window so the trajectory ends
-        with an eval point. Anchoring to the absolute ts (not the per-call loop
-        index `i`) keeps the eval grid (e.g. 150,160,170,...) stable across a
-        mid-run resume, which rebases start_ts/`train_ts_list` to the resume
-        window. Gated by `eval_each_window`.
+        Single cadence knob `eval_every_n_windows`:
+          * <=0 -> eval disabled entirely (train-only; e.g. perf benchmarking or
+            the resume test). The eval dataloader is not even built.
+          * 1 (default) -> eval after every window.
+          * K>1 -> eval when the ABSOLUTE window ts is on the grid anchored at
+            `eval_anchor_ts` (the original start_ts), i.e. ts in {anchor,
+            anchor+K, anchor+2K, ...}, and ALWAYS on the final window so the
+            trajectory ends with an eval point. Anchoring to the absolute ts
+            (not the per-call loop index `i`) keeps the eval grid (e.g.
+            150,160,170,...) stable across a mid-run resume, which rebases
+            start_ts/`train_ts_list` to the resume window.
         """
-        if not eval_each_window:
+        if eval_every_n_windows <= 0:
             return False
-        if eval_every_n_windows <= 1:
+        if eval_every_n_windows == 1:
             return True
         return (train_ts_list[i] - eval_anchor_ts) % eval_every_n_windows == 0 or i == n_train - 1
 
@@ -1892,7 +1894,7 @@ def streaming_train_eval_loop(
         # sample content depends only on the sampler window, not is_eval, so
         # prefetching during train is safe.
         eval_iter: Optional[Iterator] = None
-        if eval_each_window and len(train_ts_list) > 0:
+        if eval_every_n_windows > 0 and len(train_ts_list) > 0:
             eval_sampler = StreamingWindowSampler(rank, world_size)
             eval_dl = make_persistent_streaming_dataloader(
                 dataset=dataset, sampler=eval_sampler
