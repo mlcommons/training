@@ -4,16 +4,15 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --partition=meta64          # [CLUSTER-SPECIFIC] partition name
-#SBATCH --time=01:10:00
 #SBATCH --output=/apps/chcai/yambda_slurm.%j.out
 # =============================================================================
 # launch_slurm.sh — single entry point for the yambda-5b trainer on N>=1 nodes.
 #
-# Consolidates what used to be three separate files so multi-node enablement is
+# Consolidates what used to be separate scripts so multi-node enablement is
 # ONE committable script (plus the train_ranker.py / utils.py python changes):
-#   * sbatch_smoke_multinode.sh   -> the `orchestrate` phase (host SLURM glue)
-#   * _provision_yambda_primus.sh -> the `provision`   phase (container + RDMA)
-#   * launch_smoke_8gpu.sh        -> the `worker`      phase (in-container train)
+#   * orchestrate phase (host SLURM glue) — formerly sbatch_smoke_multinode.sh
+#   * provision   phase (container + RDMA) — formerly _provision_yambda_primus.sh
+#   * worker      phase (in-container train) — now inlined below
 #
 # PHASES (auto-detected from context; force with LAUNCH_SLURM_PHASE=<phase>):
 #   orchestrate  Runs on the SLURM batch host (no /.dockerenv). Resolves the
@@ -141,7 +140,15 @@ orchestrate() {
   METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
   FORCE_PROVISION=${FORCE_PROVISION:-0}
 
-  : > "$LOG"
+  # Truncate the metrics log on a FRESH run; APPEND on a supervised relaunch
+  # (APPEND_LOG=1) so the full-run NE/AUC history survives crash/node-failover
+  # resubmits instead of being wiped on every attempt (mirrors the single-node
+  # supervisor's init-once/append model).
+  if [ "${APPEND_LOG:-0}" = "1" ]; then
+    echo "[$(date)] === resume: appending to existing $LOG (APPEND_LOG=1) ===" >> "$LOG"
+  else
+    : > "$LOG"
+  fi
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
   echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
@@ -177,19 +184,78 @@ orchestrate() {
   # --- step 1: ensure the container is up on every node ----------------------
   echo "[$(date)] ensuring container '$CONTAINER' on all nodes (force=$FORCE_PROVISION)" | tee -a "$LOG"
   srun --ntasks-per-node=1 bash -c "
+    # Reap stale/foreign GPU containers from prior jobs BEFORE (re)provisioning.
+    # The node is allocated --exclusive, so any GPU container other than
+    # '$CONTAINER' is an orphan left by a previous job (its container outlives the
+    # SLURM allocation). We remove every such container that has GPU access
+    # (/dev/kfd or /dev/dri) — running OR stopped, whether or not it currently
+    # pins VRAM ('docker ps -aq' includes stopped ones) — since idle orphans can
+    # still hold device handles or wake up; leaked HBM from these has caused both
+    # OOMs and RCCL collective hangs. We deliberately SKIP non-GPU containers
+    # (e.g. 'k8s-node-services-*' and other cluster system services) so we don't
+    # disrupt node infrastructure. docker teardown lets the driver reclaim HBM.
+    for _c in \$(docker ps -aq 2>/dev/null); do
+      _nm=\$(docker inspect -f '{{.Name}}' \"\$_c\" 2>/dev/null | sed 's#^/##')
+      [ \"\$_nm\" = \"$CONTAINER\" ] && continue
+      _dev=\$(docker inspect -f '{{range .HostConfig.Devices}}{{.PathOnHost}} {{end}}' \"\$_c\" 2>/dev/null)
+      case \"\$_dev\" in
+        *kfd*|*dri*)
+          echo \"[\$(hostname)] reaping stale GPU container \$_nm (\$_c)\"
+          docker rm -f \"\$_c\" >/dev/null 2>&1 || true ;;
+        *)
+          echo \"[\$(hostname)] keeping non-GPU/system container \$_nm (\$_c)\" ;;
+      esac
+    done
     if [ \"$FORCE_PROVISION\" = \"1\" ] || ! docker exec $CONTAINER true >/dev/null 2>&1; then
       echo \"[\$(hostname)] (re)provisioning container\"
       LAUNCH_SLURM_PHASE=provision CONTAINER=$CONTAINER IMAGE=$IMAGE \
         BAKED_IMAGE=$BAKED_IMAGE BAKED_TAR=$BAKED_TAR USE_BAKED=$USE_BAKED \
         BAKE_IMAGE=${BAKE_IMAGE:-0} RDMA_OVERLAY=$OVERLAY REPO=$REPO bash $SCRIPT_PATH
     else
-      echo \"[\$(hostname)] container already up\"
+      # Container persists across jobs; the reap above only removes FOREIGN GPU
+      # containers, so our own '$CONTAINER' can still pin HBM via stray trainer
+      # ranks left by a prior OOM/crash (this caused repeated 'CUDA out of memory'
+      # on relaunch onto the same node). Restart it to kill every exec'd proc and
+      # let the driver reclaim HBM — cheap (keeps the installed deps in the
+      # container fs; NFS RDMA overlay also persists), no full re-provision.
+      echo \"[\$(hostname)] container already up — restarting to free any leaked HBM before launch\"
+      docker restart $CONTAINER >/dev/null 2>&1 || true
+      # Readiness gate: a bare 'docker exec true' can pass while the runtime is
+      # still settling, so the SUBSEQUENT (heavier) worker exec races the restart
+      # and dies with 'container is not running' / OCI 'setns' errors (observed on
+      # c07-08 and e08-08 -> the peer never joins rendezvous -> master 600s
+      # TCPStore timeout). Require State.Running=true AND a successful probe, then
+      # a short settle, before considering the container ready.
+      for _w in \$(seq 1 30); do
+        [ \"\$(docker inspect -f '{{.State.Running}}' $CONTAINER 2>/dev/null)\" = \"true\" ] \
+          && docker exec $CONTAINER true >/dev/null 2>&1 && break
+        sleep 2
+      done
+      sleep 2
+      echo \"[\$(hostname)] container restarted (HBM reclaimed; running=\$(docker inspect -f '{{.State.Running}}' $CONTAINER 2>/dev/null))\"
     fi
   " 2>&1 | tee -a "$LOG"
 
   # --- step 2: launch the worker (trainer) inside the container on every node -
   echo "[$(date)] launching trainer (worker phase) on all nodes" | tee -a "$LOG"
   srun --ntasks-per-node=1 bash -c "
+    # Pre-flight readiness gate (per node): step 1 ran in a SEPARATE srun, so the
+    # container can still be settling here. Wait for State.Running=true + a probe
+    # before the worker exec so we don't race a just-restarted container.
+    for _w in \$(seq 1 30); do
+      [ \"\$(docker inspect -f '{{.State.Running}}' $CONTAINER 2>/dev/null)\" = \"true\" ] \
+        && docker exec $CONTAINER true >/dev/null 2>&1 && break
+      [ \$_w -eq 1 ] && echo \"[\$(hostname)] worker pre-flight: waiting for container to be ready...\"
+      sleep 2
+    done
+    # Retry wrapper: docker exec startup failures (rc 125 daemon 'container is not
+    # running', 126/127 OCI/setns 'exec failed') mean the container wasn't ready,
+    # NOT that the trainer ran and failed. Restart + re-gate + retry a few times.
+    # Any OTHER rc (the trainer actually started and exited) is propagated so the
+    # supervisor's resume-from-checkpoint logic owns real failures.
+    _wattempt=0
+    while : ; do
+    _wattempt=\$((_wattempt+1))
     docker exec \
       -e LAUNCH_SLURM_PHASE=worker \
       -e SLURM_NNODES=\$SLURM_NNODES \
@@ -213,7 +279,16 @@ orchestrate() {
       ${NUM_WORKERS:+-e NUM_WORKERS=$NUM_WORKERS} \
       ${PREFETCH_FACTOR:+-e PREFETCH_FACTOR=$PREFETCH_FACTOR} \
       ${DIAG_UNIQUE_EMB:+-e DIAG_UNIQUE_EMB=$DIAG_UNIQUE_EMB} \
+      ${DIAG_EMB_STEPS:+-e DIAG_EMB_STEPS=$DIAG_EMB_STEPS} \
       ${OUTPUT_TRACE:+-e OUTPUT_TRACE=$OUTPUT_TRACE} \
+      ${MIN_HISTORY:+-e MIN_HISTORY=$MIN_HISTORY} \
+      ${MAX_SEQ_LEN:+-e MAX_SEQ_LEN=$MAX_SEQ_LEN} \
+      ${HISTORY_LENGTH:+-e HISTORY_LENGTH=$HISTORY_LENGTH} \
+      ${BATCH_SIZE:+-e BATCH_SIZE=$BATCH_SIZE} \
+      ${CKPT_TIME_INTERVAL_S:+-e CKPT_TIME_INTERVAL_S=$CKPT_TIME_INTERVAL_S} \
+      ${KEEP_LAST_N:+-e KEEP_LAST_N=$KEEP_LAST_N} \
+      ${IN_WINDOW_CKPT_FREQ:+-e IN_WINDOW_CKPT_FREQ=$IN_WINDOW_CKPT_FREQ} \
+      ${CKPT_STEP_FREQ:+-e CKPT_STEP_FREQ=$CKPT_STEP_FREQ} \
       -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-0.90} \
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
@@ -224,6 +299,20 @@ orchestrate() {
       -e LOG=$LOG \
       $NCCL_ENV_ARGS \
       $CONTAINER bash -lc 'cd $REPO && LAUNCH_SLURM_PHASE=worker bash scripts/launch_slurm.sh'
+    _wrc=\$?
+    if { [ \$_wrc -eq 125 ] || [ \$_wrc -eq 126 ] || [ \$_wrc -eq 127 ]; } && [ \$_wattempt -lt 5 ]; then
+      echo \"[\$(hostname)] worker exec failed to START (rc=\$_wrc, attempt \$_wattempt/5) — container not ready; restarting + retrying\"
+      docker restart $CONTAINER >/dev/null 2>&1 || true
+      for _w in \$(seq 1 30); do
+        [ \"\$(docker inspect -f '{{.State.Running}}' $CONTAINER 2>/dev/null)\" = \"true\" ] \
+          && docker exec $CONTAINER true >/dev/null 2>&1 && break
+        sleep 2
+      done
+      sleep 3
+      continue
+    fi
+    exit \$_wrc
+    done
   " 2>&1 | tee -a "$LOG"
   rc=${PIPESTATUS[0]}
   echo "[$(date)] launch_slurm/orchestrate finished rc=$rc" | tee -a "$LOG"
@@ -400,21 +489,29 @@ worker() {
   else
     NNODES=${NNODES:-1}
     NODE_RANK=${NODE_RANK:-0}
-    MASTER_ADDR=${MASTER_ADDR:-localhost}
+    # Single-node: all ranks live on THIS host, so rendezvous over loopback and
+    # do NOT use the SLURM hostname. On some nodes the hostname resolves to a
+    # non-routable per-GPU RoCE /31 (benic 192.168.x) address; using it makes the
+    # NCCL bootstrap fail with "No route to host". localhost is node-independent.
+    MASTER_ADDR=localhost
     MASTER_PORT=${MASTER_PORT:-}     # empty => train_ranker picks a free port
   fi
   export NNODES NODE_RANK GPUS_PER_NODE MASTER_ADDR MASTER_PORT
   export WORLD_SIZE=$(( NNODES * GPUS_PER_NODE ))
   echo "[$(date)] topology: nnodes=$NNODES node_rank=$NODE_RANK gpus_per_node=$GPUS_PER_NODE world_size=$WORLD_SIZE master=$MASTER_ADDR:${MASTER_PORT:-<auto>}" | tee -a "$LOG"
 
-  # RCCL/NCCL cross-node knobs (multi-node only; single-node leaves auto-detect).
-  # The container is --network=host so RCCL sees ALL host interfaces; split the
-  # two planes explicitly: TCP bootstrap over the routable fenic0, RDMA data over
-  # the 8 Broadcom bnxt_re RoCE HCAs (the per-GPU benic* 192.168.x/31 links are
-  # NOT node-routable for TCP — auto-detect there hangs init).
+  # NCCL bootstrap NIC — pin for BOTH single- and multi-node. The container is
+  # --network=host so RCCL sees ALL host interfaces; if left to auto-detect, NCCL
+  # can pick a non-routable per-GPU RoCE /31 (benic* 192.168.x) link and fail
+  # bootstrap with "No route to host" (this is node-dependent: it happened to
+  # work on some nodes and not others, causing repetitive single-node init
+  # failures). Pinning the routable host NIC fixes it everywhere.
+  # [CLUSTER-SPECIFIC] routable host NIC for TCP bootstrap (find via `ip -br addr`).
+  export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
+
+  # Multi-node additionally needs the RDMA data-plane (bnxt_re HCAs) configured;
+  # single-node uses intra-node P2P (XGMI/PCIe) so only the bootstrap NIC matters.
   if [ "$NNODES" -gt 1 ]; then
-    # [CLUSTER-SPECIFIC] routable host NIC for TCP bootstrap (find via `ip -br addr`).
-    export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
     NCCL_NET_TRANSPORT=${NCCL_NET_TRANSPORT:-ib}
     if [ "$NCCL_NET_TRANSPORT" = "socket" ]; then
       export NCCL_IB_DISABLE=1
@@ -465,6 +562,27 @@ worker() {
         || echo "[$(date)] WARNING: could not set perf level (no permission?). Run 'rocm-smi --setperflevel auto' on the HOST before benchmarking — clocks may be capped." | tee -a "$LOG"
     fi
     echo "[$(date)] sclk sample (GPU0):$(rocm-smi -d 0 --showclocks 2>/dev/null | grep -i 'sclk clock level' | sed -E 's/.*sclk clock level//')" | tee -a "$LOG" || true
+  fi
+
+  # --- stray-trainer / leaked-VRAM guard -------------------------------------
+  # The trainer runs via `docker exec` into a long-lived container, so its procs
+  # live in the container PID namespace, NOT the SLURM job cgroup. If a prior job
+  # OOM'd/crashed, a rank can leak and keep holding ~half of every GPU's VRAM,
+  # which persists across jobs (container survives) and guarantees the next
+  # attempt OOMs. Before launching, reap any pre-existing trainer procs (there
+  # should be none at this point) and wait for VRAM to drain. [g]-guard avoids
+  # self-match. Non-fatal.
+  if pgrep -f '[g]enerative_recommenders' >/dev/null 2>&1; then
+    echo "[$(date)] WARNING: leaked trainer procs found pre-launch — killing." | tee -a "$LOG"
+    pkill -9 -f '[g]enerative_recommenders' 2>/dev/null || true
+    for _i in $(seq 1 15); do
+      pgrep -f '[g]enerative_recommenders' >/dev/null 2>&1 || break
+      sleep 2
+    done
+    sleep 5  # let the driver release VRAM after process exit
+    if command -v rocm-smi >/dev/null 2>&1; then
+      echo "[$(date)] post-cleanup GPU0 used GiB:$(rocm-smi --showmeminfo vram 2>/dev/null | awk -F: '/Used/{printf " %.0f", $3/1073741824; exit}')" | tee -a "$LOG"
+    fi
   fi
 
   echo "[$(date)] launching train_ranker with WORLD_SIZE=$WORLD_SIZE" | tee -a "$LOG"
