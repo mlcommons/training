@@ -1422,6 +1422,7 @@ def get_dataset(
     name: str,
     new_path_prefix: str = "",
     history_length: Optional[int] = None,
+    min_history: Optional[int] = None,
     streaming_window_seconds: int = 86400,
     streaming_sort_within_window: bool = False,
     streaming_shuffle_fraction: float = 0.0,
@@ -1553,6 +1554,12 @@ def get_dataset(
                 # Override via `get_dataset.history_length = N` in gin.
                 "history_length": history_length if history_length is not None else 4096,
                 "scan_window": 20000,
+                # Anchor-eligibility floor: a LISTEN event qualifies once the
+                # user has >= min_history prior events. Decoupled from
+                # history_length (gather cap) since jagged attention handles
+                # short UIH. None = legacy (require a full history_length).
+                # Override via `get_dataset.min_history = N` / $MIN_HISTORY.
+                "min_history": min_history,
                 "cross_specs": YAMBDA_5B_CROSS_SPECS,
                 # Temporal-streaming knobs (only used under --mode
                 # streaming-train-eval; ignored by the default train-eval path).
