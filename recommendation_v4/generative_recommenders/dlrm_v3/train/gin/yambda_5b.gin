@@ -206,13 +206,13 @@ ot/env_int.default = 0
 streaming_train_eval_loop.persistent_loader = @pl/env_int()
 pl/env_int.key = "PERSISTENT_LOADER"
 pl/env_int.default = 1
-streaming_train_eval_loop.eval_each_window = @ev/env_int()
-ev/env_int.key = "EVAL_EACH_WINDOW"
-ev/env_int.default = 1
-# Full-holdout eval cadence: run eval every Nth train window (and always on the
-# final window) instead of every window. 1 (default) = eval every window (no
-# behavior change). Set >1 (e.g. 5 via $EVAL_EVERY_N_WINDOWS) to amortize the
-# cost of consuming the full next-day eval window over several train windows.
+# Full-holdout eval cadence (single knob; replaces the old EVAL_EACH_WINDOW
+# on/off switch). 0 = eval disabled (train-only, e.g. perf benchmarking or the
+# resume test; the eval dataloader isn't even built). 1 (default) = eval after
+# every window. N>1 (e.g. 5 via $EVAL_EVERY_N_WINDOWS) = eval every Nth window
+# (and always the final one) to amortize the cost of consuming the full next-day
+# eval window. The cadence is anchored to the absolute ts grid so eval points
+# stay stable across a mid-run resume.
 streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
 evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
 evn/env_int.default = 1
