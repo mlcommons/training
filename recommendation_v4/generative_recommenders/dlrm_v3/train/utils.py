@@ -688,34 +688,129 @@ def make_train_test_dataloaders(
     return train_dataloader, test_dataloader
 
 
-def _log_unique_embedding_diag(sample, rank: int, step: int) -> None:
-    """Diagnostic: log per-batch unique-vs-total embedding-id counts.
+# THROWAWAY DIAG state: per-embedding-table lookup stats accumulated across a
+# fixed window of steps (DIAG_EMB_STEPS, default 100) so the reported numbers are
+# averaged/aggregated rather than a single noisy batch. Rank-0 only.
+_EMB_DIAG_ACC: Dict[str, Dict[str, Any]] = {}
+_EMB_DIAG_NBATCH: int = 0
+# Cap (per-batch lookups) below which we also track a TRUE global-unique set
+# across the whole window (cheap for contextual/cross tables, total == batch
+# size). Sequential tables (item/artist/album) blow past this and only get the
+# per-batch averages.
+_EMB_DIAG_GLOBAL_CAP: int = 1 << 17  # 131072
+
+
+def _log_unique_embedding_diag(
+    sample, rank: int, step: int, max_steps: int = 100, log_every: int = 50
+) -> None:
+    """Diagnostic: aggregate per-embedding-table lookup stats over a step window.
 
     Quantifies the user-major batching concern — when consecutive sliding-window
     anchors come from the same few users, a batch reads very few UNIQUE embedding
-    rows (low unique/total), so embedding lookups are highly redundant. In-window
-    shuffle should raise this ratio. Rank-0 only, gated by the caller (only fires
-    on logged steps), and fully non-fatal so it can never break training.
+    rows (low unique/total), so embedding lookups are highly redundant. Covers the
+    base id tables AND the cross-feature tables (user_x_* / *_x_hour hashed
+    combos); the user_x_* tables should be the most redundant under shuffle OFF.
+
+    Accumulates over ``max_steps`` batches and emits an aggregate summary (mean
+    per-batch unique%/hot%/top10%, plus a true global-unique over the whole
+    window for the small contextual/cross tables). Rank-0 only, non-fatal.
     """
     if rank != 0:
         return
+    global _EMB_DIAG_NBATCH
     try:
-        parts = []
+        from generative_recommenders.dlrm_v3.configs import YAMBDA_5B_CROSS_SPECS
+
+        cross_caps = {name: n for (name, _k, n, _s) in YAMBDA_5B_CROSS_SPECS}
+
+        def _table_of(key: str):
+            # cross tables match by exact name; resolve BEFORE substring fallbacks
+            # so e.g. 'user_x_artist' isn't misread as the artist_id table.
+            if key in cross_caps:
+                return key, cross_caps[key]
+            if key == "uid" or key.endswith("_uid") or key.endswith(".uid"):
+                return "uid", 0
+            if "artist" in key:
+                return "artist_id", 0
+            if "album" in key:
+                return "album_id", 0
+            if "item" in key and key.endswith("id"):
+                return "item_id", 0
+            return None, 0
+
         for tag, kjt in (
             ("uih", sample.uih_features_kjt),
             ("cand", sample.candidates_features_kjt),
         ):
             for key in kjt.keys():
-                if not key.endswith(("item_id", "artist_id", "album_id")):
+                table, cap = _table_of(key)
+                if table is None:
                     continue
                 vals = kjt[key].values()
                 total = int(vals.numel())
                 if total == 0:
                     continue
-                uniq = int(torch.unique(vals).numel())
-                parts.append(f"{tag}.{key}={uniq}/{total} ({100.0 * uniq / total:.1f}%)")
-        if parts:
-            logger.info(f"emb-diag - Step {step}: unique/total " + " ".join(parts))
+                u, counts = torch.unique(vals, return_counts=True)
+                uniq = int(u.numel())
+                hot1 = int(counts.max().item())
+                k = min(10, uniq)
+                topk = int(torch.topk(counts, k).values.sum().item())
+
+                slot = _EMB_DIAG_ACC.setdefault(
+                    f"{tag}.{key}",
+                    {
+                        "table": table,
+                        "cap": cap,
+                        "n": 0,
+                        "tot": 0,
+                        "uniq": 0,
+                        "upct": 0.0,
+                        "upct_min": 100.0,
+                        "upct_max": 0.0,
+                        "hot1pct": 0.0,
+                        "topkpct": 0.0,
+                        "glob": None,  # running global-unique id tensor (small tables)
+                    },
+                )
+                upct = 100.0 * uniq / total
+                slot["n"] += 1
+                slot["tot"] += total
+                slot["uniq"] += uniq
+                slot["upct"] += upct
+                slot["upct_min"] = min(slot["upct_min"], upct)
+                slot["upct_max"] = max(slot["upct_max"], upct)
+                slot["hot1pct"] += 100.0 * hot1 / total
+                slot["topkpct"] += 100.0 * topk / total
+                if total <= _EMB_DIAG_GLOBAL_CAP:
+                    prev = slot["glob"]
+                    merged = u if prev is None else torch.cat([prev, u])
+                    slot["glob"] = torch.unique(merged)
+
+        _EMB_DIAG_NBATCH += 1
+        n = _EMB_DIAG_NBATCH
+        if n % log_every == 0 or n >= max_steps:
+            lines = [f"emb-diag AGGREGATE over {n} batches (step<= {step}):"]
+            for name in sorted(_EMB_DIAG_ACC):
+                s = _EMB_DIAG_ACC[name]
+                c = max(1, s["n"])
+                cap_s = f" cap={s['cap']/1e6:.0f}M" if s["cap"] else ""
+                glob_s = ""
+                if s["glob"] is not None:
+                    g = int(s["glob"].numel())
+                    glob_s = (
+                        f" | global_uniq={g} over {s['tot']} seen "
+                        f"({s['tot']/max(1,g):.1f}x reuse)"
+                    )
+                lines.append(
+                    f"  {name}[{s['table']}]{cap_s}: "
+                    f"avg_tot={s['tot']/c:.0f} "
+                    f"avg_uniq%={s['upct']/c:.1f} "
+                    f"(min={s['upct_min']:.1f} max={s['upct_max']:.1f}) "
+                    f"avg_hot1%={s['hot1pct']/c:.1f} "
+                    f"avg_top10%={s['topkpct']/c:.1f}"
+                    f"{glob_s}"
+                )
+            logger.info("\n".join(lines))
     except Exception as e:  # diagnostic must never break training
         logger.warning(f"emb-diag failed: {e}")
 
@@ -744,8 +839,16 @@ def train_loop(
     for epoch in range(num_epochs):
         dataloader.sampler.set_epoch(epoch)  # pyre-ignore [16]
         for sample in dataloader:
-            if streaming_diag_unique_emb and batch_idx % metric_log_frequency == 0:
-                _log_unique_embedding_diag(sample, rank, batch_idx)
+            if streaming_diag_unique_emb and batch_idx < int(
+                os.environ.get("DIAG_EMB_STEPS", "100")
+            ):
+                _log_unique_embedding_diag(
+                    sample,
+                    rank,
+                    batch_idx,
+                    max_steps=int(os.environ.get("DIAG_EMB_STEPS", "100")),
+                    log_every=metric_log_frequency,
+                )
             optimizer.zero_grad()
             sample.to(device)
             (
@@ -1494,8 +1597,16 @@ def streaming_train_eval_loop(
                 break
             if _t_next is not None and first_wait is None:
                 first_wait = time.perf_counter() - _t_next
-            if streaming_diag_unique_emb and train_batch_idx % metric_log_frequency == 0:
-                _log_unique_embedding_diag(sample, rank, train_batch_idx)
+            if streaming_diag_unique_emb and train_batch_idx < int(
+                os.environ.get("DIAG_EMB_STEPS", "100")
+            ):
+                _log_unique_embedding_diag(
+                    sample,
+                    rank,
+                    train_batch_idx,
+                    max_steps=int(os.environ.get("DIAG_EMB_STEPS", "100")),
+                    log_every=metric_log_frequency,
+                )
             optimizer.zero_grad()
             sample.to(device)
             (
@@ -1653,7 +1764,8 @@ def streaming_train_eval_loop(
                     metric_logger.compute_and_log(mode="eval")
                 if num_eval_batches is not None and eval_batch_idx >= num_eval_batches:
                     break
-            for k, v in metric_logger.compute(mode="eval").items():
+            _eval_metrics = metric_logger.compute(mode="eval")
+            for k, v in _eval_metrics.items():
                 print(f"{k}: {v}")
         if label and rank == 0 and _t_enter is not None:
             _eval_total = time.perf_counter() - _t_enter
@@ -1662,6 +1774,40 @@ def streaming_train_eval_loop(
                 f"[boundary] {label} eval first-batch data-wait={_fw:.1f}ms "
                 f"total_eval={_eval_total * 1000:.1f}ms batches={eval_batch_idx}"
             )
+            # Dedicated per-eval metrics sink. One JSON line per eval boundary
+            # capturing the END-OF-PASS metric over the FIXED holdout -- the single
+            # correct value for that eval point (no interim/averaging ambiguity).
+            # Rank 0 only; append-only so it survives restarts and the trajectory
+            # accumulates across resumes. Written next to the main run log
+            # ("<LOG>.metrics.jsonl"), falling back to cwd if LOG is unset.
+            import json
+            import re as _re
+
+            _log = os.environ.get("LOG")
+            if _log:
+                _base = _log[:-4] if _log.endswith(".log") else _log
+                _metrics_path = f"{_base}.metrics.jsonl"
+            else:
+                _metrics_path = "streaming_eval_metrics.jsonl"
+            _ts_m = _re.search(r"train_ts=(\d+)", label)
+            _rec = {
+                "label": label,
+                "train_ts": int(_ts_m.group(1)) if _ts_m else None,
+                "global_step": int(metric_logger.global_step.get("train", -1)),
+                "eval_batches": eval_batch_idx,
+                "total_eval_ms": round(_eval_total * 1000, 1),
+                "wall_time": time.time(),
+            }
+            for _k, _v in _eval_metrics.items():
+                try:
+                    _rec[_k] = float(_v)
+                except (TypeError, ValueError):
+                    pass
+            try:
+                with open(_metrics_path, "a") as _f:
+                    _f.write(json.dumps(_rec) + "\n")
+            except OSError as _e:
+                logger.warning("failed to write metrics sink %s: %s", _metrics_path, _e)
 
     def _maybe_checkpoint(train_ts: int) -> None:
         if (
