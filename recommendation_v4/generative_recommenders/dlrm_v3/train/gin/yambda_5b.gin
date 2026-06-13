@@ -1,4 +1,9 @@
-batch_size = 1024
+# Per-rank batch size. Env-overridable so a denser per-sample shape can fit in
+# HBM by lowering it without editing gin. Default 1024 preserves prior runs;
+# streaming train+eval both read this macro (make_*streaming_dataloader.batch_size).
+batch_size = @bs/env_int()
+bs/env_int.key     = "BATCH_SIZE"
+bs/env_int.default = 1024
 # Dataloader parallelism. Env-overridable so a perf sweep can probe whether the
 # shuffle steady-state cost is CPU-gather latency (hidden by more workers) vs
 # GPU-side embedding work (not). Defaults preserve prior behavior (4 / 8).
@@ -100,6 +105,18 @@ get_dataset.history_length = @hl/env_int()
 hl/env_int.key     = "HISTORY_LENGTH"
 hl/env_int.default = 4086
 
+# Anchor-eligibility floor: a LISTEN event becomes a trainable/eval anchor once
+# the user has >= MIN_HISTORY prior events. Decoupled from history_length (which
+# is only the gather/truncation cap) — jagged attention handles short UIH, so we
+# no longer need a full history_length of context to include a sample. The legacy
+# behavior (require a full history_length, which dropped ~60% of users) is
+# MIN_HISTORY=4086; the default below (1) includes ~all users with any history.
+# Positions/anchor-ts caches are keyed by (L, MIN_HISTORY) so floors don't
+# collide. Override via $MIN_HISTORY.
+get_dataset.min_history = @mh/env_int()
+mh/env_int.key     = "MIN_HISTORY"
+mh/env_int.default = 1
+
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow. Override via
 # $MAX_SEQ_LEN (default 4096, the 4k-no-truncation shape paired with
@@ -125,12 +142,12 @@ get_dataset.streaming_sort_within_window = False
 # shuffle (max diversity), intermediate = interpolation. Same fraction => same
 # diversity regardless of world_size / #nodes / batch_size.
 #
-# Default 1.0 (full shuffle) so the standard/benchmark run is maximally diverse
-# and, together with the fixed seed below, the in-window order is fully
-# DETERMINISTIC and identical across runs/resumes (pure function of (seed, ts)).
-# Override per-run via $STREAMING_SHUFFLE_FRACTION (e.g. 0.0 for user-major,
-# 0.03 for the diversity/locality sweet spot).
-streaming_shuffle_fraction = 1.0
+# Default 0.0 (no shuffle -> user-major, page-local mmap scans) so the standard
+# run matches the production streaming order. Together with the fixed seed below
+# the in-window order is fully DETERMINISTIC and identical across runs/resumes.
+# Override per-run via $STREAMING_SHUFFLE_FRACTION (e.g. 1.0 for a full
+# per-element shuffle / max diversity, 0.03 for the diversity/locality sweet spot).
+streaming_shuffle_fraction = 0.0
 get_dataset.streaming_shuffle_fraction = @ssf/env_float()
 ssf/env_float.key     = "STREAMING_SHUFFLE_FRACTION"
 ssf/env_float.default = %streaming_shuffle_fraction
