@@ -1,6 +1,18 @@
-batch_size = 1024
-num_workers = 4
-prefetch_factor = 8
+# Per-rank batch size. Env-overridable so a denser per-sample shape can fit in
+# HBM by lowering it without editing gin. Default 1024 preserves prior runs;
+# streaming train+eval both read this macro (make_*streaming_dataloader.batch_size).
+batch_size = @bs/env_int()
+bs/env_int.key     = "BATCH_SIZE"
+bs/env_int.default = 1024
+# Dataloader parallelism. Env-overridable so a perf sweep can probe whether the
+# shuffle steady-state cost is CPU-gather latency (hidden by more workers) vs
+# GPU-side embedding work (not). Defaults preserve prior behavior (4 / 8).
+num_workers = @nw/env_int()
+nw/env_int.key     = "NUM_WORKERS"
+nw/env_int.default = 4
+prefetch_factor = @pf/env_int()
+pf/env_int.key     = "PREFETCH_FACTOR"
+pf/env_int.default = 8
 dataset = "yambda-5b"
 
 # model parameters
@@ -93,6 +105,18 @@ get_dataset.history_length = @hl/env_int()
 hl/env_int.key     = "HISTORY_LENGTH"
 hl/env_int.default = 4086
 
+# Anchor-eligibility floor: a LISTEN event becomes a trainable/eval anchor once
+# the user has >= MIN_HISTORY prior events. Decoupled from history_length (which
+# is only the gather/truncation cap) — jagged attention handles short UIH, so we
+# no longer need a full history_length of context to include a sample. The legacy
+# behavior (require a full history_length, which dropped ~60% of users) is
+# MIN_HISTORY=4086; the default below (0) includes ~all users AND their
+# cold-start first event (zero prior context). Positions/anchor-ts caches are
+# keyed by (L, MIN_HISTORY) so floors don't collide. Override via $MIN_HISTORY.
+get_dataset.min_history = @mh/env_int()
+mh/env_int.key     = "MIN_HISTORY"
+mh/env_int.default = 0
+
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow. Override via
 # $MAX_SEQ_LEN (default 4096, the 4k-no-truncation shape paired with
@@ -110,6 +134,28 @@ msl/env_int.default = 4096
 # to the dataset's available window count at runtime; override via $NUM_TRAIN_TS.
 get_dataset.streaming_window_seconds = 86400
 get_dataset.streaming_sort_within_window = False
+# In-window shuffle to break user-major batching (consecutive sliding-window
+# anchors otherwise come from the same few users -> few unique embedding reads).
+# Diversity dial in [0,1] -- the AGREED, config-invariant benchmark knob. Maps to
+# a within-segment shuffle with K = round(fraction * per-window train-anchor
+# count): 0 = off (user-major, page-local mmap scans), 1 = full per-element
+# shuffle (max diversity), intermediate = interpolation. Same fraction => same
+# diversity regardless of world_size / #nodes / batch_size.
+#
+# Default 0.0 (no shuffle -> user-major, page-local mmap scans) so the standard
+# run matches the production streaming order. Together with the fixed seed below
+# the in-window order is fully DETERMINISTIC and identical across runs/resumes.
+# Override per-run via $STREAMING_SHUFFLE_FRACTION (e.g. 1.0 for a full
+# per-element shuffle / max diversity, 0.03 for the diversity/locality sweet spot).
+streaming_shuffle_fraction = 0.0
+get_dataset.streaming_shuffle_fraction = @ssf/env_float()
+ssf/env_float.key     = "STREAMING_SHUFFLE_FRACTION"
+ssf/env_float.default = %streaming_shuffle_fraction
+# Fixed shuffle seed -> reproducible permutation. Exposed as a knob; override via
+# $STREAMING_SHUFFLE_SEED only if you deliberately want a different draw.
+get_dataset.streaming_shuffle_seed = @ssfseed/env_int()
+ssfseed/env_int.key     = "STREAMING_SHUFFLE_SEED"
+ssfseed/env_int.default = 0
 # User-level train:eval holdout for the streaming path. With tsp<1.0, the top
 # (1 - tsp) fraction of users (by a deterministic hash of uid+split_salt) are
 # held out as a FIXED eval set and never trained -> no temporal/user leakage,
@@ -127,7 +173,10 @@ make_persistent_streaming_dataloader.num_workers = %num_workers
 make_persistent_streaming_dataloader.prefetch_factor = %prefetch_factor
 streaming_train_eval_loop.num_train_ts = @nts/env_int()
 nts/env_int.key = "NUM_TRAIN_TS"
-nts/env_int.default = 30
+# 149 daily windows -> with start_ts=150 the run sweeps ts=150..298, the full
+# dense range of the corpus (matches the long e2e runs). Clamped to the
+# dataset's available window count at runtime. Override via $NUM_TRAIN_TS.
+nts/env_int.default = 149
 # Anchors need >= history_length prior events, so the first ~130 daily windows
 # are near-empty warm-up; start at a dense window. Override via $START_TS.
 streaming_train_eval_loop.start_ts = @sts/env_int()
@@ -139,22 +188,31 @@ sts/env_int.default = 150
 streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
 mlf/env_int.key     = "METRIC_LOG_FREQ"
 mlf/env_int.default = 50
-# Trace on by default: reuses the shared Profiler.* bindings below (5-step
+# Diagnostic: log per-batch unique/total embedding-id counts on logged steps
+# (rank 0). Quantifies the user-major batching redundancy and the realized
+# diversity from get_dataset.streaming_shuffle_fraction. Off; set $DIAG_UNIQUE_EMB=1.
+streaming_train_eval_loop.streaming_diag_unique_emb = @due/env_int()
+due/env_int.key     = "DIAG_UNIQUE_EMB"
+due/env_int.default = 0
+# Chrome trace capture: reuses the shared Profiler.* bindings below (5-step
 # window at step 52). The streaming step counter advances across train+eval
-# batches, so step 52 lands in the first (train) window's compute.
-streaming_train_eval_loop.output_trace = True
+# batches, so step 52 lands in the first (train) window's compute. Off by
+# default to avoid profiler overhead in production runs; set $OUTPUT_TRACE=1.
+streaming_train_eval_loop.output_trace = @ot/env_int()
+ot/env_int.key     = "OUTPUT_TRACE"
+ot/env_int.default = 0
 # Reuse one DataLoader (persistent workers) across windows instead of respawning
 # per window. Skip eval to isolate window-reset cost. Override via env.
 streaming_train_eval_loop.persistent_loader = @pl/env_int()
 pl/env_int.key = "PERSISTENT_LOADER"
 pl/env_int.default = 1
-streaming_train_eval_loop.eval_each_window = @ev/env_int()
-ev/env_int.key = "EVAL_EACH_WINDOW"
-ev/env_int.default = 1
-# Full-holdout eval cadence: run eval every Nth train window (and always on the
-# final window) instead of every window. 1 (default) = eval every window (no
-# behavior change). Set >1 (e.g. 5 via $EVAL_EVERY_N_WINDOWS) to amortize the
-# cost of consuming the full next-day eval window over several train windows.
+# Full-holdout eval cadence (single knob; replaces the old EVAL_EACH_WINDOW
+# on/off switch). 0 = eval disabled (train-only, e.g. perf benchmarking or the
+# resume test; the eval dataloader isn't even built). 1 (default) = eval after
+# every window. N>1 (e.g. 5 via $EVAL_EVERY_N_WINDOWS) = eval every Nth window
+# (and always the final one) to amortize the cost of consuming the full next-day
+# eval window. The cadence is anchored to the absolute ts grid so eval points
+# stay stable across a mid-run resume.
 streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
 evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
 evn/env_int.default = 1
