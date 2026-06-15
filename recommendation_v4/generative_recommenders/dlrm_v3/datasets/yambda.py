@@ -204,11 +204,14 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         metadata_dir: str,
         history_length: int = 2048,
         scan_window: int = 20000,
+        min_history: Optional[int] = None,
         cross_specs: Optional[Sequence[Tuple[str, Sequence[str], int, int]]] = None,
         cache_dir: Optional[str] = None,
         is_inference: bool = False,
         streaming_window_seconds: int = 86400,
         streaming_sort_within_window: bool = False,
+        streaming_shuffle_fraction: float = 0.0,
+        streaming_shuffle_seed: int = 0,
         train_split_percentage: float = 1.0,
         split_salt: int = 0,
         *args,
@@ -219,12 +222,32 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self._metadata_dir: str = metadata_dir
         self._history_length: int = history_length
         self._scan_window: int = scan_window
+        # Minimum prior-event count for a LISTEN event to qualify as an anchor.
+        # Decoupled from history_length (which is only the gather/truncation cap):
+        # jagged attention handles short UIH, so we no longer require a full
+        # history_length of context to include a sample. Default None preserves
+        # the legacy "need a full history_length of prior events" behavior (which
+        # dropped ~60% of users); set small (e.g. 1) to include ~all users.
+        self._min_history: int = (
+            history_length if min_history is None else int(min_history)
+        )
         # Streaming/temporal-order state. Everything here is LAZY: nothing is
         # built or read until the first set_ts()/num_windows() call (only the
         # streaming-train-eval loop does that), so the default train-eval path
         # is byte-for-byte unaffected.
         self._streaming_window_seconds: int = streaming_window_seconds
         self._streaming_sort_within_window: bool = streaming_sort_within_window
+        # In-window shuffle dial in [0, 1] to break user-major batching (default
+        # 0.0 = off, user-major order preserved for page-local mmap scans). Maps to
+        # a within-segment shuffle with K = round(fraction * per-window train-anchor
+        # count): 1.0 = full per-element shuffle (max user diversity per batch),
+        # intermediate = interpolation. Computed from the global anchor count BEFORE
+        # round-robin striding, so a given fraction yields the same diversity
+        # regardless of world_size / #nodes / batch_size (config-invariant). The
+        # permutation is a pure function of (seed, ts) so the per-rank round-robin
+        # slice + mid-window resume skip stay deterministic across restarts.
+        self._streaming_shuffle_fraction: float = streaming_shuffle_fraction
+        self._streaming_shuffle_seed: int = streaming_shuffle_seed
         # User-level train:eval split. `train_split_percentage >= 1.0` means no
         # holdout (legacy behavior: every anchor is trainable). Otherwise the
         # top `1 - train_split_percentage` fraction of users (by a deterministic
@@ -261,14 +284,82 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self._cache_dir = cache_dir
         self._ensure_cache_built(cache_dir, processed_dir, history_length)
         self.store: _FlatEventStore = _FlatEventStore.load_mmap(cache_dir)
-        # Mmap the positions file built alongside the flat columns.
+        # Anchor positions depend on min_history (the eligibility floor), not
+        # just history_length (the gather cap), so they live in a
+        # min_history-versioned file that shares the flat store. Built
+        # independently of the _READY sentinel so changing the floor rebuilds
+        # only this (cheap) array, not the whole 150 GB cache.
+        self._positions_name: str = self._positions_filename(
+            history_length, self._min_history
+        )
+        self._ensure_positions_built(
+            cache_dir, self._positions_name, self._min_history
+        )
         self._positions: np.ndarray = _load_npy_readonly(
-            os.path.join(cache_dir, f"positions_L{history_length}.npy")
+            os.path.join(cache_dir, self._positions_name)
         )
         logger.info(
             f"Yambda dataset ready: {self.store.total_events:,} events, "
             f"{len(self._positions):,} training positions"
         )
+
+    @staticmethod
+    def _positions_filename(history_length: int, min_history: int) -> str:
+        """Anchor-positions filename. Uses the legacy name when the floor equals
+        the gather cap (the historical "full history required" behavior) so
+        existing caches are reused as-is; otherwise a min_history-tagged name."""
+        if min_history == history_length:
+            return f"positions_L{history_length}.npy"
+        return f"positions_L{history_length}_m{min_history}.npy"
+
+    @staticmethod
+    def _ensure_positions_built(
+        cache_dir: str, positions_name: str, min_history: int
+    ) -> None:
+        """Build the anchor-positions array for ``min_history`` if absent.
+
+        Anchors are LISTEN events whose user-local offset is >= ``min_history``
+        (i.e. the user already has that many prior events). This is decoupled
+        from the _READY-gated flat-store build so a new floor only rebuilds this
+        (cheap, ~one int64 scan) array rather than the whole 150 GB cache.
+        Multi-rank safe via an exclusive lock + atomic rename; all ranks then
+        mmap the result read-only.
+        """
+        import fcntl
+
+        positions_path = os.path.join(cache_dir, positions_name)
+        if os.path.exists(positions_path):
+            return
+        lock_path = os.path.join(cache_dir, "_positions_lock")
+        with open(lock_path, "w") as lf:
+            logger.info(f"Acquiring positions build lock for {positions_path}...")
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                if os.path.exists(positions_path):
+                    return
+                flat_uid = _load_npy_readonly(
+                    os.path.join(cache_dir, "flat_uid.npy")
+                )
+                event_types = _load_npy_readonly(
+                    os.path.join(cache_dir, "flat_event_types.npy")
+                )
+                user_start = _load_npy_readonly(
+                    os.path.join(cache_dir, "user_start.npy")
+                )
+                idx = np.arange(len(flat_uid), dtype=np.int64)
+                keep = (idx - user_start[flat_uid] >= min_history) & (
+                    event_types == LISTEN_TYPE
+                )
+                positions = np.where(keep)[0].astype(np.int64)
+                tmp = positions_path + ".tmp.npy"
+                np.save(tmp, positions)
+                os.replace(tmp, positions_path)
+                logger.info(
+                    f"Wrote {positions_name}: {len(positions):,} anchors "
+                    f"(min_history={min_history})"
+                )
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
 
     @staticmethod
     def _ensure_cache_built(
@@ -483,8 +574,11 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         import fcntl
 
         assert self._cache_dir is not None
+        # Target-ts array is per-anchor, so it must track the same min_history
+        # versioning as the positions file it indexes into.
         anchor_path = os.path.join(
-            self._cache_dir, f"anchor_ts_L{self._history_length}.npy"
+            self._cache_dir,
+            self._positions_name.replace("positions_", "anchor_ts_", 1),
         )
         if not os.path.exists(anchor_path):
             lock_path = os.path.join(self._cache_dir, "_anchor_ts_lock")
@@ -555,20 +649,63 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         uids = self.store.flat_uid[self._positions[anchor_idx]]
         return _uid_unit_hash(uids, self._split_salt) >= self._train_split_percentage
 
+    def _shuffle_window(self, idx: np.ndarray, ts: int) -> np.ndarray:
+        """Optionally break user-major ordering within a train window.
+
+        ``streaming_shuffle_fraction`` (0..1) is the single diversity dial. It
+        maps to a within-segment shuffle with ``K = round(fraction * N)`` where
+        ``N`` is this window's train-anchor count:
+
+          - 0.0  -> off: return ``idx`` unchanged (user-major, page-local scans).
+          - 1.0  -> full per-element shuffle (max user diversity per batch).
+          - else -> permute WITHIN each contiguous size-K segment (segment order
+            preserved). A per-rank batch then draws across a bounded user-major
+            region, so diversity scales with the fraction while the concurrently
+            touched mmap working set stays within ~one K-segment (page locality).
+
+        Because ``N`` is a property of the dataset/window (not the compute layout)
+        and the permutation is applied BEFORE the per-rank round-robin striding, a
+        given fraction yields the same diversity across world_size / #nodes /
+        batch_size (config-invariant).
+
+        The permutation is a pure function of ``(seed, ts)`` via
+        ``np.random.default_rng(seed + ts)``, so every (re)run of this window
+        yields the IDENTICAL order. This keeps the per-rank round-robin slice and
+        the mid-window resume ``skip_samples`` offset consistent across restarts,
+        exactly like the unshuffled path.
+        """
+        frac = self._streaming_shuffle_fraction
+        if idx.size <= 1 or not frac or frac <= 0.0:
+            return idx
+        rng = np.random.default_rng(self._streaming_shuffle_seed + ts)
+        if frac >= 1.0:
+            return idx[rng.permutation(idx.size)]
+        # Within-segment shuffle (K = round(fraction * N)): a single vectorized
+        # lexsort over per-element random keys, stable within each size-K segment
+        # so elements never cross a segment boundary (bounds the working set). O(N
+        # log K), run once per window in the background prep thread.
+        n = idx.size
+        k = max(1, int(round(frac * n)))
+        seg = np.arange(n, dtype=np.int64) // k
+        keys = rng.random(n)
+        order = np.lexsort((keys, seg))
+        return idx[order]
+
     def train_window_indices(self, ts: int) -> np.ndarray:
         """Global anchor indices for TRAIN in window ``ts``: ``window_indices``
-        with held-out eval users removed. Identical across resume because both
-        ``window_indices`` and the uid hash are pure functions, so the per-rank
-        round-robin slice (and the mid-window skip offset) stay consistent."""
+        with held-out eval users removed. Identical across resume because
+        ``window_indices``, the uid hash, and the (seed,ts)-keyed in-window
+        shuffle are all pure functions, so the per-rank round-robin slice (and
+        the mid-window skip offset) stay consistent."""
         idx = self.window_indices(ts)
         if self._train_split_percentage >= 1.0:
-            return idx
+            return self._shuffle_window(idx, ts)
         kept = idx[~self._eval_anchor_mask(idx)]
         logger.warning(
             f"train_window_indices({ts}): {idx.size:,} -> {kept.size:,} anchors "
             f"(holdout tsp={self._train_split_percentage}, salt={self._split_salt})"
         )
-        return kept
+        return self._shuffle_window(kept, ts)
 
     def eval_holdout_indices(self, start_ts: int, num_windows: int = 1) -> np.ndarray:
         """Fixed eval set: held-out users' anchors over windows

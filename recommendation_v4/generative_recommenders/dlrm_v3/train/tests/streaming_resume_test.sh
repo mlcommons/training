@@ -13,7 +13,7 @@
 #
 # Driven entirely via env-driven gin knobs defined in yambda_5b.gin:
 #   NUM_TRAIN_TS / NUM_TRAIN_BATCHES / IN_WINDOW_CKPT_FREQ / DIE_AT_STEP /
-#   CKPT_PATH / KEEP_LAST_N / EVAL_EACH_WINDOW
+#   CKPT_PATH / KEEP_LAST_N / EVAL_EVERY_N_WINDOWS
 #
 # Usage:
 #   bash generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh --jobid <slurm-jobid>
@@ -131,7 +131,7 @@ run_phase() {
 clean_ckpt
 run_phase baseline \
     "NUM_TRAIN_TS=1" \
-    "EVAL_EACH_WINDOW=0" \
+    "EVAL_EVERY_N_WINDOWS=0" \
     "METRIC_LOG_FREQ=1" \
     "NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES" \
     "DIE_AT_STEP=-1"
@@ -144,7 +144,7 @@ cleanup_workers
 clean_ckpt
 run_phase interrupt \
     "NUM_TRAIN_TS=1" \
-    "EVAL_EACH_WINDOW=0" \
+    "EVAL_EVERY_N_WINDOWS=0" \
     "METRIC_LOG_FREQ=1" \
     "NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES" \
     "IN_WINDOW_CKPT_FREQ=$IN_WINDOW_FREQ" \
@@ -162,7 +162,7 @@ echo "Saved checkpoints after interrupt: $SAVED"
 # === Phase 3: resume ===
 run_phase resume \
     "NUM_TRAIN_TS=1" \
-    "EVAL_EACH_WINDOW=0" \
+    "EVAL_EVERY_N_WINDOWS=0" \
     "METRIC_LOG_FREQ=1" \
     "NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES" \
     "IN_WINDOW_CKPT_FREQ=$IN_WINDOW_FREQ" \

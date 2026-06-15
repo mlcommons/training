@@ -710,6 +710,133 @@ def make_train_test_dataloaders(
     return train_dataloader, test_dataloader
 
 
+# THROWAWAY DIAG state: per-embedding-table lookup stats accumulated across a
+# fixed window of steps (DIAG_EMB_STEPS, default 100) so the reported numbers are
+# averaged/aggregated rather than a single noisy batch. Rank-0 only.
+_EMB_DIAG_ACC: Dict[str, Dict[str, Any]] = {}
+_EMB_DIAG_NBATCH: int = 0
+# Cap (per-batch lookups) below which we also track a TRUE global-unique set
+# across the whole window (cheap for contextual/cross tables, total == batch
+# size). Sequential tables (item/artist/album) blow past this and only get the
+# per-batch averages.
+_EMB_DIAG_GLOBAL_CAP: int = 1 << 17  # 131072
+
+
+def _log_unique_embedding_diag(
+    sample, rank: int, step: int, max_steps: int = 100, log_every: int = 50
+) -> None:
+    """Diagnostic: aggregate per-embedding-table lookup stats over a step window.
+
+    Quantifies the user-major batching concern — when consecutive sliding-window
+    anchors come from the same few users, a batch reads very few UNIQUE embedding
+    rows (low unique/total), so embedding lookups are highly redundant. Covers the
+    base id tables AND the cross-feature tables (user_x_* / *_x_hour hashed
+    combos); the user_x_* tables should be the most redundant under shuffle OFF.
+
+    Accumulates over ``max_steps`` batches and emits an aggregate summary (mean
+    per-batch unique%/hot%/top10%, plus a true global-unique over the whole
+    window for the small contextual/cross tables). Rank-0 only, non-fatal.
+    """
+    if rank != 0:
+        return
+    global _EMB_DIAG_NBATCH
+    try:
+        from generative_recommenders.dlrm_v3.configs import YAMBDA_5B_CROSS_SPECS
+
+        cross_caps = {name: n for (name, _k, n, _s) in YAMBDA_5B_CROSS_SPECS}
+
+        def _table_of(key: str):
+            # cross tables match by exact name; resolve BEFORE substring fallbacks
+            # so e.g. 'user_x_artist' isn't misread as the artist_id table.
+            if key in cross_caps:
+                return key, cross_caps[key]
+            if key == "uid" or key.endswith("_uid") or key.endswith(".uid"):
+                return "uid", 0
+            if "artist" in key:
+                return "artist_id", 0
+            if "album" in key:
+                return "album_id", 0
+            if "item" in key and key.endswith("id"):
+                return "item_id", 0
+            return None, 0
+
+        for tag, kjt in (
+            ("uih", sample.uih_features_kjt),
+            ("cand", sample.candidates_features_kjt),
+        ):
+            for key in kjt.keys():
+                table, cap = _table_of(key)
+                if table is None:
+                    continue
+                vals = kjt[key].values()
+                total = int(vals.numel())
+                if total == 0:
+                    continue
+                u, counts = torch.unique(vals, return_counts=True)
+                uniq = int(u.numel())
+                hot1 = int(counts.max().item())
+                k = min(10, uniq)
+                topk = int(torch.topk(counts, k).values.sum().item())
+
+                slot = _EMB_DIAG_ACC.setdefault(
+                    f"{tag}.{key}",
+                    {
+                        "table": table,
+                        "cap": cap,
+                        "n": 0,
+                        "tot": 0,
+                        "uniq": 0,
+                        "upct": 0.0,
+                        "upct_min": 100.0,
+                        "upct_max": 0.0,
+                        "hot1pct": 0.0,
+                        "topkpct": 0.0,
+                        "glob": None,  # running global-unique id tensor (small tables)
+                    },
+                )
+                upct = 100.0 * uniq / total
+                slot["n"] += 1
+                slot["tot"] += total
+                slot["uniq"] += uniq
+                slot["upct"] += upct
+                slot["upct_min"] = min(slot["upct_min"], upct)
+                slot["upct_max"] = max(slot["upct_max"], upct)
+                slot["hot1pct"] += 100.0 * hot1 / total
+                slot["topkpct"] += 100.0 * topk / total
+                if total <= _EMB_DIAG_GLOBAL_CAP:
+                    prev = slot["glob"]
+                    merged = u if prev is None else torch.cat([prev, u])
+                    slot["glob"] = torch.unique(merged)
+
+        _EMB_DIAG_NBATCH += 1
+        n = _EMB_DIAG_NBATCH
+        if n % log_every == 0 or n >= max_steps:
+            lines = [f"emb-diag AGGREGATE over {n} batches (step<= {step}):"]
+            for name in sorted(_EMB_DIAG_ACC):
+                s = _EMB_DIAG_ACC[name]
+                c = max(1, s["n"])
+                cap_s = f" cap={s['cap']/1e6:.0f}M" if s["cap"] else ""
+                glob_s = ""
+                if s["glob"] is not None:
+                    g = int(s["glob"].numel())
+                    glob_s = (
+                        f" | global_uniq={g} over {s['tot']} seen "
+                        f"({s['tot']/max(1,g):.1f}x reuse)"
+                    )
+                lines.append(
+                    f"  {name}[{s['table']}]{cap_s}: "
+                    f"avg_tot={s['tot']/c:.0f} "
+                    f"avg_uniq%={s['upct']/c:.1f} "
+                    f"(min={s['upct_min']:.1f} max={s['upct_max']:.1f}) "
+                    f"avg_hot1%={s['hot1pct']/c:.1f} "
+                    f"avg_top10%={s['topkpct']/c:.1f}"
+                    f"{glob_s}"
+                )
+            logger.info("\n".join(lines))
+    except Exception as e:  # diagnostic must never break training
+        logger.warning(f"emb-diag failed: {e}")
+
+
 @gin.configurable
 def train_loop(
     rank: int,
@@ -724,6 +851,7 @@ def train_loop(
     metric_log_frequency: int = 1,
     checkpoint_frequency: int = 100,
     start_batch_idx: int = 0,
+    streaming_diag_unique_emb: bool = False,
     # lr_scheduler: to-do: Add a scheduler
 ) -> None:
     model.train()
@@ -733,6 +861,16 @@ def train_loop(
     for epoch in range(num_epochs):
         dataloader.sampler.set_epoch(epoch)  # pyre-ignore [16]
         for sample in dataloader:
+            if streaming_diag_unique_emb and batch_idx < int(
+                os.environ.get("DIAG_EMB_STEPS", "100")
+            ):
+                _log_unique_embedding_diag(
+                    sample,
+                    rank,
+                    batch_idx,
+                    max_steps=int(os.environ.get("DIAG_EMB_STEPS", "100")),
+                    log_every=metric_log_frequency,
+                )
             optimizer.zero_grad()
             sample.to(device)
             (
@@ -1200,7 +1338,6 @@ def streaming_train_eval_loop(
     checkpoint_frequency: int = 100,
     start_ts: int = 0,
     persistent_loader: bool = False,
-    eval_each_window: bool = True,
     eval_every_n_windows: int = 1,
     double_buffer: bool = False,
     # --- fixed user-holdout eval set ---
@@ -1223,6 +1360,8 @@ def streaming_train_eval_loop(
     # --- global step / wall-clock checkpoint cadences ---
     checkpoint_step_frequency: int = 0,
     checkpoint_time_interval_s: float = 0.0,
+    # --- diagnostic: log per-batch unique/total embedding-id counts ---
+    streaming_diag_unique_emb: bool = False,
     # --- test-only failure injection knob ---
     die_at_step: int = -1,
     # MLPerf compliance logger (rank-0-gated facade). None disables all MLPerf
@@ -1483,6 +1622,16 @@ def streaming_train_eval_loop(
                 break
             if _t_next is not None and first_wait is None:
                 first_wait = time.perf_counter() - _t_next
+            if streaming_diag_unique_emb and train_batch_idx < int(
+                os.environ.get("DIAG_EMB_STEPS", "100")
+            ):
+                _log_unique_embedding_diag(
+                    sample,
+                    rank,
+                    train_batch_idx,
+                    max_steps=int(os.environ.get("DIAG_EMB_STEPS", "100")),
+                    log_every=metric_log_frequency,
+                )
             optimizer.zero_grad()
             sample.to(device)
             (
@@ -1642,8 +1791,8 @@ def streaming_train_eval_loop(
                     metric_logger.compute_and_log(mode="eval")
                 if num_eval_batches is not None and eval_batch_idx >= num_eval_batches:
                     break
-            eval_metrics = metric_logger.compute(mode="eval")
-            for k, v in eval_metrics.items():
+            _eval_metrics = metric_logger.compute(mode="eval")
+            for k, v in _eval_metrics.items():
                 print(f"{k}: {v}")
         if label and rank == 0 and _t_enter is not None:
             _eval_total = time.perf_counter() - _t_enter
@@ -1652,7 +1801,44 @@ def streaming_train_eval_loop(
                 f"[boundary] {label} eval first-batch data-wait={_fw:.1f}ms "
                 f"total_eval={_eval_total * 1000:.1f}ms batches={eval_batch_idx}"
             )
-        return eval_metrics
+            # Dedicated per-eval metrics sink. One JSON line per eval boundary
+            # capturing the END-OF-PASS metric over the FIXED holdout -- the single
+            # correct value for that eval point (no interim/averaging ambiguity).
+            # Rank 0 only; append-only so it survives restarts and the trajectory
+            # accumulates across resumes. Written next to the main run log
+            # ("<LOG>.metrics.jsonl"), falling back to cwd if LOG is unset.
+            import json
+            import re as _re
+
+            _log = os.environ.get("LOG")
+            if _log:
+                _base = _log[:-4] if _log.endswith(".log") else _log
+                _metrics_path = f"{_base}.metrics.jsonl"
+            else:
+                _metrics_path = "streaming_eval_metrics.jsonl"
+            _ts_m = _re.search(r"train_ts=(\d+)", label)
+            _rec = {
+                "label": label,
+                "train_ts": int(_ts_m.group(1)) if _ts_m else None,
+                "global_step": int(metric_logger.global_step.get("train", -1)),
+                "eval_batches": eval_batch_idx,
+                "total_eval_ms": round(_eval_total * 1000, 1),
+                "wall_time": time.time(),
+            }
+            for _k, _v in _eval_metrics.items():
+                try:
+                    _rec[_k] = float(_v)
+                except (TypeError, ValueError):
+                    pass
+            try:
+                with open(_metrics_path, "a") as _f:
+                    _f.write(json.dumps(_rec) + "\n")
+            except OSError as _e:
+                logger.warning("failed to write metrics sink %s: %s", _metrics_path, _e)
+        # Return metrics to the streaming loop so the MLPerf EVAL_STOP /
+        # EVAL_ACCURACY hooks (and the stop-on-target check) can consume them.
+        # Unconditional (outside the rank-0 logging block) so every rank returns.
+        return _eval_metrics
 
     def _maybe_checkpoint(train_ts: int) -> None:
         if (
@@ -1683,18 +1869,21 @@ def streaming_train_eval_loop(
     def _should_eval(i: int) -> bool:
         """Whether to run the full-holdout eval after training window index `i`.
 
-        `eval_every_n_windows<=1` (default) preserves the per-window cadence.
-        For K>1 we eval when the ABSOLUTE window ts is on the grid anchored at
-        `eval_anchor_ts` (the original start_ts), i.e. ts in {anchor, anchor+K,
-        anchor+2K, ...}, and ALWAYS on the final window so the trajectory ends
-        with an eval point. Anchoring to the absolute ts (not the per-call loop
-        index `i`) keeps the eval grid (e.g. 150,160,170,...) stable across a
-        mid-run resume, which rebases start_ts/`train_ts_list` to the resume
-        window. Gated by `eval_each_window`.
+        Single cadence knob `eval_every_n_windows`:
+          * <=0 -> eval disabled entirely (train-only; e.g. perf benchmarking or
+            the resume test). The eval dataloader is not even built.
+          * 1 (default) -> eval after every window.
+          * K>1 -> eval when the ABSOLUTE window ts is on the grid anchored at
+            `eval_anchor_ts` (the original start_ts), i.e. ts in {anchor,
+            anchor+K, anchor+2K, ...}, and ALWAYS on the final window so the
+            trajectory ends with an eval point. Anchoring to the absolute ts
+            (not the per-call loop index `i`) keeps the eval grid (e.g.
+            150,160,170,...) stable across a mid-run resume, which rebases
+            start_ts/`train_ts_list` to the resume window.
         """
-        if not eval_each_window:
+        if eval_every_n_windows <= 0:
             return False
-        if eval_every_n_windows <= 1:
+        if eval_every_n_windows == 1:
             return True
         return (train_ts_list[i] - eval_anchor_ts) % eval_every_n_windows == 0 or i == n_train - 1
 
@@ -1883,7 +2072,7 @@ def streaming_train_eval_loop(
         # sample content depends only on the sampler window, not is_eval, so
         # prefetching during train is safe.
         eval_iter: Optional[Iterator] = None
-        if eval_each_window and len(train_ts_list) > 0:
+        if eval_every_n_windows > 0 and len(train_ts_list) > 0:
             eval_sampler = StreamingWindowSampler(rank, world_size)
             eval_dl = make_persistent_streaming_dataloader(
                 dataset=dataset, sampler=eval_sampler
