@@ -220,8 +220,9 @@ def _main_func(
         global_batch_size = world_size * int(train_dataloader.batch_size)
         mlperf_logger.event(key=c.GLOBAL_BATCH_SIZE, value=global_batch_size)
         mlperf_logger.event(key=c.GRADIENT_ACCUMULATION_STEPS, value=1)
-        # Seed is fixed in setup() (_SEED = 1); kept in sync here.
-        mlperf_logger.event(key=c.SEED, value=1)
+        # Log the ACTUAL seed chosen in setup() (random per-run unless $SEED is
+        # pinned; setup() exports the chosen value to $SEED).
+        mlperf_logger.event(key=c.SEED, value=int(os.environ.get("SEED", "1")))
         # Dense (Adam) + sparse (RowWiseAdagrad) optimizer hyperparameters,
         # read from the active gin bindings.
         mlperf_logger.event(
@@ -309,8 +310,27 @@ def _main_func(
             )
     except Exception as e:
         logger.info(traceback.format_exc())
-        cleanup()
         raise Exception(e)
+    finally:
+        # Graceful distributed teardown (runs on BOTH success and failure).
+        # Previously cleanup() ran only in the except branch, so a clean finish
+        # returned without destroying the process group: ranks that returned
+        # first let rank 0's TCPStore close while peers' ProcessGroupNCCL
+        # heartbeat-monitor threads were still polling it, emitting the noisy
+        # (but harmless) "Failed to check the 'should dump' flag on TCPStore /
+        # Broken pipe" warnings + C++ stack traces at exit. Barrier first so all
+        # ranks reach the end in lockstep, then destroy_process_group() stops
+        # each rank's monitor thread and closes NCCL/the store in order. Both
+        # steps are guarded/best-effort so teardown never masks a real error.
+        if torch.distributed.is_initialized():
+            try:
+                torch.distributed.barrier()
+            except Exception:
+                logger.info("teardown barrier failed (non-fatal)")
+            try:
+                cleanup()
+            except Exception:
+                logger.info("teardown destroy_process_group failed (non-fatal)")
 
 
 def get_args():  # pyre-ignore [3]

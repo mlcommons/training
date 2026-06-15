@@ -96,25 +96,47 @@ def setup(
     # leaving stale allocations and triggering OOMs on rank 0.
     torch.cuda.set_device(device)
 
-    # Seed all RNGs so weight init (make_model, called after setup) is
-    # reproducible across runs. Same seed on every rank → dense params are
-    # initialized identically across ranks; sharded embeddings are init'd from
-    # the meta device by DMP. Fixed seed makes pipeline-vs-non-pipeline an
-    # init-matched A/B (data order is already deterministic via the sampler).
     import random
 
     import numpy as np
 
-    _SEED = 1
-    random.seed(_SEED)
-    np.random.seed(_SEED)
-    torch.manual_seed(_SEED)
-    torch.cuda.manual_seed_all(_SEED)
-
-    # initialize the process group
+    # initialize the process group FIRST so ranks can agree on a shared seed
+    # (the seed MUST be identical on every rank, else dense weight init diverges
+    # across ranks and DDP/AllReduce trains garbage).
     if not dist.is_initialized():
         dist.init_process_group(
             "nccl", rank=rank, world_size=world_size, device_id=device
+        )
+
+    # Seed selection. By default we draw a FRESH RANDOM seed every run so each
+    # launch explores a different dense weight init; pin $SEED to reproduce a
+    # specific run exactly. rank 0 draws the seed and broadcasts it so all ranks
+    # share one value; the chosen seed is exported to $SEED and logged so any run
+    # can be reproduced after the fact. NOTE (streaming-train-eval): the data
+    # ORDER and train/holdout split do NOT depend on this seed — order is
+    # time-deterministic (StreamingWindowSampler) and the split is governed by
+    # $SPLIT_SALT. The seed governs dense weight init + global-RNG stochastic ops.
+    env_seed = os.environ.get("SEED", "").strip()
+    if env_seed:
+        seed = int(env_seed)
+    else:
+        seed = int.from_bytes(os.urandom(4), "little") if rank == 0 else 0
+        _seed_t = torch.tensor([seed], dtype=torch.int64, device=device)
+        dist.broadcast(_seed_t, src=0)
+        seed = int(_seed_t.item())
+    os.environ["SEED"] = str(seed)
+
+    # Seed all RNGs with the agreed value so weight init (make_model, called
+    # after setup) is identical across ranks; sharded embeddings are init'd from
+    # the meta device by DMP.
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    if rank == 0:
+        logger.info(
+            f"[seed] using seed={seed} "
+            f"({'pinned via $SEED' if env_seed else 'random per-run; set $SEED to reproduce'})"
         )
 
     pg = dist.new_group(
