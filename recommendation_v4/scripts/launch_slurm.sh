@@ -214,6 +214,7 @@ orchestrate() {
   srun --ntasks-per-node=1 bash -c "
     docker exec \
       -e LAUNCH_SLURM_PHASE=worker \
+      -e WORKER_TEE=0 \
       -e SCRATCH=$SCRATCH \
       -e SLURM_NNODES=\$SLURM_NNODES \
       -e SLURM_NODEID=\$SLURM_NODEID \
@@ -381,6 +382,14 @@ worker() {
   cd "$REPO_ROOT"
   mkdir -p "$SCRATCH" 2>/dev/null || true
   LOG=${LOG:-$SCRATCH/yambda_5b_8gpu.log}
+  # Avoid double-logging. When launched by the orchestrate phase, our stdout is
+  # ALREADY captured into the real $LOG by orchestrate's `tee` (and, multi-node,
+  # funneled through one srun pipe). Re-`tee`ing $LOG here would write every line
+  # twice. Orchestrate sets WORKER_TEE=0 to point our own file sink at /dev/null:
+  # we still echo to stdout (captured upstream) but don't duplicate the file.
+  # Direct single-node invocation (the streaming-e2e supervisor) leaves
+  # WORKER_TEE unset, so the worker keeps writing $LOG itself.
+  [ "${WORKER_TEE:-1}" = "0" ] && LOG=/dev/null
   # TensorBoard under the writable scratch root unless the caller (e.g. the e2e
   # supervisor) pinned a per-run path. Keeps the gin default from ever being used.
   export TENSORBOARD_LOG_PATH=${TENSORBOARD_LOG_PATH:-$SCRATCH/tb/yambda_5b}
