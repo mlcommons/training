@@ -549,14 +549,26 @@ worker() {
   export WORLD_SIZE=$(( NNODES * GPUS_PER_NODE ))
   echo "[$(date)] topology: nnodes=$NNODES node_rank=$NODE_RANK gpus_per_node=$GPUS_PER_NODE world_size=$WORLD_SIZE master=$MASTER_ADDR:${MASTER_PORT:-<auto>}" | tee -a "$LOG"
 
-  # NCCL bootstrap NIC — pin for BOTH single- and multi-node. The container is
-  # --network=host so RCCL sees ALL host interfaces; if left to auto-detect, NCCL
-  # can pick a non-routable per-GPU RoCE /31 (benic* 192.168.x) link and fail
-  # bootstrap with "No route to host" (this is node-dependent: it happened to
-  # work on some nodes and not others, causing repetitive single-node init
-  # failures). Pinning the routable host NIC fixes it everywhere.
-  # [CLUSTER-SPECIFIC] routable host NIC for TCP bootstrap (find via `ip -br addr`).
-  export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
+  # NCCL bootstrap NIC. The container is --network=host so RCCL sees ALL host
+  # interfaces; if left to auto-detect, NCCL can pick a non-routable per-GPU RoCE
+  # /31 (benic* 192.168.x) link and fail bootstrap with "No route to host" (this
+  # is node-dependent: it worked on some nodes and not others, causing repetitive
+  # single-node init failures). Pin it explicitly to avoid that.
+  #   * Single-node (NNODES==1): all ranks are on THIS host, so only the bootstrap
+  #     control-plane crosses the socket NIC (data plane is intra-node XGMI/PCIe,
+  #     see below). Loopback is reachable by every local rank on ANY host and is
+  #     node-independent — same rationale as MASTER_ADDR=localhost above — so it
+  #     "just works" on dev boxes that have no fenic0 (e.g. a single MI355 node).
+  #   * Multi-node (NNODES>1): needs a routable host NIC shared across nodes for
+  #     the cross-node TCP rendezvous; default to the meta64 fenic0.
+  # Both remain ${NCCL_SOCKET_IFNAME:-...}-overridable for other fabrics.
+  # [CLUSTER-SPECIFIC] multi-node routable host NIC for TCP bootstrap (find via `ip -br addr`).
+  if [ "$NNODES" -gt 1 ]; then
+    export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
+  else
+    export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-lo}
+  fi
+  echo "[$(date)] NCCL_SOCKET_IFNAME=$NCCL_SOCKET_IFNAME (nnodes=$NNODES)" | tee -a "$LOG"
 
   # Multi-node additionally needs the RDMA data-plane (bnxt_re HCAs) configured;
   # single-node uses intra-node P2P (XGMI/PCIe) so only the bootstrap NIC matters.
