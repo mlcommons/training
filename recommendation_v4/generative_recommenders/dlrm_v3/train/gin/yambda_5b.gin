@@ -85,18 +85,19 @@ env_int.default = 260
 
 # Sparse embedding all-to-all wire precision. The embedding shuffle is the
 # dominant, bandwidth-bound (esp. multi-node) collective; quantizing it via
-# TorchRec QCommsConfig halves (bf16/fp16) the wire volume. "fp32" = off
-# (default; numerically untouched). Set "bf16" (or "fp16") to enable.
-# Override via $DLRMV4_SPARSE_A2A_PRECISION.
-make_optimizer_and_shard.sparse_a2a_precision = @saap/env_str()
-saap/env_str.key     = "DLRMV4_SPARSE_A2A_PRECISION"
-saap/env_str.default = "fp32"
-# Also quantize the backward (gradient) a2a. 1 = yes (default), 0 = forward-only
-# (keeps gradients fp32 for a more conservative numerical profile).
-# Override via $DLRMV4_BF16_SPARSE_BWD.
-make_optimizer_and_shard.sparse_a2a_quantize_backward = @saab/env_int()
-saab/env_int.key     = "DLRMV4_BF16_SPARSE_BWD"
-saab/env_int.default = 1
+# TorchRec QCommsConfig halves (bf16/fp16, both 2 bytes) the wire volume.
+# Forward and backward are set independently (each: "fp32" | "bf16" | "fp16").
+# Both "fp32" = off (default; numerically identical to baseline trunk).
+# Per TorchRec golden_training, fwd=fp16 / bwd=bf16 is the recommended quantized
+# mix: fp16's mantissa suits bounded forward activations, while bf16's wider
+# exponent range avoids overflow on gradients.
+# Override via $SPARSE_A2A_FWD / $SPARSE_A2A_BWD.
+make_optimizer_and_shard.sparse_a2a_forward_precision = @saaf/env_str()
+saaf/env_str.key     = "SPARSE_A2A_FWD"
+saaf/env_str.default = "fp32"
+make_optimizer_and_shard.sparse_a2a_backward_precision = @saab/env_str()
+saab/env_str.key     = "SPARSE_A2A_BWD"
+saab/env_str.default = "fp32"
 
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = %DATA_PATH

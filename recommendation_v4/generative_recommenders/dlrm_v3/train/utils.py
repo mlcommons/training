@@ -343,33 +343,44 @@ def sparse_optimizer_factory_and_class(
 def _maybe_apply_qcomm_a2a(
     sharders: List[Any],
     device: torch.device,
-    precision: str = "fp32",
-    quantize_backward: bool = True,
+    forward_precision: str = "fp32",
+    backward_precision: str = "fp32",
 ) -> List[Any]:
     """Optionally quantize the embedding all-to-all payload via TorchRec qcomm.
 
     The yambda-5b embedding shuffle is the dominant, bandwidth-bound (multi-node)
-    collective (~14.5 GB/rank fp32); BF16/FP16 forward(+backward) halves the wire
-    volume. Quant/dequant happen inside the comm op, transparent to the lookup
-    consumer. Ported from the DLRMv2 R2 lever, retargeted from
-    ``EmbeddingBagCollectionSharder`` to the sequence ``EmbeddingCollectionSharder``
-    this model uses.
+    collective (~14.5 GB/rank fp32); a bf16/fp16 wire dtype halves it. Quant/
+    dequant happen inside the comm op, transparent to the lookup consumer. Ported
+    from the DLRMv2 R2 lever, retargeted from ``EmbeddingBagCollectionSharder`` to
+    the sequence ``EmbeddingCollectionSharder`` this model uses.
 
-    Args (set via gin on ``make_optimizer_and_shard``, env-overridable):
-      precision: ``fp32`` (off, default) | ``bf16`` | ``fp16`` — the a2a wire dtype.
-      quantize_backward: also quantize the gradient a2a (default True).
+    Forward and backward are configured independently because they have different
+    numerical needs (TorchRec golden_training/train_dlrm.py recommends
+    forward=fp16, backward=bf16): the forward carries bounded embedding
+    activations where fp16's extra mantissa helps, while gradients have a wider
+    range that can overflow fp16, so bf16 (fp32 exponent range) is safer there.
+    bf16 and fp16 are both 2 bytes, so the wire volume / perf is identical — the
+    choice is purely numerical.
+
+    Args (set via gin on ``make_optimizer_and_shard``, env-overridable). Each is
+    one of ``fp32`` (that direction unquantized) | ``bf16`` | ``fp16``. If BOTH
+    are fp32 the sharders are returned untouched (identical to baseline trunk).
     """
-    precision = (precision or "fp32").strip().lower()
+    _COMM = {"bf16": "BF16", "fp16": "FP16", "fp32": "FP32"}
+    fwd = (forward_precision or "fp32").strip().lower()
+    bwd = (backward_precision or "fp32").strip().lower()
     rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
-    if precision in ("fp32", "", "off", "none"):
-        return sharders
-    if precision not in ("bf16", "fp16"):
-        if rank0:
-            logger.warning(
-                "DLRMV4 qcomm a2a: unknown precision %r (want fp32|bf16|fp16); "
-                "using fp32 a2a",
-                precision,
-            )
+    for name, p in (("forward", fwd), ("backward", bwd)):
+        if p not in _COMM:
+            if rank0:
+                logger.warning(
+                    "DLRMV4 qcomm a2a: unknown %s precision %r (want "
+                    "fp32|bf16|fp16); using fp32 a2a",
+                    name,
+                    p,
+                )
+            return sharders
+    if fwd == "fp32" and bwd == "fp32":
         return sharders
     try:
         from torchrec.distributed.embedding import EmbeddingCollectionSharder
@@ -379,10 +390,9 @@ def _maybe_apply_qcomm_a2a(
             QCommsConfig,
         )
 
-        fwd_prec = {"bf16": CommType.BF16, "fp16": CommType.FP16}[precision]
         qcfg = QCommsConfig(
-            forward_precision=fwd_prec,
-            backward_precision=fwd_prec if quantize_backward else CommType.FP32,
+            forward_precision=getattr(CommType, _COMM[fwd]),
+            backward_precision=getattr(CommType, _COMM[bwd]),
         )
         registry = get_qcomm_codecs_registry(qcfg, device=device)
         new_sharders = []
@@ -399,8 +409,8 @@ def _maybe_apply_qcomm_a2a(
             logger.info(
                 "DLRMV4 qcomm a2a ENABLED: forward=%s backward=%s "
                 "replaced_ec_sharder=%s",
-                fwd_prec.value,
-                fwd_prec.value if quantize_backward else "fp32",
+                fwd,
+                bwd,
                 replaced,
             )
         return new_sharders
@@ -421,8 +431,8 @@ def make_optimizer_and_shard(
     world_size: int,
     local_world_size: Optional[int] = None,
     hbm_cap_gb: int = 260,
-    sparse_a2a_precision: str = "fp32",
-    sparse_a2a_quantize_backward: bool = True,
+    sparse_a2a_forward_precision: str = "fp32",
+    sparse_a2a_backward_precision: str = "fp32",
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
         dense_optimizer_factory_and_class()
@@ -443,8 +453,8 @@ def make_optimizer_and_shard(
     sharders = _maybe_apply_qcomm_a2a(
         sharders,
         device,
-        precision=sparse_a2a_precision,
-        quantize_backward=bool(sparse_a2a_quantize_backward),
+        forward_precision=sparse_a2a_forward_precision,
+        backward_precision=sparse_a2a_backward_precision,
     )
     # local_world_size = GPUs per node so the planner respects the intra-node
     # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
