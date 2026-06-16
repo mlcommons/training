@@ -89,6 +89,7 @@ def _main_func(
         make_model,
         make_optimizer_and_shard,
         make_train_test_dataloaders,
+        seed_everything,
         setup,
         streaming_train_eval_loop,
         train_eval_loop,
@@ -112,6 +113,11 @@ def _main_func(
     # fine, and this pass is the one that actually wires up make_model,
     # make_train_test_dataloaders, etc.
     gin.parse_config_file(gin_file)
+
+    # Seed all RNGs (gin-configurable $SEED) BEFORE make_model() so weight init
+    # is reproducible run-to-run. Must follow the full parse above so the binding
+    # is wired, and precede make_model() below.
+    seed_everything(rank=rank)
 
     model, model_configs, embedding_table_configs = make_model()
     model, optimizer = make_optimizer_and_shard(
