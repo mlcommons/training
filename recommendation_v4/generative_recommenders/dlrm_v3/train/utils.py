@@ -76,6 +76,27 @@ TORCHREC_TYPES: Set[Type[Union[EmbeddingBagCollection, EmbeddingCollection]]] = 
 }
 
 
+@gin.configurable
+def seed_everything(seed: int = 1, rank: int = 0) -> None:
+    """Seed all RNGs so weight init (make_model) is reproducible across runs.
+
+    Same seed on every rank => dense params are initialized identically across
+    ranks; sharded embeddings are init'd from the meta device by DMP. Fixing the
+    seed makes runs an init-matched A/B (data order is already deterministic via
+    the sampler). gin-configurable via $SEED (yambda_5b.gin: seed_everything.seed);
+    call this right before make_model(), after the full gin parse.
+    """
+    import random
+
+    import numpy as np
+
+    logger.info(f"[rank {rank}] seeding all RNGs with SEED={seed}")
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
 def setup(
     rank: int,
     world_size: int,
@@ -96,20 +117,10 @@ def setup(
     # leaving stale allocations and triggering OOMs on rank 0.
     torch.cuda.set_device(device)
 
-    # Seed all RNGs so weight init (make_model, called after setup) is
-    # reproducible across runs. Same seed on every rank → dense params are
-    # initialized identically across ranks; sharded embeddings are init'd from
-    # the meta device by DMP. Fixed seed makes pipeline-vs-non-pipeline an
-    # init-matched A/B (data order is already deterministic via the sampler).
-    import random
-
-    import numpy as np
-
-    _SEED = 1
-    random.seed(_SEED)
-    np.random.seed(_SEED)
-    torch.manual_seed(_SEED)
-    torch.cuda.manual_seed_all(_SEED)
+    # NOTE: RNG seeding for reproducible weight init lives in seed_everything(),
+    # which train_ranker calls right before make_model() (after the full gin
+    # parse, so the gin-configurable $SEED is bound). Seeding here would be too
+    # early to be gin-configurable and is redundant with that call.
 
     # initialize the process group
     if not dist.is_initialized():
