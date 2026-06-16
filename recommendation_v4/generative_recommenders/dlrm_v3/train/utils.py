@@ -340,6 +340,80 @@ def sparse_optimizer_factory_and_class(
     return optimizer_cls, kwargs, optimizer_factory
 
 
+def _maybe_apply_qcomm_a2a(
+    sharders: List[Any],
+    device: torch.device,
+    precision: str = "fp32",
+    quantize_backward: bool = True,
+) -> List[Any]:
+    """Optionally quantize the embedding all-to-all payload via TorchRec qcomm.
+
+    The yambda-5b embedding shuffle is the dominant, bandwidth-bound (multi-node)
+    collective (~14.5 GB/rank fp32); BF16/FP16 forward(+backward) halves the wire
+    volume. Quant/dequant happen inside the comm op, transparent to the lookup
+    consumer. Ported from the DLRMv2 R2 lever, retargeted from
+    ``EmbeddingBagCollectionSharder`` to the sequence ``EmbeddingCollectionSharder``
+    this model uses.
+
+    Args (set via gin on ``make_optimizer_and_shard``, env-overridable):
+      precision: ``fp32`` (off, default) | ``bf16`` | ``fp16`` — the a2a wire dtype.
+      quantize_backward: also quantize the gradient a2a (default True).
+    """
+    precision = (precision or "fp32").strip().lower()
+    rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
+    if precision in ("fp32", "", "off", "none"):
+        return sharders
+    if precision not in ("bf16", "fp16"):
+        if rank0:
+            logger.warning(
+                "DLRMV4 qcomm a2a: unknown precision %r (want fp32|bf16|fp16); "
+                "using fp32 a2a",
+                precision,
+            )
+        return sharders
+    try:
+        from torchrec.distributed.embedding import EmbeddingCollectionSharder
+        from torchrec.distributed.fbgemm_qcomm_codec import (
+            CommType,
+            get_qcomm_codecs_registry,
+            QCommsConfig,
+        )
+
+        fwd_prec = {"bf16": CommType.BF16, "fp16": CommType.FP16}[precision]
+        qcfg = QCommsConfig(
+            forward_precision=fwd_prec,
+            backward_precision=fwd_prec if quantize_backward else CommType.FP32,
+        )
+        registry = get_qcomm_codecs_registry(qcfg, device=device)
+        new_sharders = []
+        replaced = False
+        for s in sharders:
+            if type(s).__name__ == "EmbeddingCollectionSharder" and not replaced:
+                new_sharders.append(
+                    EmbeddingCollectionSharder(qcomm_codecs_registry=registry)
+                )
+                replaced = True
+            else:
+                new_sharders.append(s)
+        if rank0:
+            logger.info(
+                "DLRMV4 qcomm a2a ENABLED: forward=%s backward=%s "
+                "replaced_ec_sharder=%s",
+                fwd_prec.value,
+                fwd_prec.value if quantize_backward else "fp32",
+                replaced,
+            )
+        return new_sharders
+    except Exception as e:  # noqa: BLE001 — fall back to fp32 a2a on any failure
+        if rank0:
+            logger.warning(
+                "DLRMV4 qcomm a2a: failed to enable (%s: %s); using fp32 a2a",
+                type(e).__name__,
+                e,
+            )
+        return sharders
+
+
 @gin.configurable
 def make_optimizer_and_shard(
     model: torch.nn.Module,
@@ -347,6 +421,8 @@ def make_optimizer_and_shard(
     world_size: int,
     local_world_size: Optional[int] = None,
     hbm_cap_gb: int = 260,
+    sparse_a2a_precision: str = "fp32",
+    sparse_a2a_quantize_backward: bool = True,
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
         dense_optimizer_factory_and_class()
@@ -364,6 +440,12 @@ def make_optimizer_and_shard(
                         sparse_opt_cls, [param], sparse_opt_args
                     )
     sharders = get_default_sharders()
+    sharders = _maybe_apply_qcomm_a2a(
+        sharders,
+        device,
+        precision=sparse_a2a_precision,
+        quantize_backward=bool(sparse_a2a_quantize_backward),
+    )
     # local_world_size = GPUs per node so the planner respects the intra-node
     # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
     # world_size for the single-node case (no behavior change).

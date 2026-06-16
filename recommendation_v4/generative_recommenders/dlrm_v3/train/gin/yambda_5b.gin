@@ -83,6 +83,21 @@ make_optimizer_and_shard.hbm_cap_gb = @env_int()
 env_int.key = "HBM_CAP_GB"
 env_int.default = 260
 
+# Sparse embedding all-to-all wire precision. The embedding shuffle is the
+# dominant, bandwidth-bound (esp. multi-node) collective; quantizing it via
+# TorchRec QCommsConfig halves (bf16/fp16) the wire volume. "fp32" = off
+# (default; numerically untouched). Set "bf16" (or "fp16") to enable.
+# Override via $DLRMV4_SPARSE_A2A_PRECISION.
+make_optimizer_and_shard.sparse_a2a_precision = @saap/env_str()
+saap/env_str.key     = "DLRMV4_SPARSE_A2A_PRECISION"
+saap/env_str.default = "fp32"
+# Also quantize the backward (gradient) a2a. 1 = yes (default), 0 = forward-only
+# (keeps gradients fp32 for a more conservative numerical profile).
+# Override via $DLRMV4_BF16_SPARSE_BWD.
+make_optimizer_and_shard.sparse_a2a_quantize_backward = @saab/env_int()
+saab/env_int.key     = "DLRMV4_BF16_SPARSE_BWD"
+saab/env_int.default = 1
+
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = %DATA_PATH
 # Total user-interaction-history (UIH) budget per sample, distributed evenly

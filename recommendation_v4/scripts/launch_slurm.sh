@@ -206,6 +206,11 @@ orchestrate() {
           echo \"[\$(hostname)] keeping non-GPU/system container \$_nm (\$_c)\" ;;
       esac
     done
+    # Reuse a STOPPED '$CONTAINER' (its installed deps persist in the container
+    # fs) instead of destructively re-provisioning from the base image + pip.
+    # Harmless no-op on a fresh node (no such container) -> falls through to
+    # provision below. Repo code is bind-mounted, so live edits are still picked up.
+    docker start $CONTAINER >/dev/null 2>&1 || true
     if [ \"$FORCE_PROVISION\" = \"1\" ] || ! docker exec $CONTAINER true >/dev/null 2>&1; then
       echo \"[\$(hostname)] (re)provisioning container\"
       LAUNCH_SLURM_PHASE=provision CONTAINER=$CONTAINER IMAGE=$IMAGE \
@@ -293,9 +298,13 @@ orchestrate() {
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
       -e EVAL_HOLDOUT_NUM_WINDOWS=${EVAL_HOLDOUT_NUM_WINDOWS:-1} \
+      ${WORKER_CMD:+-e WORKER_CMD=\"$WORKER_CMD\"} \
       ${RUN_NAME:+-e RUN_NAME=$RUN_NAME} \
       ${TENSORBOARD_LOG_PATH:+-e TENSORBOARD_LOG_PATH=$TENSORBOARD_LOG_PATH} \
       ${CKPT_PATH:+-e CKPT_PATH=$CKPT_PATH} \
+      ${DLRMV4_BF16_SPARSE_A2A:+-e DLRMV4_BF16_SPARSE_A2A=$DLRMV4_BF16_SPARSE_A2A} \
+      ${DLRMV4_SPARSE_A2A_PRECISION:+-e DLRMV4_SPARSE_A2A_PRECISION=$DLRMV4_SPARSE_A2A_PRECISION} \
+      ${DLRMV4_BF16_SPARSE_BWD:+-e DLRMV4_BF16_SPARSE_BWD=$DLRMV4_BF16_SPARSE_BWD} \
       -e LOG=$LOG \
       $NCCL_ENV_ARGS \
       $CONTAINER bash -lc 'cd $REPO && LAUNCH_SLURM_PHASE=worker bash scripts/launch_slurm.sh'
@@ -583,6 +592,16 @@ worker() {
     if command -v rocm-smi >/dev/null 2>&1; then
       echo "[$(date)] post-cleanup GPU0 used GiB:$(rocm-smi --showmeminfo vram 2>/dev/null | awk -F: '/Used/{printf " %.0f", $3/1073741824; exit}')" | tee -a "$LOG"
     fi
+  fi
+
+  # WORKER_CMD override: run an arbitrary in-container command (e.g. an a2a/RCCL
+  # micro-benchmark) instead of the trainer, REUSING all the NCCL/RDMA/topology
+  # setup above so it exercises the exact transport the trainer uses. The
+  # supervisor never sets WORKER_CMD, so the training path is unchanged.
+  if [ -n "${WORKER_CMD:-}" ]; then
+    echo "[$(date)] WORKER_CMD override (WORLD_SIZE=$WORLD_SIZE): $WORKER_CMD" | tee -a "$LOG"
+    bash -lc "cd $REPO_ROOT && $WORKER_CMD" 2>&1 | tee -a "$LOG"
+    return
   fi
 
   echo "[$(date)] launching train_ranker with WORLD_SIZE=$WORLD_SIZE" | tee -a "$LOG"
