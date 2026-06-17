@@ -12,7 +12,7 @@ Formal benchmark description: <to be completed>
 
 ## Steps to configure machine
 
-To use this repository, please ensure your system can run containers and has appropriate GPU support. The multinode launch script assumes a Slurm cluster with Pyxis/Enroot-style container support, Ray, and 8 GPUs per node.
+To use this repository, please ensure your system can run containers and has appropriate GPU support.
 
 ### Container setup
 
@@ -73,6 +73,7 @@ export EXP_NAME=<experiment name>
 export CONTAINER_IMAGE_PATH=<container image path or tag>
 export SLURM_ACCOUNT=<account>
 export SLURM_PARTITION=<partition>
+export GPUS_PER_NODE=<number of GPUs per Slurm node>
 export HF_CKPT_PATH=<host path to HF checkpoint directory>
 export NRL_MEGATRON_CHECKPOINT_DIR=<host path to Megatron-Core checkpoint cache directory>  # may be empty on first run
 export NEMO_GYM_SWE_TRAIN_DATA_PATH=<host path to training JSONL>
