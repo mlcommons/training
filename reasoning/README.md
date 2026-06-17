@@ -73,11 +73,15 @@ export EXP_NAME=<experiment name>
 export CONTAINER_IMAGE_PATH=<container image path or tag>
 export SLURM_ACCOUNT=<account>
 export SLURM_PARTITION=<partition>
-export HF_CKPT_PATH=<host path to HF checkpoint directory. empty dir is ok, will be converted in the first run>
-export NRL_MEGATRON_CHECKPOINT_DIR=<host path to Megatron-Core checkpoint cache directory>
+export HF_CKPT_PATH=<host path to HF checkpoint directory>
+export NRL_MEGATRON_CHECKPOINT_DIR=<host path to Megatron-Core checkpoint cache directory>  # may be empty on first run
 export NEMO_GYM_SWE_TRAIN_DATA_PATH=<host path to training JSONL>
 export NEMO_GYM_SWE_VALIDATION_DATA_PATH=<host path to validation JSONL>
 export NEMO_GYM_SWE_SIF_DIR=<host directory containing SWE task SIF images>
+
+# Optional authentication/logging.
+export HF_TOKEN=<huggingface token>
+export WANDB_API_KEY=<wandb token>
 
 # Defaults are defined by the launcher and may be overridden here.
 export TRAIN_NODES=<number of training nodes>        # default: 16
