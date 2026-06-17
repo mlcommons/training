@@ -160,6 +160,16 @@ get_hstu_configs.max_seq_len = @msl/env_int()
 msl/env_int.key     = "MAX_SEQ_LEN"
 msl/env_int.default = 4096
 
+# HSTU transformer depth (number of attention layers). Default 5 (unchanged).
+# Override per-run via $HSTU_NUM_LAYERS. NOTE: changing depth changes the model
+# shape, so a run with a new depth MUST use a FRESH CKPT_PATH (incompatible with
+# 5-layer checkpoints). Resolved in the full gin parse (get_hstu_configs is not
+# registered during the early skip_unknown parse), so the @env_int reference is
+# skipped on the first pass — same safe path as the LR knobs.
+get_hstu_configs.hstu_attn_num_layers = @nl/env_int()
+nl/env_int.key     = "HSTU_NUM_LAYERS"
+nl/env_int.default = 5
+
 # --- streaming (temporal-order) training -------------------------------------
 # Only consumed under `--mode streaming-train-eval`; the default train-eval
 # path above is unaffected. Trains time window T then evals window T+1,
