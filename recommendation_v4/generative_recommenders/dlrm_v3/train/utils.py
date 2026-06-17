@@ -308,6 +308,10 @@ def dense_optimizer_factory_and_class(
 
     optimizer_factory = lambda params: optimizer_cls(params, **kwargs)
 
+    logger.info(
+        f"[dense optimizer] {optimizer_name} learning_rate={learning_rate} "
+        f"(resolved from gin; override via $DENSE_LR)"
+    )
     return optimizer_cls, kwargs, optimizer_factory
 
 
@@ -348,6 +352,10 @@ def sparse_optimizer_factory_and_class(
 
     optimizer_factory = lambda params: optimizer_cls(params, **kwargs)
 
+    logger.info(
+        f"[sparse optimizer] {optimizer_name} learning_rate={learning_rate} "
+        f"(resolved from gin; override via $SPARSE_LR)"
+    )
     return optimizer_cls, kwargs, optimizer_factory
 
 

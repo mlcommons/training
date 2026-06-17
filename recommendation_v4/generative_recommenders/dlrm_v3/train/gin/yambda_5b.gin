@@ -43,7 +43,10 @@ seed/env_int.key     = "SEED"
 seed/env_int.default = 1
 
 # dense model optimizer
-dense_optimizer_factory_and_class.learning_rate = 0.001
+# Learning rate is env-overridable via $DENSE_LR (default 0.001, unchanged).
+dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()
+dlr/env_float.key     = "DENSE_LR"
+dlr/env_float.default = 0.001
 dense_optimizer_factory_and_class.optimizer_name = "Adam"
 dense_optimizer_factory_and_class.momentum = 0
 dense_optimizer_factory_and_class.weight_decay = 0
@@ -51,7 +54,10 @@ dense_optimizer_factory_and_class.eps = 1e-8
 dense_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # sparse model optimizer
-sparse_optimizer_factory_and_class.learning_rate = 0.001
+# Learning rate is env-overridable via $SPARSE_LR (default 0.001, unchanged).
+sparse_optimizer_factory_and_class.learning_rate = @slr/env_float()
+slr/env_float.key     = "SPARSE_LR"
+slr/env_float.default = 0.001
 sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
 sparse_optimizer_factory_and_class.momentum = 0
 sparse_optimizer_factory_and_class.weight_decay = 0
