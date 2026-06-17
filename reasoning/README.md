@@ -169,10 +169,6 @@ The recipe uses token-level GRPO with reward normalization and a leave-one-out b
 
 Adam with distributed optimizer state. The async recipe sets `lr: 5.0e-6`, `weight_decay: 0.0`, BF16 training, and FP32 optimizer parameters.
 
-### Randomness
-
-The recipe sets `grpo.seed: 42`. Additional determinism and environment-seeding requirements are <to be completed>.
-
 ### Precision
 
 The recipe uses BF16 policy precision by default.
