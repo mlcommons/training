@@ -2,7 +2,7 @@
 
 Large Language Model pretraining - DeepSeek V3 671B (Mixture of Experts).
 
-To closely follow the training recipe from the [DeepSeek-v3 Technical report](https://arxiv.org/html/2412.19437v2) which employs a batch size scheduling strategy, where the batch size is gradually increased from 3072 to 15360 in the training of the first 469B tokens, and then keeps 15360 in the remaining training of 4.8T tokens, the benchmark enforces all submissions to use a GBS of atleast 15360. This ensures that the benchmark is representative of DeepSeek-v3 pretraining while maintaining fairness because the task force experiments showed that convergence in the benchmarking region can be much faster with GBS << 15360. 
+To closely follow the training recipe from the [DeepSeek-v3 Technical report](https://arxiv.org/html/2412.19437v2) which employs a batch size scheduling strategy, where the batch size is gradually increased from 3072 to 15360 in the training of the first 469B tokens, and then keeps 15360 in the remaining training of 14.3T tokens, the benchmark enforces all submissions to use a GBS of atleast 15360. This ensures that the benchmark is representative of DeepSeek-v3 pretraining while maintaining fairness because the task force experiments showed that convergence in the benchmarking region can be much faster with GBS << 15360. 
 
 * **GBS<15360 - not allowed**
 * GBS>=15360: `opt_base_learning_rate = 0.000024 * sqrt(GBS / 16384)`, rounded to the **9th** decimal place.
