@@ -41,17 +41,19 @@ The run requires the following artifacts:
 | Validation JSONL | Host path to NeMo-Gym SWE validation tasks, passed as `NEMO_GYM_SWE_VALIDATION_DATA_PATH` and mounted into the container | <to be completed> |
 | Task containers | Host directory containing Apptainer/Singularity SIF images, passed as `NEMO_GYM_SWE_SIF_DIR` and mounted into the container | <to be completed> |
 
-To download the training and validation JSONL files:
+To download the training and validation JSONL files using the HuggingFace CLI:
 
 ```bash
 ; hf download hfilaretov/Benchmark-R2E-Gym-Easy --repo-type dataset --local-dir hfilaretov__Benchmark-R2E-Gym-Easy
 ...
 
 ; tree hfilaretov__Benchmark-R2E-Gym-Easy
-hfilaretov__Benchmark-R2E-Gym-Easy/
-├── mlperf_r2e_gym_easy_train.jsonl
-├── mlperf_r2e_gym_easy_val.jsonl
+hfilaretov__Benchmark-R2E-Gym-Easy
+├── benchmark_r2e_gym_easy_train.jsonl
+├── benchmark_r2e_gym_easy_val.jsonl
 └── README.md
+
+1 directory, 3 files
 ```
 
 The environment also requires per-task SIF images. The recipe resolves task containers from `sif_dir` with this template:
@@ -143,8 +145,8 @@ Prepare the builder image:
 
 ```bash
 cd RL/docker/dataset-processing-container
-export REGISTRY=<your-container-registry>
-docker build --push -t $REGISTRY/grpo-data-builder:latest .
+export DOCKER_REGISTRY=<your-container-registry>
+docker build --push -t $DOCKER_REGISTRY/grpo-data-builder:latest .
 ```
 
 Note: to build the dataset images within the builder image, you need to mount the Docker daemon socket inside the container.
@@ -165,7 +167,7 @@ docker run -it --rm \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v $STATE_DIR:/workspace/state \
     -e DOCKER_REGISTRY -e DOCKER_TOKEN -e DOCKER_USER -e HF_TOKEN -e MAX_WORKERS \
-    $REGISTRY/grpo-data-builder:latest \
+    $DOCKER_REGISTRY/grpo-data-builder:latest \
     /workspace/run-r2e-gym-build-images.sh
 ```
 
@@ -178,7 +180,7 @@ export SIF_LOCAL_DIR=<local-directory-to-store-sif-containers>
 docker run -it --rm \
     -v $SIF_LOCAL_DIR:/opt/data \
     -e DOCKER_REGISTRY -e DOCKER_TOKEN -e DOCKER_USER -e HF_TOKEN -e MAX_WORKERS \
-    $REGISTRY/grpo-data-builder:latest \
+    $DOCKER_REGISTRY/grpo-data-builder:latest \
     /workspace/run-build-sif-images.sh
 ```
 
