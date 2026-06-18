@@ -1488,6 +1488,12 @@ def streaming_train_eval_loop(
     # event emission; the loop is otherwise unchanged. Supplied by train_ranker
     # for the streaming-train-eval benchmark path.
     mlperf_logger: Optional[Any] = None,
+    # Which eval AUC drives the reported EVAL_ACCURACY and the convergence
+    # decision (early SUCCESS RUN_STOP + end-of-run finalize): "window" = the
+    # per-pass full-holdout AUC (reset each eval pass; the default), or
+    # "lifetime" = the cumulative AUC across all eval passes. Override via
+    # $EVAL_ACCURACY_AUC_MODE.
+    eval_accuracy_auc_mode: str = "window",
 ) -> None:
     """Streaming train+eval loop with per-window (and optionally mid-window)
     checkpoints.
@@ -2076,14 +2082,29 @@ def streaming_train_eval_loop(
             mlperf_logger.constants.EPOCH_NUM: epoch_num,
         }
 
-    def _lifetime_auc(metrics: Dict[str, float]) -> Optional[float]:
-        # Convergence metric: the cumulative ("lifetime_") listen_plus AUC.
-        # Key format is `metric/{prefix}{name}/{task}` (see MetricsLogger.compute),
-        # e.g. `metric/lifetime_auc/listen_plus`. Match the `lifetime_auc` short
-        # name; ignore GAUC.
+    # Convergence/EVAL_ACCURACY metric short name, selected by
+    # eval_accuracy_auc_mode: "window_auc" (per-pass full-holdout AUC, default)
+    # or "lifetime_auc" (cumulative across eval passes).
+    _eval_auc_short = (
+        "lifetime_auc"
+        if str(eval_accuracy_auc_mode).strip().lower() == "lifetime"
+        else "window_auc"
+    )
+    if rank == 0 and mlperf_logger is not None:
+        logger.info(
+            f"[mlperf] EVAL_ACCURACY / convergence metric = {_eval_auc_short} "
+            f"(eval_accuracy_auc_mode={eval_accuracy_auc_mode!r})"
+        )
+
+    def _eval_target_auc(metrics: Dict[str, float]) -> Optional[float]:
+        # Convergence metric: the listen_plus eval AUC selected by
+        # eval_accuracy_auc_mode (window vs lifetime). Key format is
+        # `metric/{prefix}{name}/{task}` (see MetricsLogger.compute), e.g.
+        # `metric/window_auc/listen_plus`. Match the selected short name;
+        # ignore GAUC.
         for key, val in metrics.items():
             short = key.split("/")[-2] if "/" in key else key
-            if short == "lifetime_auc":
+            if short == _eval_auc_short:
                 return float(val)
         return None
 
@@ -2118,24 +2139,25 @@ def streaming_train_eval_loop(
         mlperf_run_stopped[0] = True
 
     def _mlperf_eval_stop(eval_metrics: Dict[str, float]) -> bool:
-        # Emit EVAL_ACCURACY (lifetime listen_plus AUC) + EVAL_STOP, and drive an
-        # early SUCCESS RUN_STOP when the target threshold is reached. Returns
-        # True iff the run should stop now -- the SAME value on every rank.
+        # Emit EVAL_ACCURACY (the selected eval listen_plus AUC) + EVAL_STOP, and
+        # drive an early SUCCESS RUN_STOP when the target threshold is reached.
+        # Returns True iff the run should stop now -- the SAME value on every rank.
         #
-        # CRITICAL (deadlock avoidance): the cumulative lifetime AUC is produced
-        # by a reduce that is only valid on global rank 0, so a per-rank
-        # `lifetime >= thr` test diverges (only rank 0 sees the value) and the
-        # ranks that "stop" hit the RUN_STOP barrier while the rest march into
-        # the next window's embedding all-to-all -> NCCL collective-timeout hang
-        # (observed: 600s ALLTOALL_BASE watchdog abort). So rank 0 decides and
-        # BROADCASTS the boolean; all ranks then break (or continue) in lockstep.
+        # CRITICAL (deadlock avoidance): the eval AUC is produced by a reduce
+        # that is only guaranteed valid on global rank 0, so a per-rank
+        # `eval_auc >= thr` test could diverge (only rank 0 sees the value) and
+        # the ranks that "stop" hit the RUN_STOP barrier while the rest march
+        # into the next window's embedding all-to-all -> NCCL collective-timeout
+        # hang (observed: 600s ALLTOALL_BASE watchdog abort). So rank 0 decides
+        # and BROADCASTS the boolean; all ranks then break (or continue) in
+        # lockstep.
         if mlperf_logger is None:
             return False
-        lifetime = _lifetime_auc(eval_metrics)
-        if lifetime is not None:
+        eval_auc = _eval_target_auc(eval_metrics)
+        if eval_auc is not None:
             mlperf_logger.event(
                 key=mlperf_logger.constants.EVAL_ACCURACY,
-                value=lifetime,
+                value=eval_auc,
                 metadata=_mlperf_progress(),
             )
         mlperf_logger.end(
@@ -2146,9 +2168,9 @@ def streaming_train_eval_loop(
         if (
             rank == 0
             and not mlperf_run_stopped[0]
-            and lifetime is not None
+            and eval_auc is not None
             and thr is not None
-            and lifetime >= thr
+            and eval_auc >= thr
         ):
             decision[0] = 1.0
         if torch.distributed.is_initialized():
@@ -2161,12 +2183,12 @@ def streaming_train_eval_loop(
 
     def _mlperf_finalize(final_metrics: Dict[str, float]) -> None:
         # End-of-run RUN_STOP when the threshold was never crossed: SUCCESS iff
-        # the final lifetime AUC meets the target, else ABORTED.
+        # the final eval AUC meets the target, else ABORTED.
         if mlperf_logger is None or mlperf_run_stopped[0]:
             return
-        lifetime = _lifetime_auc(final_metrics)
+        eval_auc = _eval_target_auc(final_metrics)
         thr = metric_logger.auc_threshold
-        success = lifetime is not None and thr is not None and lifetime >= thr
+        success = eval_auc is not None and thr is not None and eval_auc >= thr
         _mlperf_run_stop(
             mlperf_logger.constants.SUCCESS
             if success
