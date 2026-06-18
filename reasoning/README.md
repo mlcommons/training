@@ -35,11 +35,11 @@ The run requires the following artifacts:
 
 | Artifact | Description | Status |
 |---|---|---|
-| Policy model | Host directory containing `Qwen/Qwen3-235B-A22B-Instruct-2507`, passed as `HF_CKPT_PATH` and mounted into the container | <to be completed> |
+| Policy model | Host directory containing `Qwen/Qwen3-235B-A22B-Instruct-2507`, passed as `HF_CKPT_PATH`, mounted into the container, and exposed to the recipe through `CONTAINER_HF_CKPT_PATH` | <to be completed> |
 | Megatron-Core checkpoint cache | Host directory for the HF-to-Megatron converted checkpoint cache, passed as `NRL_MEGATRON_CHECKPOINT_DIR` and mounted into the container | <to be completed> |
 | Training JSONL | Host path to NeMo-Gym SWE training tasks, passed as `NEMO_GYM_SWE_TRAIN_DATA_PATH` and mounted into the container | <to be completed> |
 | Validation JSONL | Host path to NeMo-Gym SWE validation tasks, passed as `NEMO_GYM_SWE_VALIDATION_DATA_PATH` and mounted into the container | <to be completed> |
-| Task containers | Host directory containing Apptainer/Singularity SIF images, passed as `NEMO_GYM_SWE_SIF_DIR` and mounted into the container | <to be completed> |
+| Task containers | Host directory containing Apptainer/Singularity SIF images in the layout expected by the recipe, passed as `NEMO_GYM_SWE_SIF_DIR` and mounted into the container | <to be completed> |
 
 To download the training and validation JSONL files using the HuggingFace CLI:
 
@@ -66,7 +66,7 @@ The task containers have to be built and converted to SIF format, please see [Se
 
 ### Model cache setup
 
-From outside the container, download the Hugging Face model into a host directory. The launcher requires `HF_CKPT_PATH` to point at this directory, then mounts it at `/inputs/nemo_gym/hf_ckpt` by default and passes that container path to the recipe as `policy.model_name`.
+From outside the container, download the Hugging Face model into a host directory. The launcher requires `HF_CKPT_PATH` to point at this directory, mounts that path into the container, and exports `CONTAINER_HF_CKPT_PATH` to the recipe as `policy.model_name`. By default, `CONTAINER_HF_CKPT_PATH` is the same path as `HF_CKPT_PATH`.
 
 ```bash
 python -m venv .venv
@@ -102,6 +102,8 @@ export NEMO_GYM_SWE_SIF_DIR=<host directory containing SWE task SIF images>
 # Optional authentication/logging.
 export HF_TOKEN=<huggingface token>
 export WANDB_API_KEY=<wandb token>
+export MLPERF_TARGET_ACCURACY=<target accuracy>      # default: 1.0
+export GRPO_SEED=<integer seed>                      # default: random per launch
 
 # Defaults are defined by the launcher and may be overridden here.
 export TRAIN_NODES=<number of training nodes>        # default: 16
@@ -115,7 +117,7 @@ export EXTRA_MOUNTS=<host_path>:<container_path>[,<host_path>:<container_path>..
 bash examples/nemo_gym/launch_nemo_gym_multinode_training.sh
 ```
 
-The launcher also accepts `NODES` to override `TRAIN_NODES + GEN_NODES`, `CONTAINER_REPO_LOCATION` to override the baked checkout path `/opt/nemo-rl`, `CONTAINER_INPUT_ROOT` and the `CONTAINER_*` path variables to override the stable container mount targets, `SLURM_EXCLUDE` to exclude problematic nodes, and `SLURM_COMMENT`/`SLURM_IDLE_EXEMPT_MINS` to customize the idle-GPU reaper exemption.
+The launcher also accepts `NODES` to override `TRAIN_NODES + GEN_NODES`, `CONTAINER_REPO_LOCATION` to override the baked checkout path `/opt/nemo-rl`, `CONTAINER_INPUT_ROOT` and the `CONTAINER_*` path variables to override container-side paths, `SLURM_EXCLUDE` to exclude problematic nodes, and `SLURM_COMMENT`/`SLURM_IDLE_EXEMPT_MINS` to customize the idle-GPU reaper exemption.
 
 # 3. Dataset/Environment
 
@@ -187,7 +189,7 @@ The config uses separate training and validation JSONL files:
 
 ```yaml
 policy:
-  model_name: ${oc.env:HF_CKPT_PATH}
+  model_name: ${oc.env:CONTAINER_HF_CKPT_PATH}
 data:
   train:
     data_path: ${oc.env:NEMO_GYM_SWE_TRAIN_DATA_PATH}
@@ -237,7 +239,7 @@ The recipe uses token-level GRPO with reward normalization and a leave-one-out b
 
 ### Optimizer
 
-Adam with distributed optimizer state. The async recipe sets `lr: 5.0e-6`, `weight_decay: 0.0`, BF16 training, and FP32 optimizer parameters.
+Adam with distributed optimizer state. The async recipe sets `lr: 3.0e-6`, `weight_decay: 0.0`, BF16 training, and FP32 optimizer parameters.
 
 ### Precision
 
