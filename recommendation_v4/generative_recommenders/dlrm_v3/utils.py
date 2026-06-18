@@ -857,6 +857,25 @@ class Profiler:
         self._profiler.step()
 
 
+class _NoOpSummaryWriter:
+    """Drop-in stand-in for SummaryWriter used when TensorBoard is disabled
+    (empty ``tensorboard_log_path``). All scalar writes become no-ops so the
+    metrics path (compute + text-log + ``.metrics.jsonl`` sinks) runs unchanged
+    and never crashes on TB file I/O. The shared ``/apps`` tfevents writer was a
+    crash source under transient filer ``Errno 121`` (Remote I/O) errors, and
+    nothing we consume reads TensorBoard — eval-window AUCs come from the JSONL
+    sink and the text log."""
+
+    def add_scalar(self, *args, **kwargs) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
 @gin.configurable
 class MetricsLogger:
     """
@@ -1016,6 +1035,11 @@ class MetricsLogger:
         if tensorboard_log_path != "":
             self.tb_logger = SummaryWriter(log_dir=tensorboard_log_path, purge_step=0)
             self.tb_logger.flush()
+        else:
+            # TB disabled: use a no-op writer so the existing call sites (and the
+            # `assert self.tb_logger is not None` in compute_and_log) keep working
+            # while no tfevents are written to the fragile shared filer.
+            self.tb_logger = _NoOpSummaryWriter()
 
         # Throughput / time-to-target tracking. Counters are train-only; eval
         # samples are not relevant for headline samples/sec numbers.
