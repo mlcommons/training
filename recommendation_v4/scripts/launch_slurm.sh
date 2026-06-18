@@ -229,6 +229,11 @@ orchestrate() {
           echo \"[\$(hostname)] keeping non-GPU/system container \$_nm (\$_c)\" ;;
       esac
     done
+    # Reuse a STOPPED '$CONTAINER' (its installed deps persist in the container
+    # fs) instead of destructively re-provisioning from the base image + pip.
+    # Harmless no-op on a fresh node (no such container) -> falls through to
+    # provision below. Repo code is bind-mounted, so live edits are still picked up.
+    docker start $CONTAINER >/dev/null 2>&1 || true
     if [ \"$FORCE_PROVISION\" = \"1\" ] || ! docker exec $CONTAINER true >/dev/null 2>&1; then
       echo \"[\$(hostname)] (re)provisioning container\"
       LAUNCH_SLURM_PHASE=provision CONTAINER=$CONTAINER IMAGE=$IMAGE \
@@ -308,11 +313,13 @@ orchestrate() {
       ${DIAG_EMB_STEPS:+-e DIAG_EMB_STEPS=$DIAG_EMB_STEPS} \
       ${OUTPUT_TRACE:+-e OUTPUT_TRACE=$OUTPUT_TRACE} \
       ${MIN_HISTORY:+-e MIN_HISTORY=$MIN_HISTORY} \
+      ${SEED:+-e SEED=$SEED} \
+      ${DENSE_LR:+-e DENSE_LR=$DENSE_LR} \
+      ${SPARSE_LR:+-e SPARSE_LR=$SPARSE_LR} \
+      ${HSTU_NUM_LAYERS:+-e HSTU_NUM_LAYERS=$HSTU_NUM_LAYERS} \
       ${MAX_SEQ_LEN:+-e MAX_SEQ_LEN=$MAX_SEQ_LEN} \
       ${HISTORY_LENGTH:+-e HISTORY_LENGTH=$HISTORY_LENGTH} \
       ${BATCH_SIZE:+-e BATCH_SIZE=$BATCH_SIZE} \
-      ${DENSE_LR:+-e DENSE_LR=$DENSE_LR} \
-      ${SPARSE_LR:+-e SPARSE_LR=$SPARSE_LR} \
       ${CKPT_TIME_INTERVAL_S:+-e CKPT_TIME_INTERVAL_S=$CKPT_TIME_INTERVAL_S} \
       ${KEEP_LAST_N:+-e KEEP_LAST_N=$KEEP_LAST_N} \
       ${IN_WINDOW_CKPT_FREQ:+-e IN_WINDOW_CKPT_FREQ=$IN_WINDOW_CKPT_FREQ} \
@@ -322,10 +329,13 @@ orchestrate() {
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
       -e EVAL_HOLDOUT_NUM_WINDOWS=${EVAL_HOLDOUT_NUM_WINDOWS:-1} \
+      ${WORKER_CMD:+-e WORKER_CMD=\"$WORKER_CMD\"} \
       ${RUN_NAME:+-e RUN_NAME=$RUN_NAME} \
       ${TENSORBOARD_LOG_PATH:+-e TENSORBOARD_LOG_PATH=$TENSORBOARD_LOG_PATH} \
       ${MLPERF_LOG_PATH:+-e MLPERF_LOG_PATH=$MLPERF_LOG_PATH} \
       ${CKPT_PATH:+-e CKPT_PATH=$CKPT_PATH} \
+      ${SPARSE_A2A_FWD:+-e SPARSE_A2A_FWD=$SPARSE_A2A_FWD} \
+      ${SPARSE_A2A_BWD:+-e SPARSE_A2A_BWD=$SPARSE_A2A_BWD} \
       -e LOG=$LOG \
       $NCCL_ENV_ARGS \
       $CONTAINER bash -lc 'cd $REPO && LAUNCH_SLURM_PHASE=worker bash scripts/launch_slurm.sh'
@@ -657,6 +667,16 @@ worker() {
     if command -v rocm-smi >/dev/null 2>&1; then
       echo "[$(date)] post-cleanup GPU0 used GiB:$(rocm-smi --showmeminfo vram 2>/dev/null | awk -F: '/Used/{printf " %.0f", $3/1073741824; exit}')" | tee -a "$LOG"
     fi
+  fi
+
+  # WORKER_CMD override: run an arbitrary in-container command (e.g. an a2a/RCCL
+  # micro-benchmark) instead of the trainer, REUSING all the NCCL/RDMA/topology
+  # setup above so it exercises the exact transport the trainer uses. The
+  # supervisor never sets WORKER_CMD, so the training path is unchanged.
+  if [ -n "${WORKER_CMD:-}" ]; then
+    echo "[$(date)] WORKER_CMD override (WORLD_SIZE=$WORLD_SIZE): $WORKER_CMD" | tee -a "$LOG"
+    bash -lc "cd $REPO_ROOT && $WORKER_CMD" 2>&1 | tee -a "$LOG"
+    return
   fi
 
   echo "[$(date)] launching train_ranker with WORLD_SIZE=$WORLD_SIZE" | tee -a "$LOG"
