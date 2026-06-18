@@ -133,10 +133,6 @@ This is a two-step process:
 1. Images are built from the repository and git revision specified in the dataset.
 2. These images are converted to SIF file format.
 
-For x86_64 platforms, there are already pre-built images, so step 1 can be skipped.
-
-For arm64 platforms, we provide a script to build the images.
-
 You can build the container defined in `./dataset-processing-container` that already pre-packages all necessary dependencies and can be used for both steps.
 
 You should be able to run the following:
@@ -152,7 +148,7 @@ docker build --push -t $DOCKER_REGISTRY/grpo-data-builder:latest .
 Note: to build the dataset images within the builder image, you need to mount the Docker daemon socket inside the container.
 If you do not want to do that, please set up an environment equivalent to the builder image, and then run the scripts outside a container.
 
-To build the images and push them to a registry, ideally on a GB200 system to build natively:
+To build the images and push them to a registry, run on a host that has your target architecture to build natively:
 
 ```bash
 export HF_TOKEN=<read-token-for-huggingface>
