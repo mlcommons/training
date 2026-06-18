@@ -32,6 +32,19 @@ make_model.hammer_kernel = "TRITON"
 # pinned constants in ops/triton/_autotune_pinning.py call sites.
 apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 
+# Global RNG seed for reproducible weight init (dense params + embedding tables)
+# and any seeded RNG consumers. Same seed on every rank => identical dense init;
+# fixing it makes runs an init-matched A/B (data order is already deterministic
+# via the sampler). seed_everything() is called right before make_model() in
+# train_ranker (after the full gin parse), so this binding is resolved in the
+# second parse where env_int is registered.
+# Default -1 = draw a FRESH RANDOM seed every run (rank 0 draws + broadcasts so
+# all ranks agree; the chosen value is exported to $SEED and logged), so each
+# launch explores a different init. Pin $SEED >= 0 to reproduce a specific run.
+seed_everything.seed = @seed/env_int()
+seed/env_int.key     = "SEED"
+seed/env_int.default = -1
+
 # dense model optimizer
 # Learning rate is env-overridable (default 0.001 preserves prior runs) so an LR
 # sweep can probe the dense Adam rate without editing gin. Scoped (`dlr/`) so
@@ -75,6 +88,8 @@ data/env_path.default = "/apps/chcai/dlrm_data"
 # positional split) and the streaming path (get_dataset, an explicit by-user
 # hash split), so one value configures the holdout in either mode.
 # 1.0 = no holdout (legacy streaming behavior). Override via $TRAIN_SPLIT_PERCENTAGE.
+# Default 1.0: all users are trained AND evaluated (full-coverage eval), matching
+# the alleval/qa2a production runs; set <1.0 (e.g. 0.90) for a clean held-out cohort.
 TRAIN_SPLIT_PERCENTAGE = @tsp/env_float()
 tsp/env_float.key     = "TRAIN_SPLIT_PERCENTAGE"
 tsp/env_float.default = 1.0
@@ -94,6 +109,22 @@ make_train_test_dataloaders.num_blocks = 1
 make_optimizer_and_shard.hbm_cap_gb = @env_int()
 env_int.key = "HBM_CAP_GB"
 env_int.default = 260
+
+# Sparse embedding all-to-all wire precision. The embedding shuffle is the
+# dominant, bandwidth-bound (esp. multi-node) collective; quantizing it via
+# TorchRec QCommsConfig halves (bf16/fp16, both 2 bytes) the wire volume.
+# Forward and backward are set independently (each: "fp32" | "bf16" | "fp16").
+# Both "fp32" = off (default; numerically identical to baseline trunk).
+# Per TorchRec golden_training, fwd=fp16 / bwd=bf16 is the recommended quantized
+# mix: fp16's mantissa suits bounded forward activations, while bf16's wider
+# exponent range avoids overflow on gradients.
+# Override via $SPARSE_A2A_FWD / $SPARSE_A2A_BWD.
+make_optimizer_and_shard.sparse_a2a_forward_precision = @saaf/env_str()
+saaf/env_str.key     = "SPARSE_A2A_FWD"
+saaf/env_str.default = "fp32"
+make_optimizer_and_shard.sparse_a2a_backward_precision = @saab/env_str()
+saab/env_str.key     = "SPARSE_A2A_BWD"
+saab/env_str.default = "fp32"
 
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = %DATA_PATH
@@ -137,6 +168,16 @@ mh/env_int.default = 0
 get_hstu_configs.max_seq_len = @msl/env_int()
 msl/env_int.key     = "MAX_SEQ_LEN"
 msl/env_int.default = 4096
+
+# HSTU transformer depth (number of attention layers). Default 5 (unchanged).
+# Override per-run via $HSTU_NUM_LAYERS. NOTE: changing depth changes the model
+# shape, so a run with a new depth MUST use a FRESH CKPT_PATH (incompatible with
+# 5-layer checkpoints). Resolved in the full gin parse (get_hstu_configs is not
+# registered during the early skip_unknown parse), so the @env_int reference is
+# skipped on the first pass — same safe path as the LR knobs.
+get_hstu_configs.hstu_attn_num_layers = @nl/env_int()
+nl/env_int.key     = "HSTU_NUM_LAYERS"
+nl/env_int.default = 5
 
 # --- streaming (temporal-order) training -------------------------------------
 # Only consumed under `--mode streaming-train-eval`; the default train-eval

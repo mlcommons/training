@@ -76,6 +76,57 @@ TORCHREC_TYPES: Set[Type[Union[EmbeddingBagCollection, EmbeddingCollection]]] = 
 }
 
 
+@gin.configurable
+def seed_everything(seed: int = -1, rank: int = 0) -> None:
+    """Seed all RNGs so weight init (make_model) is reproducible across runs.
+
+    Same seed on every rank => dense params are initialized identically across
+    ranks; sharded embeddings are init'd from the meta device by DMP. Fixing the
+    seed makes runs an init-matched A/B (data order is already deterministic via
+    the sampler). gin-configurable via $SEED (yambda_5b.gin: seed_everything.seed);
+    call this right before make_model(), AFTER setup() (the process group must be
+    initialized for the cross-rank broadcast below) and after the full gin parse.
+
+    Default seed < 0 (the gin default, i.e. $SEED unset) => draw a FRESH RANDOM
+    seed every run so each launch explores a different dense weight init. rank 0
+    draws the seed and broadcasts it so all ranks share one value; the chosen
+    seed is exported to $SEED and logged so any run can be reproduced after the
+    fact by re-pinning $SEED. seed >= 0 (i.e. $SEED pinned) reproduces a specific
+    run exactly. NOTE (streaming-train-eval): data ORDER and the train/holdout
+    split do NOT depend on this seed — order is time-deterministic
+    (StreamingWindowSampler) and the split is governed by $SPLIT_SALT. This seed
+    governs dense weight init + global-RNG stochastic ops.
+    """
+    import random
+
+    import numpy as np
+
+    pinned = seed >= 0
+    if not pinned:
+        # rank 0 draws a random seed and broadcasts it so all ranks agree (an
+        # identical seed on every rank is REQUIRED, else dense weight init
+        # diverges across ranks and DDP/AllReduce trains garbage).
+        if dist.is_available() and dist.is_initialized():
+            device = torch.device(f"cuda:{torch.cuda.current_device()}")
+            drawn = int.from_bytes(os.urandom(4), "little") if rank == 0 else 0
+            _seed_t = torch.tensor([drawn], dtype=torch.int64, device=device)
+            dist.broadcast(_seed_t, src=0)
+            seed = int(_seed_t.item())
+        else:
+            seed = int.from_bytes(os.urandom(4), "little")
+    # Export the resolved value so the run is reproducible after the fact.
+    os.environ["SEED"] = str(seed)
+
+    logger.info(
+        f"[rank {rank}] seeding all RNGs with SEED={seed} "
+        f"({'pinned via $SEED' if pinned else 'random per-run; set $SEED to reproduce'})"
+    )
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
 def setup(
     rank: int,
     world_size: int,
@@ -96,47 +147,16 @@ def setup(
     # leaving stale allocations and triggering OOMs on rank 0.
     torch.cuda.set_device(device)
 
-    import random
+    # NOTE: RNG seeding for reproducible weight init lives in seed_everything(),
+    # which train_ranker calls right before make_model() (after setup() so the
+    # process group is initialized for the cross-rank seed broadcast, and after
+    # the full gin parse so the gin-configurable $SEED is bound). Seeding here
+    # would be too early to be gin-configurable.
 
-    import numpy as np
-
-    # initialize the process group FIRST so ranks can agree on a shared seed
-    # (the seed MUST be identical on every rank, else dense weight init diverges
-    # across ranks and DDP/AllReduce trains garbage).
+    # initialize the process group
     if not dist.is_initialized():
         dist.init_process_group(
             "nccl", rank=rank, world_size=world_size, device_id=device
-        )
-
-    # Seed selection. By default we draw a FRESH RANDOM seed every run so each
-    # launch explores a different dense weight init; pin $SEED to reproduce a
-    # specific run exactly. rank 0 draws the seed and broadcasts it so all ranks
-    # share one value; the chosen seed is exported to $SEED and logged so any run
-    # can be reproduced after the fact. NOTE (streaming-train-eval): the data
-    # ORDER and train/holdout split do NOT depend on this seed — order is
-    # time-deterministic (StreamingWindowSampler) and the split is governed by
-    # $SPLIT_SALT. The seed governs dense weight init + global-RNG stochastic ops.
-    env_seed = os.environ.get("SEED", "").strip()
-    if env_seed:
-        seed = int(env_seed)
-    else:
-        seed = int.from_bytes(os.urandom(4), "little") if rank == 0 else 0
-        _seed_t = torch.tensor([seed], dtype=torch.int64, device=device)
-        dist.broadcast(_seed_t, src=0)
-        seed = int(_seed_t.item())
-    os.environ["SEED"] = str(seed)
-
-    # Seed all RNGs with the agreed value so weight init (make_model, called
-    # after setup) is identical across ranks; sharded embeddings are init'd from
-    # the meta device by DMP.
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    if rank == 0:
-        logger.info(
-            f"[seed] using seed={seed} "
-            f"({'pinned via $SEED' if env_seed else 'random per-run; set $SEED to reproduce'})"
         )
 
     pg = dist.new_group(
@@ -319,6 +339,10 @@ def dense_optimizer_factory_and_class(
 
     optimizer_factory = lambda params: optimizer_cls(params, **kwargs)
 
+    logger.info(
+        f"[dense optimizer] {optimizer_name} learning_rate={learning_rate} "
+        f"(resolved from gin; override via $DENSE_LR)"
+    )
     return optimizer_cls, kwargs, optimizer_factory
 
 
@@ -359,7 +383,95 @@ def sparse_optimizer_factory_and_class(
 
     optimizer_factory = lambda params: optimizer_cls(params, **kwargs)
 
+    logger.info(
+        f"[sparse optimizer] {optimizer_name} learning_rate={learning_rate} "
+        f"(resolved from gin; override via $SPARSE_LR)"
+    )
     return optimizer_cls, kwargs, optimizer_factory
+
+
+def _maybe_apply_qcomm_a2a(
+    sharders: List[Any],
+    device: torch.device,
+    forward_precision: str = "fp32",
+    backward_precision: str = "fp32",
+) -> List[Any]:
+    """Optionally quantize the embedding all-to-all payload via TorchRec qcomm.
+
+    The yambda-5b embedding shuffle is the dominant, bandwidth-bound (multi-node)
+    collective (~14.5 GB/rank fp32); a bf16/fp16 wire dtype halves it. Quant/
+    dequant happen inside the comm op, transparent to the lookup consumer. Ported
+    from the DLRMv2 R2 lever, retargeted from ``EmbeddingBagCollectionSharder`` to
+    the sequence ``EmbeddingCollectionSharder`` this model uses.
+
+    Forward and backward are configured independently because they have different
+    numerical needs (TorchRec golden_training/train_dlrm.py recommends
+    forward=fp16, backward=bf16): the forward carries bounded embedding
+    activations where fp16's extra mantissa helps, while gradients have a wider
+    range that can overflow fp16, so bf16 (fp32 exponent range) is safer there.
+    bf16 and fp16 are both 2 bytes, so the wire volume / perf is identical — the
+    choice is purely numerical.
+
+    Args (set via gin on ``make_optimizer_and_shard``, env-overridable). Each is
+    one of ``fp32`` (that direction unquantized) | ``bf16`` | ``fp16``. If BOTH
+    are fp32 the sharders are returned untouched (identical to baseline trunk).
+    """
+    _COMM = {"bf16": "BF16", "fp16": "FP16", "fp32": "FP32"}
+    fwd = (forward_precision or "fp32").strip().lower()
+    bwd = (backward_precision or "fp32").strip().lower()
+    rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
+    for name, p in (("forward", fwd), ("backward", bwd)):
+        if p not in _COMM:
+            if rank0:
+                logger.warning(
+                    "DLRMV4 qcomm a2a: unknown %s precision %r (want "
+                    "fp32|bf16|fp16); using fp32 a2a",
+                    name,
+                    p,
+                )
+            return sharders
+    if fwd == "fp32" and bwd == "fp32":
+        return sharders
+    try:
+        from torchrec.distributed.embedding import EmbeddingCollectionSharder
+        from torchrec.distributed.fbgemm_qcomm_codec import (
+            CommType,
+            get_qcomm_codecs_registry,
+            QCommsConfig,
+        )
+
+        qcfg = QCommsConfig(
+            forward_precision=getattr(CommType, _COMM[fwd]),
+            backward_precision=getattr(CommType, _COMM[bwd]),
+        )
+        registry = get_qcomm_codecs_registry(qcfg, device=device)
+        new_sharders = []
+        replaced = False
+        for s in sharders:
+            if type(s).__name__ == "EmbeddingCollectionSharder" and not replaced:
+                new_sharders.append(
+                    EmbeddingCollectionSharder(qcomm_codecs_registry=registry)
+                )
+                replaced = True
+            else:
+                new_sharders.append(s)
+        if rank0:
+            logger.info(
+                "DLRMV4 qcomm a2a ENABLED: forward=%s backward=%s "
+                "replaced_ec_sharder=%s",
+                fwd,
+                bwd,
+                replaced,
+            )
+        return new_sharders
+    except Exception as e:  # noqa: BLE001 — fall back to fp32 a2a on any failure
+        if rank0:
+            logger.warning(
+                "DLRMV4 qcomm a2a: failed to enable (%s: %s); using fp32 a2a",
+                type(e).__name__,
+                e,
+            )
+        return sharders
 
 
 @gin.configurable
@@ -369,6 +481,8 @@ def make_optimizer_and_shard(
     world_size: int,
     local_world_size: Optional[int] = None,
     hbm_cap_gb: int = 260,
+    sparse_a2a_forward_precision: str = "fp32",
+    sparse_a2a_backward_precision: str = "fp32",
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
         dense_optimizer_factory_and_class()
@@ -386,6 +500,12 @@ def make_optimizer_and_shard(
                         sparse_opt_cls, [param], sparse_opt_args
                     )
     sharders = get_default_sharders()
+    sharders = _maybe_apply_qcomm_a2a(
+        sharders,
+        device,
+        forward_precision=sparse_a2a_forward_precision,
+        backward_precision=sparse_a2a_backward_precision,
+    )
     # local_world_size = GPUs per node so the planner respects the intra-node
     # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
     # world_size for the single-node case (no behavior change).
