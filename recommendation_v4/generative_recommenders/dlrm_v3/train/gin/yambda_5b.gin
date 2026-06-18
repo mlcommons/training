@@ -308,13 +308,16 @@ Profiler.active = 5
 Profiler.trace_dir = @run_results_dir()
 
 # logger variables
-# TensorBoard event dir. Default lives on shared NFS (not container-local /tmp,
-# which is wiped on node failover) so the NE/AUC scalars survive relaunches and
-# failover. Override per-run via $TENSORBOARD_LOG_PATH (the supervisor sets it
-# to /apps/chcai/tb/$RUN_NAME/).
+# TensorBoard event dir. DISABLED BY DEFAULT (empty path): the shared-NFS
+# tfevents writer is the only metrics sink whose I/O error is uncaught, and it
+# repeatedly crashed trainers on transient /apps `Errno 121` (Remote I/O) hiccups.
+# Nothing we consume reads TensorBoard — eval-window AUCs come from the durable
+# `<LOG>.metrics.jsonl` sink (try/except-guarded) and the text run log. An empty
+# path makes MetricsLogger install a no-op writer (see _NoOpSummaryWriter).
+# Re-enable for a run by setting $TENSORBOARD_LOG_PATH to a non-empty dir.
 MetricsLogger.tensorboard_log_path = @tbp/env_path()
 tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
-tbp/env_path.default = "/apps/chcai/tb/yambda_5b/"
+tbp/env_path.default = ""
 MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = 0.80275
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and
