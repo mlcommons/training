@@ -135,8 +135,6 @@ This is a two-step process:
 
 You can build the container defined in `./dataset-processing-container` that already pre-packages all necessary dependencies and can be used for both steps.
 
-You should be able to run the following:
-
 Prepare the builder image:
 
 ```bash
