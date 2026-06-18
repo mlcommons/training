@@ -43,10 +43,10 @@ seed/env_int.key     = "SEED"
 seed/env_int.default = 1
 
 # dense model optimizer
-# Learning rate is env-overridable via $DENSE_LR (default 0.001, unchanged).
+# Learning rate is env-overridable via $DENSE_LR (default 1e-5).
 dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()
 dlr/env_float.key     = "DENSE_LR"
-dlr/env_float.default = 0.001
+dlr/env_float.default = 0.00001
 dense_optimizer_factory_and_class.optimizer_name = "Adam"
 dense_optimizer_factory_and_class.momentum = 0
 dense_optimizer_factory_and_class.weight_decay = 0
@@ -54,10 +54,10 @@ dense_optimizer_factory_and_class.eps = 1e-8
 dense_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # sparse model optimizer
-# Learning rate is env-overridable via $SPARSE_LR (default 0.001, unchanged).
+# Learning rate is env-overridable via $SPARSE_LR (default 1e-5).
 sparse_optimizer_factory_and_class.learning_rate = @slr/env_float()
 slr/env_float.key     = "SPARSE_LR"
-slr/env_float.default = 0.001
+slr/env_float.default = 0.00001
 sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
 sparse_optimizer_factory_and_class.momentum = 0
 sparse_optimizer_factory_and_class.weight_decay = 0
@@ -160,15 +160,15 @@ get_hstu_configs.max_seq_len = @msl/env_int()
 msl/env_int.key     = "MAX_SEQ_LEN"
 msl/env_int.default = 4096
 
-# HSTU transformer depth (number of attention layers). Default 5 (unchanged).
+# HSTU transformer depth (number of attention layers). Default 3.
 # Override per-run via $HSTU_NUM_LAYERS. NOTE: changing depth changes the model
 # shape, so a run with a new depth MUST use a FRESH CKPT_PATH (incompatible with
-# 5-layer checkpoints). Resolved in the full gin parse (get_hstu_configs is not
-# registered during the early skip_unknown parse), so the @env_int reference is
-# skipped on the first pass — same safe path as the LR knobs.
+# checkpoints of a different depth). Resolved in the full gin parse
+# (get_hstu_configs is not registered during the early skip_unknown parse), so
+# the @env_int reference is skipped on the first pass — same safe path as the LR knobs.
 get_hstu_configs.hstu_attn_num_layers = @nl/env_int()
 nl/env_int.key     = "HSTU_NUM_LAYERS"
-nl/env_int.default = 5
+nl/env_int.default = 3
 
 # --- streaming (temporal-order) training -------------------------------------
 # Only consumed under `--mode streaming-train-eval`; the default train-eval
