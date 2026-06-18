@@ -213,9 +213,20 @@ def _main_func(
 
         def _gin_param(name: str, default: object) -> object:
             try:
-                return gin.query_parameter(name)
+                value = gin.query_parameter(name)
             except (ValueError, KeyError):
                 return default
+            # When a binding is a gin macro/configurable reference (e.g.
+            # `@dlr/env_float()`), query_parameter returns the unevaluated
+            # reference object, which the MLPerf logger cannot encode. Resolve
+            # it to its actual value so env-overridden LRs are logged as real
+            # numbers. Plain literals pass through unchanged.
+            if hasattr(value, "scoped_configurable_fn"):
+                try:
+                    return value.scoped_configurable_fn()
+                except Exception:
+                    return default
+            return value
 
         global_batch_size = world_size * int(train_dataloader.batch_size)
         mlperf_logger.event(key=c.GLOBAL_BATCH_SIZE, value=global_batch_size)

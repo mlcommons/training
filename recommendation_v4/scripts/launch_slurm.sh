@@ -174,6 +174,7 @@ orchestrate() {
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
   echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
+  echo "[$(date)] lr-override: DENSE_LR=${DENSE_LR:-<unset:gin default 0.001>} SPARSE_LR=${SPARSE_LR:-<unset:gin default 0.001>}" | tee -a "$LOG"
 
   # Rendezvous resolved on the HOST (the container image has no SLURM client).
   MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" 2>/dev/null | head -1)
@@ -310,11 +311,13 @@ orchestrate() {
       ${MAX_SEQ_LEN:+-e MAX_SEQ_LEN=$MAX_SEQ_LEN} \
       ${HISTORY_LENGTH:+-e HISTORY_LENGTH=$HISTORY_LENGTH} \
       ${BATCH_SIZE:+-e BATCH_SIZE=$BATCH_SIZE} \
+      ${DENSE_LR:+-e DENSE_LR=$DENSE_LR} \
+      ${SPARSE_LR:+-e SPARSE_LR=$SPARSE_LR} \
       ${CKPT_TIME_INTERVAL_S:+-e CKPT_TIME_INTERVAL_S=$CKPT_TIME_INTERVAL_S} \
       ${KEEP_LAST_N:+-e KEEP_LAST_N=$KEEP_LAST_N} \
       ${IN_WINDOW_CKPT_FREQ:+-e IN_WINDOW_CKPT_FREQ=$IN_WINDOW_CKPT_FREQ} \
       ${CKPT_STEP_FREQ:+-e CKPT_STEP_FREQ=$CKPT_STEP_FREQ} \
-      -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-0.90} \
+      -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-1.0} \
       -e AUC_THRESHOLD=${AUC_THRESHOLD:-0.80275} \
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \

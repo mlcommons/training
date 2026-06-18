@@ -33,7 +33,13 @@ make_model.hammer_kernel = "TRITON"
 apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 
 # dense model optimizer
-dense_optimizer_factory_and_class.learning_rate = 0.001
+# Learning rate is env-overridable (default 0.001 preserves prior runs) so an LR
+# sweep can probe the dense Adam rate without editing gin. Scoped (`dlr/`) so
+# this env_float binding doesn't collide with the other env_float call sites.
+# Override via $DENSE_LR.
+dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()
+dlr/env_float.key     = "DENSE_LR"
+dlr/env_float.default = 0.001
 dense_optimizer_factory_and_class.optimizer_name = "Adam"
 dense_optimizer_factory_and_class.momentum = 0
 dense_optimizer_factory_and_class.weight_decay = 0
@@ -41,7 +47,13 @@ dense_optimizer_factory_and_class.eps = 1e-8
 dense_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # sparse model optimizer
-sparse_optimizer_factory_and_class.learning_rate = 0.001
+# Learning rate is env-overridable (default 0.001 preserves prior runs) so an LR
+# sweep can probe the sparse RowWiseAdagrad rate without editing gin. Scoped
+# (`slr/`) so this env_float binding doesn't collide with the other env_float
+# call sites. Override via $SPARSE_LR.
+sparse_optimizer_factory_and_class.learning_rate = @slr/env_float()
+slr/env_float.key     = "SPARSE_LR"
+slr/env_float.default = 0.001
 sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
 sparse_optimizer_factory_and_class.momentum = 0
 sparse_optimizer_factory_and_class.weight_decay = 0
@@ -65,7 +77,7 @@ data/env_path.default = "/apps/chcai/dlrm_data"
 # 1.0 = no holdout (legacy streaming behavior). Override via $TRAIN_SPLIT_PERCENTAGE.
 TRAIN_SPLIT_PERCENTAGE = @tsp/env_float()
 tsp/env_float.key     = "TRAIN_SPLIT_PERCENTAGE"
-tsp/env_float.default = 0.90
+tsp/env_float.default = 1.0
 
 # dataloader configs
 make_train_test_dataloaders.batch_size = %batch_size
