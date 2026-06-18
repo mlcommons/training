@@ -41,9 +41,28 @@ The run requires the following artifacts:
 | Validation JSONL | Host path to NeMo-Gym SWE validation tasks, passed as `NEMO_GYM_SWE_VALIDATION_DATA_PATH` and mounted into the container | <to be completed> |
 | Task containers | Host directory containing Apptainer/Singularity SIF images, passed as `NEMO_GYM_SWE_SIF_DIR` and mounted into the container | <to be completed> |
 
-Dataset download commands: <to be completed>
+To download the training and validation JSONL files using the HuggingFace CLI:
 
-Dataset verification commands: <to be completed>
+```bash
+; hf download hfilaretov/Benchmark-R2E-Gym-Easy --repo-type dataset --local-dir hfilaretov__Benchmark-R2E-Gym-Easy
+...
+
+; tree hfilaretov__Benchmark-R2E-Gym-Easy
+hfilaretov__Benchmark-R2E-Gym-Easy
+├── benchmark_r2e_gym_easy_train.jsonl
+├── benchmark_r2e_gym_easy_val.jsonl
+└── README.md
+
+1 directory, 3 files
+```
+
+The environment also requires per-task SIF images. The recipe resolves task containers from `sif_dir` with this template:
+
+```yaml
+- "${sif_dir}/r2egym_{instance_id}.sif"
+```
+
+The task containers have to be built and converted to SIF format, please see [Section 3](#data-preprocessing) below.
 
 ### Model cache setup
 
@@ -102,19 +121,65 @@ The launcher also accepts `NODES` to override `TRAIN_NODES + GEN_NODES`, `CONTAI
 
 ### Publication/Attribution
 
-Dataset and task-container attribution: <to be completed>
+We use a subset of the [R2E-Gym/R2E-Gym-Subset](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset) dataset.
 
 ### Data preprocessing
 
-The recipe consumes prebuilt JSONL files through `NemoGymDataset`. Each row represents a software-engineering task for the NeMo-Gym environment. The exact transformation from the source task corpus into the benchmark JSONL format is <to be completed>.
+The recipe consumes prebuilt JSONL files through from [Benchmark-R2E-Gym-Easy](https://huggingface.co/datasets/hfilaretov/Benchmark-R2E-Gym-Easy).
+Each row represents a software-engineering task for the NeMo-Gym environment.
 
-The environment also requires per-task SIF images. The recipe resolves task containers from `sif_dir` with these templates:
+The JSONL files refer to SIF container files that need to be generated.
+This is a two-step process:
+1. Images are built from the repository and git revision specified in the dataset.
+2. These images are converted to SIF file format.
 
-```yaml
-- "${sif_dir}/swebench_sweb.eval.x86_64.{instance_id}.sif"
-- "${sif_dir}/swegym_sweb.eval.x86_64.{instance_id}.sif"
-- "${sif_dir}/r2egym_{instance_id}.sif"
+You can build the container defined in `./dataset-processing-container` that already pre-packages all necessary dependencies and can be used for both steps.
+
+Prepare the builder image:
+
+```bash
+cd RL/docker/dataset-processing-container
+export DOCKER_REGISTRY=<your-container-registry>
+docker build --push -t $DOCKER_REGISTRY/grpo-data-builder:latest .
 ```
+
+Note: to build the dataset images within the builder image, you need to mount the Docker daemon socket inside the container.
+If you do not want to do that, please set up an environment equivalent to the builder image, and then run the scripts outside a container.
+
+To build the images and push them to a registry, run on a host that has your target architecture to build natively:
+
+```bash
+export HF_TOKEN=<read-token-for-huggingface>
+export DOCKER_REGISTRY=<url-to-docker-registry>
+export DOCKER_TOKEN=<docker-registry-token>
+export DOCKER_USER=<docker-registry-username>
+export STATE_DIR=<path-to-persistent-storage>
+export MAX_WORKERS=<maximum-number-of-parallel-build-tasks>
+
+# R2E-Gym Easy subset
+docker run -it --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v $STATE_DIR:/workspace/state \
+    -e DOCKER_REGISTRY -e DOCKER_TOKEN -e DOCKER_USER -e HF_TOKEN -e MAX_WORKERS \
+    $DOCKER_REGISTRY/grpo-data-builder:latest \
+    /workspace/run-r2e-gym-build-images.sh
+```
+
+To convert the images from the registry to SIF files:
+
+```bash
+export SIF_LOCAL_DIR=<local-directory-to-store-sif-containers>
+
+# SIF images, final dataset
+docker run -it --rm \
+    -v $SIF_LOCAL_DIR:/opt/data \
+    -e DOCKER_REGISTRY -e DOCKER_TOKEN -e DOCKER_USER -e HF_TOKEN -e MAX_WORKERS \
+    $DOCKER_REGISTRY/grpo-data-builder:latest \
+    /workspace/run-build-sif-images.sh
+```
+
+Please note that the above container will use its local storage to build the SIF files and then copy them over to your `SIF_LOCAL_DIR`.
+You therefore might be constrained in the number of `$MAX_WORKERS` by your available local storage.
 
 ### Training and test data separation
 
