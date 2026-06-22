@@ -504,6 +504,18 @@ def make_optimizer_and_shard(
 
     plan = planner.collective_plan(model, sharders, pg)
 
+    # Re-seed right before DMP materializes/inits the sharded embedding tables.
+    # The per-table seeded init_fn (configs.get_embedding_table_config) handles
+    # the eager path, but the fused FBGEMM TBE path inits weights on-device and
+    # may bypass init_fn, drawing from the global RNG instead. Re-seeding here
+    # (same value on every rank) makes embedding init reproducible run-to-run for
+    # a fixed sharding plan (Tier 1). Dense params are already initialized in
+    # make_model, so this does not perturb them.
+    _emb_seed = int(os.environ.get("SEED", "1"))
+    torch.manual_seed(_emb_seed)
+    torch.cuda.manual_seed_all(_emb_seed)
+    logger.info(f"[emb-init] re-seeded RNGs before DMP with SEED={_emb_seed}")
+
     # Shard model
     model = DistributedModelParallel(
         module=model,
@@ -511,6 +523,58 @@ def make_optimizer_and_shard(
         plan=plan,
         sharders=sharders,
     )
+
+    # --- startup init checksum (reproducibility probe) -------------------------
+    # Right after DMP materializes real weights, log a cheap deterministic
+    # fingerprint of every parameter so two builds with the same $SEED + sharding
+    # plan can be diffed for byte-level init reproducibility. For sharded
+    # embeddings we all-reduce the per-shard (count, sum, sumsq) so the
+    # fingerprint covers the WHOLE table independent of how rows split across
+    # ranks; replicated dense params use rank 0's local copy. Stats are computed
+    # as in-place reductions with fp64 accumulation (no full-size temporaries —
+    # the embedding shards are tens of GB), so this stays light. Disable with
+    # INIT_CHECKSUM=0.
+    if os.environ.get("INIT_CHECKSUM", "1") == "1":
+        import hashlib
+
+        _rank = dist.get_rank() if dist.is_initialized() else 0
+        _fps: List[str] = []
+        for _name, _p in sorted(model.named_parameters(), key=lambda kv: kv[0]):
+            _sharded = isinstance(_p, ShardedTensor)
+            if _sharded:
+                _shards = _p.local_shards()
+                _loc = _shards[0].tensor if _shards else None
+            else:
+                _loc = _p
+            if _loc is None or _loc.numel() == 0:
+                _cnt, _sm, _sq = 0.0, 0.0, 0.0
+            else:
+                _det = _loc.detach()
+                _cnt = float(_det.numel())
+                _sm = _det.sum(dtype=torch.float64).item()
+                _nrm = torch.linalg.vector_norm(
+                    _det, ord=2, dtype=torch.float64
+                ).item()
+                _sq = _nrm * _nrm
+            if _sharded and dist.is_initialized():
+                _stat = torch.tensor(
+                    [_cnt, _sm, _sq], dtype=torch.float64, device=device
+                )
+                dist.all_reduce(_stat, op=dist.ReduceOp.SUM)
+                _cnt, _sm, _sq = _stat.tolist()
+            _fps.append(f"{_name}|{int(_cnt)}|{_sm:.6f}|{_sq:.6f}")
+            if _rank == 0:
+                logger.info(
+                    f"[init-checksum] {'sharded' if _sharded else 'dense'} "
+                    f"{_name} n={int(_cnt)} sum={_sm:.6f} sumsq={_sq:.6f}"
+                )
+        if _rank == 0:
+            _digest = hashlib.sha256("\n".join(_fps).encode()).hexdigest()[:16]
+            logger.info(
+                f"[init-checksum] SEED={os.environ.get('SEED', '?')} "
+                f"params={len(_fps)} digest={_digest}"
+            )
+
     # Create keyed optimizer
     all_optimizers = []
     all_params = {}
