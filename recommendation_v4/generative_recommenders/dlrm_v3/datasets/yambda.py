@@ -734,6 +734,41 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self._eval_holdout_cache_key = key
         return holdout
 
+    def total_train_anchors(self, start_ts: int, num_ts: int) -> int:
+        """Total TRAIN anchors across windows ``[start_ts, start_ts + num_ts)``.
+
+        A single O(N) pass over the cached ``_anchor_ts`` array (NOT per-window
+        ``train_window_indices`` scans). Used to convert a "fraction of training
+        data" eval cadence into a global train-step interval. With a user holdout
+        (``train_split_percentage`` < 1.0) the held-out eval users are excluded
+        via the SAME uid hash as ``train_window_indices``, so the count matches
+        what is actually trained.
+
+        NOTE: this is an UPPER BOUND on the realized train STEP count — the
+        per-window samplers truncate each window to a multiple of ``world_size``
+        and drop the last partial per-rank batch (``drop_last=True``). The small
+        overcount is acceptable for a cadence knob (it only shifts the eval grid
+        by a fraction of a window).
+        """
+        self._ensure_streaming_index()
+        assert self._anchor_ts is not None and self._t_min is not None
+        if num_ts <= 0:
+            return 0
+        w = self._streaming_window_seconds
+        lo = self._t_min + start_ts * w
+        hi = self._t_min + (start_ts + num_ts) * w
+        in_range = (self._anchor_ts >= lo) & (self._anchor_ts < hi)
+        if self._train_split_percentage >= 1.0:
+            total = int(np.count_nonzero(in_range))
+        else:
+            sel = np.where(in_range)[0]
+            total = int(np.count_nonzero(~self._eval_anchor_mask(sel)))
+        logger.warning(
+            f"total_train_anchors(start_ts={start_ts}, num_ts={num_ts}): "
+            f"{total:,} train anchors (tsp={self._train_split_percentage})"
+        )
+        return total
+
     def set_ts(self, ts: int, train_only: bool = False) -> None:
         """Restrict the active sample set to anchors in window ``ts`` (used by
         the per-window-DataLoader path, where ``iloc``/``get_item_count`` index

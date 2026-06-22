@@ -43,10 +43,10 @@ seed/env_int.key     = "SEED"
 seed/env_int.default = 1
 
 # dense model optimizer
-# Learning rate is env-overridable via $DENSE_LR (default 1e-5).
+# Learning rate is env-overridable via $DENSE_LR (default 1e-7).
 dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()
 dlr/env_float.key     = "DENSE_LR"
-dlr/env_float.default = 0.00001
+dlr/env_float.default = 0.0000001
 dense_optimizer_factory_and_class.optimizer_name = "Adam"
 dense_optimizer_factory_and_class.momentum = 0
 dense_optimizer_factory_and_class.weight_decay = 0
@@ -54,10 +54,10 @@ dense_optimizer_factory_and_class.eps = 1e-8
 dense_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # sparse model optimizer
-# Learning rate is env-overridable via $SPARSE_LR (default 1e-5).
+# Learning rate is env-overridable via $SPARSE_LR (default 1e-7).
 sparse_optimizer_factory_and_class.learning_rate = @slr/env_float()
 slr/env_float.key     = "SPARSE_LR"
-slr/env_float.default = 0.00001
+slr/env_float.default = 0.0000001
 sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
 sparse_optimizer_factory_and_class.momentum = 0
 sparse_optimizer_factory_and_class.weight_decay = 0
@@ -66,10 +66,10 @@ sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # Gradient clipping for the STREAMING path (clips dense params; sparse tables
 # use a fused optimizer and are unaffected). Env-overridable via $GRAD_CLIP_NORM.
-# Default 0.0 = OFF so existing streaming runs are unchanged; set >0 to enable.
+# Default 1.0 = ON (max_norm=1.0); set 0.0 via $GRAD_CLIP_NORM to disable.
 streaming_train_eval_loop.grad_clip_norm = @gcn/env_float()
 gcn/env_float.key     = "GRAD_CLIP_NORM"
-gcn/env_float.default = 0.0
+gcn/env_float.default = 1.0
 
 # Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
 # below. Used by both make_train_test_dataloaders and get_dataset.
@@ -257,6 +257,13 @@ ot/env_int.default = 0
 streaming_train_eval_loop.persistent_loader = @pl/env_int()
 pl/env_int.key = "PERSISTENT_LOADER"
 pl/env_int.default = 1
+# ---- Eval cadence: choose EXACTLY ONE of the two knobs below ----------------
+# The streaming loop can decide WHEN to run the full-holdout eval pass in one of
+# two ways. They are MUTUALLY EXCLUSIVE — enabling the data-fraction cadence
+# (EVAL_EVERY_DATA_PCT>0) requires EVAL_EVERY_N_WINDOWS=0; setting both >0 raises
+# a ValueError at startup. The final end-of-run eval always runs in either mode.
+#
+# (1) PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS, the default).
 # Full-holdout eval cadence (single knob; replaces the old EVAL_EACH_WINDOW
 # on/off switch). 0 = eval disabled (train-only, e.g. perf benchmarking or the
 # resume test; the eval dataloader isn't even built). 1 (default) = eval after
@@ -264,9 +271,38 @@ pl/env_int.default = 1
 # (and always the final one) to amortize the cost of consuming the full next-day
 # eval window. The cadence is anchored to the absolute ts grid so eval points
 # stay stable across a mid-run resume.
+# NOTE: each daily window has a DIFFERENT number of training samples, so a
+# per-window cadence produces eval points that are UNEVENLY spaced in terms of
+# how much data was trained between them. Use the data-fraction cadence below if
+# you want evenly-spaced-by-data eval points instead.
 streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
 evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
 evn/env_int.default = 1
+#
+# (2) DATA-FRACTION cadence (EVAL_EVERY_DATA_PCT).
+# Run the full-holdout eval every time the run has trained this FRACTION of the
+# run's TOTAL training data, so eval points are EVENLY spaced by data volume
+# (compute), independent of how many samples each daily window happens to hold.
+# This is the fix for the per-window cadence's uneven spacing noted above.
+#   value semantics (it is a fraction in (0, 1], NOT a percent number):
+#     0.0  (default) = OFF  -> fall back to the per-window EVAL_EVERY_N_WINDOWS.
+#     0.01           = eval every 1%  of the data  -> ~100 eval points total.
+#     0.05           = eval every 5%  of the data  -> ~20  eval points total.
+#     0.10           = eval every 10% of the data  -> ~10  eval points total.
+# How "fraction of data" becomes an eval trigger: at startup the fraction is
+# converted ONCE into a global train-step interval
+#     eval_interval_steps = round(pct * total_train_anchors / (batch_size * world_size))
+# where total_train_anchors is counted over the ORIGINAL requested window range
+# [start_ts, start_ts+num_train_ts). Eval then fires whenever the monotonic
+# train global_step crosses a multiple of that interval (it can fire MID-WINDOW,
+# i.e. partway through a daily window, and across window boundaries). Because the
+# interval is computed over the original range and global_step is
+# checkpoint-restored, the eval grid is identical on a cold start and on every
+# resume. Each eval record's label carries "@step=<global_step>" so the
+# trajectory can be plotted against data volume. Override via $EVAL_EVERY_DATA_PCT.
+streaming_train_eval_loop.eval_every_data_pct = @edp/env_float()
+edp/env_float.key     = "EVAL_EVERY_DATA_PCT"
+edp/env_float.default = 0.0
 # Double-buffer windows: prepare the next window (index mask + first-batch
 # prefetch) in a background thread during the current window's compute, hiding
 # the per-window reset. Needs persistent_loader=1. Override via env.

@@ -1439,6 +1439,11 @@ def streaming_train_eval_loop(
     start_ts: int = 0,
     persistent_loader: bool = False,
     eval_every_n_windows: int = 1,
+    # Data-fraction eval cadence (mutually exclusive with eval_every_n_windows).
+    # >0 = eval every this FRACTION of the run's total training data, converted
+    # once to a global train-step interval. 0.0 = OFF (use the per-window
+    # cadence). Wired to $EVAL_EVERY_DATA_PCT via gin.
+    eval_every_data_pct: float = 0.0,
     double_buffer: bool = False,
     # --- fixed user-holdout eval set ---
     # Window range the fixed eval set is drawn from. None -> default to
@@ -1507,6 +1512,18 @@ def streaming_train_eval_loop(
     save fires. Used by the failure-injection test to crash at a deterministic
     boundary and then resume.
     """
+    # Exactly one eval cadence may be active. eval_every_n_windows defaults to 1
+    # (eval every window), so enabling the data-fraction cadence REQUIRES
+    # explicitly disabling the per-window one (EVAL_EVERY_N_WINDOWS=0). Fail fast
+    # on a contradictory config rather than silently picking one.
+    if (eval_every_data_pct and eval_every_data_pct > 0) and eval_every_n_windows > 0:
+        raise ValueError(
+            "Conflicting eval cadences: eval_every_data_pct="
+            f"{eval_every_data_pct} (>0) AND eval_every_n_windows="
+            f"{eval_every_n_windows} (>0). They are mutually exclusive. To use "
+            "the data-fraction cadence set EVAL_EVERY_N_WINDOWS=0; to use the "
+            "per-window cadence set EVAL_EVERY_DATA_PCT=0."
+        )
     profiler = Profiler(rank) if output_trace else None
     # Normalize the per-window caps: <=0 (the env-binding default) means "no cap
     # = consume the full window". The eval-break check below is `is not None and
@@ -1562,6 +1579,53 @@ def streaming_train_eval_loop(
         if (eval_holdout_ts is not None and eval_holdout_ts >= 0)
         else requested_end_ts
     )
+
+    # Data-fraction eval cadence: convert eval_every_data_pct into a global
+    # train-step interval ONCE, over the ORIGINAL requested window range
+    # [eval_anchor_ts, requested_end_ts). Keying the later trigger off
+    # `global_step % eval_interval_steps` (global_step is monotonic and
+    # checkpoint-restored) makes the eval grid identical on cold start and on
+    # every resume, exactly like checkpoint_step_frequency. 0 => disabled.
+    eval_interval_steps = 0
+    if eval_every_data_pct and eval_every_data_pct > 0:
+        # Per-rank batch size: the persistent loader carries it directly; the
+        # per-window path uses the same gin %batch_size (env BATCH_SIZE,
+        # default 1024 — matches make_streaming_dataloader.batch_size).
+        bs = (
+            persistent_dl.batch_size
+            if persistent_dl is not None
+            else int(os.environ.get("BATCH_SIZE", "1024"))
+        )
+        if hasattr(dataset.dataset, "total_train_anchors"):
+            total_train_anchors = dataset.dataset.total_train_anchors(  # pyre-ignore[16]
+                eval_anchor_ts, requested_end_ts - eval_anchor_ts
+            )
+            total_train_steps = total_train_anchors // max(1, bs * world_size)
+            eval_interval_steps = max(
+                1, round(eval_every_data_pct * total_train_steps)
+            )
+            if rank == 0:
+                logger.info(
+                    "[data-pct-eval] eval_every_data_pct=%.6g -> "
+                    "eval_interval_steps=%d (total_train_anchors=%d bs=%d "
+                    "world_size=%d total_train_steps=%d over windows [%d, %d))",
+                    eval_every_data_pct,
+                    eval_interval_steps,
+                    total_train_anchors,
+                    bs,
+                    world_size,
+                    total_train_steps,
+                    eval_anchor_ts,
+                    requested_end_ts,
+                )
+        elif rank == 0:
+            logger.warning(
+                "[data-pct-eval] dataset %s has no total_train_anchors(); "
+                "data-fraction eval is DISABLED (no per-window eval either, "
+                "since EVAL_EVERY_N_WINDOWS must be 0 to reach here) — only the "
+                "final eval will run.",
+                type(dataset.dataset).__name__,
+            )
 
     # The split is an immutable run contract: a silent change across resume
     # would both desync the mid-window skip offset AND turn held-out eval users
@@ -1711,6 +1775,7 @@ def streaming_train_eval_loop(
         train_ts: int,
         start_batch_idx: int = 0,
         label: Optional[str] = None,
+        do_eval: Optional[Callable[[int, int], None]] = None,
     ) -> None:
         # `start_batch_idx` is set when we're re-entering a window that was
         # interrupted mid-way (in_window resume); the dataloader iterator was
@@ -1817,6 +1882,30 @@ def streaming_train_eval_loop(
                 # Reset the wall-clock anchor on ANY save so the next time
                 # trigger is measured from the most recent checkpoint.
                 last_ckpt_time[0] = time.time()
+            # Data-fraction eval cadence: run the full-holdout eval whenever the
+            # monotonic global step crosses a multiple of eval_interval_steps
+            # (i.e. every eval_every_data_pct of the training data). Keyed off
+            # global_step (checkpoint-restored) so the eval grid is identical
+            # across resume. Mid-window-safe: eval sets model.eval(), so restore
+            # train mode + dataset.is_eval afterward. do_eval is None unless the
+            # data-pct cadence is enabled.
+            if (
+                do_eval is not None
+                and eval_interval_steps > 0
+                and gstep > 0
+                and gstep % eval_interval_steps == 0
+            ):
+                if rank == 0:
+                    logger.info(
+                        "[data-pct-eval] trigger eval train_ts=%d global_step=%d "
+                        "(interval=%d)",
+                        train_ts,
+                        gstep,
+                        eval_interval_steps,
+                    )
+                do_eval(train_ts, gstep)
+                model.train()
+                dataset.dataset.is_eval = False  # pyre-ignore [16]
             # Test-only: deterministic crash for the failure-injection test.
             # Triggered AFTER the save above, so on resume we re-enter at
             # batch_idx_in_window=train_batch_idx and emit batches [K+1, end).
@@ -2035,7 +2124,13 @@ def streaming_train_eval_loop(
         # sample content depends only on the sampler window, not is_eval, so
         # prefetching during train is safe.
         eval_iter: Optional[Iterator] = None
-        if eval_every_n_windows > 0 and len(train_ts_list) > 0:
+        # Build/fork the eval pool when EITHER cadence needs it: the per-window
+        # cadence (eval_every_n_windows>0) or the data-fraction cadence
+        # (eval_interval_steps>0). Both are never simultaneously on (validated
+        # at entry), so this is "eval is enabled at all".
+        if (eval_every_n_windows > 0 or eval_interval_steps > 0) and len(
+            train_ts_list
+        ) > 0:
             eval_sampler = StreamingWindowSampler(rank, world_size)
             eval_dl = make_persistent_streaming_dataloader(
                 dataset=dataset, sampler=eval_sampler
@@ -2053,6 +2148,22 @@ def streaming_train_eval_loop(
             # iter() again to replay the identical set (no set_window churn).
             eval_sampler.set_window(eval_global_indices)
             eval_iter = iter(eval_dl)
+
+        # Data-fraction eval callback (double-buffer path). Fired mid-window by
+        # _run_train_window on the global-step cadence. Reuses the already-forked
+        # persistent eval pool: iter(eval_dl) here runs on the MAIN thread (a
+        # reset, not a fork — the only fork was the up-front iter() above), so it
+        # stays safe alongside the background window-prefetch thread.
+        def _do_eval_db(train_ts: int, gstep: int) -> None:
+            dataset.dataset.is_eval = True  # pyre-ignore [16]
+            assert eval_dl is not None
+            _run_eval_window(
+                iter(eval_dl),
+                label=f"eval_holdout@train_ts={train_ts}@step={gstep}",
+            )
+
+        _db_do_eval = _do_eval_db if eval_interval_steps > 0 else None
+
         for i, (train_ts, train_data_iterator) in enumerate(
             # Only the FIRST window after a mid-window resume needs the skip
             # (handed via prefetcher.stream's first_skip_samples). The skip is
@@ -2074,6 +2185,7 @@ def streaming_train_eval_loop(
                 train_ts=train_ts,
                 start_batch_idx=start_batch,
                 label=f"train_ts={train_ts}",
+                do_eval=_db_do_eval,
             )
             if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
@@ -2090,6 +2202,28 @@ def streaming_train_eval_loop(
                     eval_iter = iter(eval_dl)
             _maybe_checkpoint(train_ts)
     else:
+        # Data-fraction eval callback (non-double-buffer path). Builds a fresh
+        # eval dataloader per call over the FIXED holdout set (or the legacy
+        # next-window eval when the dataset has no holdout support).
+        def _do_eval_nb(train_ts: int, gstep: int) -> None:
+            dataset.dataset.is_eval = True  # pyre-ignore [16]
+            if eval_global_indices is not None:
+                _run_eval_window(
+                    iter(
+                        make_streaming_dataloader(
+                            dataset=dataset, indices=eval_global_indices
+                        )
+                    ),
+                    label=f"eval_holdout@train_ts={train_ts}@step={gstep}",
+                )
+            else:
+                _run_eval_window(
+                    iter(make_streaming_dataloader(dataset=dataset, ts=train_ts + 1)),
+                    label=f"eval@train_ts={train_ts}@step={gstep}",
+                )
+
+        _nb_do_eval = _do_eval_nb if eval_interval_steps > 0 else None
+
         for i, train_ts in enumerate(train_ts_list):
             dataset.dataset.is_eval = False  # pyre-ignore [16]
             skip = first_skip_samples if i == 0 else 0
@@ -2102,6 +2236,7 @@ def streaming_train_eval_loop(
                 _window_iter(train_ts, skip_samples=skip),
                 train_ts=train_ts,
                 start_batch_idx=start_batch,
+                do_eval=_nb_do_eval,
             )
             if _should_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
