@@ -32,12 +32,50 @@ make_model.hammer_kernel = "TRITON"
 # pinned constants in ops/triton/_autotune_pinning.py call sites.
 apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 
-# Global RNG seed for reproducible weight init (dense params + embedding tables)
-# and any seeded RNG consumers. Same seed on every rank => identical dense init;
-# fixing it makes runs an init-matched A/B (data order is already deterministic
-# via the sampler). seed_everything() is called right before make_model() in
-# train_ranker (after the full gin parse), so this binding is resolved in the
-# second parse where env_int is registered. Override per-run via $SEED.
+# =============================================================================
+# $SEED — global RNG seed for reproducible MODEL INITIALIZATION.
+#
+# WHAT IT CONTROLS (all weight init is a deterministic function of $SEED):
+#   1. Dense parameters (HSTU transformer blocks, MLPs, action embeddings, the
+#      postprocessor). seed_everything() seeds python/numpy/torch/torch.cuda
+#      with $SEED right before make_model(). The SAME seed is set on every rank,
+#      so dense weights are initialized identically across ranks AND reproducibly
+#      run-to-run.
+#   2. Sparse embedding tables (item_id, artist_id, album_id, uid, the cross
+#      tables). These are materialized on-device while DMP shards the model, NOT
+#      in make_model(), so seed_everything() alone does not pin them. Two
+#      mechanisms tie them to $SEED:
+#        (a) make_optimizer_and_shard() RE-SEEDS torch/torch.cuda from $SEED
+#            immediately before DistributedModelParallel(...), so the fused
+#            FBGEMM TBE init (which draws from the global RNG on-device) is
+#            reproducible. This is the path that actually applies here.
+#        (b) get_embedding_table_config() also attaches a per-table seeded
+#            init_fn (seed derived from sha256($SEED, table_name)) for the
+#            eager/non-meta code path. It no-ops on the meta device that DMP
+#            uses, so (a) is the effective guarantee for this setup.
+#   3. Any other seeded RNG consumers (e.g. dropout's init-time draws).
+#
+#   SCOPE ("Tier 1"): reproducible for a FIXED sharding plan — same GPU/world
+#   size AND same planner output. It is NOT invariant to changing the GPU count
+#   or sharding (the per-shard draw boundaries move). The init DISTRIBUTION is
+#   unchanged from stock (uniform +/-1/sqrt(num_embeddings), or a table's
+#   explicit weight_init_min/max), so $SEED affects determinism, not quality.
+#
+#   VERIFY: INIT_CHECKSUM=1 (default) logs a per-table fingerprint + a one-line
+#   "[init-checksum] SEED=.. digest=.." right after DMP. Two builds with the same
+#   $SEED + plan print the same digest; different seeds differ. (INIT_CHECKSUM=0
+#   to skip.)
+#
+# WHAT IT DOES *NOT* CONTROL (separate, independent knobs):
+#   - Streaming data order / shuffle permutation -> $STREAMING_SHUFFLE_SEED
+#     (get_dataset.streaming_shuffle_seed, below).
+#   - Train/eval holdout user split               -> $SPLIT_SALT (below).
+#   So holding $STREAMING_SHUFFLE_SEED + $SPLIT_SALT fixed and varying ONLY $SEED
+#   isolates the effect of model initialization (a clean init-seed A/B / sweep).
+#
+# PARSE NOTE: seed_everything() runs right before make_model() in train_ranker
+# (after the full gin parse), so this binding resolves in the second parse where
+# env_int is registered. Override per-run via $SEED.
 seed_everything.seed = @seed/env_int()
 seed/env_int.key     = "SEED"
 seed/env_int.default = 1

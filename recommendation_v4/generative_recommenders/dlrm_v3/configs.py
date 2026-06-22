@@ -19,9 +19,13 @@ Configuration module for DLRMv3 model.
 This module provides configuration functions for the HSTU model architecture and embedding table configurations.
 """
 
-from typing import Dict, Optional
+import hashlib
+import math
+import os
+from typing import Callable, Dict, Optional, Tuple
 
 import gin
+import torch
 
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTUConfig
 from generative_recommenders.modules.multitask_module import (
@@ -509,10 +513,63 @@ def get_hstu_configs(
     return hstu_config
 
 
+def _stable_table_seed(init_seed: int, table_name: str) -> int:
+    """Deterministic 63-bit seed from (init_seed, table_name).
+
+    Uses sha256 (not Python's salted built-in ``hash()``) so the per-table seed
+    is identical across processes/ranks/runs for a given ``$SEED`` + table name.
+    """
+    digest = hashlib.sha256(f"{init_seed}:{table_name}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") & 0x7FFF_FFFF_FFFF_FFFF
+
+
+def _uniform_init_bounds(cfg: EmbeddingConfig) -> Tuple[float, float]:
+    """Mirror TorchREC's default per-table init bounds.
+
+    TorchREC falls back to ``uniform_(-1/sqrt(N), +1/sqrt(N))`` when a table does
+    not set ``weight_init_min/max``; honor any explicit bounds the config carries.
+    """
+    bound = math.sqrt(1.0 / cfg.num_embeddings)
+    lo = -bound if cfg.weight_init_min is None else cfg.weight_init_min
+    hi = bound if cfg.weight_init_max is None else cfg.weight_init_max
+    return lo, hi
+
+
+def _make_seeded_uniform_init(
+    table_seed: int, lo: float, hi: float
+) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Build a seeded in-place uniform initializer for one table's weight.
+
+    TorchREC/FBGEMM calls ``init_fn`` with the (per-rank) local shard tensor on
+    its compute device, so we seed a generator on that same device. For a fixed
+    sharding plan (world size + plan unchanged) this makes embedding init
+    byte-reproducible run-to-run.
+    """
+
+    def _init(weight: torch.Tensor) -> torch.Tensor:
+        # TorchREC builds the unsharded EmbeddingCollection on the META device
+        # first (DMP materializes real storage on the compute device later).
+        # Meta tensors have no storage and torch.Generator(device="meta") is
+        # invalid ("META device type not an accelerator"), so skip them: the
+        # seeded init for the sharded/fused TBE path is provided by the RNG
+        # re-seed right before DMP in make_optimizer_and_shard. On a real
+        # device (eager/non-meta path) we still apply the per-table seeded fill.
+        if weight.device.type == "meta":
+            return weight
+        gen = torch.Generator(device=weight.device)
+        gen.manual_seed(table_seed)
+        with torch.no_grad():
+            weight.uniform_(lo, hi, generator=gen)
+        return weight
+
+    return _init
+
+
 @gin.configurable
 def get_embedding_table_config(
     dataset: str = "debug",
     embedding_dim: Optional[int] = None,
+    init_seed: Optional[int] = None,
 ) -> Dict[str, EmbeddingConfig]:
     """
     Create and return embedding table configurations.
@@ -527,10 +584,31 @@ def get_embedding_table_config(
             `HSTU_EMBEDDING_DIM`. Keep in sync with the matching gin override on
             `get_hstu_configs.hstu_embedding_table_dim` — the model and the
             tables must agree on dim or sharding will reject the plan.
+        init_seed: Base seed for the per-table seeded `init_fn` (Tier 1
+            reproducible embedding init). When None, falls back to `$SEED`
+            (default 1), matching `seed_everything`. Each table draws from a
+            generator seeded by `sha256(init_seed, table_name)` so init is
+            reproducible run-to-run for a fixed sharding plan.
 
     Returns:
         Dict mapping table names to their EmbeddingConfig objects.
     """
+    tables = _build_embedding_table_config(dataset=dataset, embedding_dim=embedding_dim)
+
+    if init_seed is None:
+        init_seed = int(os.environ.get("SEED", "1"))
+    for name, cfg in tables.items():
+        lo, hi = _uniform_init_bounds(cfg)
+        cfg.init_fn = _make_seeded_uniform_init(
+            _stable_table_seed(init_seed, name), lo, hi
+        )
+    return tables
+
+
+def _build_embedding_table_config(
+    dataset: str = "debug",
+    embedding_dim: Optional[int] = None,
+) -> Dict[str, EmbeddingConfig]:
     DIM = embedding_dim if embedding_dim is not None else HSTU_EMBEDDING_DIM
     if "movielens" in dataset:
         assert dataset in [
