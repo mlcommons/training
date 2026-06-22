@@ -1460,6 +1460,9 @@ def streaming_train_eval_loop(
     # --- global step / wall-clock checkpoint cadences ---
     checkpoint_step_frequency: int = 0,
     checkpoint_time_interval_s: float = 0.0,
+    # --- gradient clipping (streaming path, dense params). 0.0 = OFF, which
+    #     preserves legacy streaming behavior. Wired to $GRAD_CLIP_NORM via gin. ---
+    grad_clip_norm: float = 0.0,
     # --- diagnostic: log per-batch unique/total embedding-id counts ---
     streaming_diag_unique_emb: bool = False,
     # --- test-only failure injection knob ---
@@ -1627,6 +1630,13 @@ def streaming_train_eval_loop(
                 original_end_ts, start_ts,
             )
 
+    if rank == 0:
+        logger.info(
+            "[grad-clip] streaming path gradient clipping %s (max_norm=%.4g via $GRAD_CLIP_NORM)",
+            "ENABLED" if (grad_clip_norm and grad_clip_norm > 0) else "OFF",
+            grad_clip_norm,
+        )
+
     def _window_iter(ts: int, skip_samples: int = 0):
         # TRAIN-only iterator: both branches exclude held-out eval users via
         # train_window_indices / set_ts(train_only=True). (Eval uses the fixed
@@ -1743,6 +1753,15 @@ def streaming_train_eval_loop(
             )
             # pyre-ignore
             sum(aux_losses.values()).backward()
+            # Gradient clipping for the streaming path. Clips dense params (the
+            # sparse embedding tables use a fused optimizer and are unaffected,
+            # same as the non-streaming path's clip_grad_norm_). OFF by default
+            # (grad_clip_norm=0.0 via $GRAD_CLIP_NORM) so legacy streaming runs
+            # are byte-for-byte unchanged; set >0 to enable.
+            if grad_clip_norm and grad_clip_norm > 0:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=grad_clip_norm
+                )
             optimizer.step()
             metric_logger.update(
                 mode="train",
