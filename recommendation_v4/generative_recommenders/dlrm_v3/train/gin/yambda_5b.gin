@@ -64,6 +64,13 @@ sparse_optimizer_factory_and_class.weight_decay = 0
 sparse_optimizer_factory_and_class.eps = 1e-8
 sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
 
+# Gradient clipping for the STREAMING path (clips dense params; sparse tables
+# use a fused optimizer and are unaffected). Env-overridable via $GRAD_CLIP_NORM.
+# Default 0.0 = OFF so existing streaming runs are unchanged; set >0 to enable.
+streaming_train_eval_loop.grad_clip_norm = @gcn/env_float()
+gcn/env_float.key     = "GRAD_CLIP_NORM"
+gcn/env_float.default = 0.0
+
 # Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
 # below. Used by both make_train_test_dataloaders and get_dataset.
 # Scoped (`data/env_path`) so this binding doesn't collide with the RUN_NAME
