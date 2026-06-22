@@ -61,10 +61,14 @@ apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 #   unchanged from stock (uniform +/-1/sqrt(num_embeddings), or a table's
 #   explicit weight_init_min/max), so $SEED affects determinism, not quality.
 #
-#   VERIFY: INIT_CHECKSUM=1 (default) logs a per-table fingerprint + a one-line
-#   "[init-checksum] SEED=.. digest=.." right after DMP. Two builds with the same
-#   $SEED + plan print the same digest; different seeds differ. (INIT_CHECKSUM=0
-#   to skip.)
+#   VERIFY: INIT_CHECKSUM=1 (OFF by default) logs a per-table fingerprint + a
+#   one-line "[init-checksum] SEED=.. digest=.." right after DMP. Two builds with
+#   the same $SEED + plan print the same digest; different seeds differ. It is OFF
+#   by default because the fp64 per-shard reductions materialize a full fp64 copy
+#   of each local embedding shard (>150 GiB for the big tables), leaving almost no
+#   HBM headroom after sharding and OOMing the build on any node with residual
+#   memory. Enable only for an explicit reproducibility check (ideally a clean
+#   node / smaller batch).
 #
 # WHAT IT DOES *NOT* CONTROL (separate, independent knobs):
 #   - Streaming data order / shuffle permutation -> $STREAMING_SHUFFLE_SEED
