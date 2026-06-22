@@ -154,9 +154,20 @@ def setup(
     # would be too early to be gin-configurable.
 
     # initialize the process group
+    #
+    # The default PG timeout must match TIMEOUT (not the 600s NCCL default):
+    # checkpoint saves go through DCP collectives on *this* default PG, and the
+    # 560GB sparse-embedding write is both slow on shared NFS and badly skewed
+    # across ranks (shards range ~37GB..~95GB), so the fastest rank can sit in
+    # the post-write allgather/barrier well past 600s waiting for the slowest
+    # rank. The stock 600s watchdog then SIGABRTs an otherwise-healthy job.
     if not dist.is_initialized():
         dist.init_process_group(
-            "nccl", rank=rank, world_size=world_size, device_id=device
+            "nccl",
+            rank=rank,
+            world_size=world_size,
+            device_id=device,
+            timeout=timedelta(seconds=TIMEOUT),
         )
 
     pg = dist.new_group(
