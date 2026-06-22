@@ -525,16 +525,20 @@ def make_optimizer_and_shard(
     )
 
     # --- startup init checksum (reproducibility probe) -------------------------
-    # Right after DMP materializes real weights, log a cheap deterministic
-    # fingerprint of every parameter so two builds with the same $SEED + sharding
-    # plan can be diffed for byte-level init reproducibility. For sharded
-    # embeddings we all-reduce the per-shard (count, sum, sumsq) so the
-    # fingerprint covers the WHOLE table independent of how rows split across
-    # ranks; replicated dense params use rank 0's local copy. Stats are computed
-    # as in-place reductions with fp64 accumulation (no full-size temporaries —
-    # the embedding shards are tens of GB), so this stays light. Disable with
-    # INIT_CHECKSUM=0.
-    if os.environ.get("INIT_CHECKSUM", "1") == "1":
+    # Right after DMP materializes real weights, log a deterministic fingerprint
+    # of every parameter so two builds with the same $SEED + sharding plan can be
+    # diffed for byte-level init reproducibility. For sharded embeddings we
+    # all-reduce the per-shard (count, sum, sumsq) so the fingerprint covers the
+    # WHOLE table independent of how rows split across ranks; replicated dense
+    # params use rank 0's local copy.
+    # OFF BY DEFAULT: the fp64 reductions below (.sum(dtype=float64) /
+    # vector_norm(dtype=float64)) materialize a full fp64 copy of each local
+    # embedding shard (~2x the fp32 shard, i.e. >150 GiB for the big tables),
+    # which leaves almost no HBM headroom after sharding and will OOM the build on
+    # any node with residual memory. Only enable for explicit reproducibility
+    # checks, ideally with a smaller batch / on a clean node. Enable with
+    # INIT_CHECKSUM=1.
+    if os.environ.get("INIT_CHECKSUM", "0") == "1":
         import hashlib
 
         _rank = dist.get_rank() if dist.is_initialized() else 0
