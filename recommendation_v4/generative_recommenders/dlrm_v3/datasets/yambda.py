@@ -190,8 +190,12 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         hstu_config: DlrmHSTUConfig (must come from `get_hstu_configs("yambda-5b")`).
         processed_dir: directory with `train_sessions.parquet` + `item_popularity.npy`.
         metadata_dir: directory with `{artist,album}_item_mapping.parquet`.
-        history_length: per-pool truncation cap (total interleaved ≤ 3 * this).
+        history_length: UIH cap. Under "interleaved" it is the per-pool cap
+            (total ≤ 3 * history_length // 3); under "last_n" it is the literal
+            total number of pooled events kept.
         scan_window: how far back to scan when filling each pool.
+        history_strategy: "interleaved" (equal per-pool L//3 cap, re-interleaved)
+            or "last_n" (last history_length pooled events, no per-pool split).
         cross_specs: list of (name, keys, num_embeddings, salt). Source of truth
             in `dlrm_v3/configs.py:YAMBDA_5B_CROSS_SPECS`.
         is_inference: passed through to base class.
@@ -205,6 +209,7 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         history_length: int = 2048,
         scan_window: int = 20000,
         min_history: Optional[int] = None,
+        history_strategy: str = "interleaved",
         cross_specs: Optional[Sequence[Tuple[str, Sequence[str], int, int]]] = None,
         cache_dir: Optional[str] = None,
         is_inference: bool = False,
@@ -222,6 +227,21 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self._metadata_dir: str = metadata_dir
         self._history_length: int = history_length
         self._scan_window: int = scan_window
+        # UIH construction strategy:
+        #   "interleaved" (default) — equal history_length//3 cap per behavior
+        #     pool (listen+/like/skip), re-interleaved chronologically. Likes are
+        #     ~1.9% of the corpus so the like pool over-fills relative to its
+        #     natural frequency while the sequence under-fills overall.
+        #   "last_n" — take the last history_length events of ANY pool type with
+        #     no per-pool split. Fills the sequence to ~history_length (higher
+        #     effective length) and lets the like share fall to its natural rate.
+        # Both exclude dislike/unlike/undislike (no action-weight bit).
+        if history_strategy not in ("interleaved", "last_n"):
+            raise ValueError(
+                f"history_strategy must be 'interleaved' or 'last_n', got "
+                f"{history_strategy!r}"
+            )
+        self._history_strategy: str = history_strategy
         # Minimum prior-event count for a LISTEN event to qualify as an anchor.
         # Decoupled from history_length (which is only the gather/truncation cap):
         # jagged attention handles short UIH, so we no longer require a full
@@ -734,6 +754,41 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         self._eval_holdout_cache_key = key
         return holdout
 
+    def total_train_anchors(self, start_ts: int, num_ts: int) -> int:
+        """Total TRAIN anchors across windows ``[start_ts, start_ts + num_ts)``.
+
+        A single O(N) pass over the cached ``_anchor_ts`` array (NOT per-window
+        ``train_window_indices`` scans). Used to convert a "fraction of training
+        data" eval cadence into a global train-step interval. With a user holdout
+        (``train_split_percentage`` < 1.0) the held-out eval users are excluded
+        via the SAME uid hash as ``train_window_indices``, so the count matches
+        what is actually trained.
+
+        NOTE: this is an UPPER BOUND on the realized train STEP count — the
+        per-window samplers truncate each window to a multiple of ``world_size``
+        and drop the last partial per-rank batch (``drop_last=True``). The small
+        overcount is acceptable for a cadence knob (it only shifts the eval grid
+        by a fraction of a window).
+        """
+        self._ensure_streaming_index()
+        assert self._anchor_ts is not None and self._t_min is not None
+        if num_ts <= 0:
+            return 0
+        w = self._streaming_window_seconds
+        lo = self._t_min + start_ts * w
+        hi = self._t_min + (start_ts + num_ts) * w
+        in_range = (self._anchor_ts >= lo) & (self._anchor_ts < hi)
+        if self._train_split_percentage >= 1.0:
+            total = int(np.count_nonzero(in_range))
+        else:
+            sel = np.where(in_range)[0]
+            total = int(np.count_nonzero(~self._eval_anchor_mask(sel)))
+        logger.warning(
+            f"total_train_anchors(start_ts={start_ts}, num_ts={num_ts}): "
+            f"{total:,} train anchors (tsp={self._train_split_percentage})"
+        )
+        return total
+
     def set_ts(self, ts: int, train_only: bool = False) -> None:
         """Restrict the active sample set to anchors in window ``ts`` (used by
         the per-window-DataLoader path, where ``iloc``/``get_item_count`` index
@@ -779,6 +834,64 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         flat_pos = self.iloc(idx)
         return self._build_sample(flat_pos, max_num_candidates)
 
+    @staticmethod
+    def _empty_history() -> Tuple[
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+    ]:
+        empty = np.empty(0, dtype=np.int64)
+        return empty, empty, empty, empty, empty
+
+    def _read_scan_window(
+        self, flat_pos: int, user_start: int
+    ) -> Optional[
+        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    ]:
+        """Read the causal scan window [scan_start, flat_pos) for an anchor.
+        Returns (item_ids, timestamps, is_lp, is_like, is_skip) views, or None
+        if the window is empty."""
+        scan_start = max(int(user_start), int(flat_pos) - self._scan_window)
+        scan_end = int(flat_pos)
+        if scan_end <= scan_start:
+            return None
+        return (
+            self.store.flat_item_ids[scan_start:scan_end],
+            self.store.flat_timestamps[scan_start:scan_end],
+            self.store.flat_is_listen_plus[scan_start:scan_end],
+            self.store.flat_is_like[scan_start:scan_end],
+            self.store.flat_is_skip[scan_start:scan_end],
+        )
+
+    def _materialize_history(
+        self,
+        keep_local: np.ndarray,
+        item_ids: np.ndarray,
+        timestamps: np.ndarray,
+        is_lp: np.ndarray,
+        is_like: np.ndarray,
+        is_skip: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Gather item/artist/album/ts + pool-bitmask `weight` for the kept
+        (chronologically-ordered) local indices."""
+        items = item_ids[keep_local]
+        ts = timestamps[keep_local]
+        artists = self.item_to_artist[np.clip(items, 0, self.item_to_artist.shape[0] - 1)]
+        albums = self.item_to_album[np.clip(items, 0, self.item_to_album.shape[0] - 1)]
+        # Pool bitmask per kept event (LP/LIKE/SKIP are mutually exclusive in
+        # the source data, but OR is safe and forward-compatible).
+        weight = np.zeros(keep_local.shape[0], dtype=np.int64)
+        weight[is_lp[keep_local]] |= LP_BIT
+        weight[is_like[keep_local]] |= LIKE_BIT
+        weight[is_skip[keep_local]] |= SKIP_BIT
+        return items, artists, albums, ts, weight
+
+    def _gather_history(
+        self, flat_pos: int, user_start: int
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Dispatch UIH construction to the configured strategy."""
+        if self._history_strategy == "last_n":
+            return self._gather_last_n_history(flat_pos, user_start)
+        return self._gather_interleaved_history(flat_pos, user_start)
+
     def _gather_interleaved_history(
         self, flat_pos: int, user_start: int
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -787,17 +900,10 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         (LP_BIT/LIKE_BIT/SKIP_BIT). Per-pool cap = history_length // 3."""
         L = self._history_length
         per_pool = max(1, L // 3)
-        scan_start = max(int(user_start), int(flat_pos) - self._scan_window)
-        scan_end = int(flat_pos)
-        if scan_end <= scan_start:
-            empty = np.empty(0, dtype=np.int64)
-            return empty, empty, empty, empty, empty
-
-        item_ids = self.store.flat_item_ids[scan_start:scan_end]
-        timestamps = self.store.flat_timestamps[scan_start:scan_end]
-        is_lp = self.store.flat_is_listen_plus[scan_start:scan_end]
-        is_like = self.store.flat_is_like[scan_start:scan_end]
-        is_skip = self.store.flat_is_skip[scan_start:scan_end]
+        scan = self._read_scan_window(flat_pos, user_start)
+        if scan is None:
+            return self._empty_history()
+        item_ids, timestamps, is_lp, is_like, is_skip = scan
 
         # Local indices into the scan window — preserves chronological order
         # within each pool and lets us interleave by re-sorting.
@@ -808,25 +914,39 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
 
         keep_local = np.concatenate([lp_idx, like_idx, skip_idx])
         if keep_local.size == 0:
-            empty = np.empty(0, dtype=np.int64)
-            return empty, empty, empty, empty, empty
+            return self._empty_history()
 
         order = np.argsort(keep_local, kind="stable")
         keep_local = keep_local[order]
 
-        items = item_ids[keep_local]
-        ts = timestamps[keep_local]
-        artists = self.item_to_artist[np.clip(items, 0, self.item_to_artist.shape[0] - 1)]
-        albums = self.item_to_album[np.clip(items, 0, self.item_to_album.shape[0] - 1)]
+        return self._materialize_history(
+            keep_local, item_ids, timestamps, is_lp, is_like, is_skip
+        )
 
-        # Pool bitmask per kept event (LP/LIKE/SKIP are mutually exclusive in
-        # the source data, but OR is safe and forward-compatible).
-        weight = np.zeros(keep_local.shape[0], dtype=np.int64)
-        weight[is_lp[keep_local]] |= LP_BIT
-        weight[is_like[keep_local]] |= LIKE_BIT
-        weight[is_skip[keep_local]] |= SKIP_BIT
+    def _gather_last_n_history(
+        self, flat_pos: int, user_start: int
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Build the UIH from the last `history_length` events of ANY pool type
+        (listen+/like/skip) with no per-pool split. Vs the interleaved strategy
+        this fills the sequence to ~history_length (higher effective length) and
+        lets the like share fall to its natural corpus rate (~1.9%). Events
+        outside the 3 pools (dislike/unlike/undislike) are excluded as before."""
+        L = self._history_length
+        scan = self._read_scan_window(flat_pos, user_start)
+        if scan is None:
+            return self._empty_history()
+        item_ids, timestamps, is_lp, is_like, is_skip = scan
 
-        return items, artists, albums, ts, weight
+        member = is_lp | is_like | is_skip
+        # Last L pooled events, in chronological order (already position-sorted
+        # within the scan window, so no re-sort is needed).
+        keep_local = np.arange(item_ids.shape[0], dtype=np.int64)[member][-L:]
+        if keep_local.size == 0:
+            return self._empty_history()
+
+        return self._materialize_history(
+            keep_local, item_ids, timestamps, is_lp, is_like, is_skip
+        )
 
     def _build_sample(
         self, flat_pos: int, max_num_candidates: int
@@ -834,7 +954,7 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         uid = int(self.store.flat_uid[flat_pos])
         user_start = int(self.store.user_start[uid])
 
-        items, artists, albums, ts, weight = self._gather_interleaved_history(
+        items, artists, albums, ts, weight = self._gather_history(
             flat_pos, user_start
         )
 

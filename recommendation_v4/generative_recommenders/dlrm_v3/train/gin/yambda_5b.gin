@@ -32,13 +32,56 @@ make_model.hammer_kernel = "TRITON"
 # pinned constants in ops/triton/_autotune_pinning.py call sites.
 apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 
-# Global RNG seed for reproducible weight init (dense params + embedding tables)
-# and any seeded RNG consumers. Same seed on every rank => identical dense init;
-# fixing it makes runs an init-matched A/B (data order is already deterministic
-# via the sampler). seed_everything() is called right before make_model() in
-# train_ranker (after the full gin parse), so this binding is resolved in the
-# second parse where env_int is registered.
-# Default -1 = draw a FRESH RANDOM seed every run (rank 0 draws + broadcasts so
+# =============================================================================
+# $SEED — global RNG seed for reproducible MODEL INITIALIZATION.
+#
+# WHAT IT CONTROLS (all weight init is a deterministic function of $SEED):
+#   1. Dense parameters (HSTU transformer blocks, MLPs, action embeddings, the
+#      postprocessor). seed_everything() seeds python/numpy/torch/torch.cuda
+#      with $SEED right before make_model(). The SAME seed is set on every rank,
+#      so dense weights are initialized identically across ranks AND reproducibly
+#      run-to-run.
+#   2. Sparse embedding tables (item_id, artist_id, album_id, uid, the cross
+#      tables). These are materialized on-device while DMP shards the model, NOT
+#      in make_model(), so seed_everything() alone does not pin them. Two
+#      mechanisms tie them to $SEED:
+#        (a) make_optimizer_and_shard() RE-SEEDS torch/torch.cuda from $SEED
+#            immediately before DistributedModelParallel(...), so the fused
+#            FBGEMM TBE init (which draws from the global RNG on-device) is
+#            reproducible. This is the path that actually applies here.
+#        (b) get_embedding_table_config() also attaches a per-table seeded
+#            init_fn (seed derived from sha256($SEED, table_name)) for the
+#            eager/non-meta code path. It no-ops on the meta device that DMP
+#            uses, so (a) is the effective guarantee for this setup.
+#   3. Any other seeded RNG consumers (e.g. dropout's init-time draws).
+#
+#   SCOPE ("Tier 1"): reproducible for a FIXED sharding plan — same GPU/world
+#   size AND same planner output. It is NOT invariant to changing the GPU count
+#   or sharding (the per-shard draw boundaries move). The init DISTRIBUTION is
+#   unchanged from stock (uniform +/-1/sqrt(num_embeddings), or a table's
+#   explicit weight_init_min/max), so $SEED affects determinism, not quality.
+#
+#   VERIFY: INIT_CHECKSUM=1 (OFF by default) logs a per-table fingerprint + a
+#   one-line "[init-checksum] SEED=.. digest=.." right after DMP. Two builds with
+#   the same $SEED + plan print the same digest; different seeds differ. It is OFF
+#   by default because the fp64 per-shard reductions materialize a full fp64 copy
+#   of each local embedding shard (>150 GiB for the big tables), leaving almost no
+#   HBM headroom after sharding and OOMing the build on any node with residual
+#   memory. Enable only for an explicit reproducibility check (ideally a clean
+#   node / smaller batch).
+#
+# WHAT IT DOES *NOT* CONTROL (separate, independent knobs):
+#   - Streaming data order / shuffle permutation -> $STREAMING_SHUFFLE_SEED
+#     (get_dataset.streaming_shuffle_seed, below).
+#   - Train/eval holdout user split               -> $SPLIT_SALT (below).
+#   So holding $STREAMING_SHUFFLE_SEED + $SPLIT_SALT fixed and varying ONLY $SEED
+#   isolates the effect of model initialization (a clean init-seed A/B / sweep).
+#
+# PARSE NOTE: seed_everything() runs right before make_model() in train_ranker
+# (after the full gin parse), so this binding resolves in the second parse where
+# env_int is registered. Override per-run via $SEED.
+#
+# DEFAULT -1 = draw a FRESH RANDOM seed every run (rank 0 draws + broadcasts so
 # all ranks agree; the chosen value is exported to $SEED and logged), so each
 # launch explores a different init. Pin $SEED >= 0 to reproduce a specific run.
 seed_everything.seed = @seed/env_int()
@@ -46,12 +89,10 @@ seed/env_int.key     = "SEED"
 seed/env_int.default = -1
 
 # dense model optimizer
-# Learning rate is env-overridable (default 1e-5) so an LR sweep can probe the
-# dense Adam rate without editing gin. Scoped (`dlr/`) so this env_float binding
-# doesn't collide with the other env_float call sites. Override via $DENSE_LR.
+# Learning rate is env-overridable via $DENSE_LR (default 1e-7).
 dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()
 dlr/env_float.key     = "DENSE_LR"
-dlr/env_float.default = 0.00001
+dlr/env_float.default = 0.0000001
 dense_optimizer_factory_and_class.optimizer_name = "Adam"
 dense_optimizer_factory_and_class.momentum = 0
 dense_optimizer_factory_and_class.weight_decay = 0
@@ -59,18 +100,22 @@ dense_optimizer_factory_and_class.eps = 1e-8
 dense_optimizer_factory_and_class.betas = (0.95, 0.999)
 
 # sparse model optimizer
-# Learning rate is env-overridable (default 1e-5) so an LR sweep can probe the
-# sparse RowWiseAdagrad rate without editing gin. Scoped (`slr/`) so this
-# env_float binding doesn't collide with the other env_float call sites.
-# Override via $SPARSE_LR.
+# Learning rate is env-overridable via $SPARSE_LR (default 1e-7).
 sparse_optimizer_factory_and_class.learning_rate = @slr/env_float()
 slr/env_float.key     = "SPARSE_LR"
-slr/env_float.default = 0.00001
+slr/env_float.default = 0.0000001
 sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
 sparse_optimizer_factory_and_class.momentum = 0
 sparse_optimizer_factory_and_class.weight_decay = 0
 sparse_optimizer_factory_and_class.eps = 1e-8
 sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
+
+# Gradient clipping for the STREAMING path (clips dense params; sparse tables
+# use a fused optimizer and are unaffected). Env-overridable via $GRAD_CLIP_NORM.
+# Default 1.0 = ON (max_norm=1.0); set 0.0 via $GRAD_CLIP_NORM to disable.
+streaming_train_eval_loop.grad_clip_norm = @gcn/env_float()
+gcn/env_float.key     = "GRAD_CLIP_NORM"
+gcn/env_float.default = 1.0
 
 # Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
 # below. Used by both make_train_test_dataloaders and get_dataset.
@@ -146,6 +191,43 @@ get_dataset.new_path_prefix = %DATA_PATH
 get_dataset.history_length = @hl/env_int()
 hl/env_int.key     = "HISTORY_LENGTH"
 hl/env_int.default = 4086
+
+# UIH construction strategy — how a user's prior events become the sequence the
+# model attends over. Override via $HISTORY_STRATEGY. Both strategies scan the
+# last `scan_window` (20000) events before the anchor and consider ONLY the 3
+# behavior pools (listen+ / like / skip); dislike/unlike/undislike are excluded
+# (no action-weight bit), so the model's action_weights=[1,2,4] are unchanged.
+# The two differ only in HOW they pick events out of that scan window:
+#
+#   "interleaved" (default):
+#     - Budget = equal per-pool quota of HISTORY_LENGTH//3 (=1362) events; take
+#       the last 1362 of EACH pool independently, then merge + re-sort by time.
+#     - HISTORY_LENGTH is thus a PER-POOL cap (nominal total = 3 * L//3).
+#     - Consequence: likes are only ~1.9% of the corpus, so the like pool
+#       under-fills (~105 of its 1362 slots) and that budget is NOT reallocated
+#       — the sequence comes up short. Measured: ~2663 events effective, ~4.0%
+#       of them likes (i.e. likes OVER-represented vs their natural rate).
+#     - Use when you want guaranteed like exposure per sample (class-balanced UIH).
+#
+#   "last_n":
+#     - Budget = a single pool-agnostic cap: take the last HISTORY_LENGTH events
+#       of ANY pool type, already chronological (no per-pool split, no re-sort).
+#     - HISTORY_LENGTH is thus the LITERAL TOTAL UIH cap (not a per-pool L//3).
+#     - Consequence: the sequence fills to ~HISTORY_LENGTH (the only limit is how
+#       many pooled events exist in the scan window), so effective length is
+#       higher and the like share falls to its natural rate. Measured: ~4085
+#       events effective (~1.5x interleaved), ~1.2% of them likes.
+#     - Trade-off: more recent listen+/skip context (longer effective sequence)
+#       at the cost of fewer likes; ~1.4x eval/step compute (more non-skipped
+#       jagged-attention positions). Keep HISTORY_LENGTH=4086 to fill the 4k
+#       model budget.
+#
+# Both strategies are strategy-INDEPENDENT on disk: the gather runs at
+# sample-build time, so switching reuses the SAME hstu_cache_L<HISTORY_LENGTH>/
+# and positions cache — no rebuild needed.
+get_dataset.history_strategy = @hs/env_str()
+hs/env_str.key     = "HISTORY_STRATEGY"
+hs/env_str.default = "interleaved"
 
 # Anchor-eligibility floor: a LISTEN event becomes a trainable/eval anchor once
 # the user has >= MIN_HISTORY prior events. Decoupled from history_length (which
@@ -258,6 +340,13 @@ ot/env_int.default = 0
 streaming_train_eval_loop.persistent_loader = @pl/env_int()
 pl/env_int.key = "PERSISTENT_LOADER"
 pl/env_int.default = 1
+# ---- Eval cadence: choose EXACTLY ONE of the two knobs below ----------------
+# The streaming loop can decide WHEN to run the full-holdout eval pass in one of
+# two ways. They are MUTUALLY EXCLUSIVE — enabling the data-fraction cadence
+# (EVAL_EVERY_DATA_PCT>0) requires EVAL_EVERY_N_WINDOWS=0; setting both >0 raises
+# a ValueError at startup. The final end-of-run eval always runs in either mode.
+#
+# (1) PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS, the default).
 # Full-holdout eval cadence (single knob; replaces the old EVAL_EACH_WINDOW
 # on/off switch). 0 = eval disabled (train-only, e.g. perf benchmarking or the
 # resume test; the eval dataloader isn't even built). 1 (default) = eval after
@@ -265,9 +354,38 @@ pl/env_int.default = 1
 # (and always the final one) to amortize the cost of consuming the full next-day
 # eval window. The cadence is anchored to the absolute ts grid so eval points
 # stay stable across a mid-run resume.
+# NOTE: each daily window has a DIFFERENT number of training samples, so a
+# per-window cadence produces eval points that are UNEVENLY spaced in terms of
+# how much data was trained between them. Use the data-fraction cadence below if
+# you want evenly-spaced-by-data eval points instead.
 streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
 evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
 evn/env_int.default = 1
+#
+# (2) DATA-FRACTION cadence (EVAL_EVERY_DATA_PCT).
+# Run the full-holdout eval every time the run has trained this FRACTION of the
+# run's TOTAL training data, so eval points are EVENLY spaced by data volume
+# (compute), independent of how many samples each daily window happens to hold.
+# This is the fix for the per-window cadence's uneven spacing noted above.
+#   value semantics (it is a fraction in (0, 1], NOT a percent number):
+#     0.0  (default) = OFF  -> fall back to the per-window EVAL_EVERY_N_WINDOWS.
+#     0.01           = eval every 1%  of the data  -> ~100 eval points total.
+#     0.05           = eval every 5%  of the data  -> ~20  eval points total.
+#     0.10           = eval every 10% of the data  -> ~10  eval points total.
+# How "fraction of data" becomes an eval trigger: at startup the fraction is
+# converted ONCE into a global train-step interval
+#     eval_interval_steps = round(pct * total_train_anchors / (batch_size * world_size))
+# where total_train_anchors is counted over the ORIGINAL requested window range
+# [start_ts, start_ts+num_train_ts). Eval then fires whenever the monotonic
+# train global_step crosses a multiple of that interval (it can fire MID-WINDOW,
+# i.e. partway through a daily window, and across window boundaries). Because the
+# interval is computed over the original range and global_step is
+# checkpoint-restored, the eval grid is identical on a cold start and on every
+# resume. Each eval record's label carries "@step=<global_step>" so the
+# trajectory can be plotted against data volume. Override via $EVAL_EVERY_DATA_PCT.
+streaming_train_eval_loop.eval_every_data_pct = @edp/env_float()
+edp/env_float.key     = "EVAL_EVERY_DATA_PCT"
+edp/env_float.default = 0.0
 # Double-buffer windows: prepare the next window (index mask + first-batch
 # prefetch) in a background thread during the current window's compute, hiding
 # the per-window reset. Needs persistent_loader=1. Override via env.
