@@ -188,6 +188,43 @@ get_dataset.history_length = @hl/env_int()
 hl/env_int.key     = "HISTORY_LENGTH"
 hl/env_int.default = 4086
 
+# UIH construction strategy — how a user's prior events become the sequence the
+# model attends over. Override via $HISTORY_STRATEGY. Both strategies scan the
+# last `scan_window` (20000) events before the anchor and consider ONLY the 3
+# behavior pools (listen+ / like / skip); dislike/unlike/undislike are excluded
+# (no action-weight bit), so the model's action_weights=[1,2,4] are unchanged.
+# The two differ only in HOW they pick events out of that scan window:
+#
+#   "interleaved" (default):
+#     - Budget = equal per-pool quota of HISTORY_LENGTH//3 (=1362) events; take
+#       the last 1362 of EACH pool independently, then merge + re-sort by time.
+#     - HISTORY_LENGTH is thus a PER-POOL cap (nominal total = 3 * L//3).
+#     - Consequence: likes are only ~1.9% of the corpus, so the like pool
+#       under-fills (~105 of its 1362 slots) and that budget is NOT reallocated
+#       — the sequence comes up short. Measured: ~2663 events effective, ~4.0%
+#       of them likes (i.e. likes OVER-represented vs their natural rate).
+#     - Use when you want guaranteed like exposure per sample (class-balanced UIH).
+#
+#   "last_n":
+#     - Budget = a single pool-agnostic cap: take the last HISTORY_LENGTH events
+#       of ANY pool type, already chronological (no per-pool split, no re-sort).
+#     - HISTORY_LENGTH is thus the LITERAL TOTAL UIH cap (not a per-pool L//3).
+#     - Consequence: the sequence fills to ~HISTORY_LENGTH (the only limit is how
+#       many pooled events exist in the scan window), so effective length is
+#       higher and the like share falls to its natural rate. Measured: ~4085
+#       events effective (~1.5x interleaved), ~1.2% of them likes.
+#     - Trade-off: more recent listen+/skip context (longer effective sequence)
+#       at the cost of fewer likes; ~1.4x eval/step compute (more non-skipped
+#       jagged-attention positions). Keep HISTORY_LENGTH=4086 to fill the 4k
+#       model budget.
+#
+# Both strategies are strategy-INDEPENDENT on disk: the gather runs at
+# sample-build time, so switching reuses the SAME hstu_cache_L<HISTORY_LENGTH>/
+# and positions cache — no rebuild needed.
+get_dataset.history_strategy = @hs/env_str()
+hs/env_str.key     = "HISTORY_STRATEGY"
+hs/env_str.default = "interleaved"
+
 # Anchor-eligibility floor: a LISTEN event becomes a trainable/eval anchor once
 # the user has >= MIN_HISTORY prior events. Decoupled from history_length (which
 # is only the gather/truncation cap) — jagged attention handles short UIH, so we
