@@ -1447,6 +1447,7 @@ def get_dataset(
     new_path_prefix: str = "",
     history_length: Optional[int] = None,
     min_history: Optional[int] = None,
+    history_strategy: str = "interleaved",
     streaming_window_seconds: int = 86400,
     streaming_sort_within_window: bool = False,
     streaming_shuffle_fraction: float = 0.0,
@@ -1584,6 +1585,13 @@ def get_dataset(
                 # short UIH. None = legacy (require a full history_length).
                 # Override via `get_dataset.min_history = N` / $MIN_HISTORY.
                 "min_history": min_history,
+                # UIH construction: "interleaved" (per-pool L//3 cap) or
+                # "last_n" (last history_length pooled events, no per-pool
+                # split). Strategy-independent on disk — both reuse the same
+                # hstu_cache_L<history_length>/ and positions file (the gather
+                # runs at sample-construction time), so switching needs no
+                # rebuild. Override via $HISTORY_STRATEGY.
+                "history_strategy": history_strategy,
                 "cross_specs": YAMBDA_5B_CROSS_SPECS,
                 # Temporal-streaming knobs (only used under --mode
                 # streaming-train-eval; ignored by the default train-eval path).
