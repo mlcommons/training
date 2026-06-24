@@ -157,28 +157,3 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-
-# SLURM batch stdout + local run artifacts (run logs are never committed;
-# the real run logs / MLPerf compliance logs live under $SCRATCH, outside the
-# repo). The trainer's #SBATCH --output lands in the submit dir as
-# yambda_slurm.<jobid>.out.
-yambda_slurm.*.out
-yambda_slurm.*.log
-compliance_checker.log
-
-# Local container build/run helpers — environment-specific, not committed.
-/Dockerfile.nvidia
-/scripts/run_docker.sh
-
-# Local dlrmv4 analysis artifacts (per-job plots/scripts/dumps); kept on disk
-# for ad-hoc analysis but never committed.
-/analyze_*.py
-/dump_eval_*.py
-/perday_*.py
-/parse_lr_sweep.py
-/gen_canvas.py
-/plot_*.py
-/*.png
-/*.csv
-/scripts/bench_collectives.py
-/docs/v4_vs_v2_and_hstu_walkthrough.md
