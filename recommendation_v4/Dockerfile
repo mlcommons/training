@@ -66,6 +66,12 @@ RUN pip install \
         torchmetrics==1.0.3 \
         tensordict
 
+# mlperf_logging — required by train/mlperf_logging_utils.py for MLPerf
+# compliance logs. Pinned to the Training 6.0 tag for reproducibility; --no-deps
+# so pip does not resolve requirements.txt's torch/fbgemm_gpu/torchrec pins and
+# clobber the +rocm7.2 wheels above.
+RUN pip install --no-deps "git+https://github.com/mlcommons/logging.git@6.0.0-rc6"
+
 # Smoke-test the 6 imports the launch script checks at
 # scripts/launch_smoke_8gpu.sh:26.
 RUN python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; \
