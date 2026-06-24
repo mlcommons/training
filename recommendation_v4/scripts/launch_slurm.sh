@@ -4,11 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --partition=meta64          # [CLUSTER-SPECIFIC] partition name
-#SBATCH --time=01:10:00
 #SBATCH --output=yambda_slurm.%j.out
-# ^ relative to the submit dir (SLURM parses #SBATCH before any shell runs, so it
-#   cannot expand env vars). The real consolidated run log is $LOG (see below),
-#   which defaults under $SCRATCH; this file just captures the batch stdout.
 # =============================================================================
 # launch_slurm.sh — single entry point for the yambda-5b trainer on N>=1 nodes.
 #
@@ -34,14 +30,9 @@
 #                supervisor's direct `bash scripts/launch_slurm.sh` is unchanged.
 #
 # USAGE
-#   Reference run (1 node): sbatch --nodes=1 scripts/launch_slurm.sh
-#   Reference run (N node):  sbatch --nodes=N scripts/launch_slurm.sh
-#     ^ a bare submit reproduces the FROZEN REFERENCE shape (full 299-window
-#       sweep + data-fraction eval cadence). Prepend SMOKE=1 for a fast
-#       functional check (short window, capped batches).
+#   Multi-node (N>=1):  sbatch --nodes=2 scripts/launch_slurm.sh
 #   Single-node direct: bash scripts/launch_slurm.sh   (already inside container;
-#                       what run_streaming_e2e.sh invokes per relaunch — uses the
-#                       gin defaults, NOT the orchestrate reference shape)
+#                       what run_streaming_e2e.sh invokes per relaunch)
 #   Perf pair:
 #     LOG=/apps/chcai/perf_1node.log NUM_TRAIN_BATCHES=200 NUM_EVAL_BATCHES=0 \
 #       EVAL_EACH_WINDOW=0 METRIC_LOG_FREQ=20 \
@@ -115,7 +106,7 @@ if [ -z "$PHASE" ]; then
 fi
 
 # ---- shared config (env-overridable) ----------------------------------------
-CONTAINER=${CONTAINER:-yambda_${USER:-$(id -un)}}   # per-user container name (do NOT reuse another user's container — its bind mounts differ)
+CONTAINER=${CONTAINER:-yambda_primus}
 REPO=${REPO:-$REPO_ROOT}                       # repo path inside the container
 IMAGE=${IMAGE:-rocm/primus:v26.3}              # [CLUSTER-SPECIFIC] ROCm/arch base image
 BAKED_IMAGE=${BAKED_IMAGE:-yambda_primus_baked:latest}
@@ -123,13 +114,6 @@ BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFI
 USE_BAKED=${USE_BAKED:-1}
 OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay (read-only, already staged)
 
-# Bind mounts + scratch — all on shared NFS, identical path on every node.
-#   REPO_MOUNT : NFS home root that contains THIS repo (bind-mounted rw).
-#   DATA_MOUNT : NFS root with the (shared, read-only) dataset + RDMA overlay +
-#                pip/fbgemm build assets. Kept as-is so the dataset is NOT
-#                duplicated. You only need read access here.
-#   SCRATCH    : this run's WRITABLE output root (logs / tb / traces).
-# All env-overridable, so nothing is hardwired to one user's home.
 REPO_MOUNT=${REPO_MOUNT:-$HOME}              # NFS home holding the repo (must contain $REPO); override if your repo lives elsewhere
 DATA_MOUNT=${DATA_MOUNT:-/apps/chcai}        # shared dataset + RDMA overlay + pip/fbgemm assets (read-only)
 SCRATCH=${SCRATCH:-$HOME/yambda_runs}        # writable output root (logs / tb / traces)
@@ -151,11 +135,6 @@ orchestrate() {
   mkdir -p "$SCRATCH" 2>/dev/null || true
   LOG=${LOG:-$SCRATCH/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
 
-  # Run-shape defaults. By DEFAULT a bare `sbatch scripts/launch_slurm.sh`
-  # reproduces the FROZEN REFERENCE run: full 299-window sweep (START_TS=0) with
-  # the data-fraction eval cadence (eval every 0.5% of the training stream). Set
-  # SMOKE=1 for a fast functional check (short dense window, capped batches,
-  # per-window eval). Any individual knob below stays env-overridable.
   MODE=${MODE:-streaming-train-eval}
   if [ "${SMOKE:-0}" = "1" ]; then
     START_TS=${START_TS:-150}
@@ -171,10 +150,6 @@ orchestrate() {
   NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-0}
   EVAL_EACH_WINDOW=${EVAL_EACH_WINDOW:-1}
   METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-20}
-  # Eval cadence — the two knobs are mutually exclusive (the worker raises if both
-  # are >0). Data-fraction is the reference default; if the caller explicitly
-  # selected the per-window cadence (EVAL_EVERY_N_WINDOWS>0) leave data-pct off,
-  # otherwise default to the reference 0.5%-of-data cadence (per-window disabled).
   if [ "${EVAL_EVERY_N_WINDOWS:-0}" -gt 0 ] 2>/dev/null; then
     EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0}
   else
@@ -192,12 +167,6 @@ orchestrate() {
   else
     : > "$LOG"
   fi
-  # Group/other write (but NOT read) so the in-container worker (running as root,
-  # squashed to `nobody` over root-squashed NFS) can append via `tee -a $LOG`.
-  # `tee -a` opens write-only, so 622 is sufficient -- avoid 666, which would let
-  # other users on the shared filesystem read (and tamper with) the job log.
-  # Without the write bit the worker's tee is denied and exits non-zero, which
-  # pipefail turns into a spurious rc=1 even when training succeeds.
   chmod 622 "$LOG" 2>/dev/null || true
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
@@ -523,28 +492,12 @@ worker() {
   cd "$REPO_ROOT"
   mkdir -p "$SCRATCH" 2>/dev/null || true
   LOG=${LOG:-$SCRATCH/yambda_5b_8gpu.log}
-  # Avoid double-logging. When launched by the orchestrate phase, our stdout is
-  # ALREADY captured into the real $LOG by orchestrate's `tee` (and, multi-node,
-  # funneled through one srun pipe). Re-`tee`ing $LOG here would write every line
-  # twice. Orchestrate sets WORKER_TEE=0 to point our own file sink at /dev/null:
-  # we still echo to stdout (captured upstream) but don't duplicate the file.
-  # Direct single-node invocation (the streaming-e2e supervisor) leaves
-  # WORKER_TEE unset, so the worker keeps writing $LOG itself.
+  # WORKER_TEE=0 (set by orchestrate) sends our file sink to /dev/null to avoid
+  # double-logging, since orchestrate already tees stdout into the real $LOG.
   [ "${WORKER_TEE:-1}" = "0" ] && LOG=/dev/null
-  # TensorBoard under the writable scratch root unless the caller (e.g. the e2e
-  # supervisor) pinned a per-run path. Keeps the gin default from ever being used.
   export TENSORBOARD_LOG_PATH=${TENSORBOARD_LOG_PATH:-$SCRATCH/tb/yambda_5b}
-  # MLPerf Training compliance log (streaming-train-eval path). Lands beside the
-  # other run outputs under scratch unless the caller pins it. Rank 0 writes it;
-  # check it post-run with:
-  #   python -m mlperf_logging.compliance_checker --usage training \
-  #     --ruleset 5.0.0 "$MLPERF_LOG_PATH"
-  # Default to a PER-JOB filename so each standalone `sbatch` gets a clean
-  # compliance log: mllog opens the file in APPEND mode, so a fixed name would
-  # accumulate events across runs and fail the compliance_checker (duplicate
-  # INIT_START/RUN_START). The streaming-e2e supervisor pins MLPERF_LOG_PATH
-  # explicitly (and inits it once at run start), so its relaunch-into-same-file
-  # append semantics are preserved untouched.
+  # MLPerf compliance log (rank 0 writes it). Per-job filename so each standalone
+  # sbatch gets a clean log; the e2e supervisor pins MLPERF_LOG_PATH itself.
   export MLPERF_LOG_PATH=${MLPERF_LOG_PATH:-$SCRATCH/mlperf/yambda_5b_mlperf.${SLURM_JOB_ID:-manual}.log}
   echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee -a "$LOG"
 
@@ -594,20 +547,9 @@ worker() {
   export WORLD_SIZE=$(( NNODES * GPUS_PER_NODE ))
   echo "[$(date)] topology: nnodes=$NNODES node_rank=$NODE_RANK gpus_per_node=$GPUS_PER_NODE world_size=$WORLD_SIZE master=$MASTER_ADDR:${MASTER_PORT:-<auto>}" | tee -a "$LOG"
 
-  # NCCL bootstrap NIC. The container is --network=host so RCCL sees ALL host
-  # interfaces; if left to auto-detect, NCCL can pick a non-routable per-GPU RoCE
-  # /31 (benic* 192.168.x) link and fail bootstrap with "No route to host" (this
-  # is node-dependent: it worked on some nodes and not others, causing repetitive
-  # single-node init failures). Pin it explicitly to avoid that.
-  #   * Single-node (NNODES==1): all ranks are on THIS host, so only the bootstrap
-  #     control-plane crosses the socket NIC (data plane is intra-node XGMI/PCIe,
-  #     see below). Loopback is reachable by every local rank on ANY host and is
-  #     node-independent — same rationale as MASTER_ADDR=localhost above — so it
-  #     "just works" on dev boxes that have no fenic0 (e.g. a single MI355 node).
-  #   * Multi-node (NNODES>1): needs a routable host NIC shared across nodes for
-  #     the cross-node TCP rendezvous; default to the meta64 fenic0.
-  # Both remain ${NCCL_SOCKET_IFNAME:-...}-overridable for other fabrics.
-  # [CLUSTER-SPECIFIC] multi-node routable host NIC for TCP bootstrap (find via `ip -br addr`).
+  # NCCL bootstrap NIC: loopback single-node, routable host NIC multi-node (pin
+  # to avoid auto-detect picking a non-routable per-GPU RoCE link). Override via
+  # $NCCL_SOCKET_IFNAME. [CLUSTER-SPECIFIC] multi-node fenic0 (find via `ip -br addr`).
   if [ "$NNODES" -gt 1 ]; then
     export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
   else
@@ -646,17 +588,8 @@ worker() {
       export NCCL_IB_TIMEOUT=${NCCL_IB_TIMEOUT:-14}
       export NCCL_IGNORE_CPU_AFFINITY=${NCCL_IGNORE_CPU_AFFINITY:-1}
       export RCCL_MSCCL_ENABLE=${RCCL_MSCCL_ENABLE:-0}
-      # GPU-Direct RDMA: ENABLED by default. The brcmrdma host kernel ships the
-      # inbox peer-memory client (`ib_register_peer_memory_client` in
-      # /proc/kallsyms), so RCCL does true GPU<->NIC DMA over bnxt_re instead of
-      # bouncing through host memory. Measured ~+22% throughput at 2 nodes
-      # (65.7%->79.8% weak-scaling efficiency) vs the old host-staged path.
-      # GDR_LEVEL=5 (most permissive) is required so GDR is used even when the GPU
-      # and NIC cross the CPU root complex. NCCL_DMABUF_ENABLE=1 is a harmless
-      # no-op here (kernel lacks CONFIG_DMABUF_MOVE_NOTIFY/CONFIG_PCI_P2PDMA, so
-      # peermem carries it). Enabling is non-fatal: if peermem is ever absent RCCL
-      # just logs "GDR 0" and falls back to host staging. Override with
-      # NCCL_NET_GDR_LEVEL=0 to force the legacy host-staged path.
+      # GPU-Direct RDMA on by default (~+22% throughput at 2 nodes via peermem).
+      # Set NCCL_NET_GDR_LEVEL=0 to force the legacy host-staged path.
       export NCCL_NET_GDR_LEVEL=${NCCL_NET_GDR_LEVEL:-5}
       export NCCL_DMABUF_ENABLE=${NCCL_DMABUF_ENABLE:-1}
       echo "[$(date)] NCCL: RDMA over bnxt_re (GID idx ${NCCL_IB_GID_INDEX}, TC ${NCCL_IB_TC}, GDR_LEVEL=${NCCL_NET_GDR_LEVEL}, DMABUF=${NCCL_DMABUF_ENABLE}; meta64 bnxt_re config, validated)" | tee -a "$LOG"
