@@ -62,9 +62,9 @@
 #
 #  B) Filesystems (must be shared/NFS across ALL nodes — this script re-invokes
 #     itself and reads the overlay + data from these paths cluster-wide)
-#     - REPO_MOUNT (repo + this script, e.g. /home/suachong) is bind-mounted rw;
+#     - REPO_MOUNT (repo + this script, e.g. /home/<user>) is bind-mounted rw;
 #       DATA_MOUNT (e.g. /apps/chcai) holds the read-only dataset + overlay +
-#       baked tar + pip tarball; SCRATCH (e.g. /home/suachong/yambda_runs) is the
+#       baked tar + pip tarball; SCRATCH (e.g. /home/<user>/yambda_runs) is the
 #       writable log/output root. Override any via env — nothing is user-hardwired.
 #
 #  C) Container image / GPU software stack (tied to the GPU arch + ROCm version)

@@ -17,7 +17,7 @@
 #
 # Usage:
 #   bash generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh --jobid <slurm-jobid>
-#       [--container yambda_suachong]
+#       [--container yambda_<user>]
 #       [--num-train-batches 200]
 #       [--die-at-step 350]
 #       [--keep]    # retain LOG_DIR + CKPT after run for inspection
