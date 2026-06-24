@@ -93,8 +93,16 @@ class MLPerfLogger:
         self._logger = None
         if not self.enabled:
             return
-        if log_path:
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        # Only rank 0 emits events, so only rank 0 needs the file handler:
+        # attaching it on every rank wastes file handles and risks contention on
+        # a shared log path. Non-zero ranks configure mllog without a filename
+        # (their event methods no-op anyway).
+        if log_path and self.rank == 0:
+            log_dir = os.path.dirname(log_path)
+            # dirname is "" when log_path has no directory component (e.g.
+            # MLPERF_LOG_PATH=mlperf.log); os.makedirs("") raises, so guard it.
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
             mllog.config(filename=log_path, default_stack_offset=default_stack_offset)
         else:
             mllog.config(default_stack_offset=default_stack_offset)
@@ -158,14 +166,20 @@ def get_mlperf_logger(
     log_path: str = "",
     benchmark_name: str = "hstu",
     submitter_name: str = "reference_implementation",
-) -> MLPerfLogger:
-    """Build a configured :class:`MLPerfLogger`.
+) -> Optional[MLPerfLogger]:
+    """Build a configured :class:`MLPerfLogger`, or ``None`` if unavailable.
 
     ``benchmark_name`` / ``submitter_name`` are gin-configurable (and the path is
     env-overridable via ``$MLPERF_LOG_PATH``) so a submission can stamp its own
     benchmark string without code changes. The log path defaults to
     ``$MLPERF_LOG_PATH`` when set, else ``""`` (mllog logs to stdout).
+
+    Returns ``None`` when ``mlperf_logging`` is not installed so callers' existing
+    ``mlperf_logger is not None`` guards cleanly disable logging -- otherwise they
+    would pass the guard and then hit ``logger.constants`` (which is ``None``).
     """
+    if not _MLLOG_AVAILABLE:
+        return None
     resolved_path = os.environ.get("MLPERF_LOG_PATH", log_path)
     return MLPerfLogger(
         rank=rank,

@@ -68,6 +68,12 @@ RUN pip install \
         torchmetrics==1.0.3 \
         tensordict
 
+# mlperf_logging — required by train/mlperf_logging_utils.py for MLPerf
+# compliance logs. Pinned to the Training 6.0 tag for reproducibility; --no-deps
+# so pip does not resolve requirements.txt's torch/fbgemm_gpu/torchrec pins and
+# clobber the image's native NGC torch.
+RUN pip install --no-deps "git+https://github.com/mlcommons/logging.git@6.0.0-rc6"
+
 # Smoke-test that packages are installed at the right versions. Cannot dlopen
 # fbgemm_gpu / torchrec here because their SONAME deps (libnvidia-ml.so.1, etc.)
 # only resolve when the container runs with `--gpus all` — which docker build

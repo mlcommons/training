@@ -192,11 +192,13 @@ orchestrate() {
   else
     : > "$LOG"
   fi
-  # World-writable so the in-container worker (running as root, squashed to
-  # `nobody` over root-squashed NFS) can append via `tee -a $LOG`. Without this
-  # the worker's tee opens the file read-only-denied and exits non-zero, which
+  # Group/other write (but NOT read) so the in-container worker (running as root,
+  # squashed to `nobody` over root-squashed NFS) can append via `tee -a $LOG`.
+  # `tee -a` opens write-only, so 622 is sufficient -- avoid 666, which would let
+  # other users on the shared filesystem read (and tamper with) the job log.
+  # Without the write bit the worker's tee is denied and exits non-zero, which
   # pipefail turns into a spurious rc=1 even when training succeeds.
-  chmod 666 "$LOG" 2>/dev/null || true
+  chmod 622 "$LOG" 2>/dev/null || true
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
   echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ SMOKE=${SMOKE:-0} EVAL_EVERY_N_WINDOWS=$EVAL_EVERY_N_WINDOWS EVAL_EVERY_DATA_PCT=$EVAL_EVERY_DATA_PCT" | tee -a "$LOG"
