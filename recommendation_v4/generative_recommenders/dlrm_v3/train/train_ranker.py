@@ -206,59 +206,13 @@ def _main_func(
         mlperf_logger is not None and mlperf_init_logged and resume_cold_start
     )
     if mlperf_run_active:
-        c = mlperf_logger.constants
-        mlperf_logger.submission_info(
-            benchmark_name=mlperf_logger.benchmark_name,
-            submitter_name=mlperf_logger.submitter_name,
+        # Submission info + hyperparameters + INIT_STOP/RUN_START, all emitted by
+        # the logger (optimizer names/LRs read from gin internally). Seed is the
+        # value setup() resolved and exported to $SEED.
+        mlperf_logger.log_run_start(
+            global_batch_size=world_size * int(train_dataloader.batch_size),
+            seed=int(os.environ.get("SEED", "1")),
         )
-
-        def _gin_param(name: str, default: object) -> object:
-            try:
-                value = gin.query_parameter(name)
-            except (ValueError, KeyError):
-                return default
-            # Resolve gin macro refs (e.g. @dlr/env_float()) to real values so
-            # env-overridden LRs log as numbers, not unencodable objects.
-            if hasattr(value, "scoped_configurable_fn"):
-                try:
-                    return value.scoped_configurable_fn()
-                except Exception:
-                    return default
-            return value
-
-        global_batch_size = world_size * int(train_dataloader.batch_size)
-        mlperf_logger.event(key=c.GLOBAL_BATCH_SIZE, value=global_batch_size)
-        mlperf_logger.event(key=c.GRADIENT_ACCUMULATION_STEPS, value=1)
-        # Actual seed chosen in setup() (exported to $SEED).
-        mlperf_logger.event(key=c.SEED, value=int(os.environ.get("SEED", "1")))
-        # Dense (Adam) + sparse (RowWiseAdagrad) optimizer hyperparameters from gin.
-        mlperf_logger.event(
-            key=c.OPT_NAME,
-            value=_gin_param(
-                "dense_optimizer_factory_and_class.optimizer_name", "Adam"
-            ),
-        )
-        mlperf_logger.event(
-            key=c.OPT_BASE_LR,
-            value=_gin_param(
-                "dense_optimizer_factory_and_class.learning_rate", None
-            ),
-        )
-        mlperf_logger.event(
-            key="opt_sparse_name",
-            value=_gin_param(
-                "sparse_optimizer_factory_and_class.optimizer_name",
-                "RowWiseAdagrad",
-            ),
-        )
-        mlperf_logger.event(
-            key="opt_sparse_base_learning_rate",
-            value=_gin_param(
-                "sparse_optimizer_factory_and_class.learning_rate", None
-            ),
-        )
-        mlperf_logger.end(key=c.INIT_STOP, sync=True)
-        mlperf_logger.start(key=c.RUN_START, sync=True)
 
     # train loop
     try:

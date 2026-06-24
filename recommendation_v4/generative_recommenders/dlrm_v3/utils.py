@@ -1213,6 +1213,52 @@ class MetricsLogger:
         )
         return all_computed_metrics
 
+    def _global_mean_loss(self, loss_terms: Dict[str, torch.Tensor]) -> float:
+        """Cross-rank mean of the summed per-task losses.
+
+        The 1-element all-reduce MUST run on every rank in lockstep; callers gate
+        it on a rank-identical counter (global_step / a deterministic frequency)
+        so it cannot desync.
+        """
+        loss_t = torch.stack(
+            [v.detach().float().sum() for v in loss_terms.values()]
+        ).sum()
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(loss_t, op=torch.distributed.ReduceOp.SUM)
+            loss_t = loss_t / self._world_size
+        return float(loss_t)
+
+    def maybe_log_mlperf_train_loss(
+        self, aux_losses: Dict[str, torch.Tensor], every: int
+    ) -> None:
+        """Emit the MLPerf ``train_loss`` event on its OWN cadence.
+
+        Decoupled from the console/TB metric cadence (``compute_and_log``): call
+        this every train step with the just-computed ``aux_losses`` and the
+        desired interval ``every`` (in global train steps). The cross-rank loss
+        all-reduce only fires on the cadence, gated by ``global_step["train"]``
+        which is incremented identically on all ranks in ``update()`` — so the
+        collective stays in lockstep. No-op when MLPerf logging is disabled
+        (``mlperf_logger is None`` on every rank) or ``every <= 0``.
+        """
+        if self.mlperf_logger is None or every <= 0 or not aux_losses:
+            return
+        if self.global_step["train"] % every != 0:
+            return
+        train_loss = self._global_mean_loss(aux_losses)
+        c = self.mlperf_logger.constants
+        md: Dict[str, Any] = {c.SAMPLES_COUNT: self.cumulative_train_samples}
+        if self.lr_getter is not None:
+            try:
+                md["lr"] = float(self.lr_getter())
+            except Exception:
+                pass
+        self.mlperf_logger.event(
+            key=getattr(c, "TRAIN_LOSS", "train_loss"),
+            value=train_loss,
+            metadata=md,
+        )
+
     def compute_and_log(
         self,
         mode: str = "train",
@@ -1249,21 +1295,15 @@ class MetricsLogger:
                         global_step=self.global_step[mode],
                     )
 
-        # Global (cross-rank mean) train loss to console/TB + the MLPerf
-        # train_loss event, at the metric-logging cadence. The 1-element
-        # all-reduce runs on every rank in lockstep, so it cannot desync.
+        # Global (cross-rank mean) train loss to console/TB at the metric-logging
+        # cadence. The 1-element all-reduce runs on every rank in lockstep, so it
+        # cannot desync. The MLPerf `train_loss` EVENT is emitted separately via
+        # ``maybe_log_mlperf_train_loss`` so its cadence can be tuned independently
+        # of this console/TB cadence (see that method).
         if mode == "train" and additional_logs is not None and "losses" in additional_logs:
             loss_terms = additional_logs["losses"]
             if loss_terms:
-                loss_t = torch.stack(
-                    [v.detach().float().sum() for v in loss_terms.values()]
-                ).sum()
-                if torch.distributed.is_available() and torch.distributed.is_initialized():
-                    torch.distributed.all_reduce(
-                        loss_t, op=torch.distributed.ReduceOp.SUM
-                    )
-                    loss_t = loss_t / self._world_size
-                train_loss = float(loss_t)
+                train_loss = self._global_mean_loss(loss_terms)
                 self.tb_logger.add_scalar(
                     "train_loss", train_loss, global_step=self.global_step["train"]
                 )
@@ -1271,21 +1311,6 @@ class MetricsLogger:
                     logger.info(
                         f"train - Step {self.global_step['train']} "
                         f"train_loss={train_loss:.5f}"
-                    )
-                if self.mlperf_logger is not None:
-                    c = self.mlperf_logger.constants
-                    md: Dict[str, Any] = {
-                        c.SAMPLES_COUNT: self.cumulative_train_samples,
-                    }
-                    if self.lr_getter is not None:
-                        try:
-                            md["lr"] = float(self.lr_getter())
-                        except Exception:
-                            pass
-                    self.mlperf_logger.event(
-                        key=getattr(c, "TRAIN_LOSS", "train_loss"),
-                        value=train_loss,
-                        metadata=md,
                     )
 
         # Throughput metrics (train only). One GPU->CPU sync per call.
