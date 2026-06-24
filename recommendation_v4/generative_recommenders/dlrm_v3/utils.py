@@ -1053,6 +1053,32 @@ class MetricsLogger:
         self._perf_samples_counter: torch.Tensor = torch.zeros(
             1, dtype=torch.long, device=device
         )
+        # Non-train wall-time to exclude from the train step-time window so
+        # `step_ms` reports the canonical per-step compute latency even when an
+        # interval coincides with eval or checkpointing. Categorized so the
+        # excluded time is also reportable (eval_ms / ckpt_ms) rather than just
+        # discarded. The trainer brackets eval/ckpt regions via
+        # pause_perf(cat)/resume_perf(cat); accumulators reset each train-perf log.
+        self._perf_excluded: Dict[str, float] = {"eval": 0.0, "ckpt": 0.0}
+        self._perf_pause: Dict[str, Optional[float]] = {}
+
+    def pause_perf(self, category: str) -> None:
+        """Start excluding wall-time under `category` (e.g. "eval"/"ckpt") from
+        the train step-time window. Idempotent: a second pause without an
+        intervening resume is a no-op (keeps the earliest start)."""
+        if self._perf_pause.get(category) is None:
+            self._perf_pause[category] = time.perf_counter()
+
+    def resume_perf(self, category: str) -> None:
+        """Stop excluding `category` and fold the elapsed interval into the
+        per-category accumulator. No-op if not currently paused."""
+        t0 = self._perf_pause.get(category)
+        if t0 is not None:
+            self._perf_excluded[category] = (
+                self._perf_excluded.get(category, 0.0)
+                + (time.perf_counter() - t0)
+            )
+            self._perf_pause[category] = None
 
     @property
     def all_metrics(self) -> Dict[str, List[RecMetricComputation]]:
@@ -1210,12 +1236,22 @@ class MetricsLogger:
         # Throughput metrics (train only). One GPU->CPU sync per call.
         if mode == "train" and self._perf_steps_in_window > 0:
             now = time.perf_counter()
-            dt = max(now - self._perf_t_window, 1e-6)
+            wall_dt = max(now - self._perf_t_window, 1e-6)
+            # Subtract bracketed eval/checkpoint wall-time so step_ms / sps /
+            # MFU reflect canonical train-step compute, not eval+ckpt stalls
+            # that happened to land in this window. The excluded time is also
+            # surfaced separately below (eval_ms / ckpt_ms) rather than discarded.
+            eval_s = self._perf_excluded.get("eval", 0.0)
+            ckpt_s = self._perf_excluded.get("ckpt", 0.0)
+            dt = max(wall_dt - eval_s - ckpt_s, 1e-6)
             n_samples = int(self._perf_samples_counter.item())
             self._perf_total_samples += n_samples
             local_sps = n_samples / dt
             global_sps = local_sps * self._world_size
             step_ms = dt * 1000.0 / self._perf_steps_in_window
+            wall_step_ms = wall_dt * 1000.0 / self._perf_steps_in_window
+            eval_ms = eval_s * 1000.0
+            ckpt_ms = ckpt_s * 1000.0
             elapsed = now - self._perf_t_start
             step = self.global_step["train"]
             self.tb_logger.add_scalar(
@@ -1226,6 +1262,17 @@ class MetricsLogger:
             )
             self.tb_logger.add_scalar(
                 "perf/train_step_time_ms", step_ms, global_step=step
+            )
+            # Inclusive (old-semantics) per-step wall time and the eval/ckpt
+            # breakdown that was excluded from step_ms above.
+            self.tb_logger.add_scalar(
+                "perf/train_wall_step_time_ms", wall_step_ms, global_step=step
+            )
+            self.tb_logger.add_scalar(
+                "perf/window_eval_time_ms", eval_ms, global_step=step
+            )
+            self.tb_logger.add_scalar(
+                "perf/window_ckpt_time_ms", ckpt_ms, global_step=step
             )
             self.tb_logger.add_scalar(
                 "perf/train_total_samples", self._perf_total_samples, global_step=step
@@ -1269,12 +1316,20 @@ class MetricsLogger:
             logger.info(
                 f"train - Step {step} perf: local_sps={local_sps:.1f} "
                 f"global_sps={global_sps:.1f} step_ms={step_ms:.2f} "
-                f"elapsed_sec={elapsed:.1f} total_samples={self._perf_total_samples}"
+                f"elapsed_sec={elapsed:.1f} total_samples={self._perf_total_samples} "
+                f"wall_step_ms={wall_step_ms:.2f} eval_ms={eval_ms:.1f} "
+                f"ckpt_ms={ckpt_ms:.1f}"
                 + tflops_str
             )
             self._perf_t_window = now
             self._perf_steps_in_window = 0
             self._perf_samples_counter.zero_()
+            # Reset the excluded-time accumulators for the next window. Any
+            # still-open pause (eval/ckpt straddling this log) is cleared so its
+            # remaining time is not double-counted; in practice perf logs fire
+            # only after a train step, never mid eval/ckpt.
+            self._perf_excluded = {"eval": 0.0, "ckpt": 0.0}
+            self._perf_pause = {}
 
         # Time-to-target: latch wall-clock once any task's AUC crosses threshold.
         # Matches MLPerf DLRM-DCNv2 reporting style (default upstream target 0.80275).
