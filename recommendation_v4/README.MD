@@ -39,6 +39,51 @@ bash scripts/launch_slurm.sh
 
 Data path resolves at runtime via `env_path` gin macros (see [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)). Traces and any per-run outputs land in `results/<RUN_NAME>/`.
 
+### 1.1 Full reference run (single + multi-node)
+
+For a complete benchmark run you typically wrap the `sbatch` call in a small
+submit script that pins the run-shape + eval cadence (most other
+hyperparameters already match the [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)
+defaults, so only the knobs below need to be set). The single- and multi-node
+launchers are identical except for `--nodes` (the trainer auto-derives
+`NNODES`/`NODE_RANK`/`MASTER_ADDR`/`WORLD_SIZE` from SLURM):
+
+**Single node (1×8 GPU):**
+
+```bash
+cd <repo-root>
+MODE=streaming-train-eval \
+  START_TS=0 NUM_TRAIN_TS=299 \
+  TRAIN_SPLIT_PERCENTAGE=1.0 \
+  EVAL_HOLDOUT_TS=299 EVAL_HOLDOUT_NUM_WINDOWS=1 \
+  EVAL_EVERY_N_WINDOWS=0 EVAL_EVERY_DATA_PCT=0.005 \
+  AUC_THRESHOLD=0.885 \
+  BATCH_SIZE=1024 \
+  METRIC_LOG_FREQ=20 \
+  RUN_NAME=yc-full-epoch \
+  LOG="$HOME/yambda_runs/yc-full-epoch/run.log" \
+  sbatch --nodes=1 --time=4-00:00:00 --job-name=yambda-1node scripts/launch_slurm.sh
+```
+
+**Multi-node (2×8 GPU):** same env, only the `sbatch` line changes:
+
+```bash
+  ... same env knobs as above ...
+  RUN_NAME=yc-full-epoch-2node \
+  LOG="$HOME/yambda_runs/yc-full-epoch-2node/run.log" \
+  sbatch --nodes=2 --ntasks-per-node=1 --time=4-00:00:00 --job-name=yambda-2node scripts/launch_slurm.sh
+```
+
+Notes:
+- `EVAL_EVERY_DATA_PCT=0.005` + `EVAL_EVERY_N_WINDOWS=0` selects the
+  data-fraction eval cadence (eval every 0.5% of the training stream — a fixed
+  number of samples between evals, independent of node count). The two eval
+  cadences are mutually exclusive.
+- `AUC_THRESHOLD` is the convergence target: a SUCCESS `RUN_STOP` fires when the
+  per-pass `window_auc` first reaches it.
+- Keep all run outputs (`LOG`, checkpoints, mllog, TensorBoard) under a writable
+  scratch path you own; the dataset mount is read-only.
+
 ## 2. Data preparation
 
 ```bash
