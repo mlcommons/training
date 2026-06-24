@@ -181,10 +181,10 @@ def _main_func(
         gpu_peak_flops=gpu_peak_flops,
         model=model,
         eval_cumulative=(mode == "streaming-train-eval"),
-        # Lifetime-AUC backend + bins/window come from gin (see yambda_5b.gin:
-        # MetricsLogger.{train,eval}_lifetime_auc_mode / cumulative_auc_bins /
-        # lifetime_auc_window), env-overridable. eval_cumulative stays explicit
-        # because it is runtime-mode dependent, not a config knob.
+        # Lifetime-AUC backend ("binned") + bins come from gin (see yambda_5b.gin:
+        # MetricsLogger.{train,eval}_lifetime_auc_mode / cumulative_auc_bins).
+        # eval_cumulative stays explicit because it is runtime-mode dependent,
+        # not a config knob.
     )
     # Capture streaming resume hint (None for cold start / non-streaming
     # checkpoints). For the streaming-train-eval mode, we forward this into

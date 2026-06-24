@@ -1484,11 +1484,11 @@ def env_str(key: str = "", default: str = "") -> str:
     """Resolve a string from os.environ[key], falling back to `default`.
 
     Companion to `env_int`/`env_float` for categorical/string overrides (e.g. a
-    metric backend selector). Example gin usage:
+    strategy selector). Example gin usage:
 
-        MetricsLogger.train_lifetime_auc_mode = @tlam/env_str()
-        tlam/env_str.key     = "TRAIN_LIFETIME_AUC_MODE"
-        tlam/env_str.default = "binned"
+        get_dataset.history_strategy = @hs/env_str()
+        hs/env_str.key     = "HISTORY_STRATEGY"
+        hs/env_str.default = "interleaved"
     """
     raw = os.environ.get(key) if key else None
     return raw if raw else default
