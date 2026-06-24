@@ -78,24 +78,12 @@ TORCHREC_TYPES: Set[Type[Union[EmbeddingBagCollection, EmbeddingCollection]]] = 
 
 @gin.configurable
 def seed_everything(seed: int = -1, rank: int = 0) -> None:
-    """Seed all RNGs so weight init (make_model) is reproducible across runs.
+    """Seed all RNGs (same value on every rank) for reproducible dense weight init.
 
-    Same seed on every rank => dense params are initialized identically across
-    ranks; sharded embeddings are init'd from the meta device by DMP. Fixing the
-    seed makes runs an init-matched A/B (data order is already deterministic via
-    the sampler). gin-configurable via $SEED (yambda_5b.gin: seed_everything.seed);
-    call this right before make_model(), AFTER setup() (the process group must be
-    initialized for the cross-rank broadcast below) and after the full gin parse.
-
-    Default seed < 0 (the gin default, i.e. $SEED unset) => draw a FRESH RANDOM
-    seed every run so each launch explores a different dense weight init. rank 0
-    draws the seed and broadcasts it so all ranks share one value; the chosen
-    seed is exported to $SEED and logged so any run can be reproduced after the
-    fact by re-pinning $SEED. seed >= 0 (i.e. $SEED pinned) reproduces a specific
-    run exactly. NOTE (streaming-train-eval): data ORDER and the train/holdout
-    split do NOT depend on this seed — order is time-deterministic
-    (StreamingWindowSampler) and the split is governed by $SPLIT_SALT. This seed
-    governs dense weight init + global-RNG stochastic ops.
+    Call right before make_model(), after setup() (process group needed for the
+    broadcast) and the gin parse. seed < 0 ($SEED unset) draws a fresh random seed
+    per run (rank 0 broadcasts; exported to $SEED); seed >= 0 reproduces a run.
+    Data order/split are independent of this seed (StreamingWindowSampler/$SPLIT_SALT).
     """
     import random
 
@@ -129,29 +117,13 @@ def seed_everything(seed: int = -1, rank: int = 0) -> None:
 
 @gin.configurable
 def decorrelate_runtime_rng(rank: int = 0, enabled: bool = True) -> None:
-    """Offset the global RNG by ``rank`` so RUNTIME stochastic ops draw
-    decorrelated draws per data-parallel rank.
+    """Re-seed torch/cuda with $SEED + rank so HSTU dropout draws different masks
+    per data-parallel rank (seed_everything's identical seed would draw the same).
 
-    The only such op here is HSTU dropout (input_dropout=0.2,
-    linear_dropout_rate=0.1; see configs.get_hstu_configs). seed_everything()
-    sets an IDENTICAL seed on every rank — required so replicated dense weights
-    init identically — which also makes every rank draw the SAME dropout masks
-    in the forward. Gradients still differ (each rank sees different data), so
-    that is not incorrect, but identical masks waste the extra mask diversity
-    that decorrelated replicas give per global batch. This re-seeds torch/cuda
-    with $SEED + rank to recover it (the standard data-parallel RNG track, cf.
-    Megatron's tensor/data-parallel RNG separation).
-
-    ORDERING IS LOAD-BEARING: call this AFTER everything that must be identical
-    across ranks — make_model() (dense weight init) AND make_optimizer_and_shard()
-    (the pre-DMP re-seed + sharded embedding init). It deliberately perturbs only
-    forward-time stochasticity, never init.
-
-    Reproducibility is preserved: the offset is a pure function of the resolved
-    $SEED (exported by seed_everything) and rank, and per-rank RNG state is
-    snapshotted/restored on checkpoint resume (see checkpoint.py). Set
-    enabled=False (gin: decorrelate_runtime_rng.enabled) to restore the legacy
-    identical-mask-on-every-rank behavior.
+    MUST run after make_model() + make_optimizer_and_shard() so init stays
+    identical across ranks; it perturbs only forward-time stochasticity.
+    Reproducible (pure fn of $SEED + rank; RNG state checkpointed). enabled=False
+    keeps the legacy identical-mask behavior.
     """
     if not enabled:
         logger.info(
