@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --partition=meta64          # [CLUSTER-SPECIFIC] partition name
-#SBATCH --output=/apps/chcai/yambda_slurm.%j.out
+#SBATCH --output=yambda_slurm.%j.out
 # =============================================================================
 # launch_slurm.sh — single entry point for the yambda-5b trainer on N>=1 nodes.
 #
@@ -110,9 +110,9 @@ CONTAINER=${CONTAINER:-yambda_primus}
 REPO=${REPO:-$REPO_ROOT}                       # repo path inside the container
 IMAGE=${IMAGE:-rocm/primus:v26.3}              # [CLUSTER-SPECIFIC] ROCm/arch base image
 BAKED_IMAGE=${BAKED_IMAGE:-yambda_primus_baked:latest}
-BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFIC] shared-NFS path
+BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFIC] shared-NFS path (read-only build asset)
 USE_BAKED=${USE_BAKED:-1}
-OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay
+OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay (read-only, already staged)
 
 REPO_MOUNT=${REPO_MOUNT:-$HOME}              # NFS home holding the repo (must contain $REPO); override if your repo lives elsewhere
 DATA_MOUNT=${DATA_MOUNT:-/apps/chcai}        # shared dataset + RDMA overlay + pip/fbgemm assets (read-only)
@@ -128,22 +128,34 @@ orchestrate() {
   # path + repo root from SLURM so we can re-invoke this script on every node and
   # `cd` to the right repo inside the container.
   SCRIPT_PATH=$(scontrol show job "${SLURM_JOB_ID:-0}" 2>/dev/null | grep -oP 'Command=\K\S+')
-  [ -f "${SCRIPT_PATH:-}" ] || SCRIPT_PATH="${SLURM_SUBMIT_DIR:-$REPO_ROOT}/scripts/launch_slurm.sh"
+  [ -f "${SCRIPT_PATH:-}" ] || SCRIPT_PATH="${SLURM_SUBMIT_DIR:-$REPO_ROOT}/scripts/launch_slurm_suachong.sh"
   [ -f "$SCRIPT_PATH" ] || SCRIPT_PATH="$SELF"
   REPO=$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)
 
   mkdir -p "$SCRATCH" 2>/dev/null || true
   LOG=${LOG:-$SCRATCH/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
 
-  # Smoke defaults — override via env for a perf run (see header USAGE).
   MODE=${MODE:-streaming-train-eval}
-  START_TS=${START_TS:-150}
-  NUM_TRAIN_TS=${NUM_TRAIN_TS:-1}
-  NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
-  NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
+  if [ "${SMOKE:-0}" = "1" ]; then
+    START_TS=${START_TS:-150}
+    NUM_TRAIN_TS=${NUM_TRAIN_TS:-1}
+    NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
+    NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
+    EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
+    METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
+  fi
+  START_TS=${START_TS:-0}
+  NUM_TRAIN_TS=${NUM_TRAIN_TS:-299}
+  NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-0}
+  NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-0}
   EVAL_EACH_WINDOW=${EVAL_EACH_WINDOW:-1}
-  EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
-  METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
+  METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-20}
+  if [ "${EVAL_EVERY_N_WINDOWS:-0}" -gt 0 ] 2>/dev/null; then
+    EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0}
+  else
+    EVAL_EVERY_N_WINDOWS=0
+    EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0.005}
+  fi
   FORCE_PROVISION=${FORCE_PROVISION:-0}
 
   # Truncate the metrics log on a FRESH run; APPEND on a supervised relaunch
@@ -155,9 +167,11 @@ orchestrate() {
   else
     : > "$LOG"
   fi
+  chmod 622 "$LOG" 2>/dev/null || true
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
-  echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
+  echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ SMOKE=${SMOKE:-0} EVAL_EVERY_N_WINDOWS=$EVAL_EVERY_N_WINDOWS EVAL_EVERY_DATA_PCT=$EVAL_EVERY_DATA_PCT" | tee -a "$LOG"
+  echo "[$(date)] lr-override: DENSE_LR=${DENSE_LR:-<unset:gin default 1e-7>} SPARSE_LR=${SPARSE_LR:-<unset:gin default 1e-7>}" | tee -a "$LOG"
 
   # Rendezvous resolved on the HOST (the container image has no SLURM client).
   MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" 2>/dev/null | head -1)
@@ -270,6 +284,7 @@ orchestrate() {
     _wattempt=\$((_wattempt+1))
     docker exec \
       -e LAUNCH_SLURM_PHASE=worker \
+      -e WORKER_TEE=0 \
       -e SCRATCH=$SCRATCH \
       -e SLURM_NNODES=\$SLURM_NNODES \
       -e SLURM_NODEID=\$SLURM_NODEID \
@@ -298,6 +313,7 @@ orchestrate() {
       ${DIAG_EMB_STEPS:+-e DIAG_EMB_STEPS=$DIAG_EMB_STEPS} \
       ${OUTPUT_TRACE:+-e OUTPUT_TRACE=$OUTPUT_TRACE} \
       ${MIN_HISTORY:+-e MIN_HISTORY=$MIN_HISTORY} \
+      ${HISTORY_STRATEGY:+-e HISTORY_STRATEGY=$HISTORY_STRATEGY} \
       ${SEED:+-e SEED=$SEED} \
       ${DENSE_LR:+-e DENSE_LR=$DENSE_LR} \
       ${SPARSE_LR:+-e SPARSE_LR=$SPARSE_LR} \
@@ -313,6 +329,10 @@ orchestrate() {
       -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-1.0} \
       -e AUC_THRESHOLD=${AUC_THRESHOLD:-0.80275} \
       ${MLPERF_SUBMISSION_PLATFORM:+-e MLPERF_SUBMISSION_PLATFORM=$MLPERF_SUBMISSION_PLATFORM} \
+      ${TRAIN_LIFETIME_AUC_MODE:+-e TRAIN_LIFETIME_AUC_MODE=$TRAIN_LIFETIME_AUC_MODE} \
+      ${EVAL_LIFETIME_AUC_MODE:+-e EVAL_LIFETIME_AUC_MODE=$EVAL_LIFETIME_AUC_MODE} \
+      ${CUMULATIVE_AUC_BINS:+-e CUMULATIVE_AUC_BINS=$CUMULATIVE_AUC_BINS} \
+      ${LIFETIME_AUC_WINDOW:+-e LIFETIME_AUC_WINDOW=$LIFETIME_AUC_WINDOW} \
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
       -e EVAL_HOLDOUT_NUM_WINDOWS=${EVAL_HOLDOUT_NUM_WINDOWS:-1} \
@@ -325,7 +345,7 @@ orchestrate() {
       ${SPARSE_A2A_BWD:+-e SPARSE_A2A_BWD=$SPARSE_A2A_BWD} \
       -e LOG=$LOG \
       $NCCL_ENV_ARGS \
-      $CONTAINER bash -lc 'cd $REPO && LAUNCH_SLURM_PHASE=worker bash scripts/launch_slurm.sh'
+      $CONTAINER bash -lc 'cd $REPO && LAUNCH_SLURM_PHASE=worker bash scripts/launch_slurm_suachong.sh'
     _wrc=\$?
     if { [ \$_wrc -eq 125 ] || [ \$_wrc -eq 126 ] || [ \$_wrc -eq 127 ]; } && [ \$_wattempt -lt 5 ]; then
       echo \"[\$(hostname)] worker exec failed to START (rc=\$_wrc, attempt \$_wattempt/5) — container not ready; restarting + retrying\"
@@ -478,8 +498,10 @@ worker() {
   cd "$REPO_ROOT"
   mkdir -p "$SCRATCH" 2>/dev/null || true
   LOG=${LOG:-$SCRATCH/yambda_5b_8gpu.log}
-  # Append (not truncate): under the streaming-e2e supervisor a run may relaunch
-  # many times into the SAME $LOG; the supervisor initializes it once at run start.
+  # WORKER_TEE=0 (set by orchestrate) sends our file sink to /dev/null to avoid
+  # double-logging, since orchestrate already tees stdout into the real $LOG.
+  [ "${WORKER_TEE:-1}" = "0" ] && LOG=/dev/null
+  export TENSORBOARD_LOG_PATH=${TENSORBOARD_LOG_PATH:-$SCRATCH/tb/yambda_5b}
   # MLPerf compliance log (rank 0 writes it). Per-job filename so each standalone
   # sbatch gets a clean log; the e2e supervisor pins MLPERF_LOG_PATH itself.
   export MLPERF_LOG_PATH=${MLPERF_LOG_PATH:-$SCRATCH/mlperf/yambda_5b_mlperf.${SLURM_JOB_ID:-manual}.log}
@@ -531,14 +553,15 @@ worker() {
   export WORLD_SIZE=$(( NNODES * GPUS_PER_NODE ))
   echo "[$(date)] topology: nnodes=$NNODES node_rank=$NODE_RANK gpus_per_node=$GPUS_PER_NODE world_size=$WORLD_SIZE master=$MASTER_ADDR:${MASTER_PORT:-<auto>}" | tee -a "$LOG"
 
-  # NCCL bootstrap NIC — pin for BOTH single- and multi-node. The container is
-  # --network=host so RCCL sees ALL host interfaces; if left to auto-detect, NCCL
-  # can pick a non-routable per-GPU RoCE /31 (benic* 192.168.x) link and fail
-  # bootstrap with "No route to host" (this is node-dependent: it happened to
-  # work on some nodes and not others, causing repetitive single-node init
-  # failures). Pinning the routable host NIC fixes it everywhere.
-  # [CLUSTER-SPECIFIC] routable host NIC for TCP bootstrap (find via `ip -br addr`).
-  export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
+  # NCCL bootstrap NIC: loopback single-node, routable host NIC multi-node (pin
+  # to avoid auto-detect picking a non-routable per-GPU RoCE link). Override via
+  # $NCCL_SOCKET_IFNAME. [CLUSTER-SPECIFIC] multi-node fenic0 (find via `ip -br addr`).
+  if [ "$NNODES" -gt 1 ]; then
+    export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-fenic0}
+  else
+    export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-lo}
+  fi
+  echo "[$(date)] NCCL_SOCKET_IFNAME=$NCCL_SOCKET_IFNAME (nnodes=$NNODES)" | tee -a "$LOG"
 
   # Multi-node additionally needs the RDMA data-plane (bnxt_re HCAs) configured;
   # single-node uses intra-node P2P (XGMI/PCIe) so only the bootstrap NIC matters.
@@ -571,10 +594,11 @@ worker() {
       export NCCL_IB_TIMEOUT=${NCCL_IB_TIMEOUT:-14}
       export NCCL_IGNORE_CPU_AFFINITY=${NCCL_IGNORE_CPU_AFFINITY:-1}
       export RCCL_MSCCL_ENABLE=${RCCL_MSCCL_ENABLE:-0}
-      # GPU-Direct RDMA needs DMABUF/peermem (neither in-container here) — leave
-      # GDR off so RCCL stages through host memory (still real RDMA over bnxt_re).
-      export NCCL_NET_GDR_LEVEL=${NCCL_NET_GDR_LEVEL:-0}
-      echo "[$(date)] NCCL: RDMA over bnxt_re (GID idx ${NCCL_IB_GID_INDEX}, TC ${NCCL_IB_TC}, GDR_LEVEL=${NCCL_NET_GDR_LEVEL}; meta64 bnxt_re config, validated)" | tee -a "$LOG"
+      # GPU-Direct RDMA on by default (~+22% throughput at 2 nodes via peermem).
+      # Set NCCL_NET_GDR_LEVEL=0 to force the legacy host-staged path.
+      export NCCL_NET_GDR_LEVEL=${NCCL_NET_GDR_LEVEL:-5}
+      export NCCL_DMABUF_ENABLE=${NCCL_DMABUF_ENABLE:-1}
+      echo "[$(date)] NCCL: RDMA over bnxt_re (GID idx ${NCCL_IB_GID_INDEX}, TC ${NCCL_IB_TC}, GDR_LEVEL=${NCCL_NET_GDR_LEVEL}, DMABUF=${NCCL_DMABUF_ENABLE}; meta64 bnxt_re config, validated)" | tee -a "$LOG"
     fi
   fi
   export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
