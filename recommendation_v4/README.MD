@@ -100,7 +100,7 @@ The `like` pool is roughly **30× rarer** than `lp` — important context for th
 
 ## 4. How data is fed to HSTU
 
-For every training anchor (a LISTEN event with ≥ `min_history` prior events — default `1`, i.e. ~all users; set `$MIN_HISTORY=4086` for the legacy "full `history_length` of context required" filter that dropped ~60% of users), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
+For every training anchor (a LISTEN event with ≥ `min_history` prior events — frozen default `4086`, the "full `history_length` of context required" power-users filter; set `$MIN_HISTORY=0` to include ~all users plus their cold-start first event), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
 
 ```
 UIH (User Interaction History):
@@ -203,7 +203,7 @@ with env overrides:
 | `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows (no per-window respawn) |
 | `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread during compute |
 | `EVAL_EACH_WINDOW` | `streaming_train_eval_loop.eval_each_window` | 1 | eval window T+1 after training window T |
-| `MIN_HISTORY` | `get_dataset.min_history` | 1 | anchor-eligibility floor: min prior events for a LISTEN to be a sample (1 = ~all users; 4086 = legacy full-history filter) |
+| `MIN_HISTORY` | `get_dataset.min_history` | 4086 | anchor-eligibility floor: min prior events for a LISTEN to be a sample (frozen default 4086 = full-history power-users filter; 0 = ~all users incl. cold-start) |
 | — | `streaming_train_eval_loop.num_train_batches` / `num_eval_batches` | unset | cap per-window steps (unset = consume full window) |
 
 ### 5.3 Hiding the window-reset overhead

@@ -239,7 +239,10 @@ hs/env_str.default = "interleaved"
 # keyed by (L, MIN_HISTORY) so floors don't collide. Override via $MIN_HISTORY.
 get_dataset.min_history = @mh/env_int()
 mh/env_int.key     = "MIN_HISTORY"
-mh/env_int.default = 0
+# Freeze default: power-users-only floor at the full history budget. With
+# HISTORY_LENGTH=4086 this maps to the existing positions_L4086.npy cache (no
+# rebuild, no shared-dir write — see yambda.py _positions_filename legacy path).
+mh/env_int.default = 4086
 
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow. Override via
