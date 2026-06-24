@@ -17,7 +17,7 @@
 #
 # Usage:
 #   bash generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh --jobid <slurm-jobid>
-#       [--container yambda_<user>]
+#       [--container yambda_primus]
 #       [--num-train-batches 200]
 #       [--die-at-step 350]
 #       [--keep]    # retain LOG_DIR + CKPT after run for inspection
@@ -25,7 +25,7 @@
 set -uo pipefail
 
 JOBID=""
-CONTAINER="yambda_${USER:-$(id -un)}"
+CONTAINER="yambda_primus"
 NUM_TRAIN_BATCHES=200
 DIE_AT_STEP=350
 IN_WINDOW_FREQ=50
@@ -40,9 +40,6 @@ KEEP=0
 # correctness gates are the functional-invariant checks below (RNG restored,
 # resumed-at-correct-step, atomic/keep_last_n), not this number.
 ATOL=0.15
-# Writable scratch ($HOME-derived) + repo root (this file is at
-# <repo>/generative_recommenders/dlrm_v3/train/tests/, i.e. 4 levels deep).
-# Both env-overridable; nothing is hardwired to a specific user/site.
 SCRATCH=${SCRATCH:-$HOME/yambda_runs}
 CKPT_ROOT=${CKPT_ROOT:-$SCRATCH/ckpts_resume_test}
 LOG_DIR=${LOG_DIR:-$SCRATCH/streaming_resume_test}
