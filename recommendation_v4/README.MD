@@ -11,17 +11,27 @@ auto-detects its context: run inside the container it takes the single-node
 worker path; submitted via `sbatch` it orchestrates the multi-node run
 (provision + per-node launch). N=1 is byte-for-byte the legacy single-node path.
 
-**Single node (8-GPU), inside the container:**
+A bare submit reproduces the **frozen reference run** (full 299-window sweep +
+data-fraction eval cadence) — all run-shape/cadence defaults are baked in, so no
+env knobs are required:
+
+**Single node (8-GPU):**
 
 ```bash
-docker exec yambda_8gpu bash -c \
-  'cd /workspace/recommendation_v4 && bash scripts/launch_slurm.sh'
+sbatch --nodes=1 scripts/launch_slurm.sh
 ```
 
-**Multi-node (N×8-GPU) via SLURM:**
+**Multi-node (N×8-GPU):**
 
 ```bash
-sbatch --nodes=2 --partition=meta64 scripts/launch_slurm.sh
+sbatch --nodes=2 scripts/launch_slurm.sh
+```
+
+For a fast functional check instead of a full run, prepend `SMOKE=1` (short
+window, capped batches, per-window eval):
+
+```bash
+SMOKE=1 sbatch --nodes=1 scripts/launch_slurm.sh
 ```
 
 Multi-node uses real RDMA (RoCEv2). The fabric/NCCL setup and every
@@ -39,50 +49,26 @@ bash scripts/launch_slurm.sh
 
 Data path resolves at runtime via `env_path` gin macros (see [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)). Traces and any per-run outputs land in `results/<RUN_NAME>/`.
 
-### 1.1 Full reference run (single + multi-node)
+### 1.1 The frozen reference shape
 
-For a complete benchmark run you typically wrap the `sbatch` call in a small
-submit script that pins the run-shape + eval cadence (most other
-hyperparameters already match the [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)
-defaults, so only the knobs below need to be set). The single- and multi-node
-launchers are identical except for `--nodes` (the trainer auto-derives
-`NNODES`/`NODE_RANK`/`MASTER_ADDR`/`WORLD_SIZE` from SLURM):
+The reference run-shape and eval cadence are the built-in defaults (set in the
+orchestrate phase of `scripts/launch_slurm.sh`), so the bare `sbatch` commands
+above ARE the reference run. The single- and multi-node launchers are identical
+except for `--nodes`; the trainer auto-derives `NNODES`/`NODE_RANK`/`MASTER_ADDR`/
+`WORLD_SIZE` from SLURM. The baked-in shape:
 
-**Single node (1×8 GPU):**
+| knob | reference default |
+|---|---|
+| `START_TS` / `NUM_TRAIN_TS` | 0 / 299 (full sweep) |
+| eval cadence | `EVAL_EVERY_DATA_PCT=0.005` (every 0.5% of the training stream — a fixed number of samples between evals, independent of node count), per-window cadence off |
+| `NUM_TRAIN_BATCHES` / `NUM_EVAL_BATCHES` | 0 / 0 (consume full windows) |
 
-```bash
-cd <repo-root>
-MODE=streaming-train-eval \
-  START_TS=0 NUM_TRAIN_TS=299 \
-  TRAIN_SPLIT_PERCENTAGE=1.0 \
-  EVAL_HOLDOUT_TS=299 EVAL_HOLDOUT_NUM_WINDOWS=1 \
-  EVAL_EVERY_N_WINDOWS=0 EVAL_EVERY_DATA_PCT=0.005 \
-  AUC_THRESHOLD=0.80275 \
-  BATCH_SIZE=1024 \
-  METRIC_LOG_FREQ=20 \
-  RUN_NAME=yc-full-epoch \
-  LOG="$HOME/yambda_runs/yc-full-epoch/run.log" \
-  sbatch --nodes=1 --time=4-00:00:00 --job-name=yambda-1node scripts/launch_slurm.sh
-```
-
-**Multi-node (2×8 GPU):** same env, only the `sbatch` line changes:
-
-```bash
-  ... same env knobs as above ...
-  RUN_NAME=yc-full-epoch-2node \
-  LOG="$HOME/yambda_runs/yc-full-epoch-2node/run.log" \
-  sbatch --nodes=2 --ntasks-per-node=1 --time=4-00:00:00 --job-name=yambda-2node scripts/launch_slurm.sh
-```
-
-Notes:
-- `EVAL_EVERY_DATA_PCT=0.005` + `EVAL_EVERY_N_WINDOWS=0` selects the
-  data-fraction eval cadence (eval every 0.5% of the training stream — a fixed
-  number of samples between evals, independent of node count). The two eval
-  cadences are mutually exclusive.
-- `AUC_THRESHOLD` is the convergence target: a SUCCESS `RUN_STOP` fires when the
-  per-pass `window_auc` first reaches it.
-- Keep all run outputs (`LOG`, checkpoints, mllog, TensorBoard) under a writable
-  scratch path you own; the dataset mount is read-only.
+To customize, override any knob via env (e.g. `RUN_NAME=...`, `LOG=...`,
+`AUC_THRESHOLD=...`). Selecting the per-window eval cadence
+(`EVAL_EVERY_N_WINDOWS>0`) automatically disables the data-fraction one (they are
+mutually exclusive). Keep all run outputs (`LOG`, checkpoints, mllog,
+TensorBoard) under a writable scratch path you own — the dataset mount is
+read-only.
 
 ## 2. Data preparation
 

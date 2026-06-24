@@ -34,9 +34,14 @@
 #                supervisor's direct `bash scripts/launch_slurm.sh` is unchanged.
 #
 # USAGE
-#   Multi-node (N>=1):  sbatch --nodes=2 scripts/launch_slurm.sh
+#   Reference run (1 node): sbatch --nodes=1 scripts/launch_slurm.sh
+#   Reference run (N node):  sbatch --nodes=N scripts/launch_slurm.sh
+#     ^ a bare submit reproduces the FROZEN REFERENCE shape (full 299-window
+#       sweep + data-fraction eval cadence). Prepend SMOKE=1 for a fast
+#       functional check (short window, capped batches).
 #   Single-node direct: bash scripts/launch_slurm.sh   (already inside container;
-#                       what run_streaming_e2e.sh invokes per relaunch)
+#                       what run_streaming_e2e.sh invokes per relaunch — uses the
+#                       gin defaults, NOT the orchestrate reference shape)
 #   Perf pair:
 #     LOG=/apps/chcai/perf_1node.log NUM_TRAIN_BATCHES=200 NUM_EVAL_BATCHES=0 \
 #       EVAL_EACH_WINDOW=0 METRIC_LOG_FREQ=20 \
@@ -146,15 +151,36 @@ orchestrate() {
   mkdir -p "$SCRATCH" 2>/dev/null || true
   LOG=${LOG:-$SCRATCH/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
 
-  # Smoke defaults — override via env for a perf run (see header USAGE).
+  # Run-shape defaults. By DEFAULT a bare `sbatch scripts/launch_slurm.sh`
+  # reproduces the FROZEN REFERENCE run: full 299-window sweep (START_TS=0) with
+  # the data-fraction eval cadence (eval every 0.5% of the training stream). Set
+  # SMOKE=1 for a fast functional check (short dense window, capped batches,
+  # per-window eval). Any individual knob below stays env-overridable.
   MODE=${MODE:-streaming-train-eval}
-  START_TS=${START_TS:-150}
-  NUM_TRAIN_TS=${NUM_TRAIN_TS:-1}
-  NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
-  NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
+  if [ "${SMOKE:-0}" = "1" ]; then
+    START_TS=${START_TS:-150}
+    NUM_TRAIN_TS=${NUM_TRAIN_TS:-1}
+    NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
+    NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
+    EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
+    METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
+  fi
+  START_TS=${START_TS:-0}
+  NUM_TRAIN_TS=${NUM_TRAIN_TS:-299}
+  NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-0}
+  NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-0}
   EVAL_EACH_WINDOW=${EVAL_EACH_WINDOW:-1}
-  EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
-  METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
+  METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-20}
+  # Eval cadence — the two knobs are mutually exclusive (the worker raises if both
+  # are >0). Data-fraction is the reference default; if the caller explicitly
+  # selected the per-window cadence (EVAL_EVERY_N_WINDOWS>0) leave data-pct off,
+  # otherwise default to the reference 0.5%-of-data cadence (per-window disabled).
+  if [ "${EVAL_EVERY_N_WINDOWS:-0}" -gt 0 ] 2>/dev/null; then
+    EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0}
+  else
+    EVAL_EVERY_N_WINDOWS=0
+    EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0.005}
+  fi
   FORCE_PROVISION=${FORCE_PROVISION:-0}
 
   # Truncate the metrics log on a FRESH run; APPEND on a supervised relaunch
@@ -173,7 +199,7 @@ orchestrate() {
   chmod 666 "$LOG" 2>/dev/null || true
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
-  echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
+  echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ SMOKE=${SMOKE:-0} EVAL_EVERY_N_WINDOWS=$EVAL_EVERY_N_WINDOWS EVAL_EVERY_DATA_PCT=$EVAL_EVERY_DATA_PCT" | tee -a "$LOG"
   echo "[$(date)] lr-override: DENSE_LR=${DENSE_LR:-<unset:gin default 1e-7>} SPARSE_LR=${SPARSE_LR:-<unset:gin default 1e-7>}" | tee -a "$LOG"
 
   # Rendezvous resolved on the HOST (the container image has no SLURM client).
