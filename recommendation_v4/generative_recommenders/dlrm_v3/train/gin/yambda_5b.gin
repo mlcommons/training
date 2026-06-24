@@ -463,18 +463,29 @@ at/env_float.key     = "AUC_THRESHOLD"
 at/env_float.default = 0.80275
 # EVAL_ACCURACY + early-stop are driven by per-window AUC (window_auc) vs the
 # threshold above.
-# Lifetime-AUC backend for the train + eval cumulative ("lifetime_*") AUC.
-# Hardcoded to "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an
-# O(bins) score histogram (additive all-reduce, memory independent of
-# #samples/#windows). The legacy "capped" trailing-buffer backend is no longer
-# selectable.
-MetricsLogger.train_lifetime_auc_mode = "binned"
-MetricsLogger.eval_lifetime_auc_mode = "binned"
+# Lifetime-AUC backend, selectable independently for the train cumulative AUC and
+# the eval cumulative ("lifetime_*") AUC. Both default to "binned":
+#   "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an O(bins) score
+#     histogram (additive all-reduce, memory independent of #samples/#windows).
+#   "capped" = LifetimeAUCMetricComputation: AUC over a trailing buffer of
+#     `lifetime_auc_window` samples/rank (legacy; per-rank buffer all-gathered).
+# Override per-run via $TRAIN_LIFETIME_AUC_MODE / $EVAL_LIFETIME_AUC_MODE.
+MetricsLogger.train_lifetime_auc_mode = @tlam/env_str()
+tlam/env_str.key     = "TRAIN_LIFETIME_AUC_MODE"
+tlam/env_str.default = "binned"
+MetricsLogger.eval_lifetime_auc_mode = @elam/env_str()
+elam/env_str.key     = "EVAL_LIFETIME_AUC_MODE"
+elam/env_str.default = "binned"
 # Score-histogram resolution for the "binned" backend. Higher = finer AUC
 # resolution at O(bins) memory. Override via $CUMULATIVE_AUC_BINS.
 MetricsLogger.cumulative_auc_bins = @cab/env_int()
 cab/env_int.key     = "CUMULATIVE_AUC_BINS"
 cab/env_int.default = 100000
+# Trailing-buffer size (samples/rank) for the "capped" backend. Override via
+# $LIFETIME_AUC_WINDOW. Ignored when the backend is "binned".
+MetricsLogger.lifetime_auc_window = @law/env_int()
+law/env_int.key     = "LIFETIME_AUC_WINDOW"
+law/env_int.default = 10000000
 # Checkpointing disabled by default — a full DMP checkpoint is ~100s of GB and
 # the streaming loop always saves on the final window. save_dmp_checkpoint
 # no-ops on the empty path. Set $CKPT_PATH to a directory to re-enable; the
