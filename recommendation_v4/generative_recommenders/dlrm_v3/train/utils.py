@@ -1133,6 +1133,8 @@ def eval_loop(
     # lr_scheduler: to-do: Add a scheduler
 ) -> None:
     model.eval()
+    # Exclude eval wall-time from the train step-time window (see _run_eval_window).
+    metric_logger.pause_perf("eval")
     batch_idx: int = 0
     profiler = Profiler(rank) if output_trace else None
     metric_logger.reset(mode="eval")
@@ -1170,6 +1172,7 @@ def eval_loop(
     metric_logger.compute_and_log(mode="eval")
     for k, v in metric_logger.compute(mode="eval").items():
         print(f"{k}: {v}")
+    metric_logger.resume_perf("eval")
 
 
 class _PipelineModelWrapper(torch.nn.Module):
@@ -2055,6 +2058,12 @@ def streaming_train_eval_loop(
         # only fires after a completed eval window or mid-train-window, so any
         # restored state always sits on a completed-eval boundary -- which is
         # also why the eval reset below is safe across resume.
+        #
+        # Exclude this eval pass's wall-time from the train step-time window so
+        # step_ms stays canonical even when eval coincides with a train interval;
+        # the duration is reported separately (window_eval_time_ms + total_eval
+        # below). Resumed unconditionally at the end of this function.
+        metric_logger.pause_perf("eval")
         model.eval()
         # Reset eval metrics so each pass reports a clean number over the FIXED
         # holdout set. Without this, lifetime/window eval metrics would keep
@@ -2148,6 +2157,7 @@ def streaming_train_eval_loop(
                     _f.write(json.dumps(_rec) + "\n")
             except OSError as _e:
                 logger.warning("failed to write metrics sink %s: %s", _metrics_path, _e)
+        metric_logger.resume_perf("eval")
         # Return metrics to the streaming loop so the MLPerf EVAL_STOP /
         # EVAL_ACCURACY hooks (and the stop-on-target check) can consume them.
         # Unconditional (outside the rank-0 logging block) so every rank returns.
