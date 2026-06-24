@@ -1616,9 +1616,7 @@ def streaming_train_eval_loop(
     streaming_diag_unique_emb: bool = False,
     # --- test-only failure injection knob ---
     die_at_step: int = -1,
-    # MLPerf compliance logger (rank-0-gated facade). None disables all MLPerf
-    # event emission; the loop is otherwise unchanged. Supplied by train_ranker
-    # for the streaming-train-eval benchmark path.
+    # MLPerf logger (rank-0-gated); None disables all MLPerf event emission.
     mlperf_logger: Optional[Any] = None,
     # Which eval metric drives EVAL_ACCURACY + the convergence decision. Format
     # "{window|lifetime}_{auc|gauc|accuracy|ne}" (bare "window"/"lifetime" => auc).
@@ -2198,9 +2196,7 @@ def streaming_train_eval_loop(
             except OSError as _e:
                 logger.warning("failed to write metrics sink %s: %s", _metrics_path, _e)
         metric_logger.resume_perf("eval")
-        # Return metrics to the streaming loop so the MLPerf EVAL_STOP /
-        # EVAL_ACCURACY hooks (and the stop-on-target check) can consume them.
-        # Unconditional (outside the rank-0 logging block) so every rank returns.
+        # Return metrics (on every rank) so the MLPerf eval hooks can consume them.
         return _eval_metrics
 
     def _maybe_checkpoint(train_ts: int) -> None:
@@ -2271,12 +2267,8 @@ def streaming_train_eval_loop(
             )
 
     # --- MLPerf progress accounting + event helpers ---------------------------
-    # `total_train_samples` is the denominator for the MLPerf samples_count /
-    # epoch_num progress unit: the total GLOBAL trainable samples over the
-    # configured window range. Computed once up-front (one O(N) anchor mask per
-    # window -- the same call the loop makes per window) and logged as
-    # TRAIN_SAMPLES. Skipped entirely when no MLPerf logger is attached, since
-    # the masks are not free. `mlperf_run_stopped` guards single RUN_STOP.
+    # total_train_samples = epoch_num denominator (global trainable samples over
+    # the window range), computed once and logged as TRAIN_SAMPLES.
     total_train_samples = 0
     mlperf_run_stopped = [False]
     if mlperf_logger is not None:
@@ -2300,10 +2292,7 @@ def streaming_train_eval_loop(
                 key=mlperf_logger.constants.EVAL_SAMPLES,
                 value=int(eval_global_indices.size),
             )
-        # Let MetricsLogger.compute_and_log emit the per-step MLPerf `train_loss`
-        # event (rank-0 gated) at the metric-logging cadence, stamped with the
-        # current base LR. Read param_groups[0] defensively (KeyedOptimizer
-        # exposes it; guard against any optimizer that does not).
+        # Wire the logger + LR getter so compute_and_log emits the train_loss event.
         metric_logger.mlperf_logger = mlperf_logger
 
         def _current_lr() -> float:
@@ -2377,14 +2366,9 @@ def streaming_train_eval_loop(
         mlperf_run_stopped[0] = True
 
     def _mlperf_eval_stop(eval_metrics: Dict[str, float]) -> bool:
-        # Emit EVAL_ACCURACY (the selected eval listen_plus metric) + EVAL_STOP,
-        # and drive an early SUCCESS RUN_STOP when the target is reached. Returns
-        # True iff the run should stop now -- the SAME value on every rank.
-        #
-        # CRITICAL (deadlock avoidance): the eval metric is only valid on global
-        # rank 0, so rank 0 decides and BROADCASTS the boolean; all ranks then
-        # break (or continue) in lockstep. A per-rank test could diverge and hang
-        # the next window's embedding all-to-all (600s ALLTOALL_BASE watchdog).
+        # Emit EVAL_ACCURACY + EVAL_STOP, early SUCCESS RUN_STOP on target.
+        # Rank 0 decides + broadcasts the stop bool so all ranks break in lockstep
+        # (a per-rank test could diverge and hang the next all-to-all).
         if mlperf_logger is None:
             return False
         eval_value = _eval_target_metric(eval_metrics)
@@ -2590,11 +2574,8 @@ def streaming_train_eval_loop(
                 # MLPerf target reached: RUN_STOP already emitted; stop training.
                 break
 
-    # Final eval over the SAME fixed user-holdout set (consistent with the
-    # per-window evals above). Reuses _run_eval_window so metrics are reset and
-    # reported the same way. Falls back to the legacy final-window eval for
-    # datasets without user holdout. Skipped if the MLPerf target was already
-    # reached mid-run (RUN_STOP already emitted, run is over).
+    # Final eval over the fixed user-holdout set (legacy final-window eval
+    # otherwise). Skipped if the MLPerf target already stopped the run mid-run.
     if not mlperf_run_stopped[0]:
         dataset.dataset.is_eval = True  # pyre-ignore [16]
         _mlperf_eval_start()
@@ -2612,12 +2593,9 @@ def streaming_train_eval_loop(
                 iter(make_streaming_dataloader(dataset=dataset, ts=num_train_ts)),
                 label="eval@final",
             )
-        # EVAL_ACCURACY/EVAL_STOP for the final pass (may emit SUCCESS RUN_STOP
-        # if the target was met exactly at the end).
         _mlperf_eval_stop(final_metrics)
         if rank == 0:
             for k, v in final_metrics.items():
                 print(f"{k}: {v}")
-        # End-of-run RUN_STOP: SUCCESS iff the final lifetime AUC met the target,
-        # else ABORTED. No-op if a SUCCESS RUN_STOP already fired above.
+        # End-of-run RUN_STOP: SUCCESS if final metric met target, else ABORTED.
         _mlperf_finalize(final_metrics)
