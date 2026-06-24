@@ -108,6 +108,7 @@ def _main_func(
     from generative_recommenders.dlrm_v3.checkpoint import load_dmp_checkpoint
     from generative_recommenders.dlrm_v3.train.utils import (
         cleanup,
+        decorrelate_runtime_rng,
         eval_loop,
         make_model,
         make_optimizer_and_shard,
@@ -149,6 +150,11 @@ def _main_func(
         world_size=world_size,
         local_world_size=gpus_per_node,
     )
+    # Decorrelate forward-time stochasticity (HSTU dropout) per data-parallel
+    # rank. MUST run after make_model() + make_optimizer_and_shard() so the
+    # replicated dense weights and sharded embeddings stay init-identical across
+    # ranks; this only offsets the global RNG by rank so dropout masks differ.
+    decorrelate_runtime_rng(rank=rank)
     train_dataloader, test_dataloader = make_train_test_dataloaders(
         hstu_config=model_configs,
         embedding_table_configs=embedding_table_configs,

@@ -88,6 +88,19 @@ seed_everything.seed = @seed/env_int()
 seed/env_int.key     = "SEED"
 seed/env_int.default = -1
 
+# $DECORRELATE_DROPOUT — per-rank decorrelation of RUNTIME stochastic ops.
+# After init (make_model + DMP), re-seed torch/cuda with $SEED + rank so HSTU
+# dropout (input_dropout=0.2, linear_dropout_rate=0.1) draws DIFFERENT masks on
+# every data-parallel rank instead of the identical masks implied by the shared
+# init seed — the standard data-parallel RNG track. Init (dense weights +
+# sharded embeddings) is untouched: this runs strictly after it. 1 = on
+# (default), 0 = legacy identical-mask-on-every-rank behavior. Reproducible: the
+# offset is a pure fn of resolved $SEED + rank, and per-rank RNG state is
+# checkpointed across resume.
+decorrelate_runtime_rng.enabled = @drr/env_int()
+drr/env_int.key     = "DECORRELATE_DROPOUT"
+drr/env_int.default = 1
+
 # dense model optimizer
 # Learning rate is env-overridable via $DENSE_LR (default 1e-7).
 dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()

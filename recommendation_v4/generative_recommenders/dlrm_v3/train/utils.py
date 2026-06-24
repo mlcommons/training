@@ -127,6 +127,48 @@ def seed_everything(seed: int = -1, rank: int = 0) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
+@gin.configurable
+def decorrelate_runtime_rng(rank: int = 0, enabled: bool = True) -> None:
+    """Offset the global RNG by ``rank`` so RUNTIME stochastic ops draw
+    decorrelated draws per data-parallel rank.
+
+    The only such op here is HSTU dropout (input_dropout=0.2,
+    linear_dropout_rate=0.1; see configs.get_hstu_configs). seed_everything()
+    sets an IDENTICAL seed on every rank — required so replicated dense weights
+    init identically — which also makes every rank draw the SAME dropout masks
+    in the forward. Gradients still differ (each rank sees different data), so
+    that is not incorrect, but identical masks waste the extra mask diversity
+    that decorrelated replicas give per global batch. This re-seeds torch/cuda
+    with $SEED + rank to recover it (the standard data-parallel RNG track, cf.
+    Megatron's tensor/data-parallel RNG separation).
+
+    ORDERING IS LOAD-BEARING: call this AFTER everything that must be identical
+    across ranks — make_model() (dense weight init) AND make_optimizer_and_shard()
+    (the pre-DMP re-seed + sharded embedding init). It deliberately perturbs only
+    forward-time stochasticity, never init.
+
+    Reproducibility is preserved: the offset is a pure function of the resolved
+    $SEED (exported by seed_everything) and rank, and per-rank RNG state is
+    snapshotted/restored on checkpoint resume (see checkpoint.py). Set
+    enabled=False (gin: decorrelate_runtime_rng.enabled) to restore the legacy
+    identical-mask-on-every-rank behavior.
+    """
+    if not enabled:
+        logger.info(
+            f"[rank {rank}] decorrelate_runtime_rng disabled; dropout masks "
+            f"identical across ranks"
+        )
+        return
+    base = int(os.environ.get("SEED", "1"))
+    offset_seed = base + int(rank)
+    torch.manual_seed(offset_seed)
+    torch.cuda.manual_seed_all(offset_seed)
+    logger.info(
+        f"[rank {rank}] decorrelated runtime RNG: SEED={base} + rank={rank} "
+        f"=> {offset_seed} (per-rank dropout masks)"
+    )
+
+
 def setup(
     rank: int,
     world_size: int,
