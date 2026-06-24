@@ -83,20 +83,12 @@ def _main_func(
     gin.parse_config_file(gin_file, skip_unknown=True)
     apply_env_bootstrap()
 
-    # MLPerf compliance logging is only wired for the streaming-train-eval
-    # (yambda-5b) benchmark path. Build the rank-0-gated logger now. No-ops on
-    # non-zero ranks and when mlperf_logging is not installed.
+    # Rank-0-gated MLPerf logger, only for the streaming-train-eval path.
     mlperf_logger = (
         get_mlperf_logger(rank=rank) if mode == "streaming-train-eval" else None
     )
-    # Emit the init-start boundary before setup so the init phase is measured,
-    # but ONLY when this is guaranteed to be a cold start. CKPT_PATH unset means
-    # checkpoints are disabled (the default + submission config) -> always cold
-    # start. When CKPT_PATH is set (resumable / e2e-supervisor runs) we defer the
-    # decision to resume_cold_start below and skip the pre-setup markers, so a
-    # resume relaunch never emits an orphaned INIT_START/RUN_START. The whole
-    # downstream sequence (INIT_STOP/RUN_START/blocks/eval/RUN_STOP) is gated on
-    # this flag so the log is always balanced.
+    # Emit INIT_START before setup only on a guaranteed cold start (CKPT_PATH
+    # unset); resume relaunches skip it so the log stays balanced.
     mlperf_init_logged = False
     if mlperf_logger is not None and not os.environ.get("CKPT_PATH", ""):
         mlperf_logger.event(key=mlperf_logger.constants.CACHE_CLEAR, value=True)
@@ -208,11 +200,8 @@ def _main_func(
         )
     )
 
-    # MLPerf: submission info + hyperparameters, then the init/run boundary.
-    # Gated on (init markers emitted AND genuine cold start) so the e2e
-    # supervisor's resume relaunches don't restart the INIT/RUN markers
-    # mid-stream (which would invalidate the single-run log), and so the log is
-    # never left with an INIT_STOP that has no matching INIT_START.
+    # MLPerf submission info + hyperparameters + INIT_STOP/RUN_START, only on a
+    # genuine cold start so resume relaunches don't reopen the run markers.
     mlperf_run_active = (
         mlperf_logger is not None and mlperf_init_logged and resume_cold_start
     )
@@ -228,11 +217,8 @@ def _main_func(
                 value = gin.query_parameter(name)
             except (ValueError, KeyError):
                 return default
-            # When a binding is a gin macro/configurable reference (e.g.
-            # `@dlr/env_float()`), query_parameter returns the unevaluated
-            # reference object, which the MLPerf logger cannot encode. Resolve
-            # it to its actual value so env-overridden LRs are logged as real
-            # numbers. Plain literals pass through unchanged.
+            # Resolve gin macro refs (e.g. @dlr/env_float()) to real values so
+            # env-overridden LRs log as numbers, not unencodable objects.
             if hasattr(value, "scoped_configurable_fn"):
                 try:
                     return value.scoped_configurable_fn()
@@ -243,11 +229,9 @@ def _main_func(
         global_batch_size = world_size * int(train_dataloader.batch_size)
         mlperf_logger.event(key=c.GLOBAL_BATCH_SIZE, value=global_batch_size)
         mlperf_logger.event(key=c.GRADIENT_ACCUMULATION_STEPS, value=1)
-        # Log the ACTUAL seed chosen in setup() (random per-run unless $SEED is
-        # pinned; setup() exports the chosen value to $SEED).
+        # Actual seed chosen in setup() (exported to $SEED).
         mlperf_logger.event(key=c.SEED, value=int(os.environ.get("SEED", "1")))
-        # Dense (Adam) + sparse (RowWiseAdagrad) optimizer hyperparameters,
-        # read from the active gin bindings.
+        # Dense (Adam) + sparse (RowWiseAdagrad) optimizer hyperparameters from gin.
         mlperf_logger.event(
             key=c.OPT_NAME,
             value=_gin_param(
@@ -327,24 +311,17 @@ def _main_func(
                 resume_batch_idx_in_window=resume_batch_idx_in_window,
                 resume_split_contract=resume_split_contract,
                 resume_cold_start=resume_cold_start,
-                # Only pass the logger when the run boundaries were emitted, so
-                # the loop never produces orphan block/eval events.
+                # Only pass the logger when run boundaries were emitted, so the
+                # loop never produces orphan block/eval events.
                 mlperf_logger=mlperf_logger if mlperf_run_active else None,
             )
     except Exception as e:
         logger.info(traceback.format_exc())
         raise Exception(e)
     finally:
-        # Graceful distributed teardown (runs on BOTH success and failure).
-        # Previously cleanup() ran only in the except branch, so a clean finish
-        # returned without destroying the process group: ranks that returned
-        # first let rank 0's TCPStore close while peers' ProcessGroupNCCL
-        # heartbeat-monitor threads were still polling it, emitting the noisy
-        # (but harmless) "Failed to check the 'should dump' flag on TCPStore /
-        # Broken pipe" warnings + C++ stack traces at exit. Barrier first so all
-        # ranks reach the end in lockstep, then destroy_process_group() stops
-        # each rank's monitor thread and closes NCCL/the store in order. Both
-        # steps are guarded/best-effort so teardown never masks a real error.
+        # Graceful distributed teardown on both success and failure: barrier so
+        # all ranks finish in lockstep, then destroy the process group (best-
+        # effort) to avoid noisy TCPStore/NCCL shutdown warnings at exit.
         if torch.distributed.is_initialized():
             try:
                 torch.distributed.barrier()

@@ -15,13 +15,8 @@
 # pyre-unsafe
 """MLPerf Training compliance logging for the DLRMv3 streaming-train-eval path.
 
-Thin, rank-0-gated wrapper around ``mlperf_logging.mllog`` so the streaming
-loop can emit the MLPerf event stream (INIT/RUN/BLOCK/EVAL/RUN_STOP) without
-every call site re-checking the rank or guarding against a missing dependency.
-
-Modeled on recommendation_v2/torchrec_dlrm's inline ``submission_info`` but
-extended with rank-0 gating + optional distributed barriers (the NeMo / unet3d
-``sync`` pattern), so a multi-rank run produces exactly one valid log.
+Rank-0-gated wrapper around ``mlperf_logging.mllog`` so the streaming loop emits
+the MLPerf event stream without every call site re-checking rank or the dep.
 """
 
 import logging
@@ -63,11 +58,9 @@ def _barrier() -> None:
 class MLPerfLogger:
     """Rank-0-gated facade over ``mllog``.
 
-    All event methods no-op on non-zero ranks and when ``mlperf_logging`` is not
-    installed, so callers never need to guard. ``sync=True`` inserts an
-    all-rank ``dist.barrier()`` before the (rank-0-only) emission so the logged
-    timestamp reflects the slowest rank reaching the boundary -- required for
-    INIT_STOP/RUN_START/RUN_STOP per the MLPerf rules.
+    Event methods no-op on non-zero ranks and when mlperf_logging is absent.
+    ``sync=True`` barriers before emit so the timestamp reflects the slowest rank
+    (required for INIT_STOP/RUN_START/RUN_STOP).
     """
 
     def __init__(
@@ -79,29 +72,18 @@ class MLPerfLogger:
         submitter_name: str = "reference_implementation",
     ):
         self.enabled: bool = _MLLOG_AVAILABLE
-        # CRITICAL: use the EXPLICIT global rank passed by the caller, not a
-        # dist.get_rank() lookup. This logger is constructed BEFORE
-        # dist.init_process_group (so the init phase can be timed), at which
-        # point torch.distributed.get_rank() is unavailable and would return 0
-        # for every process -> all 16 ranks would log everything. The caller
-        # (train_ranker) already knows the true global rank
-        # (node_rank * gpus_per_node + local_rank), so trust it. Fall back to a
-        # best-effort dist/zero lookup only when not provided.
+        # Use the EXPLICIT caller rank: this is built before init_process_group,
+        # when dist.get_rank() would return 0 on every rank (all would log).
         self.rank: int = rank if rank is not None else _rank()
         self.benchmark_name: str = benchmark_name
         self.submitter_name: str = submitter_name
         self._logger = None
         if not self.enabled:
             return
-        # Only rank 0 emits events, so only rank 0 needs the file handler:
-        # attaching it on every rank wastes file handles and risks contention on
-        # a shared log path. Non-zero ranks configure mllog without a filename
-        # (their event methods no-op anyway).
+        # Only rank 0 emits, so only rank 0 needs the file handler.
         if log_path and self.rank == 0:
             log_dir = os.path.dirname(log_path)
-            # dirname is "" when log_path has no directory component (e.g.
-            # MLPERF_LOG_PATH=mlperf.log); os.makedirs("") raises, so guard it.
-            if log_dir:
+            if log_dir:  # guard: os.makedirs("") raises for a bare filename
                 os.makedirs(log_dir, exist_ok=True)
             mllog.config(filename=log_path, default_stack_offset=default_stack_offset)
         else:
@@ -169,14 +151,8 @@ def get_mlperf_logger(
 ) -> Optional[MLPerfLogger]:
     """Build a configured :class:`MLPerfLogger`, or ``None`` if unavailable.
 
-    ``benchmark_name`` / ``submitter_name`` are gin-configurable (and the path is
-    env-overridable via ``$MLPERF_LOG_PATH``) so a submission can stamp its own
-    benchmark string without code changes. The log path defaults to
-    ``$MLPERF_LOG_PATH`` when set, else ``""`` (mllog logs to stdout).
-
-    Returns ``None`` when ``mlperf_logging`` is not installed so callers' existing
-    ``mlperf_logger is not None`` guards cleanly disable logging -- otherwise they
-    would pass the guard and then hit ``logger.constants`` (which is ``None``).
+    Path defaults to ``$MLPERF_LOG_PATH``. Returns ``None`` (not a disabled
+    logger) so callers' ``is not None`` guards cleanly skip logging.
     """
     if not _MLLOG_AVAILABLE:
         return None
