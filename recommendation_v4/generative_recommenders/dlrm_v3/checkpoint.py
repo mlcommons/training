@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import shutil
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional, Set, Tuple
 
@@ -345,6 +346,15 @@ def save_dmp_checkpoint(
     """
     if path == "":
         return
+    # Exclude checkpoint wall-time from the train step-time window so step_ms
+    # reports canonical compute latency; the duration is surfaced separately
+    # (window_ckpt_time_ms + the per-save log below). pause/resume are no-ops if
+    # metric_logger is None. Not wrapped in try/finally: a save that raises
+    # crashes the process (supervisor restarts fresh), so a dangling pause on
+    # the soon-dead logger is irrelevant.
+    _t_ckpt_start = time.perf_counter()
+    if metric_logger is not None:
+        metric_logger.pause_perf("ckpt")
     base_path = path
     # Atomic-save layout: write to .tmp, rename to final, prune older.
     tmp_subdir = f"{base_path}/{batch_idx}.tmp"
@@ -460,8 +470,14 @@ def save_dmp_checkpoint(
         else:
             os.replace(tmp_subdir, final_subdir)
         _prune_old_checkpoints(base_path, keep_last_n, final_subdir)
-        logger.info("checkpoint successfully saved → %s", final_subdir)
+        logger.info(
+            "checkpoint successfully saved → %s (wall-time %.2fs)",
+            final_subdir,
+            time.perf_counter() - _t_ckpt_start,
+        )
     torch.distributed.barrier()
+    if metric_logger is not None:
+        metric_logger.resume_perf("ckpt")
 
 
 @gin.configurable
