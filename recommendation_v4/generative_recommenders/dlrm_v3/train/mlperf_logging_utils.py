@@ -69,7 +69,8 @@ class MLPerfLogger:
         log_path: Optional[str] = None,
         default_stack_offset: int = 2,
         benchmark_name: str = "hstu",
-        submitter_name: str = "reference_implementation",
+        submitter_name: str = "AMD",
+        submission_platform: str = "MI355X",
     ):
         self.enabled: bool = _MLLOG_AVAILABLE
         # Use the EXPLICIT caller rank: this is built before init_process_group,
@@ -77,6 +78,7 @@ class MLPerfLogger:
         self.rank: int = rank if rank is not None else _rank()
         self.benchmark_name: str = benchmark_name
         self.submitter_name: str = submitter_name
+        self.submission_platform: str = submission_platform
         self._logger = None
         if not self.enabled:
             return
@@ -130,16 +132,211 @@ class MLPerfLogger:
         if self.enabled and self.rank == 0:
             self._logger.end(key=key, value=value, metadata=metadata or {})
 
-    def submission_info(self, benchmark_name: str, submitter_name: str) -> None:
+    def submission_info(self) -> None:
         """Emit the five SUBMISSION_* events required for a valid submission."""
         if not (self.enabled and self.rank == 0):
             return
         c = mllog_constants
-        self.event(key=c.SUBMISSION_BENCHMARK, value=benchmark_name)
-        self.event(key=c.SUBMISSION_ORG, value=submitter_name)
+        self.event(key=c.SUBMISSION_BENCHMARK, value=self.benchmark_name)
+        self.event(key=c.SUBMISSION_ORG, value=self.submitter_name)
         self.event(key=c.SUBMISSION_DIVISION, value=c.CLOSED)
         self.event(key=c.SUBMISSION_STATUS, value=c.ONPREM)
-        self.event(key=c.SUBMISSION_PLATFORM, value=submitter_name)
+        self.event(key=c.SUBMISSION_PLATFORM, value=self.submission_platform)
+
+    def log_run_start(
+        self,
+        global_batch_size: int,
+        seed: int,
+        gradient_accumulation_steps: int = 1,
+    ) -> None:
+        """Emit submission info + core hyperparameters, then INIT_STOP + RUN_START.
+
+        Optimizer names/LRs are read from gin (dense Adam + sparse RowWiseAdagrad),
+        resolving env-macro refs to concrete values. Call once on a genuine cold
+        start, after the model is built. INIT_STOP/RUN_START barrier so the
+        timestamp reflects the slowest rank, so ALL ranks must call this together
+        (non-rank-0 / disabled calls no-op the emit but still hit the barrier).
+        """
+        c = self.constants
+        self.submission_info()
+        self.event(key=c.GLOBAL_BATCH_SIZE, value=int(global_batch_size))
+        self.event(
+            key=c.GRADIENT_ACCUMULATION_STEPS, value=int(gradient_accumulation_steps)
+        )
+        self.event(key=c.SEED, value=int(seed))
+        self.event(
+            key=c.OPT_NAME,
+            value=_gin_param("dense_optimizer_factory_and_class.optimizer_name", "Adam"),
+        )
+        self.event(
+            key=c.OPT_BASE_LR,
+            value=_gin_param("dense_optimizer_factory_and_class.learning_rate", None),
+        )
+        self.event(
+            key="opt_sparse_name",
+            value=_gin_param(
+                "sparse_optimizer_factory_and_class.optimizer_name", "RowWiseAdagrad"
+            ),
+        )
+        self.event(
+            key="opt_sparse_base_learning_rate",
+            value=_gin_param(
+                "sparse_optimizer_factory_and_class.learning_rate", None
+            ),
+        )
+        self.end(key=c.INIT_STOP, sync=True)
+        self.start(key=c.RUN_START, sync=True)
+
+
+def _gin_param(name: str, default: Any) -> Any:
+    """Read a gin-bound parameter, resolving env-macro refs to concrete values.
+
+    Returns ``default`` if the parameter is unbound or a macro ref cannot be
+    resolved (so env-overridden LRs log as numbers, not unencodable objects).
+    """
+    try:
+        value = gin.query_parameter(name)
+    except (ValueError, KeyError):
+        return default
+    if hasattr(value, "scoped_configurable_fn"):
+        try:
+            return value.scoped_configurable_fn()
+        except Exception:
+            return default
+    return value
+
+
+class MLPerfRunTracker:
+    """Centralized MLPerf run-boundary state machine for the streaming loop.
+
+    Owns the block/eval/run markers, the SAMPLES_COUNT/EPOCH_NUM progress
+    metadata, and the convergence decision (per-window AUC vs the configured
+    ``auc_threshold``). Every method no-ops when ``logger`` is None, so the
+    streaming loop can call them unconditionally. The convergence metric is
+    fixed to per-window AUC (higher-is-better).
+    """
+
+    # MetricsLogger.compute key short name for per-window AUC.
+    _EVAL_METRIC_SHORT = "window_auc"
+
+    def __init__(
+        self,
+        logger: Optional[MLPerfLogger],
+        metric_logger: Any,
+        total_train_samples: int,
+        rank: int,
+        device: Any,
+    ):
+        self.logger = logger
+        self.metric_logger = metric_logger
+        self.total_train_samples = int(total_train_samples)
+        self.rank = int(rank)
+        self.device = device
+        self.run_stopped: bool = False
+        # Idempotency flag so the boundary helpers and the outer loop can both
+        # call start/stop without risking a double BLOCK_START/STOP.
+        self._block_open: bool = False
+
+    @property
+    def enabled(self) -> bool:
+        return self.logger is not None
+
+    def _progress(self) -> Dict[str, Any]:
+        c = self.logger.constants
+        samples = self.metric_logger.cumulative_train_samples
+        epoch = (
+            samples / self.total_train_samples if self.total_train_samples > 0 else 0.0
+        )
+        return {c.SAMPLES_COUNT: samples, c.EPOCH_NUM: epoch}
+
+    def log_dataset_sizes(self, eval_samples: Optional[int] = None) -> None:
+        if not self.enabled:
+            return
+        c = self.logger.constants
+        self.logger.event(key=c.TRAIN_SAMPLES, value=self.total_train_samples)
+        if eval_samples is not None:
+            self.logger.event(key=c.EVAL_SAMPLES, value=int(eval_samples))
+
+    def block_start(self) -> None:
+        if self.enabled and not self._block_open:
+            self.logger.start(
+                key=self.logger.constants.BLOCK_START, metadata=self._progress()
+            )
+            self._block_open = True
+
+    def block_stop(self) -> None:
+        if self.enabled and self._block_open:
+            self.logger.end(
+                key=self.logger.constants.BLOCK_STOP, metadata=self._progress()
+            )
+            self._block_open = False
+
+    def eval_start(self) -> None:
+        if self.enabled:
+            self.logger.start(
+                key=self.logger.constants.EVAL_START, metadata=self._progress()
+            )
+
+    def _target_metric(self, metrics: Dict[str, float]) -> Optional[float]:
+        # Key format `metric/{prefix}_{name}/{task}` (see MetricsLogger.compute);
+        # match the per-window AUC short name.
+        for key, val in metrics.items():
+            short = key.split("/")[-2] if "/" in key else key
+            if short == self._EVAL_METRIC_SHORT:
+                return float(val)
+        return None
+
+    def _meets_target(self, value: Optional[float]) -> bool:
+        thr = self.metric_logger.auc_threshold
+        if value is None or thr is None:
+            return False
+        return value >= thr
+
+    def run_stop(self, status: object) -> None:
+        # Emit RUN_STOP exactly once, with an all-rank barrier so the timestamp
+        # reflects the slowest rank (MLPerf requirement).
+        if not self.enabled or self.run_stopped:
+            return
+        c = self.logger.constants
+        self.logger.end(
+            key=c.RUN_STOP,
+            metadata={c.STATUS: status, **self._progress()},
+            sync=True,
+        )
+        self.run_stopped = True
+
+    def eval_stop(self, eval_metrics: Dict[str, float]) -> bool:
+        # Emit EVAL_ACCURACY + EVAL_STOP, early SUCCESS RUN_STOP on target.
+        # Rank 0 decides + broadcasts the stop bool so all ranks break in lockstep
+        # (a per-rank test could diverge and hang the next all-to-all).
+        if not self.enabled:
+            return False
+        c = self.logger.constants
+        eval_value = self._target_metric(eval_metrics)
+        if eval_value is not None:
+            self.logger.event(
+                key=c.EVAL_ACCURACY, value=eval_value, metadata=self._progress()
+            )
+        self.logger.end(key=c.EVAL_STOP, metadata=self._progress())
+        decision = torch.zeros(1, device=self.device)
+        if self.rank == 0 and not self.run_stopped and self._meets_target(eval_value):
+            decision[0] = 1.0
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.broadcast(decision, src=0)
+        should_stop = bool(decision.item() > 0.5)
+        if should_stop:
+            # All ranks agree -> all reach the RUN_STOP barrier together.
+            self.run_stop(c.SUCCESS)
+        return should_stop
+
+    def finalize(self, final_metrics: Dict[str, float]) -> None:
+        # End-of-run RUN_STOP when the target was never crossed: SUCCESS iff the
+        # final eval metric meets the target, else ABORTED.
+        if not self.enabled or self.run_stopped:
+            return
+        c = self.logger.constants
+        success = self._meets_target(self._target_metric(final_metrics))
+        self.run_stop(c.SUCCESS if success else c.ABORTED)
 
 
 @gin.configurable
@@ -147,19 +344,35 @@ def get_mlperf_logger(
     rank: int = 0,
     log_path: str = "",
     benchmark_name: str = "hstu",
-    submitter_name: str = "reference_implementation",
+    submitter_name: str = "AMD",
+    submission_platform: str = "MI355X",
 ) -> Optional[MLPerfLogger]:
     """Build a configured :class:`MLPerfLogger`, or ``None`` if unavailable.
 
     Path defaults to ``$MLPERF_LOG_PATH``. Returns ``None`` (not a disabled
     logger) so callers' ``is not None`` guards cleanly skip logging.
+
+    Disable knob: set ``$MLPERF_LOGGING=0`` (or false/no/off) to turn the whole
+    MLPerf event stream off — returns ``None`` on EVERY rank, so the train loop's
+    ``is not None`` guards skip emission AND the cross-rank train-loss all-reduce
+    in lockstep. Default (unset / "1") = enabled, preserving prior behavior.
     """
     if not _MLLOG_AVAILABLE:
         return None
+    if os.environ.get("MLPERF_LOGGING", "1").strip().lower() in (
+        "0", "false", "no", "off",
+    ):
+        logger.info("MLPerf logging disabled via $MLPERF_LOGGING=0")
+        return None
     resolved_path = os.environ.get("MLPERF_LOG_PATH", log_path)
+    # SUBMISSION_PLATFORM defaults to "MI355X"; override per-submitter via env.
+    resolved_platform = os.environ.get(
+        "MLPERF_SUBMISSION_PLATFORM", submission_platform
+    )
     return MLPerfLogger(
         rank=rank,
         log_path=resolved_path,
         benchmark_name=benchmark_name,
         submitter_name=submitter_name,
+        submission_platform=resolved_platform,
     )

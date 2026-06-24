@@ -325,6 +325,14 @@ sts/env_int.default = 150
 streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
 mlf/env_int.key     = "METRIC_LOG_FREQ"
 mlf/env_int.default = 50
+# MLPerf train_loss event cadence (global train steps), INDEPENDENT of
+# METRIC_LOG_FREQ above. 0 (default) = fall back to METRIC_LOG_FREQ, preserving
+# the prior coupled behavior. Set $MLPERF_TRAIN_LOSS_LOG_FREQ>0 to log the MLPerf
+# train_loss event at a different rate than the console/TB metrics. Disable the
+# whole MLPerf stream with $MLPERF_LOGGING=0.
+streaming_train_eval_loop.mlperf_train_loss_log_frequency = @mltlf/env_int()
+mltlf/env_int.key     = "MLPERF_TRAIN_LOSS_LOG_FREQ"
+mltlf/env_int.default = 0
 # Diagnostic: log per-batch unique/total embedding-id counts on logged steps
 # (rank 0). Quantifies the user-major batching redundancy and the realized
 # diversity from get_dataset.streaming_shuffle_fraction. Off; set $DIAG_UNIQUE_EMB=1.
@@ -453,11 +461,8 @@ MetricsLogger.world_size = 8
 MetricsLogger.auc_threshold = @at/env_float()
 at/env_float.key     = "AUC_THRESHOLD"
 at/env_float.default = 0.80275
-# Eval metric driving EVAL_ACCURACY + early-stop: "{window|lifetime}_{auc|gauc|
-# accuracy|ne}" (default window_auc). Override via $EVAL_ACCURACY_AUC_MODE.
-streaming_train_eval_loop.eval_accuracy_auc_mode = @eaam/env_str()
-eaam/env_str.key     = "EVAL_ACCURACY_AUC_MODE"
-eaam/env_str.default = "window_auc"
+# EVAL_ACCURACY + early-stop are driven by per-window AUC (window_auc) vs the
+# threshold above.
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and
 # the eval cumulative ("lifetime_*") AUC. Both default to "binned":
 #   "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an O(bins) score
