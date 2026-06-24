@@ -174,7 +174,7 @@ orchestrate() {
   echo "[$(date)] launch_slurm/orchestrate: job=${SLURM_JOB_ID:-?} nodes=${SLURM_JOB_NODELIST:-?} nnodes=${SLURM_NNODES:-1}" | tee -a "$LOG"
   echo "[$(date)] resolved SCRIPT_PATH=$SCRIPT_PATH REPO=$REPO" | tee -a "$LOG"
   echo "[$(date)] config: MODE=$MODE START_TS=$START_TS NUM_TRAIN_TS=$NUM_TRAIN_TS NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES METRIC_LOG_FREQ=$METRIC_LOG_FREQ" | tee -a "$LOG"
-  echo "[$(date)] lr-override: DENSE_LR=${DENSE_LR:-<unset:gin default 0.001>} SPARSE_LR=${SPARSE_LR:-<unset:gin default 0.001>}" | tee -a "$LOG"
+  echo "[$(date)] lr-override: DENSE_LR=${DENSE_LR:-<unset:gin default 1e-7>} SPARSE_LR=${SPARSE_LR:-<unset:gin default 1e-7>}" | tee -a "$LOG"
 
   # Rendezvous resolved on the HOST (the container image has no SLURM client).
   MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" 2>/dev/null | head -1)
@@ -314,6 +314,7 @@ orchestrate() {
       ${DIAG_EMB_STEPS:+-e DIAG_EMB_STEPS=$DIAG_EMB_STEPS} \
       ${OUTPUT_TRACE:+-e OUTPUT_TRACE=$OUTPUT_TRACE} \
       ${MIN_HISTORY:+-e MIN_HISTORY=$MIN_HISTORY} \
+      ${HISTORY_STRATEGY:+-e HISTORY_STRATEGY=$HISTORY_STRATEGY} \
       ${SEED:+-e SEED=$SEED} \
       ${DENSE_LR:+-e DENSE_LR=$DENSE_LR} \
       ${SPARSE_LR:+-e SPARSE_LR=$SPARSE_LR} \
