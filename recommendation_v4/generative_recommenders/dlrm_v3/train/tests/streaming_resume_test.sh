@@ -40,10 +40,9 @@ KEEP=0
 # correctness gates are the functional-invariant checks below (RNG restored,
 # resumed-at-correct-step, atomic/keep_last_n), not this number.
 ATOL=0.15
-SCRATCH=${SCRATCH:-$HOME/yambda_runs}
-CKPT_ROOT=${CKPT_ROOT:-$SCRATCH/ckpts_resume_test}
-LOG_DIR=${LOG_DIR:-$SCRATCH/streaming_resume_test}
-REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}
+CKPT_ROOT=/apps/chcai/ckpts_resume_test
+LOG_DIR=/apps/chcai/streaming_resume_test
+REPO=/home/chcai/training/recommendation_v4
 
 while [[ $# -gt 0 ]]; do
     case $1 in
