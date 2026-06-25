@@ -1,0 +1,22 @@
+# MD5 checksums for the preprocessed yambda-5b dataset (processed_5b/).
+#
+# Format: standard `md5sum` output -> "<md5hash>  <relative_path>".
+# Paths are relative to ${DLRM_DATA_PATH}/processed_5b/.
+#
+# These hashes are PLACEHOLDERS (TODO). They must be generated from a canonical
+# preprocessing run before this benchmark is submitted, e.g.:
+#
+#   cd "${DLRM_DATA_PATH}/processed_5b"
+#   md5sum train_sessions.parquet test_events.parquet session_index.parquet \
+#          item_popularity.npy split_meta.json \
+#     > <repo>/md5sums_yambda_5b_processed.txt
+#
+# Until then `verify_dataset.sh` falls back to an existence/layout check and
+# warns that checksums are not yet pinned.
+#
+# TODO(rcp/data): replace the lines below with real md5 hashes.
+TODO_GENERATE_HASH  train_sessions.parquet
+TODO_GENERATE_HASH  test_events.parquet
+TODO_GENERATE_HASH  session_index.parquet
+TODO_GENERATE_HASH  item_popularity.npy
+TODO_GENERATE_HASH  split_meta.json
