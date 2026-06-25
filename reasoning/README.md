@@ -102,7 +102,6 @@ export NEMO_GYM_SWE_SIF_DIR=<host directory containing SWE task SIF images>
 # Optional authentication/logging.
 export HF_TOKEN=<huggingface token>
 export WANDB_API_KEY=<wandb token>
-export MLPERF_TARGET_ACCURACY=<target accuracy>      # default: 1.0
 export GRPO_SEED=<integer seed>                      # default: random per launch
 
 # Defaults are defined by the launcher and may be overridden here.
@@ -117,7 +116,7 @@ export EXTRA_MOUNTS=<host_path>:<container_path>[,<host_path>:<container_path>..
 bash examples/nemo_gym/launch_nemo_gym_multinode_training.sh
 ```
 
-The launcher also accepts `NODES` to override `TRAIN_NODES + GEN_NODES`, `CONTAINER_REPO_LOCATION` to override the baked checkout path `/opt/nemo-rl`, `CONTAINER_INPUT_ROOT` and the `CONTAINER_*` path variables to override container-side paths, `SLURM_EXCLUDE` to exclude problematic nodes, and `SLURM_COMMENT`/`SLURM_IDLE_EXEMPT_MINS` to customize the idle-GPU reaper exemption.
+The launcher also accepts `NODES` to override `TRAIN_NODES + GEN_NODES`, `CONTAINER_REPO_LOCATION` to override the baked checkout path `/opt/nemo-rl`, `CONTAINER_INPUT_ROOT` and the `CONTAINER_*` path variables to override container-side paths.
 
 # 3. Dataset/Environment
 
