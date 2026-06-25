@@ -80,10 +80,11 @@ apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 # PARSE NOTE: seed_everything() runs right before make_model() in train_ranker
 # (after the full gin parse), so this binding resolves in the second parse where
 # env_int is registered. Override per-run via $SEED.
-# Default -1 draws a fresh random seed each run; pin $SEED >= 0 to reproduce.
+# Default 1 gives a fixed, reproducible seed each run; override $SEED to vary it
+# (set $SEED = -1 to draw a fresh random seed per run).
 seed_everything.seed = @seed/env_int()
 seed/env_int.key     = "SEED"
-seed/env_int.default = -1
+seed/env_int.default = 1
 
 # $DECORRELATE_DROPOUT — re-seed torch/cuda with $SEED + rank after init so HSTU
 # dropout masks differ per data-parallel rank. 1 = on, 0 = identical masks (default).
@@ -457,10 +458,11 @@ tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
 tbp/env_path.default = ""
 MetricsLogger.world_size = 8
 # MLPerf convergence target: run stops when the selected eval AUC reaches it.
-# Override via $AUC_THRESHOLD.
+# Default 1.0 is unreachable, so the run trains through all windows (no early
+# stop) out of the box; set $AUC_THRESHOLD=0.80275 for the MLPerf target.
 MetricsLogger.auc_threshold = @at/env_float()
 at/env_float.key     = "AUC_THRESHOLD"
-at/env_float.default = 0.80275
+at/env_float.default = 1.0
 # EVAL_ACCURACY + early-stop are driven by per-window AUC (window_auc) vs the
 # threshold above.
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and
