@@ -9,4 +9,4 @@
 [submodule "reasoning/RL"]
 	path = reasoning/RL
 	url = https://github.com/CarlosGomes98/RL.git
-	branch = mlperf-training
+	branch = mlperf-training-qwen35
