@@ -282,9 +282,19 @@ Architecture values below are taken from the [Hugging Face model card](https://h
 
 | **Component** | **Architecture** | **Parameters** | **Technical Details** |
 |---------------|------------------|----------------|-----------------------|
-| **Training runtime** | Megatron-Core through NeMo-RL | Same policy weights | TP4 x PP2 x CP1, EP16, BF16 |
+| **Training runtime** | Megatron-Bridge and Megatron-Core through NeMo-RL | Same policy weights | TP4 x PP2 x CP1, EP16, BF16 |
 | **Generation runtime** | vLLM | Same policy weights | TP8, EP8, 64k benchmark context, HTTP server exposed for NeMo-Gym |
 | **SWE environment** | NeMo-Gym + OpenHands | N/A | CodeActAgent, max 30 turns |
+
+Source revisions identify the checked-out editable packages used by the reference implementation.
+
+| **Runtime package** | **Package version** | **Source revision** |
+|---------------------|---------------------|---------------------|
+| NeMo-RL | `0.6.0` | `e4d0b38c` |
+| Megatron-Bridge | `0.5.0` | `95e5f38f` |
+| Megatron-Core | `0.18.0` | `d30c3ae54` |
+| vLLM | `0.17.1` | PyPI package pin |
+| NeMo-Gym | `0.3.0rc0` | `1a4912e` |
 
 ### Weight and bias initialization
 
