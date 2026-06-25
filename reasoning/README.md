@@ -1,18 +1,18 @@
 # 1. Problem
 
-## Reasoning - GRPO with NeMo-Gym SWE/OpenHands.
+## SWE Agent Reinforcement Learning  - GRPO with NeMo-Gym SWE/OpenHands.
 
-[NeMo-RL](https://github.com/CarlosGomes98/RL) provides the implementation used for this benchmark. The benchmark trains `Qwen/Qwen3-235B-A22B-Instruct-2507` with GRPO against a NeMo-Gym software-engineering environment driven by an OpenHands SWE agent.
+[NeMo-RL](https://github.com/CarlosGomes98/RL) provides the implementation used for this benchmark. The benchmark uses reinforcement learning to train `Qwen/Qwen3.5-397B-A17B` with GRPO against a NeMo-Gym software-engineering environment driven by an OpenHands SWE agent.
 
-The relevant config files are under `RL/examples/nemo_gym`. The benchmark launch entrypoint is `RL/examples/nemo_gym/launch_nemo_gym_multinode_training.sh`, using `RL/examples/nemo_gym/grpo_qwen3_235b_swe_openhands_async.yaml`.
+The task is to improve the SWE agent's accuracy in solving held-out R2E-Gym software-engineering tasks. A rollout receives reward 1 when the generated patch passes the task evaluation and reward 0 otherwise.
 
-Formal benchmark description: <to be completed>
+The relevant config files are under `RL/examples/nemo_gym` and `RL/qwen_35`. The benchmark launch entrypoint is `RL/examples/nemo_gym/launch_nemo_gym_multinode_training.sh`, using `RL/qwen_35/configs/grpo_qwen35_397b_swe_openhands_async_benchmark.yaml`.
 
 # 2. Directions
 
 ## Steps to configure machine
 
-To use this repository, please ensure your system can run containers and has appropriate GPU support.
+To use this repository, please ensure your have access to a SLURM cluster with Enroot/Pyxis and at least 64x4 GB200 GPUs.
 
 ### Container setup
 
@@ -27,7 +27,7 @@ docker buildx build \
   .
 ```
 
-The Dockerfile overlays the SWE/NeMo-Gym pieces on top of `nvcr.io/nvidia/nemo-rl:v0.6.0` and prefetches Gym virtual environments for `examples/nemo_gym/grpo_qwen3_235b_swe_openhands_async.yaml`.
+The Dockerfile overlays the SWE/NeMo-Gym pieces on top of `nvcr.io/nvidia/nemo-rl:v0.6.0` and prefetches Gym virtual environments for `examples/nemo_gym/grpo_qwen35_397b_swe_openhands_async.yaml`.
 
 ## Steps to download and verify data
 
@@ -35,19 +35,19 @@ The run requires the following artifacts:
 
 | Artifact | Description | Status |
 |---|---|---|
-| Policy model | Host directory containing `Qwen/Qwen3-235B-A22B-Instruct-2507`, passed as `HF_CKPT_PATH`, mounted into the container, and exposed to the recipe through `CONTAINER_HF_CKPT_PATH` | <to be completed> |
-| Megatron-Core checkpoint cache | Host directory for the HF-to-Megatron converted checkpoint cache, passed as `NRL_MEGATRON_CHECKPOINT_DIR` and mounted into the container | <to be completed> |
-| Training JSONL | Host path to NeMo-Gym SWE training tasks, passed as `NEMO_GYM_SWE_TRAIN_DATA_PATH` and mounted into the container | <to be completed> |
-| Validation JSONL | Host path to NeMo-Gym SWE validation tasks, passed as `NEMO_GYM_SWE_VALIDATION_DATA_PATH` and mounted into the container | <to be completed> |
-| Task containers | Host directory containing Apptainer/Singularity SIF images in the layout expected by the recipe, passed as `NEMO_GYM_SWE_SIF_DIR` and mounted into the container | <to be completed> |
+| Policy model | Host directory containing `Qwen/Qwen3.5-397B-A17B`, passed as `HF_CKPT_PATH`, mounted into the container, and exposed to the recipe through `CONTAINER_HF_CKPT_PATH` | Download from Hugging Face |
+| Megatron-Core checkpoint cache | Host directory for the HF-to-Megatron converted checkpoint cache, passed as `NRL_MEGATRON_CHECKPOINT_DIR` and mounted into the container | Empty directory is allowed on first run |
+| Training JSONL | Host path to NeMo-Gym SWE training tasks, passed as `NEMO_GYM_SWE_TRAIN_DATA_PATH` and mounted into the container | Build with `RL/tools/create_r2e_gym_easy_subset_jsonl.py` |
+| Validation JSONL | Host path to NeMo-Gym SWE validation tasks, passed as `NEMO_GYM_SWE_VALIDATION_DATA_PATH` and mounted into the container | Build with `RL/tools/create_r2e_gym_easy_subset_jsonl.py` |
+| Task containers | Host directory containing Apptainer/Singularity SIF images in the layout expected by the recipe, passed as `NEMO_GYM_SWE_SIF_DIR` and mounted into the container | Build with `RL/docker/dataset-processing-container` |
 
 To download the training and validation JSONL files using the HuggingFace CLI:
 
 ```bash
-; hf download hfilaretov/Benchmark-R2E-Gym-Easy --repo-type dataset --local-dir hfilaretov__Benchmark-R2E-Gym-Easy
+hf download hfilaretov/Benchmark-R2E-Gym-Easy --repo-type dataset --local-dir hfilaretov__Benchmark-R2E-Gym-Easy
 ...
 
-; tree hfilaretov__Benchmark-R2E-Gym-Easy
+tree hfilaretov__Benchmark-R2E-Gym-Easy
 hfilaretov__Benchmark-R2E-Gym-Easy
 ├── benchmark_r2e_gym_easy_train.jsonl
 ├── benchmark_r2e_gym_easy_val.jsonl
@@ -59,7 +59,7 @@ hfilaretov__Benchmark-R2E-Gym-Easy
 The environment also requires per-task SIF images. The recipe resolves task containers from `sif_dir` with this template:
 
 ```yaml
-- "${sif_dir}/r2egym_{instance_id}.sif"
+- "${sif_dir}/r2egym/{instance_id}.sif"
 ```
 
 The task containers have to be built and converted to SIF format, please see [Section 3](#data-preprocessing) below.
@@ -73,9 +73,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install huggingface_hub
 
-export HF_CKPT_PATH=$(pwd)/hf/Qwen/Qwen3-235B-A22B-Instruct-2507
+export HF_CKPT_PATH=$(pwd)/hf/Qwen/Qwen3.5-397B-A17B
 mkdir -p "$HF_CKPT_PATH"
-HF_TOKEN=<your hf token> hf download Qwen/Qwen3-235B-A22B-Instruct-2507 --local-dir "$HF_CKPT_PATH"
+HF_TOKEN=<your hf token> hf download Qwen/Qwen3.5-397B-A17B --local-dir "$HF_CKPT_PATH"
 ```
 
 The launcher also creates and mounts a host Hugging Face cache. Set `HF_HOME` before launch if you want to use a cache outside `$(pwd)/.cache`.
@@ -102,13 +102,14 @@ export NEMO_GYM_SWE_SIF_DIR=<host directory containing SWE task SIF images>
 # Optional authentication/logging.
 export HF_TOKEN=<huggingface token>
 export WANDB_API_KEY=<wandb token>
+export MLPERF_TARGET_ACCURACY=<target reward mean>  # default: 1.0 until the target is finalized
 export GRPO_SEED=<integer seed>                      # default: random per launch
 
 # Defaults are defined by the launcher and may be overridden here.
 export TRAIN_NODES=<number of training nodes>        # default: 16
 export GEN_NODES=<number of generation nodes>        # default: 24
 export SLURM_TIME=<walltime>                         # default: 1:0:0
-export RECIPE=examples/nemo_gym/grpo_qwen3_235b_swe_openhands_async.yaml
+export RECIPE=qwen_35/configs/grpo_qwen35_397b_swe_openhands_async_benchmark.yaml
 
 # Optional extra mounts. The launcher automatically mounts the paths above.
 export EXTRA_MOUNTS=<host_path>:<container_path>[,<host_path>:<container_path>...]
@@ -127,9 +128,14 @@ We use a subset of the [R2E-Gym/R2E-Gym-Subset](https://huggingface.co/datasets/
 ### Data preprocessing
 
 The recipe consumes prebuilt JSONL files through from [Benchmark-R2E-Gym-Easy](https://huggingface.co/datasets/hfilaretov/Benchmark-R2E-Gym-Easy).
-Each row represents a software-engineering task for the NeMo-Gym environment.
+Each row represents a software-engineering task for the NeMo-Gym environment. We filtered the original `R2E-Gym/R2E-Gym-Subset` dataset based on these two conditions:
+* whether an environment container image successfully builds for both x86_64 and aarch64
+* complexity using the following condition:
+  ```
+  where num_non_test_func_methods == 1 | where num_non_test_files == 1 | where num_non_test_lines <= 20
+  ```
 
-To build the JSONL files, please run:
+To build the JSONL files yourself, please run:
 
 ```bash
 # Optional token
@@ -146,7 +152,7 @@ uv run --with pyarrow python RL/tools/create_r2e_gym_easy_subset_jsonl.py \
 You'll have the relevant output files in `outputs`:
 
 ```bash
-; wc -l outputs/data/*.jsonl
+wc -l outputs/data/*.jsonl
      721 outputs/data/benchmark_r2e_gym_easy_train.jsonl
      256 outputs/data/benchmark_r2e_gym_easy_val.jsonl
     4578 outputs/data/r2e_gym_subset_full.jsonl
@@ -221,15 +227,15 @@ data:
 sif_dir: ${oc.env:NEMO_GYM_SWE_SIF_DIR}
 ```
 
-The official split procedure is <to be completed>.
+The official split is defined by the fixed instance-id files `RL/tools/train-instance-ids.txt` and `RL/tools/val-instance-ids.txt`. The conversion script validates that the lists do not overlap, writes matching rows to `benchmark_r2e_gym_easy_train.jsonl` and `benchmark_r2e_gym_easy_val.jsonl`, and leaves rows in neither list only in `r2e_gym_subset_full.jsonl`.
 
 ### Training data order
 
-Training data order is preserved by the recipe with `data.shuffle: false`. The intended ordering or curriculum of the training JSONL is <to be completed>.
+Training data order is preserved by the recipe with `data.shuffle: false`. The converter writes the training JSONL in the order encountered in the converted R2E-Gym subset after filtering by `RL/tools/train-instance-ids.txt`; the benchmark does not add runtime shuffling.
 
 ### Test data order
 
-Validation data order is preserved by the recipe. The config uses `grpo.max_val_samples: null`, so validation thoroughness is inferred from the validation dataset size unless overridden.
+Validation data order is preserved by the recipe. The config uses `grpo.max_val_samples: null`, so validation thoroughness is inferred from the validation dataset size unless overridden. The benchmark does not add runtime shuffling of validation data.
 
 ### Simulation environment (RL models only)
 
@@ -239,22 +245,48 @@ The benchmark uses NeMo-Gym with the SWE/OpenHands agent configuration. Rollouts
 
 ### Publication/Attribution
 
-Model and implementation attribution: <to be completed>
+The policy starts from the [`Qwen/Qwen3.5-397B-A17B`](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) checkpoint released by the Qwen team. The reference training implementation is NeMo-RL with the Qwen 3.5.
 
-### List of layers
+### Model details
+
+Architecture values below are taken from the [Hugging Face model card](https://huggingface.co/Qwen/Qwen3.5-397B-A17B) and [`config.json`](https://huggingface.co/Qwen/Qwen3.5-397B-A17B/blob/main/config.json).
+
+| Config | Value |
+| :-- | :-- |
+| # Total Parameters | 397B |
+| # Active Parameters | 17B |
+| # Layers | 60 |
+| Hidden Layout | 3 Gated DeltaNet + 1 Gated Attention layers per block (15 blocks) |
+| Attention Type | Hybrid Gated DeltaNet + Gated Attention |
+| Gated DeltaNet Heads (V / QK) | 64 / 16 |
+| Gated DeltaNet Head Dimension | 128 |
+| Gated Attention Heads (Q / KV) | 32 / 2 |
+| Gated Attention Head Dimension | 256 |
+| RoPE Dimension | 64 |
+| Model Dimension | 4,096 |
+| # Routed Experts | 512 |
+| # Active Routed Experts | 10 |
+| # Shared Experts | 1 |
+| Expert Intermediate Dimension | 1,024 |
+| Activation | SiLU (SwiGLU in MoE) |
+| Normalization | RMSNorm |
+| Vocab Size | 248,320 |
+| Native Context Length | 262,144 |
+| Benchmark Context Length | 65,536 |
+
+### Benchmark runtime
 
 | **Component** | **Architecture** | **Parameters** | **Technical Details** |
 |---------------|------------------|----------------|-----------------------|
-| **Policy model** | Qwen3 MoE Transformer | 235B total, 22B active | `Qwen/Qwen3-235B-A22B-Instruct-2507` |
-| **Training runtime** | Megatron-Core through NeMo-RL | Same policy weights | TP4 x CP4 x PP8 minimum training replica; expert model parallel size 16 |
-| **Generation runtime** | vLLM | Same policy weights | TP16, BF16, HTTP server exposed for NeMo-Gym |
-| **SWE environment** | NeMo-Gym + OpenHands | N/A | Agent max turns 15 |
-
-Exact layer-by-layer model description: <to be completed>
+| **Training runtime** | Megatron-Core through NeMo-RL | Same policy weights | TP4 x PP2 x CP1, EP16, BF16 |
+| **Generation runtime** | vLLM | Same policy weights | TP8, EP8, 64k benchmark context, HTTP server exposed for NeMo-Gym |
+| **SWE environment** | NeMo-Gym + OpenHands | N/A | CodeActAgent, max 30 turns |
 
 ### Weight and bias initialization
 
-Training starts from a pretrained Hugging Face checkpoint converted to Megatron-Core format. Random initialization is not used for the policy model. Any benchmark-specific initialization details are <to be completed>.
+Training starts from the pretrained Hugging Face checkpoint converted to Megatron-Core format. Random initialization is not used for the policy model. The first run can populate `NRL_MEGATRON_CHECKPOINT_DIR` with the converted checkpoint cache.
+
+MoE router weights are kept frozen.
 
 ### Loss function
 
@@ -262,7 +294,9 @@ The recipe uses token-level GRPO with reward normalization and a leave-one-out b
 
 ### Optimizer
 
-Adam with distributed optimizer state. The async recipe sets `lr: 3.0e-6`, `weight_decay: 0.0`, BF16 training, and FP32 optimizer parameters.
+TODO: final
+
+AdamW with distributed optimizer state. The benchmark config sets `lr: 2.0e-6`, `min_lr: 2.0e-6`, `weight_decay: 0.0`, 2 warmup steps, BF16 training, and FP32 optimizer parameters.
 
 ### Precision
 
@@ -272,16 +306,25 @@ The recipe uses BF16 policy precision by default.
 
 ### Quality metric
 
-The checkpointing metric is `val:total_reward/mean`, computed from NeMo-Gym validation rollouts.
+The quality metric is `val:accuracy`, computed from NeMo-Gym validation rollouts.
 
 ### Quality target
 
-<to be completed>
+TODO: final
+
+The quality target is pending MLCommons ratification. The current launcher reads `MLPERF_TARGET_ACCURACY` and defaults to `0.6`.
 
 ### Evaluation frequency
 
-The async recipe sets `grpo.val_period: 5`, `grpo.val_at_start: true`, and `grpo.val_at_end: true`.
+TODO: final
+
+The benchmark recipe sets:
+```
+grpo.val_period: 2
+grpo.val_at_start: true
+grpo.val_at_end: true
+```
 
 ### Evaluation thoroughness
 
-The validation set size is <to be completed>.
+The validation JSONL contains 256 R2E-Gym tasks and each evaluation uses the full validation set.
