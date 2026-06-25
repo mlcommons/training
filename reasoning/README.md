@@ -129,6 +129,30 @@ We use a subset of the [R2E-Gym/R2E-Gym-Subset](https://huggingface.co/datasets/
 The recipe consumes prebuilt JSONL files through from [Benchmark-R2E-Gym-Easy](https://huggingface.co/datasets/hfilaretov/Benchmark-R2E-Gym-Easy).
 Each row represents a software-engineering task for the NeMo-Gym environment.
 
+To build the JSONL files, please run:
+
+```bash
+# Optional token
+export HF_TOKEN=<read-token>
+hf download R2E-Gym/R2E-Gym-Subset --repo-type dataset --local-dir tmp/R2E-Gym__R2E-Gym-Subset
+uv run --with pyarrow python RL/tools/create_r2e_gym_easy_subset_jsonl.py \
+  --dataset-dir tmp/R2E-Gym__R2E-Gym-Subset \
+  --output-dir outputs/data/ \
+  --cache-dir tmp/r2e_repo_cache \
+  --train-ids RL/tools/train-instance-ids.txt \
+  --val-ids RL/tools/val-instance-ids.txt
+```
+
+You'll have the relevant output files in `outputs`:
+
+```bash
+; wc -l outputs/data/*.jsonl
+     721 outputs/data/benchmark_r2e_gym_easy_train.jsonl
+     256 outputs/data/benchmark_r2e_gym_easy_val.jsonl
+    4578 outputs/data/r2e_gym_subset_full.jsonl
+    5555 total
+```
+
 The JSONL files refer to SIF container files that need to be generated.
 This is a two-step process:
 1. Images are built from the repository and git revision specified in the dataset.
