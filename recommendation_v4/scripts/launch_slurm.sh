@@ -58,9 +58,10 @@
 #
 #  B) Filesystems (must be shared/NFS across ALL nodes — this script re-invokes
 #     itself and reads the overlay + data from these paths cluster-wide)
-#     - /home/chcai (repo + this script) and /apps/chcai (scratch: logs, overlay,
-#       baked tar, data, pip tarball). CHANGE both the bind mounts in the
-#       `docker run` (provision) and the default LOG/BAKED_TAR/OVERLAY/PIP_* paths.
+#     - REPO_MOUNT (repo + this script, e.g. /home/<user>) is bind-mounted rw;
+#       DATA_MOUNT (e.g. /apps/chcai) holds the read-only dataset + overlay +
+#       baked tar + pip tarball; SCRATCH (e.g. /home/<user>/yambda_runs) is the
+#       writable log/output root. Override any via env — nothing is user-hardwired.
 #
 #  C) Container image / GPU software stack (tied to the GPU arch + ROCm version)
 #     - IMAGE=rocm/primus:v26.3        : base image. ROCm/AMD-specific.
@@ -113,6 +114,10 @@ BAKED_TAR=${BAKED_TAR:-/apps/chcai/yambda_primus_baked.tar}   # [CLUSTER-SPECIFI
 USE_BAKED=${USE_BAKED:-1}
 OVERLAY=${RDMA_OVERLAY:-/apps/chcai/rdma_host_el9_new}        # [CLUSTER-SPECIFIC] shared-NFS RDMA overlay
 
+REPO_MOUNT=${REPO_MOUNT:-$HOME}              # NFS home holding the repo (must contain $REPO); override if your repo lives elsewhere
+DATA_MOUNT=${DATA_MOUNT:-/apps/chcai}        # shared dataset + RDMA overlay + pip/fbgemm assets (read-only)
+SCRATCH=${SCRATCH:-$HOME/yambda_runs}        # writable output root (logs / tb / traces)
+
 # =============================================================================
 # PHASE: orchestrate  (SLURM batch host)
 # =============================================================================
@@ -127,7 +132,8 @@ orchestrate() {
   [ -f "$SCRIPT_PATH" ] || SCRIPT_PATH="$SELF"
   REPO=$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)
 
-  LOG=${LOG:-/apps/chcai/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
+  mkdir -p "$SCRATCH" 2>/dev/null || true
+  LOG=${LOG:-$SCRATCH/yambda_slurm.${SLURM_JOB_ID:-manual}.log}
 
   # Smoke defaults — override via env for a perf run (see header USAGE).
   MODE=${MODE:-streaming-train-eval}
@@ -215,7 +221,8 @@ orchestrate() {
       echo \"[\$(hostname)] (re)provisioning container\"
       LAUNCH_SLURM_PHASE=provision CONTAINER=$CONTAINER IMAGE=$IMAGE \
         BAKED_IMAGE=$BAKED_IMAGE BAKED_TAR=$BAKED_TAR USE_BAKED=$USE_BAKED \
-        BAKE_IMAGE=${BAKE_IMAGE:-0} RDMA_OVERLAY=$OVERLAY REPO=$REPO bash $SCRIPT_PATH
+        BAKE_IMAGE=${BAKE_IMAGE:-0} RDMA_OVERLAY=$OVERLAY REPO=$REPO \
+        REPO_MOUNT=$REPO_MOUNT DATA_MOUNT=$DATA_MOUNT SCRATCH=$SCRATCH bash $SCRIPT_PATH
     else
       # Container persists across jobs; the reap above only removes FOREIGN GPU
       # containers, so our own '$CONTAINER' can still pin HBM via stray trainer
@@ -263,6 +270,7 @@ orchestrate() {
     _wattempt=\$((_wattempt+1))
     docker exec \
       -e LAUNCH_SLURM_PHASE=worker \
+      -e SCRATCH=$SCRATCH \
       -e SLURM_NNODES=\$SLURM_NNODES \
       -e SLURM_NODEID=\$SLURM_NODEID \
       -e SLURM_PROCID=\$SLURM_PROCID \
@@ -280,6 +288,8 @@ orchestrate() {
       -e NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES \
       -e NUM_EVAL_BATCHES=$NUM_EVAL_BATCHES \
       -e METRIC_LOG_FREQ=$METRIC_LOG_FREQ \
+      ${MLPERF_LOGGING:+-e MLPERF_LOGGING=$MLPERF_LOGGING} \
+      ${MLPERF_TRAIN_LOSS_LOG_FREQ:+-e MLPERF_TRAIN_LOSS_LOG_FREQ=$MLPERF_TRAIN_LOSS_LOG_FREQ} \
       ${STREAMING_SHUFFLE_FRACTION:+-e STREAMING_SHUFFLE_FRACTION=$STREAMING_SHUFFLE_FRACTION} \
       ${STREAMING_SHUFFLE_SEED:+-e STREAMING_SHUFFLE_SEED=$STREAMING_SHUFFLE_SEED} \
       ${NUM_WORKERS:+-e NUM_WORKERS=$NUM_WORKERS} \
@@ -301,12 +311,15 @@ orchestrate() {
       ${IN_WINDOW_CKPT_FREQ:+-e IN_WINDOW_CKPT_FREQ=$IN_WINDOW_CKPT_FREQ} \
       ${CKPT_STEP_FREQ:+-e CKPT_STEP_FREQ=$CKPT_STEP_FREQ} \
       -e TRAIN_SPLIT_PERCENTAGE=${TRAIN_SPLIT_PERCENTAGE:-1.0} \
+      -e AUC_THRESHOLD=${AUC_THRESHOLD:-1.0} \
+      ${MLPERF_SUBMISSION_PLATFORM:+-e MLPERF_SUBMISSION_PLATFORM=$MLPERF_SUBMISSION_PLATFORM} \
       -e SPLIT_SALT=${SPLIT_SALT:-0} \
       -e EVAL_HOLDOUT_TS=${EVAL_HOLDOUT_TS:--1} \
       -e EVAL_HOLDOUT_NUM_WINDOWS=${EVAL_HOLDOUT_NUM_WINDOWS:-1} \
       ${WORKER_CMD:+-e WORKER_CMD=\"$WORKER_CMD\"} \
       ${RUN_NAME:+-e RUN_NAME=$RUN_NAME} \
       ${TENSORBOARD_LOG_PATH:+-e TENSORBOARD_LOG_PATH=$TENSORBOARD_LOG_PATH} \
+      ${MLPERF_LOG_PATH:+-e MLPERF_LOG_PATH=$MLPERF_LOG_PATH} \
       ${CKPT_PATH:+-e CKPT_PATH=$CKPT_PATH} \
       ${SPARSE_A2A_FWD:+-e SPARSE_A2A_FWD=$SPARSE_A2A_FWD} \
       ${SPARSE_A2A_BWD:+-e SPARSE_A2A_BWD=$SPARSE_A2A_BWD} \
@@ -379,9 +392,9 @@ provision() {
     --ulimit memlock=-1:-1 --ulimit stack=67108864:67108864 \
     `# memlock=-1 is REQUIRED for RDMA QP memory registration — do not drop` \
     --security-opt seccomp=unconfined --privileged \
-    -v /home/chcai:/home/chcai \
-    -v /apps/chcai:/apps/chcai \
-    `# [CLUSTER-SPECIFIC] shared-NFS bind mounts: repo + scratch (overlay/logs/data)` \
+    -v "$REPO_MOUNT:$REPO_MOUNT" \
+    -v "$DATA_MOUNT:$DATA_MOUNT" \
+    `# shared-NFS bind mounts: repo home (REPO_MOUNT, rw) + dataset/build assets (DATA_MOUNT)` \
     -w "$REPO" \
     "$RUN_IMAGE" sleep infinity
 
@@ -463,9 +476,13 @@ python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; print(\"impo
 # =============================================================================
 worker() {
   cd "$REPO_ROOT"
-  LOG=${LOG:-/apps/chcai/yambda_5b_8gpu.log}
+  mkdir -p "$SCRATCH" 2>/dev/null || true
+  LOG=${LOG:-$SCRATCH/yambda_5b_8gpu.log}
   # Append (not truncate): under the streaming-e2e supervisor a run may relaunch
   # many times into the SAME $LOG; the supervisor initializes it once at run start.
+  # MLPerf compliance log (rank 0 writes it). Per-job filename so each standalone
+  # sbatch gets a clean log; the e2e supervisor pins MLPERF_LOG_PATH itself.
+  export MLPERF_LOG_PATH=${MLPERF_LOG_PATH:-$SCRATCH/mlperf/yambda_5b_mlperf.${SLURM_JOB_ID:-manual}.log}
   echo "[$(date)] REPO_ROOT=$REPO_ROOT" | tee -a "$LOG"
 
   # polars-u64-idx (NOT stock polars) — yambda parquet's flat-explode overruns
@@ -554,10 +571,20 @@ worker() {
       export NCCL_IB_TIMEOUT=${NCCL_IB_TIMEOUT:-14}
       export NCCL_IGNORE_CPU_AFFINITY=${NCCL_IGNORE_CPU_AFFINITY:-1}
       export RCCL_MSCCL_ENABLE=${RCCL_MSCCL_ENABLE:-0}
-      # GPU-Direct RDMA needs DMABUF/peermem (neither in-container here) — leave
-      # GDR off so RCCL stages through host memory (still real RDMA over bnxt_re).
-      export NCCL_NET_GDR_LEVEL=${NCCL_NET_GDR_LEVEL:-0}
-      echo "[$(date)] NCCL: RDMA over bnxt_re (GID idx ${NCCL_IB_GID_INDEX}, TC ${NCCL_IB_TC}, GDR_LEVEL=${NCCL_NET_GDR_LEVEL}; meta64 bnxt_re config, validated)" | tee -a "$LOG"
+      # GPU-Direct RDMA: ENABLED by default. The brcmrdma host kernel ships the
+      # inbox peer-memory client (`ib_register_peer_memory_client` in
+      # /proc/kallsyms), so RCCL does true GPU<->NIC DMA over bnxt_re instead of
+      # bouncing through host memory. Measured ~+22% throughput at 2 nodes
+      # (65.7%->79.8% weak-scaling efficiency) vs the old host-staged path.
+      # GDR_LEVEL=5 (most permissive) is required so GDR is used even when the GPU
+      # and NIC cross the CPU root complex. NCCL_DMABUF_ENABLE=1 is a harmless
+      # no-op here (kernel lacks CONFIG_DMABUF_MOVE_NOTIFY/CONFIG_PCI_P2PDMA, so
+      # peermem carries it). Enabling is non-fatal: if peermem is ever absent RCCL
+      # just logs "GDR 0" and falls back to host staging. Override with
+      # NCCL_NET_GDR_LEVEL=0 to force the legacy host-staged path.
+      export NCCL_NET_GDR_LEVEL=${NCCL_NET_GDR_LEVEL:-5}
+      export NCCL_DMABUF_ENABLE=${NCCL_DMABUF_ENABLE:-1}
+      echo "[$(date)] NCCL: RDMA over bnxt_re (GID idx ${NCCL_IB_GID_INDEX}, TC ${NCCL_IB_TC}, GDR_LEVEL=${NCCL_NET_GDR_LEVEL}, DMABUF=${NCCL_DMABUF_ENABLE}; meta64 bnxt_re config, validated)" | tee -a "$LOG"
     fi
   fi
   export NCCL_DEBUG=${NCCL_DEBUG:-WARN}

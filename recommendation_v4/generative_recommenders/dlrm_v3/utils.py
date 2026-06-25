@@ -807,7 +807,7 @@ class Profiler:
 
     All knobs are gin-tunable, e.g. in a gin file::
 
-        Profiler.trace_dir = "/apps/chcai/dlrm_runs/exp42/trace"
+        Profiler.trace_dir = "/path/to/results/exp42/trace"
         Profiler.trace_steps = [500, 1000, 5000]
         Profiler.warmup = 5
         Profiler.active = 10
@@ -1031,6 +1031,20 @@ class MetricsLogger:
                 self.regression_metrics["eval"] = _make_reg(window_size)
 
         self.global_step: Dict[str, int] = {"train": 0, "eval": 0}
+        # MLPerf `samples_count` progress unit: global trained samples, persisted
+        # alongside global_step so a resumed run continues the count.
+        self.cumulative_train_samples: int = 0
+        # Whether the MLPerf run markers (RUN_START etc.) were already emitted for
+        # this logical run. Checkpointed so a resume relaunch knows the run is
+        # already open and does NOT re-emit INIT_START/RUN_START (the compliance
+        # checker requires EXACTLY_ONE); the resumed process continues the same
+        # event stream and emits the single RUN_STOP at convergence/end.
+        self.mlperf_run_started: bool = False
+        self._rank: int = int(rank)
+        # Optional MLPerf logger + LR accessor wired by the streaming loop (duck-
+        # typed to avoid a train-module import cycle); drives the train_loss event.
+        self.mlperf_logger: Optional[Any] = None
+        self.lr_getter: Optional[Callable[[], float]] = None
         self.tb_logger: Optional[SummaryWriter] = None
         if tensorboard_log_path != "":
             self.tb_logger = SummaryWriter(log_dir=tensorboard_log_path, purge_step=0)
@@ -1079,6 +1093,11 @@ class MetricsLogger:
                 + (time.perf_counter() - t0)
             )
             self._perf_pause[category] = None
+
+    @property
+    def auc_threshold(self) -> Optional[float]:
+        """Configured time-to-target AUC threshold (None if unset)."""
+        return self._auc_threshold
 
     @property
     def all_metrics(self) -> Dict[str, List[RecMetricComputation]]:
@@ -1143,6 +1162,9 @@ class MetricsLogger:
                 self._perf_samples_counter.dtype
             )
             self._perf_steps_in_window += 1
+            # MLPerf progress counter: per-rank sample count scaled by world size
+            # approximates global trained samples without an extra collective.
+            self.cumulative_train_samples += int(num_candidates.numel()) * self._world_size
 
     def compute(self, mode: str = "train") -> Dict[str, float]:
         """
@@ -1197,6 +1219,52 @@ class MetricsLogger:
         )
         return all_computed_metrics
 
+    def _global_mean_loss(self, loss_terms: Dict[str, torch.Tensor]) -> float:
+        """Cross-rank mean of the summed per-task losses.
+
+        The 1-element all-reduce MUST run on every rank in lockstep; callers gate
+        it on a rank-identical counter (global_step / a deterministic frequency)
+        so it cannot desync.
+        """
+        loss_t = torch.stack(
+            [v.detach().float().sum() for v in loss_terms.values()]
+        ).sum()
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(loss_t, op=torch.distributed.ReduceOp.SUM)
+            loss_t = loss_t / self._world_size
+        return float(loss_t)
+
+    def maybe_log_mlperf_train_loss(
+        self, aux_losses: Dict[str, torch.Tensor], every: int
+    ) -> None:
+        """Emit the MLPerf ``train_loss`` event on its OWN cadence.
+
+        Decoupled from the console/TB metric cadence (``compute_and_log``): call
+        this every train step with the just-computed ``aux_losses`` and the
+        desired interval ``every`` (in global train steps). The cross-rank loss
+        all-reduce only fires on the cadence, gated by ``global_step["train"]``
+        which is incremented identically on all ranks in ``update()`` — so the
+        collective stays in lockstep. No-op when MLPerf logging is disabled
+        (``mlperf_logger is None`` on every rank) or ``every <= 0``.
+        """
+        if self.mlperf_logger is None or every <= 0 or not aux_losses:
+            return
+        if self.global_step["train"] % every != 0:
+            return
+        train_loss = self._global_mean_loss(aux_losses)
+        c = self.mlperf_logger.constants
+        md: Dict[str, Any] = {c.SAMPLES_COUNT: self.cumulative_train_samples}
+        if self.lr_getter is not None:
+            try:
+                md["lr"] = float(self.lr_getter())
+            except Exception:
+                pass
+        self.mlperf_logger.event(
+            key=getattr(c, "TRAIN_LOSS", "train_loss"),
+            value=train_loss,
+            metadata=md,
+        )
+
     def compute_and_log(
         self,
         mode: str = "train",
@@ -1231,6 +1299,24 @@ class MetricsLogger:
                         f"{tag}/{mode}_{data_name}",
                         data_value.detach().clone().cpu(),
                         global_step=self.global_step[mode],
+                    )
+
+        # Global (cross-rank mean) train loss to console/TB at the metric-logging
+        # cadence. The 1-element all-reduce runs on every rank in lockstep, so it
+        # cannot desync. The MLPerf `train_loss` EVENT is emitted separately via
+        # ``maybe_log_mlperf_train_loss`` so its cadence can be tuned independently
+        # of this console/TB cadence (see that method).
+        if mode == "train" and additional_logs is not None and "losses" in additional_logs:
+            loss_terms = additional_logs["losses"]
+            if loss_terms:
+                train_loss = self._global_mean_loss(loss_terms)
+                self.tb_logger.add_scalar(
+                    "train_loss", train_loss, global_step=self.global_step["train"]
+                )
+                if self._rank == 0:
+                    logger.info(
+                        f"train - Step {self.global_step['train']} "
+                        f"train_loss={train_loss:.5f}"
                     )
 
         # Throughput metrics (train only). One GPU->CPU sync per call.
