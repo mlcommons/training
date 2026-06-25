@@ -71,6 +71,7 @@ class MLPerfLogger:
         benchmark_name: str = "hstu",
         submitter_name: str = "AMD",
         submission_platform: str = "MI355X",
+        fresh: bool = True,
     ):
         self.enabled: bool = _MLLOG_AVAILABLE
         # Use the EXPLICIT caller rank: this is built before init_process_group,
@@ -87,6 +88,14 @@ class MLPerfLogger:
             log_dir = os.path.dirname(log_path)
             if log_dir:  # guard: os.makedirs("") raises for a bare filename
                 os.makedirs(log_dir, exist_ok=True)
+            # mllog's FileHandler APPENDS (mode "a"), which is what a resume needs
+            # so the single run's event stream accumulates across relaunches into
+            # one file. On a genuine cold start, truncate first so a re-used run
+            # dir / a previous crashed-cold-start's orphaned stream can't leave a
+            # second run_start in the file (the compliance checker requires
+            # EXACTLY_ONE). Resume (fresh=False) appends to continue the stream.
+            if fresh:
+                open(log_path, "w").close()
             mllog.config(filename=log_path, default_stack_offset=default_stack_offset)
         else:
             mllog.config(default_stack_offset=default_stack_offset)
@@ -339,6 +348,30 @@ class MLPerfRunTracker:
         self.run_stop(c.SUCCESS if success else c.ABORTED)
 
 
+def mlperf_checkpoint_present(ckpt_path: str) -> bool:
+    """True iff ``ckpt_path`` resolves to an existing checkpoint (i.e. a resume).
+
+    A dependency-light mirror of ``checkpoint._resolve_latest_subdir`` so
+    ``train_ranker`` can decide cold-start vs resume BEFORE the heavy checkpoint
+    import + ``setup()``. This gates the one-time INIT_START/RUN_START markers:
+    emit them on a genuine cold start only, and never re-emit on a resume
+    relaunch (the MLPerf run spans the resume). Matches the loader's resolution:
+    empty path or a base dir with no numeric subdirs => cold start.
+    """
+    if not ckpt_path:
+        return False
+    base = ckpt_path.rstrip("/")
+    # A leaf save (numeric basename) is a resume iff that dir actually exists.
+    if os.path.basename(base).isdigit():
+        return os.path.isdir(base)
+    if not os.path.isdir(base):
+        return False
+    for name in os.listdir(base):
+        if name.isdigit() and os.path.isdir(os.path.join(base, name)):
+            return True
+    return False
+
+
 @gin.configurable
 def get_mlperf_logger(
     rank: int = 0,
@@ -346,6 +379,7 @@ def get_mlperf_logger(
     benchmark_name: str = "hstu",
     submitter_name: str = "AMD",
     submission_platform: str = "MI355X",
+    fresh: bool = True,
 ) -> Optional[MLPerfLogger]:
     """Build a configured :class:`MLPerfLogger`, or ``None`` if unavailable.
 
@@ -375,4 +409,5 @@ def get_mlperf_logger(
         benchmark_name=benchmark_name,
         submitter_name=submitter_name,
         submission_platform=resolved_platform,
+        fresh=fresh,
     )

@@ -1034,6 +1034,12 @@ class MetricsLogger:
         # MLPerf `samples_count` progress unit: global trained samples, persisted
         # alongside global_step so a resumed run continues the count.
         self.cumulative_train_samples: int = 0
+        # Whether the MLPerf run markers (RUN_START etc.) were already emitted for
+        # this logical run. Checkpointed so a resume relaunch knows the run is
+        # already open and does NOT re-emit INIT_START/RUN_START (the compliance
+        # checker requires EXACTLY_ONE); the resumed process continues the same
+        # event stream and emits the single RUN_STOP at convergence/end.
+        self.mlperf_run_started: bool = False
         self._rank: int = int(rank)
         # Optional MLPerf logger + LR accessor wired by the streaming loop (duck-
         # typed to avoid a train-module import cycle); drives the train_loss event.

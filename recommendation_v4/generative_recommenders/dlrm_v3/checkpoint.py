@@ -411,6 +411,9 @@ def save_dmp_checkpoint(
                 # load so pre-existing checkpoints restore as 0 and resume the
                 # count from there.
                 "cumulative_train_samples": metric_logger.cumulative_train_samples,
+                # MLPerf run-marker state: lets a resume relaunch continue the
+                # SAME run's event stream without re-emitting INIT_START/RUN_START.
+                "mlperf_run_started": metric_logger.mlperf_run_started,
                 "sparse_tensor_keys": sparse_tensor_keys,
                 # Streaming resume fields. Defaulted on load so old checkpoints
                 # (pre-streaming-resume) still load as a normal restart.
@@ -548,6 +551,12 @@ def load_nonsparse_checkpoint(
         # Defaulted for legacy checkpoints written before the counter existed.
         metric_logger.cumulative_train_samples = non_sparse_state_dict.get(
             "cumulative_train_samples", 0
+        )
+        # Defaulted False for legacy/cold checkpoints: a resume that loads a
+        # checkpoint where the run was already open continues without re-emitting
+        # the run markers.
+        metric_logger.mlperf_run_started = non_sparse_state_dict.get(
+            "mlperf_run_started", False
         )
         class_metric_state_dict = non_sparse_state_dict["class_metrics"]
         regression_metric_state_dict = non_sparse_state_dict["reg_metrics"]
