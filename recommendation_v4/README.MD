@@ -11,17 +11,31 @@ auto-detects its context: run inside the container it takes the single-node
 worker path; submitted via `sbatch` it orchestrates the multi-node run
 (provision + per-node launch). N=1 is byte-for-byte the legacy single-node path.
 
-**Single node (8-GPU), inside the container:**
+A bare submit runs a **short functional smoke run** (a single capped window with
+per-window eval) — the built-in defaults are intentionally small so a bare
+submit validates the full provision + launch + train/eval path quickly without
+consuming a whole window:
+
+**Single node (8-GPU):**
 
 ```bash
-docker exec yambda_8gpu bash -c \
-  'cd /workspace/recommendation_v4 && bash scripts/launch_slurm.sh'
+sbatch --nodes=1 scripts/launch_slurm.sh
 ```
 
-**Multi-node (N×8-GPU) via SLURM:**
+**Multi-node (N×8-GPU):**
 
 ```bash
-sbatch --nodes=2 --partition=meta64 scripts/launch_slurm.sh
+sbatch --nodes=2 scripts/launch_slurm.sh
+```
+
+To run the **full reference sweep** instead, set the run-shape/cadence knobs
+explicitly (full 299-window sweep + data-fraction eval cadence):
+
+```bash
+START_TS=0 NUM_TRAIN_TS=299 \
+NUM_TRAIN_BATCHES=0 NUM_EVAL_BATCHES=0 \
+EVAL_EVERY_N_WINDOWS=0 EVAL_EVERY_DATA_PCT=0.005 \
+sbatch --nodes=1 scripts/launch_slurm.sh
 ```
 
 Multi-node uses real RDMA (RoCEv2). The fabric/NCCL setup and every
@@ -38,6 +52,28 @@ bash scripts/launch_slurm.sh
 ```
 
 Data path resolves at runtime via `env_path` gin macros (see [yambda_5b.gin](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)). Traces and any per-run outputs land in `results/<RUN_NAME>/`.
+
+### 1.1 Run shape: smoke default vs. full reference
+
+The run-shape and eval cadence come from env-overridable defaults set in the
+orchestrate phase of `scripts/launch_slurm.sh`. The built-in defaults are
+**smoke-shaped** (small, for a fast functional check); the **full reference
+sweep** is the same launcher with the run-shape knobs overridden. The
+single- and multi-node launchers are identical except for `--nodes`; the trainer
+auto-derives `NNODES`/`NODE_RANK`/`MASTER_ADDR`/`WORLD_SIZE` from SLURM.
+
+| knob | smoke default (bare submit) | full reference (override) |
+|---|---|---|
+| `START_TS` / `NUM_TRAIN_TS` | 150 / 1 (one window) | 0 / 299 (full sweep) |
+| `NUM_TRAIN_BATCHES` / `NUM_EVAL_BATCHES` | 20 / 10 (capped) | 0 / 0 (consume full windows) |
+| eval cadence | `EVAL_EVERY_N_WINDOWS=1` (per-window) | `EVAL_EVERY_N_WINDOWS=0` + `EVAL_EVERY_DATA_PCT=0.005` (every 0.5% of the training stream — a fixed number of samples between evals, independent of node count) |
+
+Override any knob via env (e.g. `RUN_NAME=...`, `LOG=...`, `AUC_THRESHOLD=...`);
+see the full-reference command in §1 above. The per-window and data-fraction eval
+cadences are mutually exclusive — selecting one (`EVAL_EVERY_N_WINDOWS>0` or
+`EVAL_EVERY_DATA_PCT>0`) requires the other be 0. Keep all run outputs (`LOG`,
+checkpoints, mllog, TensorBoard) under a writable scratch path you own — the
+dataset mount is read-only.
 
 ## 2. Data preparation
 
@@ -100,7 +136,7 @@ The `like` pool is roughly **30× rarer** than `lp` — important context for th
 
 ## 4. How data is fed to HSTU
 
-For every training anchor (a LISTEN event with ≥ `min_history` prior events — default `1`, i.e. ~all users; set `$MIN_HISTORY=4086` for the legacy "full `history_length` of context required" filter that dropped ~60% of users), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
+For every training anchor (a LISTEN event with ≥ `min_history` prior events — frozen default `4086`, the "full `history_length` of context required" power-users filter; set `$MIN_HISTORY=0` to include ~all users plus their cold-start first event), the dataset builds a `(uih_kjt, candidate_kjt)` pair:
 
 ```
 UIH (User Interaction History):
@@ -203,7 +239,7 @@ with env overrides:
 | `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows (no per-window respawn) |
 | `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread during compute |
 | `EVAL_EACH_WINDOW` | `streaming_train_eval_loop.eval_each_window` | 1 | eval window T+1 after training window T |
-| `MIN_HISTORY` | `get_dataset.min_history` | 1 | anchor-eligibility floor: min prior events for a LISTEN to be a sample (1 = ~all users; 4086 = legacy full-history filter) |
+| `MIN_HISTORY` | `get_dataset.min_history` | 4086 | anchor-eligibility floor: min prior events for a LISTEN to be a sample (frozen default 4086 = full-history power-users filter; 0 = ~all users incl. cold-start) |
 | — | `streaming_train_eval_loop.num_train_batches` / `num_eval_batches` | unset | cap per-window steps (unset = consume full window) |
 
 ### 5.3 Hiding the window-reset overhead

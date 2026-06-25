@@ -80,9 +80,17 @@ apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 # PARSE NOTE: seed_everything() runs right before make_model() in train_ranker
 # (after the full gin parse), so this binding resolves in the second parse where
 # env_int is registered. Override per-run via $SEED.
+# Default 1 gives a fixed, reproducible seed each run; override $SEED to vary it
+# (set $SEED = -1 to draw a fresh random seed per run).
 seed_everything.seed = @seed/env_int()
 seed/env_int.key     = "SEED"
 seed/env_int.default = 1
+
+# $DECORRELATE_DROPOUT — re-seed torch/cuda with $SEED + rank after init so HSTU
+# dropout masks differ per data-parallel rank. 1 = on, 0 = identical masks (default).
+decorrelate_runtime_rng.enabled = @drr/env_int()
+drr/env_int.key     = "DECORRELATE_DROPOUT"
+drr/env_int.default = 0
 
 # dense model optimizer
 # Learning rate is env-overridable via $DENSE_LR (default 1e-7).
@@ -235,7 +243,7 @@ hs/env_str.default = "interleaved"
 # keyed by (L, MIN_HISTORY) so floors don't collide. Override via $MIN_HISTORY.
 get_dataset.min_history = @mh/env_int()
 mh/env_int.key     = "MIN_HISTORY"
-mh/env_int.default = 0
+mh/env_int.default = 4086
 
 # Model-side attention budget. Dataset truncates UIH to fit this value if
 # `history_length + contextual + candidate` would overflow. Override via
@@ -318,6 +326,14 @@ sts/env_int.default = 150
 streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
 mlf/env_int.key     = "METRIC_LOG_FREQ"
 mlf/env_int.default = 50
+# MLPerf train_loss event cadence (global train steps), INDEPENDENT of
+# METRIC_LOG_FREQ above. 0 (default) = fall back to METRIC_LOG_FREQ, preserving
+# the prior coupled behavior. Set $MLPERF_TRAIN_LOSS_LOG_FREQ>0 to log the MLPerf
+# train_loss event at a different rate than the console/TB metrics. Disable the
+# whole MLPerf stream with $MLPERF_LOGGING=0.
+streaming_train_eval_loop.mlperf_train_loss_log_frequency = @mltlf/env_int()
+mltlf/env_int.key     = "MLPERF_TRAIN_LOSS_LOG_FREQ"
+mltlf/env_int.default = 0
 # Diagnostic: log per-batch unique/total embedding-id counts on logged steps
 # (rank 0). Quantifies the user-major batching redundancy and the realized
 # diversity from get_dataset.streaming_shuffle_fraction. Off; set $DIAG_UNIQUE_EMB=1.
@@ -441,7 +457,14 @@ MetricsLogger.tensorboard_log_path = @tbp/env_path()
 tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
 tbp/env_path.default = ""
 MetricsLogger.world_size = 8
-MetricsLogger.auc_threshold = 0.80275
+# MLPerf convergence target: run stops when the selected eval AUC reaches it.
+# Default 1.0 is unreachable, so the run trains through all windows (no early
+# stop) out of the box; set $AUC_THRESHOLD=0.80275 for the MLPerf target.
+MetricsLogger.auc_threshold = @at/env_float()
+at/env_float.key     = "AUC_THRESHOLD"
+at/env_float.default = 1.0
+# EVAL_ACCURACY + early-stop are driven by per-window AUC (window_auc) vs the
+# threshold above.
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and
 # the eval cumulative ("lifetime_*") AUC. Both default to "binned":
 #   "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an O(bins) score
