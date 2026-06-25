@@ -78,22 +78,31 @@ def _main_func(
     from generative_recommenders.dlrm_v3.train._env_bootstrap import apply_env_bootstrap
     from generative_recommenders.dlrm_v3.train.mlperf_logging_utils import (
         get_mlperf_logger,
+        mlperf_checkpoint_present,
     )
 
     gin.parse_config_file(gin_file, skip_unknown=True)
     apply_env_bootstrap()
 
-    # Rank-0-gated MLPerf logger, only for the streaming-train-eval path.
+    # Cold-start vs resume, decided from the on-disk checkpoint BEFORE setup so
+    # the one-time INIT/RUN markers fire on a genuine cold start only and are NOT
+    # re-emitted on a resume relaunch — the MLPerf run (run_start..run_stop) spans
+    # the resume as a single coherent event stream in one appended log file.
+    mlperf_resume = mlperf_checkpoint_present(os.environ.get("CKPT_PATH", ""))
+    # Rank-0-gated MLPerf logger, only for the streaming-train-eval path. `fresh`
+    # truncates the log on cold start (one run_start per file) but appends on a
+    # resume so the pre-crash events are preserved and continued.
     mlperf_logger = (
-        get_mlperf_logger(rank=rank) if mode == "streaming-train-eval" else None
+        get_mlperf_logger(rank=rank, fresh=not mlperf_resume)
+        if mode == "streaming-train-eval"
+        else None
     )
-    # Emit INIT_START before setup only on a guaranteed cold start (CKPT_PATH
-    # unset); resume relaunches skip it so the log stays balanced.
-    mlperf_init_logged = False
-    if mlperf_logger is not None and not os.environ.get("CKPT_PATH", ""):
+    # INIT_START fires before setup on a cold start only (resume continues the
+    # already-open run, whose markers were emitted by the original process).
+    mlperf_cold_start = mlperf_logger is not None and not mlperf_resume
+    if mlperf_cold_start:
         mlperf_logger.event(key=mlperf_logger.constants.CACHE_CLEAR, value=True)
         mlperf_logger.start(key=mlperf_logger.constants.INIT_START)
-        mlperf_init_logged = True
 
     # Phase 2: heavy imports. Triton kernel modules evaluate their autotune
     # decorators here, using the env vars set above.
@@ -200,12 +209,13 @@ def _main_func(
         )
     )
 
-    # MLPerf submission info + hyperparameters + INIT_STOP/RUN_START, only on a
-    # genuine cold start so resume relaunches don't reopen the run markers.
-    mlperf_run_active = (
-        mlperf_logger is not None and mlperf_init_logged and resume_cold_start
-    )
-    if mlperf_run_active:
+    # MLPerf run markers: open the run exactly once. On a cold start emit
+    # submission info + hyperparameters + INIT_STOP/RUN_START and mark the run as
+    # started (persisted in the checkpoint via metrics.mlperf_run_started). On a
+    # resume, load_dmp_checkpoint restored mlperf_run_started=True, so we skip the
+    # markers and just continue the stream. `metrics.mlperf_run_started` guards a
+    # double-emit even if cold/resume detection and the checkpoint ever disagree.
+    if mlperf_cold_start and not metrics.mlperf_run_started:
         # Submission info + hyperparameters + INIT_STOP/RUN_START, all emitted by
         # the logger (optimizer names/LRs read from gin internally). Seed is the
         # value setup() resolved and exported to $SEED.
@@ -213,6 +223,10 @@ def _main_func(
             global_batch_size=world_size * int(train_dataloader.batch_size),
             seed=int(os.environ.get("SEED", "1")),
         )
+        metrics.mlperf_run_started = True
+    # Pass the logger to the loop whenever MLPerf logging is enabled, so block /
+    # eval / train_loss / run_stop events emit on BOTH a cold start and a resume.
+    mlperf_run_active = mlperf_logger is not None and metrics.mlperf_run_started
 
     # train loop
     try:
