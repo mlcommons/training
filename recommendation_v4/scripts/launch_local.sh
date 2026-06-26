@@ -89,7 +89,10 @@ if [ "$SMOKE" = "1" ]; then
   export NUM_TRAIN_TS=${NUM_TRAIN_TS:-1}
   export NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
   export NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
-  export EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
+  # Default eval cadence: per-window OFF (0), data-fraction every 0.5% of data
+  # (0.005). Mutually exclusive (both >0 raises a ValueError at startup).
+  export EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-0}
+  export EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0.005}
   export METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
   # Smaller per-sample shape keeps the smoke run light; drop these to use the
   # gin defaults (4086/4096). Reuse an existing hstu_cache_L<N>/ if present.

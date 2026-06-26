@@ -142,7 +142,10 @@ orchestrate() {
   NUM_TRAIN_BATCHES=${NUM_TRAIN_BATCHES:-20}
   NUM_EVAL_BATCHES=${NUM_EVAL_BATCHES:-10}
   EVAL_EACH_WINDOW=${EVAL_EACH_WINDOW:-1}
-  EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-1}
+  # Default eval cadence: per-window OFF (0), data-fraction every 0.5% of data
+  # (0.005). The two are mutually exclusive (both >0 raises a ValueError).
+  EVAL_EVERY_N_WINDOWS=${EVAL_EVERY_N_WINDOWS:-0}
+  EVAL_EVERY_DATA_PCT=${EVAL_EVERY_DATA_PCT:-0.005}
   METRIC_LOG_FREQ=${METRIC_LOG_FREQ:-5}
   FORCE_PROVISION=${FORCE_PROVISION:-0}
 

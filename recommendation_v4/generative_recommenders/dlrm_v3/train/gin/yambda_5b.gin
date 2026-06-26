@@ -358,21 +358,24 @@ pl/env_int.default = 1
 # (EVAL_EVERY_DATA_PCT>0) requires EVAL_EVERY_N_WINDOWS=0; setting both >0 raises
 # a ValueError at startup. The final end-of-run eval always runs in either mode.
 #
-# (1) PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS, the default).
+# (1) PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS).
 # Full-holdout eval cadence (single knob; replaces the old EVAL_EACH_WINDOW
-# on/off switch). 0 = eval disabled (train-only, e.g. perf benchmarking or the
-# resume test; the eval dataloader isn't even built). 1 (default) = eval after
-# every window. N>1 (e.g. 5 via $EVAL_EVERY_N_WINDOWS) = eval every Nth window
-# (and always the final one) to amortize the cost of consuming the full next-day
-# eval window. The cadence is anchored to the absolute ts grid so eval points
-# stay stable across a mid-run resume.
+# on/off switch). 0 (default) = per-window cadence OFF -> defer to the
+# data-fraction cadence below (EVAL_EVERY_DATA_PCT); if that is also 0, eval is
+# disabled entirely (train-only, e.g. perf benchmarking or the resume test; the
+# eval dataloader isn't even built). 1 = eval after every window. N>1 (e.g. 5
+# via $EVAL_EVERY_N_WINDOWS) = eval every Nth window (and always the final one)
+# to amortize the cost of consuming the full next-day eval window. The cadence is
+# anchored to the absolute ts grid so eval points stay stable across a mid-run
+# resume.
 # NOTE: each daily window has a DIFFERENT number of training samples, so a
 # per-window cadence produces eval points that are UNEVENLY spaced in terms of
-# how much data was trained between them. Use the data-fraction cadence below if
-# you want evenly-spaced-by-data eval points instead.
+# how much data was trained between them. This is why the data-fraction cadence
+# below is now the default; enable this per-window knob only if you specifically
+# want eval anchored to the daily window grid.
 streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
 evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
-evn/env_int.default = 1
+evn/env_int.default = 0
 #
 # (2) DATA-FRACTION cadence (EVAL_EVERY_DATA_PCT).
 # Run the full-holdout eval every time the run has trained this FRACTION of the
@@ -380,7 +383,9 @@ evn/env_int.default = 1
 # (compute), independent of how many samples each daily window happens to hold.
 # This is the fix for the per-window cadence's uneven spacing noted above.
 #   value semantics (it is a fraction in (0, 1], NOT a percent number):
-#     0.0  (default) = OFF  -> fall back to the per-window EVAL_EVERY_N_WINDOWS.
+#     0.0            = OFF  -> fall back to the per-window EVAL_EVERY_N_WINDOWS;
+#                      if that is also 0, eval is disabled entirely (train-only).
+#     0.005 (default)= eval every 0.5% of the data -> ~200 eval points total.
 #     0.01           = eval every 1%  of the data  -> ~100 eval points total.
 #     0.05           = eval every 5%  of the data  -> ~20  eval points total.
 #     0.10           = eval every 10% of the data  -> ~10  eval points total.
@@ -397,7 +402,7 @@ evn/env_int.default = 1
 # trajectory can be plotted against data volume. Override via $EVAL_EVERY_DATA_PCT.
 streaming_train_eval_loop.eval_every_data_pct = @edp/env_float()
 edp/env_float.key     = "EVAL_EVERY_DATA_PCT"
-edp/env_float.default = 0.0
+edp/env_float.default = 0.005
 # Double-buffer windows: prepare the next window (index mask + first-batch
 # prefetch) in a background thread during the current window's compute, hiding
 # the per-window reset. Needs persistent_loader=1. Override via env.
