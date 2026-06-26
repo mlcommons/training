@@ -82,7 +82,7 @@ The launcher also creates and mounts a host Hugging Face cache. Set `HF_HOME` be
 
 ## Steps to run and time
 
-All steps below are assumed to be run from this `reasoning` directory on the host; `cd RL` enters the NeMo-RL submodule checkout. The launcher submits `ray.sub` and runs training from the checkout baked into the container at `/opt/nemo-rl` by default.
+All steps below are assumed to be run from this `llm_moe_grpo` directory on the host; `cd RL` enters the NeMo-RL submodule checkout. The launcher submits `ray.sub` and runs training from the checkout baked into the container at `/opt/nemo-rl` by default.
 
 ```bash
 cd RL
