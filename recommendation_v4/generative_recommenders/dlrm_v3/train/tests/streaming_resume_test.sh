@@ -1,6 +1,73 @@
 #!/bin/bash
 # End-to-end failure-injection + resume test for streaming-train-eval.
 #
+# ============================================================================
+# WHY TWO TESTS (the intuition, in plain language)
+# ============================================================================
+# Training runs over consecutive time WINDOWS (window 0, then 1, then 2, ...).
+# All N GPUs must march from one window to the next IN LOCKSTEP: they constantly
+# do "everybody-talk-at-once" group ops (NCCL collectives — sharing embeddings
+# across GPUs), and every GPU must enter each group-op at the same time. If one
+# GPU is late, the rest wait for it forever and the whole job FREEZES (deadlock).
+#
+# The two scenarios check DIFFERENT kinds of failure — not bigger vs smaller:
+#
+#   midwindow   = CORRECTNESS. "When I crash and resume, do I land on the exact
+#                 right batch with the right RNG state and produce the same
+#                 numbers?"  (stays inside ONE window; never crosses a seam.)
+#
+#   multiwindow = LIVENESS / NO-DEADLOCK. "Can all N GPUs hand off across a
+#                 window SEAM together without one falling out of step and
+#                 hanging the job?"  (needs >=2 windows so a seam actually exists.)
+#
+# The dangerous spot is the SEAM between two windows: there, each GPU does solo
+# prep work (load next window's data; count anchors for the eval cadence) and
+# they DON'T all finish at the same speed. Two bugs lived exactly there, and BOTH
+# are invisible to a single-window test:
+#   (A) every GPU separately ran a slow O(N) "count all the data" pass -> they
+#       finished at different times -> fast GPU barged into the next group-op
+#       while others were still counting -> freeze.
+#       FIX: only rank 0 counts, then broadcasts the number to everyone else.
+#   (B) no rendezvous at the seam -> uneven data-prep -> same desync -> freeze.
+#       FIX: a dist.barrier() at every window boundary (all GPUs wait, then cross
+#       together).  WINDOW_BARRIER_DEBUG=1 makes rank 0 log one line per seam.
+#
+#   TIMELINE — without the fixes (each GPU on its own clock at the seam):
+#       win0 train  | solo prep (varies) | next group-op
+#       GPU0 ########|=====|              >> waiting..........
+#       GPU1 ########|========|           >> waiting.......
+#       GPU2 ########|===========|        >> waiting....
+#       GPU3 ########|==============|     >> never lines up  -> HANG
+#
+#   TIMELINE — with the fixes (rank 0 counts + a barrier gate at the seam):
+#       win0 train  | [== BARRIER: all wait ==] | win1 train
+#       GPU0 ########| count |  wait           # |########
+#       GPU1 ########|       |  wait           # |########
+#       GPU2 ########|       |  wait           # |########
+#       GPU3 ########|       |  wait           # |########
+#                 rank0 shares count ^   all cross together ^  -> OK
+#
+# Why midwindow can NOT catch (A)/(B): it runs a SINGLE window with per-window
+# eval off (NUM_TRAIN_TS=1, EVAL_EVERY_N_WINDOWS=0, split=1.0), so it never
+# reaches a seam and never turns on the data-fraction-eval/anchor-count path.
+# A broken barrier or broken broadcast passes midwindow silently.
+#
+# Why the multiwindow RESUME phase (P3 below) is the meanest case: restarting
+# from a checkpoint loads the saved window and then IMMEDIATELY steps across a
+# seam into the next window — landing right on the spot that used to freeze, AND
+# re-running all that slow setup on the resume path. If (A)/(B) regressed, P3
+# hangs and the test fails by timing out.
+#
+#                 | midwindow            | multiwindow
+#   --------------+----------------------+-----------------------------
+#   proves        | resume to RIGHT spot | cross seam WITHOUT freezing
+#   windows       | 1 (no seam)          | >=2 (crosses >=1 seam)
+#   data-pct eval | off                  | on (exercises the anchor count)
+#   catches       | wrong batch/RNG/ckpt | missing barrier/broadcast -> HANG
+#   failure mode  | wrong NUMBERS        | job FREEZES forever
+# They are complementary: you need BOTH.
+# ============================================================================
+#
 # PLATFORM-GENERAL: runs on both NVIDIA B200 and AMD MI350/MI355 (ROCm/meta64).
 # The only hardware-specific bits are picked by --platform (auto-detected from the
 # running container if omitted): the container name, the dataset path, and the
