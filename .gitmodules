@@ -7,6 +7,6 @@
 	url = https://github.com/pytorch/torchtitan.git
 	branch = mlperf-training-flux.1
 [submodule "reasoning/RL"]
-	path = reasoning/RL
+	path = llm_moe_grpo/RL
 	url = https://github.com/CarlosGomes98/RL.git
-	branch = mlperf-training
+	branch = mlperf-training-qwen35
