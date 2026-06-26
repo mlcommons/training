@@ -35,10 +35,10 @@
 #                       what run_streaming_e2e.sh invokes per relaunch)
 #   Perf pair:
 #     LOG=/apps/chcai/perf_1node.log NUM_TRAIN_BATCHES=200 NUM_EVAL_BATCHES=0 \
-#       EVAL_EACH_WINDOW=0 METRIC_LOG_FREQ=20 \
+#       EVAL_EVERY_N_WINDOWS=0 METRIC_LOG_FREQ=20 \
 #       sbatch --nodes=1 --job-name=y1 scripts/launch_slurm.sh
 #     LOG=/apps/chcai/perf_2node.log NUM_TRAIN_BATCHES=200 NUM_EVAL_BATCHES=0 \
-#       EVAL_EACH_WINDOW=0 METRIC_LOG_FREQ=20 \
+#       EVAL_EVERY_N_WINDOWS=0 METRIC_LOG_FREQ=20 \
 #       sbatch --nodes=2 --job-name=y2 scripts/launch_slurm.sh
 #     # then: bash scripts/compare_node_perf.sh /apps/chcai/perf_1node.log /apps/chcai/perf_2node.log
 #
@@ -285,7 +285,6 @@ orchestrate() {
       -e MODE=$MODE \
       -e START_TS=$START_TS \
       -e NUM_TRAIN_TS=$NUM_TRAIN_TS \
-      -e EVAL_EACH_WINDOW=$EVAL_EACH_WINDOW \
       -e EVAL_EVERY_N_WINDOWS=$EVAL_EVERY_N_WINDOWS \
       ${EVAL_EVERY_DATA_PCT:+-e EVAL_EVERY_DATA_PCT=$EVAL_EVERY_DATA_PCT} \
       -e NUM_TRAIN_BATCHES=$NUM_TRAIN_BATCHES \
