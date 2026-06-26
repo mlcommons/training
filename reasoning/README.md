@@ -12,7 +12,7 @@ The relevant config files are under `RL/examples/nemo_gym` and `RL/qwen_35`. The
 
 ## Steps to configure machine
 
-To use this repository, please ensure your have access to a SLURM cluster with Enroot/Pyxis and at least 64x4 GB200 GPUs.
+To use this repository, please ensure your have access to a SLURM cluster with Enroot/Pyxis and at least 256 GB200 GPUs.
 
 ### Container setup
 
@@ -243,7 +243,7 @@ Validation data order is preserved by the recipe. The config uses `grpo.max_val_
 
 ### Simulation environment (RL models only)
 
-The benchmark uses NeMo-Gym with the SWE/OpenHands agent configuration. Rollouts are collected through a vLLM-backed policy server, with OpenHands interacting with task containers via Apptainer/Singularity. The async recipe uses non-colocated generation and training, with one-step-stale trajectories corrected by importance sampling.
+The benchmark uses NeMo-Gym with the SWE/OpenHands agent configuration. Rollouts are collected through a vLLM-backed policy server, with OpenHands interacting with task containers via Apptainer/Singularity. Model reasoning/thinking is disabled through the vLLM chat template configuration. The async recipe uses non-colocated generation and training, with one-step-stale trajectories corrected by importance sampling.
 
 # 4. Model
 
