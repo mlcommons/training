@@ -92,7 +92,7 @@ export EXP_NAME=<experiment name>
 export CONTAINER_IMAGE_PATH=<container image path or tag>
 export SLURM_ACCOUNT=<account>
 export SLURM_PARTITION=<partition>
-export GPUS_PER_NODE=<number of GPUs per Slurm node>
+export GPUS_PER_NODE=4                                # GB200 reference configuration
 export HF_CKPT_PATH=<host path to HF checkpoint directory>
 export NRL_MEGATRON_CHECKPOINT_DIR=<host path to Megatron-Core checkpoint cache directory>  # may be empty on first run
 export NEMO_GYM_SWE_TRAIN_DATA_PATH=<host path to training JSONL>
@@ -106,8 +106,8 @@ export MLPERF_TARGET_ACCURACY=<target reward mean>  # default: 1.0 until the tar
 export GRPO_SEED=<integer seed>                      # default: random per launch
 
 # Defaults are defined by the launcher and may be overridden here.
-export TRAIN_NODES=<number of training nodes>        # default: 16
-export GEN_NODES=<number of generation nodes>        # default: 24
+export TRAIN_NODES=<number of training nodes>        # default: 32
+export GEN_NODES=<number of generation nodes>        # default: 32
 export SLURM_TIME=<walltime>                         # default: 1:0:0
 export RECIPE=qwen_35/configs/grpo_qwen35_397b_swe_openhands_async_benchmark.yaml
 
@@ -282,7 +282,7 @@ Architecture values below are taken from the [Hugging Face model card](https://h
 
 | **Component** | **Architecture** | **Parameters** | **Technical Details** |
 |---------------|------------------|----------------|-----------------------|
-| **Training runtime** | Megatron-Bridge and Megatron-Core through NeMo-RL | Same policy weights | TP4 x PP2 x CP1, EP16, BF16 |
+| **Training runtime** | Megatron-Bridge and Megatron-Core through NeMo-RL | Same policy weights | TP4 x PP2 x CP1, EP32, BF16 |
 | **Generation runtime** | vLLM | Same policy weights | TP8, EP8, 64k benchmark context, HTTP server exposed for NeMo-Gym |
 | **SWE environment** | NeMo-Gym + OpenHands | N/A | CodeActAgent, max 30 turns |
 
@@ -290,7 +290,7 @@ Source revisions identify the checked-out editable packages used by the referenc
 
 | **Runtime package** | **Package version** | **Source revision** |
 |---------------------|---------------------|---------------------|
-| NeMo-RL | `0.6.0` | `e4d0b38c` |
+| NeMo-RL | `0.6.0` | `fbc91daf` |
 | Megatron-Bridge | `0.5.0` | `95e5f38f` |
 | Megatron-Core | `0.18.0` | `d30c3ae54` |
 | vLLM | `0.17.1` | PyPI package pin |
