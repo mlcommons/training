@@ -154,7 +154,11 @@ def setup(
     os.environ["MASTER_PORT"] = str(master_port)
 
     BACKEND = dist.Backend.NCCL
-    TIMEOUT = 1800
+    # Process-group / NCCL watchdog timeout (seconds). Env-overridable so a
+    # diagnostic run can use a short, finite timeout that trips the NCCL flight
+    # recorder dump (TORCH_NCCL_TRACE_BUFFER_SIZE + TORCH_NCCL_DUMP_ON_TIMEOUT)
+    # on a collective desync instead of hanging for the full default.
+    TIMEOUT = int(os.environ.get("PG_TIMEOUT_S", "1800"))
 
     # set device BEFORE init_process_group so NCCL binds this rank to its
     # own GPU; otherwise every rank's first CUDA context lands on GPU 0,
@@ -194,6 +198,55 @@ def setup(
 
 def cleanup() -> None:
     dist.destroy_process_group()
+
+
+def _window_boundary_barrier(
+    device: torch.device, world_size: int, train_ts: int
+) -> None:
+    """Collective rendezvous at a streaming window boundary.
+
+    The per-window data prep (``window_indices``: an O(N) mask over the ~18 GB
+    mmap'd ``anchor_ts`` array) can complete at very different times across
+    ranks. The embedding input-dist all-to-all that follows is a collective, so
+    if a fast rank reaches it while a slow rank is still in prep, the NCCL
+    stream desyncs and the job deadlocks (one rank a collective behind the
+    rest). Synchronizing here makes prep-time skew harmless: every rank waits
+    until all ranks have a ready window before any issues the first forward.
+
+    Cost is one near-zero-payload barrier per window (299 total over a full
+    run). In the healthy case prep already overlapped the previous window's
+    compute via the prefetcher, so the barrier returns immediately; it only
+    blocks for the real prep skew it is there to absorb.
+    """
+    if not (dist.is_available() and dist.is_initialized()) or world_size <= 1:
+        return
+    t0 = time.time()
+    if device.type == "cuda":
+        dist.barrier(device_ids=[device.index])
+    else:
+        dist.barrier()
+    waited = time.time() - t0
+    # Surface non-trivial skew (the thing this barrier exists to absorb) so a
+    # node with a slow rank is visible without trawling the flight recorder.
+    if waited > 5.0:
+        logger.warning(
+            "[window-barrier] train_ts=%d: waited %.1fs at boundary "
+            "rendezvous (per-rank data-prep skew)",
+            train_ts,
+            waited,
+        )
+    # Test/debug observability: the healthy-path barrier is otherwise SILENT
+    # (the skew warning above only fires on >5s waits), so the resume e2e test
+    # has no signal that the boundary rendezvous actually executed. When
+    # WINDOW_BARRIER_DEBUG=1, rank 0 emits exactly one line per crossed window
+    # so the test can assert the barrier ran at EVERY boundary (regression guard
+    # for the desync deadlock the barrier fixes). Off by default — zero prod cost.
+    if os.environ.get("WINDOW_BARRIER_DEBUG") == "1" and dist.get_rank() == 0:
+        logger.info(
+            "[window-barrier] train_ts=%d rendezvous complete (waited %.3fs)",
+            train_ts,
+            waited,
+        )
 
 
 class HammerToTorchDataset(TorchDataset):
@@ -534,6 +587,14 @@ def make_optimizer_and_shard(
     # local_world_size = GPUs per node so the planner respects the intra-node
     # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
     # world_size for the single-node case (no behavior change).
+    logger.info(
+        "[hbm-cap] make_optimizer_and_shard: hbm_cap_gb=%s (planner Topology hbm_cap=%d bytes), "
+        "world_size=%s local_world_size=%s",
+        hbm_cap_gb,
+        hbm_cap_gb * 1024 * 1024 * 1024,
+        world_size,
+        local_world_size or world_size,
+    )
     planner = EmbeddingShardingPlanner(
         topology=Topology(
             local_world_size=local_world_size or world_size,
@@ -1728,9 +1789,30 @@ def streaming_train_eval_loop(
             else int(os.environ.get("BATCH_SIZE", "1024"))
         )
         if hasattr(dataset.dataset, "total_train_anchors"):
-            total_train_anchors = dataset.dataset.total_train_anchors(  # pyre-ignore[16]
-                eval_anchor_ts, requested_end_ts - eval_anchor_ts
-            )
+            # total_train_anchors does a full-range gather over the mmap'd uid
+            # array for ~billions of positions + a uid hash. It is slow
+            # (minutes, single-threaded) AND, run on every rank independently,
+            # a large per-rank skew source: a fast rank finishes and races into
+            # the first embedding all-to-all while slow ranks are still hashing,
+            # desyncing the NCCL collective stream and hanging the job. The
+            # result is a pure function of the (identical) dataset + split, so
+            # compute it ONCE on rank 0 and broadcast the scalar; ranks 1..N
+            # skip the gather entirely (no 8x mmap/CPU contention, no skew).
+            if world_size > 1 and torch.distributed.is_initialized():
+                _tta = (
+                    dataset.dataset.total_train_anchors(  # pyre-ignore[16]
+                        eval_anchor_ts, requested_end_ts - eval_anchor_ts
+                    )
+                    if rank == 0
+                    else 0
+                )
+                _tta_t = torch.tensor([_tta], dtype=torch.int64, device=device)
+                torch.distributed.broadcast(_tta_t, src=0)
+                total_train_anchors = int(_tta_t.item())
+            else:
+                total_train_anchors = dataset.dataset.total_train_anchors(  # pyre-ignore[16]
+                    eval_anchor_ts, requested_end_ts - eval_anchor_ts
+                )
             total_train_steps = total_train_anchors // max(1, bs * world_size)
             eval_interval_steps = max(
                 1, round(eval_every_data_pct * total_train_steps)
@@ -2401,6 +2483,18 @@ def streaming_train_eval_loop(
                 if i == 0 and resume_batch_idx_in_window > 0
                 else 0
             )
+            # Rendezvous all ranks at the window boundary BEFORE the first
+            # forward of this window. The prefetcher has already handed back a
+            # ready iterator (this window's window_indices mmap scan is done),
+            # but that O(N) scan over the ~18 GB anchor_ts array can finish at
+            # very different times across ranks. Without this barrier a fast
+            # rank issues the first embedding all-to-all while a slow rank is
+            # still in prep, desyncing the NCCL collective stream and hanging
+            # the job (observed at a window boundary via the flight recorder:
+            # ranks split across consecutive collective seq ids). This only
+            # absorbs prep skew (one near-zero sync per window); it does not
+            # serialize the background prefetch of future windows.
+            _window_boundary_barrier(device, world_size, train_ts)
             if _per_window_blocks:
                 mlt.block_start()
             _run_train_window(
@@ -2489,6 +2583,10 @@ def streaming_train_eval_loop(
                 if i == 0 and resume_batch_idx_in_window > 0
                 else 0
             )
+            # See the double-buffer path: rendezvous all ranks at the window
+            # boundary before the first forward so per-rank data-prep skew
+            # cannot desync the NCCL collective stream and hang the job.
+            _window_boundary_barrier(device, world_size, train_ts)
             if _per_window_blocks:
                 mlt.block_start()
             _run_train_window(
