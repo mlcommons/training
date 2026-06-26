@@ -8,5 +8,5 @@
 	branch = mlperf-training-flux.1
 [submodule "llm_moe_grpo/RL"]
 	path = llm_moe_grpo/RL
-	url = https://github.com/CarlosGomes98/RL.git
-	branch = mlperf-training-qwen35
+	url = https://github.com/NVIDIA-NeMo/RL.git
+	branch = v0.6.0-mlperf-training-qwen35
