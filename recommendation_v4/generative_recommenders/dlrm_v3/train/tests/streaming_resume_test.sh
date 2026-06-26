@@ -38,8 +38,8 @@
 #            remaining window, anchors broadcast once, and the run COMPLETED —
 #            i.e. the exact boundary-crossing-on-resume case that used to hang.
 #
-# Driven entirely via env-driven gin knobs (yambda_5b.gin) through the SAME B200
-# worker entrypoint the production supervisor uses: `bash scripts/launch_slurm.sh`
+# Driven entirely via env-driven gin knobs (yambda_5b.gin) through the SAME worker
+# entrypoint both platforms' production supervisors use: `bash scripts/launch_slurm.sh`
 # (worker phase, auto-detected inside the container). WINDOW_BARRIER_DEBUG=1 makes
 # the otherwise-silent barrier emit one rank-0 line per crossed window.
 #
@@ -60,14 +60,22 @@
 #       [--container <name>] [--data-path <path>] [--ckpt-root <path>] [--start-ts 150]
 #       [--num-train-batches 200] [--die-at-step 100]      # midwindow knobs
 #       [--mw-num-train-ts 3] [--mw-num-train-batches 20]  # multiwindow knobs
-#       [--mw-eval-pct 0.34] [--keep]
+#       [--mw-eval-pct 0.34] [--phase-timeout S] [--mw-run-timeout S] [--keep]
 #   --platform is auto-detected from the running container when omitted. Any of
 #   --container/--data-path/--ckpt-root override the platform default.
+#   Per-phase wait budgets default per-platform (B200 node-local NVMe: 1800/3600s;
+#   MI350/MI355 shared-NFS full-model ckpts ~9 min each: 5400/5400s) and can be
+#   overridden with --phase-timeout (midwindow) / --mw-run-timeout (multiwindow).
 
 set -uo pipefail
 
 JOBID=""
-REPO=/home/chcai/training/recommendation_v4
+# Repo root is derived from THIS script's location
+# (<repo>/generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh —
+# four levels up), so the test is not pinned to any one user's home. Override with
+# --repo if the repo is mounted at a different path inside the container.
+_SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(cd "$_SELF_DIR/../../../.." && pwd)
 DATASET_SUBDIR=processed_5b/hstu_cache_L4086
 SCENARIO=all                                # midwindow | multiwindow | all
 START_TS=150
@@ -89,7 +97,12 @@ NUM_EVAL_BATCHES=5      # cap the per-phase FINAL eval (0 = full holdout, very s
 DIE_AT_STEP=100
 IN_WINDOW_FREQ=50
 ATOL=0.15           # trajectory closeness bound (NOT bit-equality; see py module)
-MW_TIMEOUT=1800
+# Per-phase wait budget. Left empty here and filled per-platform below (a B200
+# ckpt save/load hits node-local NVMe and is fast; on meta64 each full-model DCP
+# save/load lands on shared NFS and takes ~9 min, and the resume phase does a
+# LOAD + several in-window saves + an end-of-window save, so it needs far longer).
+# Override explicitly with --phase-timeout.
+MW_TIMEOUT=""
 
 # --- multiwindow knobs ---
 MW_TS=3                 # windows to train (>=2 to cross a boundary)
@@ -98,7 +111,9 @@ MW_EVAL_BATCHES=5       # holdout eval batches per fired eval
 MW_EVAL_PCT=0.34        # data-fraction eval cadence (>0 enables the anchors path)
 MW_SPLIT=0.90           # train split (<1 => holdout exists => uid-hash anchor path)
 MW_HOLDOUT_TS=200       # PINNED holdout window (must match across seed→resume)
-MW_RUN_TIMEOUT=3600     # generous: init + planner + anchors gather can take min
+# generous: init + planner + anchors gather can take min; on NFS add ckpt save/load.
+# Empty => filled per-platform below. Override with --mw-run-timeout.
+MW_RUN_TIMEOUT=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -117,6 +132,8 @@ while [[ $# -gt 0 ]]; do
         --die-at-step) DIE_AT_STEP="$2"; shift 2;;
         --in-window-freq) IN_WINDOW_FREQ="$2"; shift 2;;
         --atol) ATOL="$2"; shift 2;;
+        --phase-timeout) MW_TIMEOUT="$2"; shift 2;;
+        --mw-run-timeout) MW_RUN_TIMEOUT="$2"; shift 2;;
         --mw-num-train-ts) MW_TS="$2"; shift 2;;
         --mw-num-train-batches) MW_BATCHES="$2"; shift 2;;
         --mw-num-eval-batches) MW_EVAL_BATCHES="$2"; shift 2;;
@@ -142,7 +159,20 @@ if [[ -z "$PLATFORM" ]]; then
         _names=$(srun --jobid="$JOBID" --overlap docker ps -a --format '{{.Names}}' 2>/dev/null)
         if grep -qx yambda_b200 <<<"$_names"; then PLATFORM=b200
         elif grep -qx yambda_primus <<<"$_names"; then PLATFORM=mi350
-        else PLATFORM=b200; echo "Warning: could not auto-detect platform (no known container on job $JOBID) — defaulting to b200"; fi
+        else
+            # No known training container yet (e.g. container not provisioned).
+            # Fall back to probing the allocation's GPU vendor on the host so we
+            # do NOT silently assume a platform.
+            _vendor=$(srun --jobid="$JOBID" --overlap bash -lc \
+                'if command -v rocm-smi >/dev/null 2>&1; then echo amd; \
+                 elif command -v nvidia-smi >/dev/null 2>&1; then echo nvidia; \
+                 else echo unknown; fi' 2>/dev/null | head -1)
+            case "$_vendor" in
+                amd)    PLATFORM=mi350; echo "[$(date)] no known container — detected AMD GPU host (rocm-smi) → mi350";;
+                nvidia) PLATFORM=b200;  echo "[$(date)] no known container — detected NVIDIA GPU host (nvidia-smi) → b200";;
+                *) echo "Error: could not auto-detect platform on job $JOBID (no yambda_b200/yambda_primus container and no rocm-smi/nvidia-smi). Pass --platform b200|mi350|mi355."; exit 1;;
+            esac
+        fi
     fi
     echo "[$(date)] auto-detected platform: $PLATFORM"
 fi
@@ -152,6 +182,9 @@ case "$PLATFORM" in
         # B200: mmap (ckpt LOAD + dataset cache) must NOT touch virtiofs/NFS.
         [[ "$DATA_PATH" == "__AUTO__" ]] && DATA_PATH=/tmp/yambda_data
         : "${CKPT_ROOT:=/tmp/yambda_resume_test/ckpts}"
+        # Node-local NVMe: full-model save/load is fast.
+        : "${MW_TIMEOUT:=1800}"
+        : "${MW_RUN_TIMEOUT:=3600}"
         ;;
     mi350|mi355)
         : "${CONTAINER:=yambda_primus}"
@@ -159,9 +192,15 @@ case "$PLATFORM" in
         # (matches the original MI350 test). /apps/chcai/dlrm_data is the gin default.
         [[ "$DATA_PATH" == "__AUTO__" ]] && DATA_PATH=/apps/chcai/dlrm_data
         : "${CKPT_ROOT:=/apps/chcai/ckpts_resume_test}"
+        # Shared NFS: each full-model DCP save/load is ~9 min. The midwindow resume
+        # phase chains a LOAD + multiple in-window saves + an end-of-window save
+        # (>2000s observed), so the B200 budgets are far too tight — abandoning a
+        # still-running trainer leaks GPU VRAM and OOMs the next phase. Be generous.
+        : "${MW_TIMEOUT:=5400}"
+        : "${MW_RUN_TIMEOUT:=5400}"
         ;;
 esac
-echo "[$(date)] platform=$PLATFORM container=$CONTAINER data_path=${DATA_PATH:-<gin default>} ckpt_root=$CKPT_ROOT"
+echo "[$(date)] platform=$PLATFORM container=$CONTAINER data_path=${DATA_PATH:-<gin default>} ckpt_root=$CKPT_ROOT phase_timeout=${MW_TIMEOUT}s mw_run_timeout=${MW_RUN_TIMEOUT}s"
 
 mkdir -p "$LOG_DIR"
 PYHELPER="$REPO/generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.py"
@@ -170,9 +209,26 @@ PYHELPER="$REPO/generative_recommenders/dlrm_v3/train/tests/streaming_resume_tes
 #     path is node-local on B200 or shared NFS on MI350) ---
 sx() { srun --jobid="$JOBID" --overlap docker exec "$CONTAINER" bash -lc "$1" 2>/dev/null; }
 
+# Kill any lingering trainer procs from a prior phase AND block until they are
+# really gone, so the freed GPU VRAM is reclaimed before the next phase shards
+# its embedding tables (otherwise it OOMs on the leaked memory).
+#   * Bracketed patterns ([t]rain_ranker, …) are REQUIRED: a plain `pkill -f
+#     train_ranker` issued inside `bash -lc "...train_ranker..."` matches its OWN
+#     command line and SIGKILLs this very shell (docker exec returns 137), which
+#     silently aborted the rest of the old cleanup and leaked trainers/VRAM.
+#   * After signalling, poll until no trainer remains (bounded), then a short
+#     settle so the driver finishes reclaiming device memory.
 cleanup_workers() {
-    sx "pkill -9 -f train_ranker 2>/dev/null; pkill -9 -f generative_recommenders 2>/dev/null; \
-        pkill -9 -f multiprocessing 2>/dev/null; sleep 2; pkill -9 -f spawn_main 2>/dev/null; sleep 3; true" || true
+    sx '
+        for pat in "[t]rain_ranker" "[g]enerative_recommenders" "[s]pawn_main" "[m]ultiprocessing"; do
+            pkill -9 -f "$pat" 2>/dev/null
+        done
+        for _ in $(seq 1 30); do
+            pgrep -f "[t]rain_ranker" >/dev/null 2>&1 || \
+            pgrep -f "[g]enerative_recommenders" >/dev/null 2>&1 || break
+            sleep 2
+        done
+        sleep 3; true' || true
 }
 clean_ckpt() { sx "rm -rf '$1'" || true; }
 

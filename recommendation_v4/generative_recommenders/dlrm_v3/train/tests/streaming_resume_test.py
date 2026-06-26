@@ -15,8 +15,8 @@
 """End-to-end failure-injection test for streaming resume.
 
 Two scenarios, driven by the sibling `streaming_resume_test.sh` (see its header
-for the full B200 launch wiring). This module is the shared log parser + a CLI
-the driver shells out to.
+for the full, platform-general launch wiring — NVIDIA B200 and AMD MI350/MI355).
+This module is the shared log parser + a CLI the driver shells out to.
 
 SCENARIO `midwindow` — exact-once mid-window resume. Validates the four
 single-window resume features end-to-end on the yambda-5b stack:
