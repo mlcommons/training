@@ -55,8 +55,10 @@ from torch.distributed.optim import (
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader, Dataset as TorchDataset
 from torch.utils.data.distributed import _T_co, DistributedSampler
+from torchrec.distributed.embedding_types import EmbeddingComputeKernel
 from torchrec.distributed.model_parallel import DistributedModelParallel
 from torchrec.distributed.planner import EmbeddingShardingPlanner, Topology
+from torchrec.distributed.planner.types import ParameterConstraints
 from torchrec.distributed.sharding_plan import get_default_sharders
 from torchrec.distributed.types import ShardedTensor, ShardingEnv
 from torchrec.modules.embedding_configs import EmbeddingConfig
@@ -73,6 +75,16 @@ logger: logging.Logger = logging.getLogger(__name__)
 TORCHREC_TYPES: Set[Type[Union[EmbeddingBagCollection, EmbeddingCollection]]] = {
     EmbeddingBagCollection,
     EmbeddingCollection,
+}
+
+# Embedding placement vocabulary -> torchrec compute kernel. Used by
+# make_optimizer_and_shard to translate the gin/env placement strings
+# ("hbm"/"uvm"/"uvm_caching") into ParameterConstraints. "auto" (or anything not
+# in this map) means "no constraint": the planner decides from the HBM cap.
+_PLACEMENT_TO_KERNEL: Dict[str, EmbeddingComputeKernel] = {
+    "hbm": EmbeddingComputeKernel.FUSED,
+    "uvm": EmbeddingComputeKernel.FUSED_UVM,
+    "uvm_caching": EmbeddingComputeKernel.FUSED_UVM_CACHING,
 }
 
 
@@ -552,6 +564,89 @@ def _maybe_apply_qcomm_a2a(
         return sharders
 
 
+def _embedding_table_names(
+    model: torch.nn.Module,
+    embedding_table_configs: Optional[Dict[str, EmbeddingConfig]],
+) -> List[str]:
+    """All embedding table names the planner will place.
+
+    Prefers the authoritative `embedding_table_configs` (keys == table names ==
+    planner parameter names). Falls back to walking the model's EBC/EC modules
+    when the configs are not passed in.
+    """
+    if embedding_table_configs:
+        return list(embedding_table_configs.keys())
+    names: List[str] = []
+    for _, module in model.named_modules():
+        if type(module) in TORCHREC_TYPES:
+            if isinstance(module, EmbeddingBagCollection):
+                names.extend(c.name for c in module.embedding_bag_configs())
+            elif isinstance(module, EmbeddingCollection):
+                names.extend(c.name for c in module.embedding_configs())
+    return names
+
+
+def _build_placement_constraints(
+    model: torch.nn.Module,
+    embedding_placement: str,
+    embedding_placement_overrides: Dict[str, str],
+    embedding_table_configs: Optional[Dict[str, EmbeddingConfig]],
+) -> Dict[str, ParameterConstraints]:
+    """Translate gin/env placement strings into torchrec ParameterConstraints.
+
+    Resolution per table: ``overrides.get(name, embedding_placement)``. A value
+    of ``auto`` (or empty) means "no constraint" and the table is omitted so the
+    planner keeps deciding from the HBM cap. Unknown values raise ValueError.
+    """
+    valid = set(_PLACEMENT_TO_KERNEL) | {"auto", ""}
+    for where, val in [
+        ("embedding_placement", embedding_placement),
+        *[
+            (f"embedding_placement_overrides[{k}]", v)
+            for k, v in embedding_placement_overrides.items()
+        ],
+    ]:
+        if val not in valid:
+            raise ValueError(
+                f"Invalid embedding placement {val!r} for {where}; "
+                f"expected one of {sorted(valid - {''})}."
+            )
+
+    names = _embedding_table_names(model, embedding_table_configs)
+    unknown = set(embedding_placement_overrides) - set(names)
+    if unknown:
+        logger.warning(
+            "[emb-placement] override(s) for unknown table(s) %s ignored; "
+            "known tables: %s",
+            sorted(unknown),
+            sorted(names),
+        )
+
+    constraints: Dict[str, ParameterConstraints] = {}
+    resolved: Dict[str, str] = {}
+    for name in names:
+        placement = embedding_placement_overrides.get(name, embedding_placement)
+        resolved[name] = placement or "auto"
+        kernel = _PLACEMENT_TO_KERNEL.get(placement)
+        if kernel is not None:
+            constraints[name] = ParameterConstraints(
+                compute_kernels=[kernel.value]
+            )
+
+    rank = dist.get_rank() if dist.is_initialized() else 0
+    if rank == 0:
+        logger.info(
+            "[emb-placement] global=%r overrides=%s -> resolved=%s "
+            "(constrained=%d/%d tables; the rest are planner-auto)",
+            embedding_placement,
+            embedding_placement_overrides or {},
+            resolved,
+            len(constraints),
+            len(names),
+        )
+    return constraints
+
+
 @gin.configurable
 def make_optimizer_and_shard(
     model: torch.nn.Module,
@@ -561,6 +656,9 @@ def make_optimizer_and_shard(
     hbm_cap_gb: int = 260,
     sparse_a2a_forward_precision: str = "fp32",
     sparse_a2a_backward_precision: str = "fp32",
+    embedding_placement: str = "auto",
+    embedding_placement_overrides: Optional[Dict[str, str]] = None,
+    embedding_table_configs: Optional[Dict[str, EmbeddingConfig]] = None,
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
         dense_optimizer_factory_and_class()
@@ -595,6 +693,17 @@ def make_optimizer_and_shard(
         world_size,
         local_world_size or world_size,
     )
+    # Resolve per-table embedding placement (gin/env-driven). Global default
+    # `embedding_placement` applies to every table; `embedding_placement_overrides`
+    # (table name -> placement) wins per table. Tables resolving to "auto" carry
+    # no constraint (planner decides from hbm_cap). When nothing is constrained we
+    # pass constraints=None so the plan is byte-identical to the legacy path.
+    constraints = _build_placement_constraints(
+        model=model,
+        embedding_placement=embedding_placement,
+        embedding_placement_overrides=embedding_placement_overrides or {},
+        embedding_table_configs=embedding_table_configs,
+    )
     planner = EmbeddingShardingPlanner(
         topology=Topology(
             local_world_size=local_world_size or world_size,
@@ -602,13 +711,33 @@ def make_optimizer_and_shard(
             compute_device="cuda",
             hbm_cap=hbm_cap_gb * 1024 * 1024 * 1024,
             ddr_cap=0,
-        )
+        ),
+        constraints=constraints or None,
     )
     pg = dist.GroupMember.WORLD
     env = ShardingEnv.from_process_group(pg)  # pyre-ignore [6]
     pg = env.process_group
 
     plan = planner.collective_plan(model, sharders, pg)
+
+    # Authoritative placement log: report the compute kernel the planner ACTUALLY
+    # assigned to each table (vs the [emb-placement] line above, which reports what
+    # was requested). "fused" = HBM; "fused_uvm"/"fused_uvm_caching" = UVM-backed.
+    # Rank 0 only, best-effort (never break the build over a logging shape change).
+    if (dist.get_rank() if dist.is_initialized() else 0) == 0:
+        try:
+            for module_path, param_plans in plan.plan.items():
+                for param_name, ps in param_plans.items():
+                    logger.info(
+                        "[emb-placement] plan: %s.%s -> compute_kernel=%s "
+                        "sharding_type=%s",
+                        module_path,
+                        param_name,
+                        getattr(ps, "compute_kernel", "?"),
+                        getattr(ps, "sharding_type", "?"),
+                    )
+        except Exception as e:  # logging only; must never fail the build
+            logger.warning("[emb-placement] could not dump plan kernels: %s", e)
 
     # Re-seed right before DMP materializes/inits the sharded embedding tables.
     # The per-table seeded init_fn (configs.get_embedding_table_config) handles

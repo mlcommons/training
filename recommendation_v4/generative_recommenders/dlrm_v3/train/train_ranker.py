@@ -150,6 +150,7 @@ def _main_func(
         device=device,
         world_size=world_size,
         local_world_size=gpus_per_node,
+        embedding_table_configs=embedding_table_configs,
     )
     # Decorrelate forward-time stochasticity (HSTU dropout) per data-parallel
     # rank. MUST run after make_model() + make_optimizer_and_shard() so the

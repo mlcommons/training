@@ -1501,6 +1501,45 @@ def env_str(key: str = "", default: str = "") -> str:
 
 
 @gin.configurable
+def env_str_map(
+    key: str = "",
+    default: Optional[Dict[str, str]] = None,
+    merge: bool = False,
+) -> Dict[str, str]:
+    """Parse os.environ[key] as 'name=value,name=value' into a dict.
+
+    Falls back to `default` (gin) when the env var is unset/empty. Companion to
+    `env_str` for map-valued overrides (e.g. per-table embedding placement).
+    Example gin usage:
+
+        make_optimizer_and_shard.embedding_placement_overrides = @env_str_map()
+        env_str_map.key     = "EMB_PLACEMENT_OVERRIDES"
+        env_str_map.default = {}
+
+    Example env override: EMB_PLACEMENT_OVERRIDES="uid=uvm_caching,item_id=hbm".
+
+    `merge` controls how the parsed env entries combine with `default`:
+      * False (default): the env var REPLACES `default` wholesale (whole-dict
+        override) — set the env var and you fully define the map.
+      * True: the parsed env entries are LAYERED ON TOP of `default` (per-key
+        override) — gin `default` defines the base map and the env var tweaks
+        only the named keys, leaving the rest of `default` intact.
+    """
+    base = dict(default or {})
+    raw = os.environ.get(key) if key else None
+    if not raw:
+        return base
+    parsed: Dict[str, str] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        k, _, v = pair.partition("=")
+        parsed[k.strip()] = v.strip()
+    return {**base, **parsed} if merge else parsed
+
+
+@gin.configurable
 def env_int(key: str = "", default: int = 0) -> int:
     """Resolve an int from os.environ[key], falling back to `default`.
 
