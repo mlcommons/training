@@ -512,14 +512,12 @@ def _maybe_apply_qcomm_a2a(
     rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
     for name, p in (("forward", fwd), ("backward", bwd)):
         if p not in _COMM:
-            if rank0:
-                logger.warning(
-                    "DLRMV4 qcomm a2a: unknown %s precision %r (want "
-                    "fp32|bf16|fp16); using fp32 a2a",
-                    name,
-                    p,
-                )
-            return sharders
+            # Misconfigured precision: fail loudly rather than silently running
+            # fp32. A typo in SPARSE_A2A_{FWD,BWD} must not pass as "no quant".
+            raise ValueError(
+                f"DLRMV4 qcomm a2a: unknown {name} precision {p!r} "
+                f"(want one of fp32|bf16|fp16)"
+            )
     if fwd == "fp32" and bwd == "fp32":
         return sharders
     try:
@@ -535,33 +533,45 @@ def _maybe_apply_qcomm_a2a(
             backward_precision=getattr(CommType, _COMM[bwd]),
         )
         registry = get_qcomm_codecs_registry(qcfg, device=device)
-        new_sharders = []
-        replaced = False
-        for s in sharders:
-            if type(s).__name__ == "EmbeddingCollectionSharder" and not replaced:
-                new_sharders.append(
-                    EmbeddingCollectionSharder(qcomm_codecs_registry=registry)
-                )
-                replaced = True
-            else:
-                new_sharders.append(s)
-        if rank0:
-            logger.info(
-                "DLRMV4 qcomm a2a ENABLED: forward=%s backward=%s "
-                "replaced_ec_sharder=%s",
-                fwd,
-                bwd,
-                replaced,
+    except Exception as e:  # noqa: BLE001
+        # A configured quantized a2a that fails to build is a hard error. Silently
+        # downgrading to fp32 would change numerics/throughput with no signal, and
+        # a partial failure (one rank fp32, others fp16) would also desync the
+        # collectives. Raise on every rank so the whole job aborts consistently.
+        raise RuntimeError(
+            f"DLRMV4 qcomm a2a: failed to enable configured quantization "
+            f"(forward={fwd} backward={bwd}): {type(e).__name__}: {e}"
+        ) from e
+
+    new_sharders = []
+    replaced = False
+    for s in sharders:
+        if type(s).__name__ == "EmbeddingCollectionSharder" and not replaced:
+            new_sharders.append(
+                EmbeddingCollectionSharder(qcomm_codecs_registry=registry)
             )
-        return new_sharders
-    except Exception as e:  # noqa: BLE001 — fall back to fp32 a2a on any failure
-        if rank0:
-            logger.warning(
-                "DLRMV4 qcomm a2a: failed to enable (%s: %s); using fp32 a2a",
-                type(e).__name__,
-                e,
-            )
-        return sharders
+            replaced = True
+        else:
+            new_sharders.append(s)
+    if not replaced:
+        # Codec registry built fine, but there was no EmbeddingCollectionSharder to
+        # bind it to, so the quantized a2a would be silently inert. Treat this as a
+        # hard failure too — "configured but not applied" is the bug we want caught.
+        raise RuntimeError(
+            f"DLRMV4 qcomm a2a: quantization configured (forward={fwd} "
+            f"backward={bwd}) but no EmbeddingCollectionSharder was found to attach "
+            f"the qcomm codec registry to; refusing to run with quantization "
+            f"silently disabled"
+        )
+    if rank0:
+        logger.info(
+            "DLRMV4 qcomm a2a ENABLED: forward=%s backward=%s "
+            "replaced_ec_sharder=%s",
+            fwd,
+            bwd,
+            replaced,
+        )
+    return new_sharders
 
 
 def _embedding_table_names(
