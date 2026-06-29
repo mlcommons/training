@@ -335,15 +335,17 @@ make_persistent_streaming_dataloader.num_workers = %num_workers
 make_persistent_streaming_dataloader.prefetch_factor = %prefetch_factor
 streaming_train_eval_loop.num_train_ts = @nts/env_int()
 nts/env_int.key = "NUM_TRAIN_TS"
-# 149 daily windows -> with start_ts=150 the run sweeps ts=150..298, the full
-# dense range of the corpus (matches the long e2e runs). Clamped to the
-# dataset's available window count at runtime. Override via $NUM_TRAIN_TS.
-nts/env_int.default = 149
+# 299 daily windows -> with start_ts=0 the run sweeps ts=0..298, the full corpus
+# (matches the long fp16 e2e run). Clamped to the dataset's available window
+# count at runtime. Override via $NUM_TRAIN_TS.
+nts/env_int.default = 299
 # Anchors need >= history_length prior events, so the first ~130 daily windows
-# are near-empty warm-up; start at a dense window. Override via $START_TS.
+# are near-empty warm-up. Default start_ts=0 trains the full corpus from the
+# start (matches the canonical fp16 run); set $START_TS=150 to skip warm-up and
+# begin at a dense window. Override via $START_TS.
 streaming_train_eval_loop.start_ts = @sts/env_int()
 sts/env_int.key = "START_TS"
-sts/env_int.default = 150
+sts/env_int.default = 0
 # Per-step metric logging cadence. Default 50 (one compute_and_log GPU->CPU
 # sync per 50 batches). The streaming-resume test sets METRIC_LOG_FREQ=1 so
 # every step emits a parseable "Step N metrics" line for trajectory comparison.
@@ -434,12 +436,13 @@ streaming_train_eval_loop.double_buffer = @db/env_int()
 db/env_int.key = "DOUBLE_BUFFER"
 db/env_int.default = 1
 # Fixed eval-holdout window range (held-out users' anchors over these windows
-# form the eval set evaluated at EVERY eval step). EVAL_HOLDOUT_TS<0 (default)
-# resolves at runtime to start_ts+num_train_ts (the window just past training),
-# which is stable across resume. EVAL_HOLDOUT_NUM_WINDOWS widens the eval span.
+# form the eval set evaluated at EVERY eval step). Default 299 = the window just
+# past the ts=0..298 training sweep (matches the canonical fp16 run). Set
+# EVAL_HOLDOUT_TS<0 to instead resolve at runtime to start_ts+num_train_ts (also
+# stable across resume). EVAL_HOLDOUT_NUM_WINDOWS widens the eval span.
 streaming_train_eval_loop.eval_holdout_ts = @eht/env_int()
 eht/env_int.key     = "EVAL_HOLDOUT_TS"
-eht/env_int.default = -1
+eht/env_int.default = 299
 streaming_train_eval_loop.eval_holdout_num_windows = @ehnw/env_int()
 ehnw/env_int.key     = "EVAL_HOLDOUT_NUM_WINDOWS"
 ehnw/env_int.default = 1
@@ -545,12 +548,12 @@ streaming_train_eval_loop.checkpoint_step_frequency = @csf/env_int()
 csf/env_int.key     = "CKPT_STEP_FREQ"
 csf/env_int.default = 0
 # Wall-clock checkpoint cadence in seconds: save when >= this many seconds have
-# elapsed since the last save (e.g. 3600 for hourly). Rank 0 owns the clock and
-# broadcasts the decision so all ranks save together. 0.0 (default) = off.
-# Override via $CKPT_TIME_INTERVAL_S.
+# elapsed since the last save. Rank 0 owns the clock and broadcasts the decision
+# so all ranks save together. Default 3600 = hourly saves (matches the canonical
+# fp16 run); set 0.0 to disable. Override via $CKPT_TIME_INTERVAL_S.
 streaming_train_eval_loop.checkpoint_time_interval_s = @ctis/env_float()
 ctis/env_float.key     = "CKPT_TIME_INTERVAL_S"
-ctis/env_float.default = 0.0
+ctis/env_float.default = 3600.0
 # Cap each train_ts window's batch count (mostly for the resume test driver).
 # Unset / 0 = use the full window.
 streaming_train_eval_loop.num_train_batches = @ntb/env_int()
