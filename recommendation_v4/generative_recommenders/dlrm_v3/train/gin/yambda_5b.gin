@@ -198,6 +198,64 @@ make_optimizer_and_shard.sparse_a2a_backward_precision = @saab/env_str()
 saab/env_str.key     = "SPARSE_A2A_BWD"
 saab/env_str.default = "fp16"
 
+# =============================================================================
+# RUNTIME PATCHES / MONKEYPATCHES
+# -----------------------------------------------------------------------------
+# Third-party kernels we override AT RUNTIME (no fork of the dependency). Each
+# knob here is a kill switch for one such patch: ON by default (it fixes a real
+# bug we hit), but flippable per-run so we can A/B the patch, reproduce the
+# original failure, or fall back to stock if a future dependency version makes
+# the patch unnecessary or incorrect. Patches are applied during model
+# build/shard (make_optimizer_and_shard), before any training step.
+# =============================================================================
+#
+# --- qcomm_lowmem_clamp_cast: low-memory fbgemm fp16/bf16 quant codec ---------
+# WHAT IT PATCHES
+#   fbgemm_gpu's embedding-a2a quantizer, fp32_to_fp16_with_clamp (and the bf16
+#   variant), which the TorchRec qcomm codec calls to pack the sparse
+#   embedding all-to-all payload onto the wire. Stock implementation is:
+#       torch.clamp(tensor, HALF_MIN, HALF_MAX).half()
+#   torch.clamp() materializes a SECOND full-size fp32 tensor (same numel as the
+#   input) BEFORE the cast, so the transient peak is
+#       input(fp32) + clamp_temp(fp32) + output(fp16)  ~= 2.5x the input.
+#   The patch reorders to an in-place, allocation-free-equivalent:
+#       tensor.half().clamp_(HALF_MIN, HALF_MAX)
+#   i.e. cast FIRST (only the fp16 output is allocated), then clamp IN PLACE —
+#   dropping the full-size fp32 clamp temp and cutting the transient peak by the
+#   size of the input tensor.
+#
+# WHY IT'S NEEDED (the bug it fixes)
+#   Embeddings are ROW-WISE sharded: every lookup of row r routes to the single
+#   rank that owns r. On a data-skewed batch a few extremely hot IDs send a
+#   disproportionate share of the global lookups to ONE owner rank, so that
+#   rank's a2a input tensor balloons. With the stock codec the extra fp32 clamp
+#   temp on that rank reached ~81.5 GiB, which OOM'd the rank mid-forward. The
+#   OOM'd rank then dropped out of the collective while its peers blocked forever
+#   in the embedding all-to-all -> ~30-min NCCL watchdog timeout -> the whole job
+#   SIGABRTs. This was a DETERMINISTIC hang (same window/step every run; e.g.
+#   yambda-5b 4-node fp16 a2a hit it at window 235 / global step 43621).
+#   See generative_recommenders/dlrm_v3/train/utils.py
+#   (_patch_fbgemm_lowmem_clamp_cast) for the full diagnosis + flight-recorder
+#   evidence.
+#
+# CORRECTNESS / PERF
+#   Numerically IDENTICAL (bit-for-bit) to stock: the single fp32->fp16 cast is
+#   the only rounding step in both orders; an fp32 value above HALF_MAX casts to
+#   +inf which clamp_ maps back to HALF_MAX, and NaNs pass through unchanged.
+#   In-place is safe because the codec encode() runs inside the qcomm autograd
+#   Function.forward with grad disabled (no graph to corrupt). No throughput
+#   regression (measured step time within run-to-run noise; it does strictly
+#   LESS memory traffic + allocation than stock).
+#
+# WHEN TO TURN OFF (set 0): only to reproduce the original OOM/hang for
+#   debugging, or to revalidate against stock after an fbgemm_gpu upgrade.
+#   Override via $QCOMM_LOWMEM_CODEC. Only takes effect when the embedding a2a is
+#   actually quantized (SPARSE_A2A_FWD/BWD not both fp32); with fp32 a2a there is
+#   no codec to patch and this knob is a no-op.
+make_optimizer_and_shard.qcomm_lowmem_clamp_cast = @qlcc/env_int()
+qlcc/env_int.key     = "QCOMM_LOWMEM_CODEC"
+qlcc/env_int.default = 1
+
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = %DATA_PATH
 # Total user-interaction-history (UIH) budget per sample, distributed evenly

@@ -480,11 +480,94 @@ def sparse_optimizer_factory_and_class(
     return optimizer_cls, kwargs, optimizer_factory
 
 
+_FBGEMM_LOWMEM_PATCHED = False
+
+
+def _patch_fbgemm_lowmem_clamp_cast(enabled: bool = True, rank0: bool = False) -> None:
+    """Replace fbgemm's quant clamp+cast with a memory-frugal equivalent.
+
+    ``enabled`` is the gin/env-driven kill switch (see
+    ``make_optimizer_and_shard.qcomm_lowmem_clamp_cast`` /
+    ``$QCOMM_LOWMEM_CODEC``). Default ON; pass ``enabled=False`` to fall back to
+    stock fbgemm (e.g. to reproduce the pre-patch OOM, or if a future fbgemm
+    version changes the codec and the patch needs revalidation).
+
+    fbgemm's ``fp32_to_fp16_with_clamp`` (and the bf16 variant) does
+    ``torch.clamp(tensor, MIN, MAX).half()``. ``torch.clamp(...)`` allocates a
+    SECOND full-size fp32 tensor (same numel as the input) *before* the cast, so
+    the transient peak is input(fp32) + clamp_temp(fp32) + output(fp16) ~= 2.5x
+    the input. On a skewed row-wise-sharded batch the hottest shard's embedding
+    tensor is huge (observed 81.5 GiB clamp temp), and that extra fp32 copy is
+    exactly the allocation that OOMs the rank — which then exits the train loop
+    while peers block forever in the a2a (a 30-min NCCL-watchdog hang). See
+    HANG_ROOTCAUSE.md / flight-recorder dump for the full diagnosis.
+
+    Cast FIRST then clamp IN PLACE: ``tensor.half().clamp_(MIN, MAX)``. This
+    allocates only the fp16 output (no full-size fp32 temp), cutting the peak by
+    the size of the input tensor, while being numerically identical: an fp32
+    value above HALF_MAX casts to +inf, which clamp_ maps back to HALF_MAX (and
+    NaNs pass through unchanged), matching clamp-then-cast bit for bit. Safe to
+    do in place because the codec ``encode()`` runs inside the qcomm autograd
+    ``Function.forward`` (grad disabled), so there is no graph to corrupt.
+    """
+    global _FBGEMM_LOWMEM_PATCHED
+    if not enabled:
+        if rank0:
+            logger.warning(
+                "[qcomm-lowmem] DISABLED (qcomm_lowmem_clamp_cast=False / "
+                "QCOMM_LOWMEM_CODEC=0) — running stock fbgemm clamp+cast, which "
+                "allocates a full-size fp32 clamp temp and can OOM->hang the "
+                "hottest row-wise embedding shard on skewed batches."
+            )
+        return
+    if _FBGEMM_LOWMEM_PATCHED:
+        return
+    try:
+        from fbgemm_gpu import quantize_comm, quantize_utils
+
+        _HMIN = quantize_utils.TORCH_HALF_MIN
+        _HMAX = quantize_utils.TORCH_HALF_MAX
+        _BMIN = quantize_utils.TORCH_BFLOAT16_MIN
+        _BMAX = quantize_utils.TORCH_BFLOAT16_MAX
+
+        def _lowmem_fp16(tensor: torch.Tensor) -> torch.Tensor:
+            return tensor.half().clamp_(_HMIN, _HMAX)
+
+        def _lowmem_bf16(tensor: torch.Tensor) -> torch.Tensor:
+            return tensor.bfloat16().clamp_(_BMIN, _BMAX)
+
+        # Patch BOTH the definition module and quantize_comm, which imported the
+        # names directly (``from .quantize_utils import fp32_to_fp16_with_clamp``)
+        # so its module-level reference must be overridden too.
+        for _mod in (quantize_utils, quantize_comm):
+            if hasattr(_mod, "fp32_to_fp16_with_clamp"):
+                _mod.fp32_to_fp16_with_clamp = _lowmem_fp16
+            if hasattr(_mod, "fp32_to_bf16_with_clamp"):
+                _mod.fp32_to_bf16_with_clamp = _lowmem_bf16
+
+        _FBGEMM_LOWMEM_PATCHED = True
+        if rank0:
+            logger.info(
+                "[qcomm-lowmem] patched fbgemm fp32->fp16/bf16 clamp+cast to "
+                "cast-then-clamp_ (drops the full-size fp32 clamp temp; avoids "
+                "OOM on skewed row-wise embedding a2a)"
+            )
+    except Exception as e:  # noqa: BLE001 — patch is best-effort, never fatal
+        if rank0:
+            logger.warning(
+                "[qcomm-lowmem] could not patch fbgemm clamp+cast (%s: %s); "
+                "running with stock (higher-peak) quantizer",
+                type(e).__name__,
+                e,
+            )
+
+
 def _maybe_apply_qcomm_a2a(
     sharders: List[Any],
     device: torch.device,
     forward_precision: str = "fp32",
     backward_precision: str = "fp32",
+    lowmem_clamp_cast: bool = True,
 ) -> List[Any]:
     """Optionally quantize the embedding all-to-all payload via TorchRec qcomm.
 
@@ -520,6 +603,11 @@ def _maybe_apply_qcomm_a2a(
             )
     if fwd == "fp32" and bwd == "fp32":
         return sharders
+    # Before building the codec, swap fbgemm's clamp+cast for a memory-frugal
+    # equivalent — see _patch_fbgemm_lowmem_clamp_cast for why (avoids a full
+    # extra fp32 temp that OOMs the hottest row-wise shard on skewed batches).
+    # Gated by `lowmem_clamp_cast` (gin/env); ON by default.
+    _patch_fbgemm_lowmem_clamp_cast(enabled=lowmem_clamp_cast, rank0=rank0)
     try:
         from torchrec.distributed.embedding import EmbeddingCollectionSharder
         from torchrec.distributed.fbgemm_qcomm_codec import (
@@ -666,6 +754,7 @@ def make_optimizer_and_shard(
     hbm_cap_gb: int = 260,
     sparse_a2a_forward_precision: str = "fp32",
     sparse_a2a_backward_precision: str = "fp32",
+    qcomm_lowmem_clamp_cast: bool = True,
     embedding_placement: str = "auto",
     embedding_placement_overrides: Optional[Dict[str, str]] = None,
     embedding_table_configs: Optional[Dict[str, EmbeddingConfig]] = None,
@@ -691,6 +780,7 @@ def make_optimizer_and_shard(
         device,
         forward_precision=sparse_a2a_forward_precision,
         backward_precision=sparse_a2a_backward_precision,
+        lowmem_clamp_cast=qcomm_lowmem_clamp_cast,
     )
     # local_world_size = GPUs per node so the planner respects the intra-node
     # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
