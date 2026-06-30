@@ -2,7 +2,7 @@
 
 ## SWE Agent Reinforcement Learning  - GRPO with NeMo-Gym SWE/OpenHands.
 
-[NeMo-RL](https://github.com/CarlosGomes98/RL/tree/mlperf-training-qwen35) provides the implementation used for this benchmark from branch `mlperf-training-qwen35`. The benchmark uses Reinforcement Learning with Verifiable Rewards (RLVR) to train `Qwen/Qwen3.5-397B-A17B` with  Group Relative Policy Optimization (GRPO) against a NeMo-Gym software-engineering environment driven by an OpenHands SWE agent.
+[NeMo-RL](https://github.com/NVIDIA-NeMo/RL/tree/v0.6.0-mlperf-training-qwen35) provides the implementation used for this benchmark from branch `mlperf-training-qwen35`. The benchmark uses Reinforcement Learning with Verifiable Rewards (RLVR) to train `Qwen/Qwen3.5-397B-A17B` with  Group Relative Policy Optimization (GRPO) against a NeMo-Gym software-engineering environment driven by an OpenHands SWE agent.
 
 The task is to improve the SWE agent's accuracy in solving held-out R2E-Gym software-engineering tasks. A rollout receives reward 1 when the generated patch passes the task evaluation and reward 0 otherwise.
 
