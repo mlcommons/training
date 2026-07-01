@@ -179,6 +179,44 @@ env_str_map.key     = "EMB_PLACEMENT_OVERRIDES"
 env_str_map.merge   = True
 env_str_map.default = {}
 
+# Per-table SHARDING-TYPE overrides (shard layout, orthogonal to placement above).
+# Absent/"auto" tables keep the planner's choice (ROW_WISE for the large yambda
+# tables). Allowed per table: "row_wise"|"column_wise"|"table_wise"|
+# "table_row_wise"|"table_column_wise"|"data_parallel"|"auto" (aliases rw/cw/tw/
+# twrw). DEFAULT OFF ({}) -> plan is byte-identical to the legacy all-ROW_WISE
+# path. Opt in per run via env, e.g.:
+#   EMB_SHARDING_OVERRIDES="album_id=column_wise,artist_id=column_wise"
+# WHY: ROW_WISE routes every lookup of row r to the single owner rank, so a few
+# hot IDs concentrate the embedding all-to-all onto one rank and OOM it (the
+# yambda-5b skew hang; album_id ~2.8x, artist_id ~1.3x per-rank load). COLUMN_WISE
+# splits the table by embedding dim (every rank holds all rows, dim/world cols),
+# so the a2a load is balanced by RANK regardless of which IDs are hot — removing
+# the value-skew OOM — at identical per-rank table bytes. Convert only the skewed
+# high-volume tables (album_id, artist_id); leave the balanced, highest-volume
+# item_id and the tiny length-1 contextual/cross tables on ROW_WISE.
+# WHY THIS GETS WORSE AT LARGER GLOBAL BATCH: the ROW_WISE a2a input buffer on the
+# owner rank is sized by how many times its hot IDs appear across the WHOLE global
+# batch, so that transient scales ~linearly with global batch size (here 32 ranks
+# x 1024 = 32768, each carrying ~4096-token UIH sequences -> tens of millions of
+# lookups/step, heavily re-hitting the same few popular albums/artists). Doubling
+# the global batch ~doubles the hot-rank burst while every other rank stays idle,
+# which is exactly what tipped GPU5/GPU3 from a saturated steady state (~208-238
+# GiB) over 288 GiB at window ~248. COLUMN_WISE makes each rank receive dim/world
+# of EVERY lookup, so the per-rank a2a volume is ~global_batch/world (balanced)
+# and grows with world size, not with which IDs are hot -> it scales cleanly as
+# you push global batch / add ranks, instead of piling the growth onto one shard.
+# Example (the yambda-5b 4-node run, global batch 32768, that hit the skew OOM):
+#   EMB_SHARDING_OVERRIDES="album_id=column_wise,artist_id=column_wise"
+# validated by the CW smoke: reshard-loaded the ROW_WISE ckpt cleanly, window_auc
+# stayed ~0.78-0.80, and the hot rank sat at ~58% (~120 GiB free) THROUGH the old
+# OOM window (vs 16 GiB free right before the ROW_WISE crash).
+# NOTE: changing the sharding plan changes the on-disk shard layout; a checkpoint
+# written under a different plan must be resharded/validated on load.
+make_optimizer_and_shard.embedding_sharding_overrides = @esh/env_str_map()
+esh/env_str_map.key     = "EMB_SHARDING_OVERRIDES"
+esh/env_str_map.merge   = True
+esh/env_str_map.default = {}
+
 # Sparse embedding all-to-all wire precision. The embedding shuffle is the
 # dominant, bandwidth-bound (esp. multi-node) collective; quantizing it via
 # TorchRec QCommsConfig halves (bf16/fp16, both 2 bytes) the wire volume.

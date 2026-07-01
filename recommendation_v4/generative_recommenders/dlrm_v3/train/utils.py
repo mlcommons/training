@@ -60,7 +60,7 @@ from torchrec.distributed.model_parallel import DistributedModelParallel
 from torchrec.distributed.planner import EmbeddingShardingPlanner, Topology
 from torchrec.distributed.planner.types import ParameterConstraints
 from torchrec.distributed.sharding_plan import get_default_sharders
-from torchrec.distributed.types import ShardedTensor, ShardingEnv
+from torchrec.distributed.types import ShardedTensor, ShardingEnv, ShardingType
 from torchrec.modules.embedding_configs import EmbeddingConfig
 from torchrec.modules.embedding_modules import (
     EmbeddingBagCollection,
@@ -85,6 +85,25 @@ _PLACEMENT_TO_KERNEL: Dict[str, EmbeddingComputeKernel] = {
     "hbm": EmbeddingComputeKernel.FUSED,
     "uvm": EmbeddingComputeKernel.FUSED_UVM,
     "uvm_caching": EmbeddingComputeKernel.FUSED_UVM_CACHING,
+}
+
+# Per-table sharding-type vocabulary -> torchrec ShardingType. Used by
+# make_optimizer_and_shard to pin a table's shard layout via ParameterConstraints
+# (e.g. move a hot, data-skewed table off ROW_WISE to COLUMN_WISE so its
+# embedding all-to-all load is balanced by rank instead of routed by row/value).
+# "auto" (or anything not in this map) means "no constraint": the planner decides.
+# Short aliases (rw/cw/tw/twrw) are accepted alongside the canonical names.
+_SHARDING_TO_TYPE: Dict[str, ShardingType] = {
+    "row_wise": ShardingType.ROW_WISE,
+    "column_wise": ShardingType.COLUMN_WISE,
+    "table_wise": ShardingType.TABLE_WISE,
+    "table_row_wise": ShardingType.TABLE_ROW_WISE,
+    "table_column_wise": ShardingType.TABLE_COLUMN_WISE,
+    "data_parallel": ShardingType.DATA_PARALLEL,
+    "rw": ShardingType.ROW_WISE,
+    "cw": ShardingType.COLUMN_WISE,
+    "tw": ShardingType.TABLE_WISE,
+    "twrw": ShardingType.TABLE_ROW_WISE,
 }
 
 
@@ -689,14 +708,27 @@ def _build_placement_constraints(
     embedding_placement: str,
     embedding_placement_overrides: Dict[str, str],
     embedding_table_configs: Optional[Dict[str, EmbeddingConfig]],
+    embedding_sharding_overrides: Optional[Dict[str, str]] = None,
 ) -> Dict[str, ParameterConstraints]:
-    """Translate gin/env placement strings into torchrec ParameterConstraints.
+    """Translate gin/env placement + sharding strings into ParameterConstraints.
 
-    Resolution per table: ``overrides.get(name, embedding_placement)``. A value
-    of ``auto`` (or empty) means "no constraint" and the table is omitted so the
-    planner keeps deciding from the HBM cap. Unknown values raise ValueError.
+    Two orthogonal per-table knobs are merged into one constraint per table:
+
+    * Placement (compute kernel / memory tier):
+      ``embedding_placement_overrides.get(name, embedding_placement)``.
+      ``auto``/empty -> no compute-kernel constraint (planner decides from HBM).
+    * Sharding type (shard layout): ``embedding_sharding_overrides.get(name)``.
+      ``auto``/empty (or absent) -> no sharding-type constraint (planner decides,
+      which is ROW_WISE for the large yambda tables). Use e.g. ``column_wise``
+      to move a hot, data-skewed table off ROW_WISE so its embedding all-to-all
+      is balanced by rank instead of routed by (hot) row.
+
+    A table is added to the returned dict only if at least one knob is set for it
+    (so with everything ``auto`` we return {} and the plan is byte-identical to
+    the legacy path). Unknown values raise ValueError.
     """
-    valid = set(_PLACEMENT_TO_KERNEL) | {"auto", ""}
+    embedding_sharding_overrides = embedding_sharding_overrides or {}
+    valid_place = set(_PLACEMENT_TO_KERNEL) | {"auto", ""}
     for where, val in [
         ("embedding_placement", embedding_placement),
         *[
@@ -704,14 +736,24 @@ def _build_placement_constraints(
             for k, v in embedding_placement_overrides.items()
         ],
     ]:
-        if val not in valid:
+        if val not in valid_place:
             raise ValueError(
                 f"Invalid embedding placement {val!r} for {where}; "
-                f"expected one of {sorted(valid - {''})}."
+                f"expected one of {sorted(valid_place - {''})}."
+            )
+    valid_shard = set(_SHARDING_TO_TYPE) | {"auto", ""}
+    for k, v in embedding_sharding_overrides.items():
+        if v not in valid_shard:
+            raise ValueError(
+                f"Invalid embedding sharding {v!r} for "
+                f"embedding_sharding_overrides[{k}]; "
+                f"expected one of {sorted(valid_shard - {''})}."
             )
 
     names = _embedding_table_names(model, embedding_table_configs)
-    unknown = set(embedding_placement_overrides) - set(names)
+    unknown = (
+        set(embedding_placement_overrides) | set(embedding_sharding_overrides)
+    ) - set(names)
     if unknown:
         logger.warning(
             "[emb-placement] override(s) for unknown table(s) %s ignored; "
@@ -721,24 +763,34 @@ def _build_placement_constraints(
         )
 
     constraints: Dict[str, ParameterConstraints] = {}
-    resolved: Dict[str, str] = {}
+    resolved_place: Dict[str, str] = {}
+    resolved_shard: Dict[str, str] = {}
     for name in names:
         placement = embedding_placement_overrides.get(name, embedding_placement)
-        resolved[name] = placement or "auto"
+        sharding = embedding_sharding_overrides.get(name, "auto")
+        resolved_place[name] = placement or "auto"
+        resolved_shard[name] = sharding or "auto"
         kernel = _PLACEMENT_TO_KERNEL.get(placement)
+        stype = _SHARDING_TO_TYPE.get(sharding)
+        kwargs: Dict[str, Any] = {}
         if kernel is not None:
-            constraints[name] = ParameterConstraints(
-                compute_kernels=[kernel.value]
-            )
+            kwargs["compute_kernels"] = [kernel.value]
+        if stype is not None:
+            kwargs["sharding_types"] = [stype.value]
+        if kwargs:
+            constraints[name] = ParameterConstraints(**kwargs)
 
     rank = dist.get_rank() if dist.is_initialized() else 0
     if rank == 0:
         logger.info(
-            "[emb-placement] global=%r overrides=%s -> resolved=%s "
+            "[emb-placement] placement(global=%r overrides=%s) sharding(overrides=%s) "
+            "-> resolved_placement=%s resolved_sharding=%s "
             "(constrained=%d/%d tables; the rest are planner-auto)",
             embedding_placement,
             embedding_placement_overrides or {},
-            resolved,
+            embedding_sharding_overrides or {},
+            resolved_place,
+            resolved_shard,
             len(constraints),
             len(names),
         )
@@ -757,6 +809,7 @@ def make_optimizer_and_shard(
     qcomm_lowmem_clamp_cast: bool = True,
     embedding_placement: str = "auto",
     embedding_placement_overrides: Optional[Dict[str, str]] = None,
+    embedding_sharding_overrides: Optional[Dict[str, str]] = None,
     embedding_table_configs: Optional[Dict[str, EmbeddingConfig]] = None,
 ) -> Tuple[DistributedModelParallel, torch.optim.Optimizer]:
     dense_opt_cls, dense_opt_args, dense_opt_factory = (
@@ -802,6 +855,7 @@ def make_optimizer_and_shard(
         model=model,
         embedding_placement=embedding_placement,
         embedding_placement_overrides=embedding_placement_overrides or {},
+        embedding_sharding_overrides=embedding_sharding_overrides or {},
         embedding_table_configs=embedding_table_configs,
     )
     planner = EmbeddingShardingPlanner(
