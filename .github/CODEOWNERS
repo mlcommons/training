@@ -2,4 +2,5 @@
 # Unless a later match takes precedence,they will be requested for review when someone opens a pull request.
 * @mlcommons/wg-training @mlcommons/wg-benchmark-infra
 
-/CODEOWNERS @mlcommons/staff
+/.github/CODEOWNERS @mlcommons/staff
+/.github/workflows/cla.yml @mlcommons/systems
