@@ -42,6 +42,16 @@ Each benchmark will run until the target quality is reached and then stop, print
 
 Some these benchmarks are rather slow or take a long time to run on the reference hardware. We expect to see significant performance improvements with more hardware and optimized implementations.
 
+# MLPerf Training v6.1 (Submission Deadline XXX, 2026)
+
+| Model | reference implementation | framework* | dataset | model parameter count**
+| ---- | ---- | ---- | ---- | ----
+| qwen3.5_397b_a17b_swe_grpo | [llm_moe_grpo](https://github.com/mlcommons/training/tree/master/llm_moe_grpo) | NeMo-RL / NeMo-Gym | SWE tasks | 397B
+
+*Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
+
+**Model parameter count is not the same as active parameter that are being trained in the benchmark.
+
 # MLPerf Training v6.0 (Submission Deadline May 15, 2026)
 
 | Model | reference implementation | framework* | dataset | model parameter count**
