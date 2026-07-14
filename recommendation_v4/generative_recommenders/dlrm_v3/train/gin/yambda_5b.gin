@@ -294,6 +294,59 @@ make_optimizer_and_shard.qcomm_lowmem_clamp_cast = @qlcc/env_int()
 qlcc/env_int.key     = "QCOMM_LOWMEM_CODEC"
 qlcc/env_int.default = 1
 
+# --- ec_index_dedup: in-batch embedding index deduplication ------------------
+# Enables TorchRec's use_index_dedup on the sequence EmbeddingCollectionSharder.
+# Before the sparse input all-to-all, duplicate ids within a batch are collapsed
+# to unique rows (torch.ops.fbgemm.jagged_unique_indices), the embedding lookup
+# runs once per unique id, then results scatter back to their original positions
+# via reverse_indices. For a NON-POOLED EmbeddingCollection this reconstruction
+# is exact, so it is numerically LOSSLESS (unlike the fp16 a2a it does not move
+# AUC/NE) — it only cuts (a) the sparse input all-to-all element COUNT and (b)
+# the number of rows the fused TBE kernel gathers per step.
+#
+# WHY IT HELPS HERE: the default streaming order is user-major
+# (STREAMING_SHUFFLE_FRACTION=0), so consecutive anchors are the same user's UIH
+# re-reading the same item/artist/album ids -> very high in-batch duplicate rate.
+# Measured via DIAG_UNIQUE_EMB on this config: the big UIH sequence tables are
+# ~98% duplicate WITHIN a batch (uih.item_id ~2.4% unique over 2.69M ids/batch,
+# uih.album_id ~1.5%, uih.artist_id ~0.6%), so collapsing to unique rows removes
+# the bulk of the lookup + a2a volume. Dedup COMPOSES with the fp16 qcomm a2a
+# (dedup cuts element count, qcomm cuts bytes/element) and the CW skew fix.
+#
+# MEASURED A/B (this exact config; fixed SEED=1; qcomm fp16 fwd+bwd; 200-step
+# train-only; c-series MI350 nodes). Steady-state (steps>=60) mean step time and
+# global throughput, dedup OFF -> ON:
+#   * 1 node  (WORLD_SIZE=8):  step_ms 941.6 -> 805.7  (-14.4%, +16.9% sps),
+#                              MFU 21.3% -> 24.7%
+#   * 2 node  (WORLD_SIZE=16): step_ms 1108.0 -> 818.0 (-26.2%, +37.6% sps),
+#                              MFU 18.1% -> 24.9%
+# The win GROWS with node count because at >1 node dedup also shrinks the
+# cross-node embedding all-to-all — the dominant bandwidth-bound multi-node
+# collective. It nearly erases the multi-node comm penalty: OFF weak-scales
+# 21.3%->18.1% MFU going 1->2 node, ON holds ~24.7%->24.9%.
+#
+# NUMERICAL NEUTRALITY (why default-on is safe): with a fixed seed the OFF and
+# ON runs produced IDENTICAL metrics, confirming the reconstruction is exact and
+# training is bit-for-bit unaffected:
+#   * 1 node  @ step41: train_loss 0.13778 == 0.13778; window_ne/lifetime_ne
+#                       1.0338 == 1.0338; window_auc 0.4947 == 0.4947
+#   * 2 node  @ step41: train_loss 0.13811 == 0.13811
+# (Contrast the fp16 a2a, which is lossy-but-tolerable; this knob moves nothing.)
+#
+# The dedup buffers are persistent=False -> NO change to the on-disk shard layout
+# and safe to toggle on an existing checkpoint (no reshard). Applied as a final
+# pass over the sharder list so it covers BOTH the qcomm-on (default) and
+# qcomm-off (SPARSE_A2A_*=fp32) construction paths.
+#
+# DEFAULT ON (1): lossless + a large, node-count-scaling speedup on this config.
+# The payoff shrinks toward neutral/slightly-negative only as batch diversity
+# rises (high STREAMING_SHUFFLE_FRACTION -> fewer in-batch dups, so the
+# jagged_unique_indices + scatter overhead stops paying for itself); set
+# EC_INDEX_DEDUP=0 for such a high-shuffle run. Override per-run via $EC_INDEX_DEDUP.
+make_optimizer_and_shard.ec_index_dedup = @ecid/env_int()
+ecid/env_int.key     = "EC_INDEX_DEDUP"
+ecid/env_int.default = 1
+
 get_dataset.name = %dataset
 get_dataset.new_path_prefix = %DATA_PATH
 # Total user-interaction-history (UIH) budget per sample, distributed evenly

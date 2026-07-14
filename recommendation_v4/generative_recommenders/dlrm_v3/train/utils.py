@@ -681,6 +681,75 @@ def _maybe_apply_qcomm_a2a(
     return new_sharders
 
 
+def _maybe_apply_ec_index_dedup(
+    sharders: List[Any],
+    enabled: bool,
+) -> List[Any]:
+    """Optionally enable TorchRec's in-batch index dedup on the EC sharder.
+
+    Runs as a FINAL pass AFTER get_default_sharders() and _maybe_apply_qcomm_a2a,
+    so it covers BOTH sharder construction paths with a single knob:
+      * qcomm ON  (SPARSE_A2A_* != fp32, the default): the EC sharder was already
+        rebuilt with a qcomm codec registry inside _maybe_apply_qcomm_a2a.
+      * qcomm OFF (SPARSE_A2A_* == fp32): that function early-returns the bare
+        get_default_sharders() list untouched.
+    In either case we rebuild the one EmbeddingCollectionSharder in place,
+    PRESERVING its existing fused_params + qcomm codec registry, and only flip
+    use_index_dedup. That ordering guarantees dedup composes with (never clobbers)
+    the fp16/bf16 a2a instead of depending on which qcomm branch ran.
+
+    use_index_dedup collapses duplicate ids within a batch to unique rows before
+    the input all-to-all (torch.ops.fbgemm.jagged_unique_indices), does the
+    embedding lookup once, then scatters back via reverse_indices. For a
+    non-pooled EmbeddingCollection (this sequence model) that reconstruction is
+    exact, so the forward is numerically lossless — unlike the fp16 a2a it does
+    not perturb AUC/NE. The buffers it registers (_hash_size_cumsum_tensor_*,
+    _hash_size_offset_tensor_*) are persistent=False, so it does NOT change the
+    on-disk shard layout and can be toggled on an existing checkpoint with no
+    reshard. Payoff scales with the in-batch duplicate rate: large under
+    user-major batching (STREAMING_SHUFFLE_FRACTION=0, the default, where one
+    user's UIH re-reads the same item/artist/album ids), shrinking toward
+    neutral/negative as batch diversity rises.
+
+    The knob only exists on EmbeddingCollectionSharder, which is the sole default
+    sharder this model actually binds (a pure sequence EmbeddingCollection), so
+    no other sharder needs touching. Configured via gin on
+    ``make_optimizer_and_shard`` (env-overridable $EC_INDEX_DEDUP).
+    """
+    if not enabled:
+        return sharders
+
+    from torchrec.distributed.embedding import EmbeddingCollectionSharder
+
+    rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
+    new_sharders = []
+    replaced = False
+    for s in sharders:
+        if type(s).__name__ == "EmbeddingCollectionSharder" and not replaced:
+            new_sharders.append(
+                EmbeddingCollectionSharder(
+                    fused_params=s.fused_params,
+                    qcomm_codecs_registry=s.qcomm_codecs_registry,
+                    use_index_dedup=True,
+                )
+            )
+            replaced = True
+        else:
+            new_sharders.append(s)
+    if not replaced:
+        # Dedup configured but no EC sharder to bind it to would mean it is
+        # silently inert — the same "configured but not applied" bug class the
+        # qcomm path guards against. Fail loudly on every rank instead.
+        raise RuntimeError(
+            "DLRMV4 EC index dedup configured (use_index_dedup=True) but no "
+            "EmbeddingCollectionSharder was found to enable it on; refusing to "
+            "run with dedup silently disabled"
+        )
+    if rank0:
+        logger.info("DLRMV4 EC index dedup ENABLED (use_index_dedup=True)")
+    return new_sharders
+
+
 def _embedding_table_names(
     model: torch.nn.Module,
     embedding_table_configs: Optional[Dict[str, EmbeddingConfig]],
@@ -807,6 +876,7 @@ def make_optimizer_and_shard(
     sparse_a2a_forward_precision: str = "fp32",
     sparse_a2a_backward_precision: str = "fp32",
     qcomm_lowmem_clamp_cast: bool = True,
+    ec_index_dedup: bool = False,
     embedding_placement: str = "auto",
     embedding_placement_overrides: Optional[Dict[str, str]] = None,
     embedding_sharding_overrides: Optional[Dict[str, str]] = None,
@@ -835,6 +905,10 @@ def make_optimizer_and_shard(
         backward_precision=sparse_a2a_backward_precision,
         lowmem_clamp_cast=qcomm_lowmem_clamp_cast,
     )
+    # Final pass: enable in-batch index dedup on the EC sharder regardless of
+    # whether the qcomm branch above rebuilt it (fp16 default) or returned the
+    # bare get_default_sharders() list (fp32). Preserves the qcomm registry.
+    sharders = _maybe_apply_ec_index_dedup(sharders, enabled=ec_index_dedup)
     # local_world_size = GPUs per node so the planner respects the intra-node
     # (xGMI/NVLink) vs inter-node hierarchy when placing shards. Defaults to
     # world_size for the single-node case (no behavior change).
