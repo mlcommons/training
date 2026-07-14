@@ -1,0 +1,722 @@
+# Per-rank batch size. Env-overridable so a denser per-sample shape can fit in
+# HBM by lowering it without editing gin. Default 1024 preserves prior runs;
+# streaming train+eval both read this macro (make_*streaming_dataloader.batch_size).
+batch_size = @bs/env_int()
+bs/env_int.key     = "BATCH_SIZE"
+bs/env_int.default = 1024
+# Dataloader parallelism. Env-overridable so a perf sweep can probe whether the
+# shuffle steady-state cost is CPU-gather latency (hidden by more workers) vs
+# GPU-side embedding work (not). Defaults preserve prior behavior (4 / 8).
+num_workers = @nw/env_int()
+nw/env_int.key     = "NUM_WORKERS"
+nw/env_int.default = 4
+prefetch_factor = @pf/env_int()
+pf/env_int.key     = "PREFETCH_FACTOR"
+pf/env_int.default = 8
+dataset = "yambda-5b"
+
+# model parameters
+make_model.dataset = %dataset
+make_model.bf16_training = True
+# HSTU attention/compute backend: "TRITON" (fused, flash-style — low HBM) or
+# "PYTORCH" (unfused; materializes the dense [B,H,N,N] score tensor, ~32 GiB at
+# N=2048/bs=1024). TRITON validated on MI350/ROCm. The HSTU_HAMMER_KERNEL env
+# var, if set, overrides this binding for one-off runs.
+make_model.hammer_kernel = "TRITON"
+
+# False = use pinned triton kernel configs (deterministic; whether that's
+# the fast or slow equilibrium depends on which config was pinned for the
+# current training shape + GPU). For a NEW training config (new shape,
+# new GPU, new triton/torch version), set True and run with
+# TRITON_PRINT_AUTOTUNING=1 to discover the fast configs, then update the
+# pinned constants in ops/triton/_autotune_pinning.py call sites.
+apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
+
+# =============================================================================
+# $SEED — global RNG seed for reproducible MODEL INITIALIZATION.
+#
+# WHAT IT CONTROLS (all weight init is a deterministic function of $SEED):
+#   1. Dense parameters (HSTU transformer blocks, MLPs, action embeddings, the
+#      postprocessor). seed_everything() seeds python/numpy/torch/torch.cuda
+#      with $SEED right before make_model(). The SAME seed is set on every rank,
+#      so dense weights are initialized identically across ranks AND reproducibly
+#      run-to-run.
+#   2. Sparse embedding tables (item_id, artist_id, album_id, uid, the cross
+#      tables). These are materialized on-device while DMP shards the model, NOT
+#      in make_model(), so seed_everything() alone does not pin them. Two
+#      mechanisms tie them to $SEED:
+#        (a) make_optimizer_and_shard() RE-SEEDS torch/torch.cuda from $SEED
+#            immediately before DistributedModelParallel(...), so the fused
+#            FBGEMM TBE init (which draws from the global RNG on-device) is
+#            reproducible. This is the path that actually applies here.
+#        (b) get_embedding_table_config() also attaches a per-table seeded
+#            init_fn (seed derived from sha256($SEED, table_name)) for the
+#            eager/non-meta code path. It no-ops on the meta device that DMP
+#            uses, so (a) is the effective guarantee for this setup.
+#   3. Any other seeded RNG consumers (e.g. dropout's init-time draws).
+#
+#   SCOPE ("Tier 1"): reproducible for a FIXED sharding plan — same GPU/world
+#   size AND same planner output. It is NOT invariant to changing the GPU count
+#   or sharding (the per-shard draw boundaries move). The init DISTRIBUTION is
+#   unchanged from stock (uniform +/-1/sqrt(num_embeddings), or a table's
+#   explicit weight_init_min/max), so $SEED affects determinism, not quality.
+#
+#   VERIFY: INIT_CHECKSUM=1 (OFF by default) logs a per-table fingerprint + a
+#   one-line "[init-checksum] SEED=.. digest=.." right after DMP. Two builds with
+#   the same $SEED + plan print the same digest; different seeds differ. It is OFF
+#   by default because the fp64 per-shard reductions materialize a full fp64 copy
+#   of each local embedding shard (>150 GiB for the big tables), leaving almost no
+#   HBM headroom after sharding and OOMing the build on any node with residual
+#   memory. Enable only for an explicit reproducibility check (ideally a clean
+#   node / smaller batch).
+#
+# WHAT IT DOES *NOT* CONTROL (separate, independent knobs):
+#   - Streaming data order / shuffle permutation -> $STREAMING_SHUFFLE_SEED
+#     (get_dataset.streaming_shuffle_seed, below).
+#   - Train/eval holdout user split               -> $SPLIT_SALT (below).
+#   So holding $STREAMING_SHUFFLE_SEED + $SPLIT_SALT fixed and varying ONLY $SEED
+#   isolates the effect of model initialization (a clean init-seed A/B / sweep).
+#
+# PARSE NOTE: seed_everything() runs right before make_model() in train_ranker
+# (after the full gin parse), so this binding resolves in the second parse where
+# env_int is registered. Override per-run via $SEED.
+# Default 1 gives a fixed, reproducible seed each run; override $SEED to vary it
+# (set $SEED = -1 to draw a fresh random seed per run).
+seed_everything.seed = @seed/env_int()
+seed/env_int.key     = "SEED"
+seed/env_int.default = 1
+
+# $DECORRELATE_DROPOUT — re-seed torch/cuda with $SEED + rank after init so HSTU
+# dropout masks differ per data-parallel rank. 1 = on, 0 = identical masks (default).
+decorrelate_runtime_rng.enabled = @drr/env_int()
+drr/env_int.key     = "DECORRELATE_DROPOUT"
+drr/env_int.default = 0
+
+# dense model optimizer
+# Learning rate is env-overridable via $DENSE_LR (default 1e-7).
+dense_optimizer_factory_and_class.learning_rate = @dlr/env_float()
+dlr/env_float.key     = "DENSE_LR"
+dlr/env_float.default = 0.0000001
+dense_optimizer_factory_and_class.optimizer_name = "Adam"
+dense_optimizer_factory_and_class.momentum = 0
+dense_optimizer_factory_and_class.weight_decay = 0
+dense_optimizer_factory_and_class.eps = 1e-8
+dense_optimizer_factory_and_class.betas = (0.95, 0.999)
+
+# sparse model optimizer
+# Learning rate is env-overridable via $SPARSE_LR (default 1e-7).
+sparse_optimizer_factory_and_class.learning_rate = @slr/env_float()
+slr/env_float.key     = "SPARSE_LR"
+slr/env_float.default = 0.0000001
+sparse_optimizer_factory_and_class.optimizer_name = "RowWiseAdagrad"
+sparse_optimizer_factory_and_class.momentum = 0
+sparse_optimizer_factory_and_class.weight_decay = 0
+sparse_optimizer_factory_and_class.eps = 1e-8
+sparse_optimizer_factory_and_class.betas = (0.95, 0.999)
+
+# Gradient clipping for the STREAMING path (clips dense params; sparse tables
+# use a fused optimizer and are unaffected). Env-overridable via $GRAD_CLIP_NORM.
+# Default 1.0 = ON (max_norm=1.0); set 0.0 via $GRAD_CLIP_NORM to disable.
+streaming_train_eval_loop.grad_clip_norm = @gcn/env_float()
+gcn/env_float.key     = "GRAD_CLIP_NORM"
+gcn/env_float.default = 1.0
+
+# Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
+# below. Used by both make_train_test_dataloaders and get_dataset.
+# Scoped (`data/env_path`) so this binding doesn't collide with the RUN_NAME
+# env_path binding below — every distinct env_path() call site needs its own
+# scope or the later `env_path.key=...` overrides earlier ones.
+DATA_PATH = @data/env_path()
+data/env_path.key = "DLRM_DATA_PATH"
+data/env_path.default = "/apps/chcai/dlrm_data"
+
+# Shared train:eval split: fraction of USERS used for training; the remaining
+# (1 - this) fraction are held out as a fixed eval set and NEVER trained.
+# Bound to BOTH the static train-eval path (make_train_test_dataloaders, a
+# positional split) and the streaming path (get_dataset, an explicit by-user
+# hash split), so one value configures the holdout in either mode.
+# 1.0 = no holdout (legacy streaming behavior). Override via $TRAIN_SPLIT_PERCENTAGE.
+# Default 1.0: all users are trained AND evaluated (full-coverage eval), matching
+# the alleval/qa2a production runs; set <1.0 (e.g. 0.90) for a clean held-out cohort.
+TRAIN_SPLIT_PERCENTAGE = @tsp/env_float()
+tsp/env_float.key     = "TRAIN_SPLIT_PERCENTAGE"
+tsp/env_float.default = 1.0
+
+# dataloader configs
+make_train_test_dataloaders.batch_size = %batch_size
+make_train_test_dataloaders.eval_batch_size = 1024
+make_train_test_dataloaders.dataset_type = %dataset
+make_train_test_dataloaders.train_split_percentage = %TRAIN_SPLIT_PERCENTAGE
+make_train_test_dataloaders.new_path_prefix = %DATA_PATH
+make_train_test_dataloaders.num_workers = %num_workers
+make_train_test_dataloaders.prefetch_factor = %prefetch_factor
+make_train_test_dataloaders.num_blocks = 1
+
+# embedding planner: per-rank HBM ceiling the torchrec sharder targets.
+# Override via $HBM_CAP_GB (e.g. lower to 150 to force more CW sharding).
+make_optimizer_and_shard.hbm_cap_gb = @env_int()
+env_int.key = "HBM_CAP_GB"
+env_int.default = 260
+
+# Embedding table placement. Global default applied to EVERY table:
+#   auto        -> no constraint; planner decides from the HBM cap (default)
+#   hbm         -> FUSED          (resident in GPU HBM)
+#   uvm         -> FUSED_UVM      (host DDR via UVM, no HBM cache)
+#   uvm_caching -> FUSED_UVM_CACHING (host DDR + HBM cache)
+# "force HBM" for all tables = set this to "hbm" (or export EMB_PLACEMENT=hbm).
+make_optimizer_and_shard.embedding_placement = @emp/env_str()
+emp/env_str.key     = "EMB_PLACEMENT"
+emp/env_str.default = "auto"
+
+# Per-table placement overrides (win over the global default above). Configure
+# each table independently here as a gin dict; allowed values per table:
+#   "hbm" | "uvm" | "uvm_caching" | "auto"  (unlisted tables use the global
+# default above). merge=True means a per-run env override LAYERS ON TOP of this
+# dict per key (tweak one table at launch, keep the rest), e.g.:
+#   EMB_PLACEMENT_OVERRIDES="uid=hbm"   # only retargets uid; others stay as below
+make_optimizer_and_shard.embedding_placement_overrides = @env_str_map()
+env_str_map.key     = "EMB_PLACEMENT_OVERRIDES"
+env_str_map.merge   = True
+env_str_map.default = {}
+
+# Per-table SHARDING-TYPE overrides (shard layout, orthogonal to placement above).
+# Absent/"auto" tables keep the planner's choice (ROW_WISE for the large yambda
+# tables). Allowed per table: "row_wise"|"column_wise"|"table_wise"|
+# "table_row_wise"|"table_column_wise"|"data_parallel"|"auto" (aliases rw/cw/tw/
+# twrw). DEFAULT OFF ({}) -> plan is byte-identical to the legacy all-ROW_WISE
+# path. Opt in per run via env, e.g.:
+#   EMB_SHARDING_OVERRIDES="album_id=column_wise,artist_id=column_wise"
+# WHY: ROW_WISE routes every lookup of row r to the single owner rank, so a few
+# hot IDs concentrate the embedding all-to-all onto one rank and OOM it (the
+# yambda-5b skew hang; album_id ~2.8x, artist_id ~1.3x per-rank load). COLUMN_WISE
+# splits the table by embedding dim (every rank holds all rows, dim/world cols),
+# so the a2a load is balanced by RANK regardless of which IDs are hot — removing
+# the value-skew OOM — at identical per-rank table bytes. Convert only the skewed
+# high-volume tables (album_id, artist_id); leave the balanced, highest-volume
+# item_id and the tiny length-1 contextual/cross tables on ROW_WISE.
+# WHY THIS GETS WORSE AT LARGER GLOBAL BATCH: the ROW_WISE a2a input buffer on the
+# owner rank is sized by how many times its hot IDs appear across the WHOLE global
+# batch, so that transient scales ~linearly with global batch size (here 32 ranks
+# x 1024 = 32768, each carrying ~4096-token UIH sequences -> tens of millions of
+# lookups/step, heavily re-hitting the same few popular albums/artists). Doubling
+# the global batch ~doubles the hot-rank burst while every other rank stays idle,
+# which is exactly what tipped GPU5/GPU3 from a saturated steady state (~208-238
+# GiB) over 288 GiB at window ~248. COLUMN_WISE makes each rank receive dim/world
+# of EVERY lookup, so the per-rank a2a volume is ~global_batch/world (balanced)
+# and grows with world size, not with which IDs are hot -> it scales cleanly as
+# you push global batch / add ranks, instead of piling the growth onto one shard.
+# Example (the yambda-5b 4-node run, global batch 32768, that hit the skew OOM):
+#   EMB_SHARDING_OVERRIDES="album_id=column_wise,artist_id=column_wise"
+# validated by the CW smoke: reshard-loaded the ROW_WISE ckpt cleanly, window_auc
+# stayed ~0.78-0.80, and the hot rank sat at ~58% (~120 GiB free) THROUGH the old
+# OOM window (vs 16 GiB free right before the ROW_WISE crash).
+# NOTE: changing the sharding plan changes the on-disk shard layout; a checkpoint
+# written under a different plan must be resharded/validated on load.
+make_optimizer_and_shard.embedding_sharding_overrides = @esh/env_str_map()
+esh/env_str_map.key     = "EMB_SHARDING_OVERRIDES"
+esh/env_str_map.merge   = True
+esh/env_str_map.default = {}
+
+# Sparse embedding all-to-all wire precision. The embedding shuffle is the
+# dominant, bandwidth-bound (esp. multi-node) collective; quantizing it via
+# TorchRec QCommsConfig halves (bf16/fp16, both 2 bytes) the wire volume.
+# Forward and backward are set independently (each: "fp32" | "bf16" | "fp16").
+# Both "fp32" = off (numerically identical to baseline trunk).
+# Default is now fp16/fp16: an A/B run vs the fp32 baseline matched window AUC to
+# within fixed-seed noise (mean Δ≈-1e-6, max|Δ|≈5e-5, r=1.0 over 0-54.5% data)
+# while cutting the embedding-a2a wire volume in half (~6% end-to-end speedup).
+# TorchRec golden_training suggests fwd=fp16 / bwd=bf16 (bf16's wider exponent
+# hedges gradient overflow), but on yambda-5b the grads stay well in fp16 range
+# (grad-clip=1.0, lr=1e-7), so fp16/fp16 is convergence-neutral here.
+# Override via $SPARSE_A2A_FWD / $SPARSE_A2A_BWD (e.g. set both "fp32" to disable).
+make_optimizer_and_shard.sparse_a2a_forward_precision = @saaf/env_str()
+saaf/env_str.key     = "SPARSE_A2A_FWD"
+saaf/env_str.default = "fp16"
+make_optimizer_and_shard.sparse_a2a_backward_precision = @saab/env_str()
+saab/env_str.key     = "SPARSE_A2A_BWD"
+saab/env_str.default = "fp16"
+
+# =============================================================================
+# RUNTIME PATCHES / MONKEYPATCHES
+# -----------------------------------------------------------------------------
+# Third-party kernels we override AT RUNTIME (no fork of the dependency). Each
+# knob here is a kill switch for one such patch: ON by default (it fixes a real
+# bug we hit), but flippable per-run so we can A/B the patch, reproduce the
+# original failure, or fall back to stock if a future dependency version makes
+# the patch unnecessary or incorrect. Patches are applied during model
+# build/shard (make_optimizer_and_shard), before any training step.
+# =============================================================================
+#
+# --- qcomm_lowmem_clamp_cast: low-memory fbgemm fp16/bf16 quant codec ---------
+# WHAT IT PATCHES
+#   fbgemm_gpu's embedding-a2a quantizer, fp32_to_fp16_with_clamp (and the bf16
+#   variant), which the TorchRec qcomm codec calls to pack the sparse
+#   embedding all-to-all payload onto the wire. Stock implementation is:
+#       torch.clamp(tensor, HALF_MIN, HALF_MAX).half()
+#   torch.clamp() materializes a SECOND full-size fp32 tensor (same numel as the
+#   input) BEFORE the cast, so the transient peak is
+#       input(fp32) + clamp_temp(fp32) + output(fp16)  ~= 2.5x the input.
+#   The patch reorders to an in-place, allocation-free-equivalent:
+#       tensor.half().clamp_(HALF_MIN, HALF_MAX)
+#   i.e. cast FIRST (only the fp16 output is allocated), then clamp IN PLACE —
+#   dropping the full-size fp32 clamp temp and cutting the transient peak by the
+#   size of the input tensor.
+#
+# WHY IT'S NEEDED (the bug it fixes)
+#   Embeddings are ROW-WISE sharded: every lookup of row r routes to the single
+#   rank that owns r. On a data-skewed batch a few extremely hot IDs send a
+#   disproportionate share of the global lookups to ONE owner rank, so that
+#   rank's a2a input tensor balloons. With the stock codec the extra fp32 clamp
+#   temp on that rank reached ~81.5 GiB, which OOM'd the rank mid-forward. The
+#   OOM'd rank then dropped out of the collective while its peers blocked forever
+#   in the embedding all-to-all -> ~30-min NCCL watchdog timeout -> the whole job
+#   SIGABRTs. This was a DETERMINISTIC hang (same window/step every run; e.g.
+#   yambda-5b 4-node fp16 a2a hit it at window 235 / global step 43621).
+#   See generative_recommenders/dlrm_v3/train/utils.py
+#   (_patch_fbgemm_lowmem_clamp_cast) for the full diagnosis + flight-recorder
+#   evidence.
+#
+# CORRECTNESS / PERF
+#   Numerically IDENTICAL (bit-for-bit) to stock: the single fp32->fp16 cast is
+#   the only rounding step in both orders; an fp32 value above HALF_MAX casts to
+#   +inf which clamp_ maps back to HALF_MAX, and NaNs pass through unchanged.
+#   In-place is safe because the codec encode() runs inside the qcomm autograd
+#   Function.forward with grad disabled (no graph to corrupt). No throughput
+#   regression (measured step time within run-to-run noise; it does strictly
+#   LESS memory traffic + allocation than stock).
+#
+# WHEN TO TURN OFF (set 0): only to reproduce the original OOM/hang for
+#   debugging, or to revalidate against stock after an fbgemm_gpu upgrade.
+#   Override via $QCOMM_LOWMEM_CODEC. Only takes effect when the embedding a2a is
+#   actually quantized (SPARSE_A2A_FWD/BWD not both fp32); with fp32 a2a there is
+#   no codec to patch and this knob is a no-op.
+make_optimizer_and_shard.qcomm_lowmem_clamp_cast = @qlcc/env_int()
+qlcc/env_int.key     = "QCOMM_LOWMEM_CODEC"
+qlcc/env_int.default = 1
+
+# --- ec_index_dedup: in-batch embedding index deduplication ------------------
+# Enables TorchRec's use_index_dedup on the sequence EmbeddingCollectionSharder.
+# Before the sparse input all-to-all, duplicate ids within a batch are collapsed
+# to unique rows (torch.ops.fbgemm.jagged_unique_indices), the embedding lookup
+# runs once per unique id, then results scatter back to their original positions
+# via reverse_indices. For a NON-POOLED EmbeddingCollection this reconstruction
+# is exact, so it is numerically LOSSLESS (unlike the fp16 a2a it does not move
+# AUC/NE) — it only cuts (a) the sparse input all-to-all element COUNT and (b)
+# the number of rows the fused TBE kernel gathers per step.
+#
+# WHY IT HELPS HERE: the default streaming order is user-major
+# (STREAMING_SHUFFLE_FRACTION=0), so consecutive anchors are the same user's UIH
+# re-reading the same item/artist/album ids -> very high in-batch duplicate rate.
+# Measured via DIAG_UNIQUE_EMB on this config: the big UIH sequence tables are
+# ~98% duplicate WITHIN a batch (uih.item_id ~2.4% unique over 2.69M ids/batch,
+# uih.album_id ~1.5%, uih.artist_id ~0.6%), so collapsing to unique rows removes
+# the bulk of the lookup + a2a volume. Dedup COMPOSES with the fp16 qcomm a2a
+# (dedup cuts element count, qcomm cuts bytes/element) and the CW skew fix.
+#
+# MEASURED A/B (this exact config; fixed SEED=1; qcomm fp16 fwd+bwd; 200-step
+# train-only; c-series MI350 nodes). Steady-state (steps>=60) mean step time and
+# global throughput, dedup OFF -> ON:
+#   * 1 node  (WORLD_SIZE=8):  step_ms 941.6 -> 805.7  (-14.4%, +16.9% sps),
+#                              MFU 21.3% -> 24.7%
+#   * 2 node  (WORLD_SIZE=16): step_ms 1108.0 -> 818.0 (-26.2%, +37.6% sps),
+#                              MFU 18.1% -> 24.9%
+# The win GROWS with node count because at >1 node dedup also shrinks the
+# cross-node embedding all-to-all — the dominant bandwidth-bound multi-node
+# collective. It nearly erases the multi-node comm penalty: OFF weak-scales
+# 21.3%->18.1% MFU going 1->2 node, ON holds ~24.7%->24.9%.
+#
+# NUMERICAL NEUTRALITY (why default-on is safe): with a fixed seed the OFF and
+# ON runs produced IDENTICAL metrics, confirming the reconstruction is exact and
+# training is bit-for-bit unaffected:
+#   * 1 node  @ step41: train_loss 0.13778 == 0.13778; window_ne/lifetime_ne
+#                       1.0338 == 1.0338; window_auc 0.4947 == 0.4947
+#   * 2 node  @ step41: train_loss 0.13811 == 0.13811
+# (Contrast the fp16 a2a, which is lossy-but-tolerable; this knob moves nothing.)
+#
+# The dedup buffers are persistent=False -> NO change to the on-disk shard layout
+# and safe to toggle on an existing checkpoint (no reshard). Applied as a final
+# pass over the sharder list so it covers BOTH the qcomm-on (default) and
+# qcomm-off (SPARSE_A2A_*=fp32) construction paths.
+#
+# DEFAULT ON (1): lossless + a large, node-count-scaling speedup on this config.
+# The payoff shrinks toward neutral/slightly-negative only as batch diversity
+# rises (high STREAMING_SHUFFLE_FRACTION -> fewer in-batch dups, so the
+# jagged_unique_indices + scatter overhead stops paying for itself); set
+# EC_INDEX_DEDUP=0 for such a high-shuffle run. Override per-run via $EC_INDEX_DEDUP.
+make_optimizer_and_shard.ec_index_dedup = @ecid/env_int()
+ecid/env_int.key     = "EC_INDEX_DEDUP"
+ecid/env_int.default = 1
+
+get_dataset.name = %dataset
+get_dataset.new_path_prefix = %DATA_PATH
+# Total user-interaction-history (UIH) budget per sample, distributed evenly
+# across 3 behaviour pools (listen+ / like / skip) at L//3 events each.
+# Per-sample sequence the model sees =
+#     3 × (L // 3) + 8 contextual + 1 candidate
+# Choosing 4086 makes 3 × 1362 + 9 = 4095, the largest value that fits
+# get_hstu_configs.max_seq_len = 4096 with no dataset-side truncation (the
+# 4k analog of the previous 2039/2048 shape, where 3×679+9=2046 ≤ 2048).
+# Larger L overflows the budget; the dataset truncates UIH events to fit.
+# Note: like events are only 1.9% of the yambda corpus and max user lifetime
+# is ~28k events, so the like pool fills to ~105 events per anchor on
+# average (not 1362) — TRITON's jagged attention skips the unfilled slots,
+# so the under-fill costs sequence budget but not GPU compute.
+# Cache is keyed by L on disk under <processed_dir>/hstu_cache_L<N>/;
+# switching L reuses an existing cache or builds a new one. Override via
+# $HISTORY_LENGTH (default 4086 = the 4k-no-truncation shape; use 2039 with
+# MAX_SEQ_LEN=2048 to reuse the previous 2k single-task cache).
+get_dataset.history_length = @hl/env_int()
+hl/env_int.key     = "HISTORY_LENGTH"
+hl/env_int.default = 4086
+
+# UIH construction strategy — how a user's prior events become the sequence the
+# model attends over. Override via $HISTORY_STRATEGY. Both strategies scan the
+# last `scan_window` (20000) events before the anchor and consider ONLY the 3
+# behavior pools (listen+ / like / skip); dislike/unlike/undislike are excluded
+# (no action-weight bit), so the model's action_weights=[1,2,4] are unchanged.
+# The two differ only in HOW they pick events out of that scan window:
+#
+#   "interleaved" (default):
+#     - Budget = equal per-pool quota of HISTORY_LENGTH//3 (=1362) events; take
+#       the last 1362 of EACH pool independently, then merge + re-sort by time.
+#     - HISTORY_LENGTH is thus a PER-POOL cap (nominal total = 3 * L//3).
+#     - Consequence: likes are only ~1.9% of the corpus, so the like pool
+#       under-fills (~105 of its 1362 slots) and that budget is NOT reallocated
+#       — the sequence comes up short. Measured: ~2663 events effective, ~4.0%
+#       of them likes (i.e. likes OVER-represented vs their natural rate).
+#     - Use when you want guaranteed like exposure per sample (class-balanced UIH).
+#
+#   "last_n":
+#     - Budget = a single pool-agnostic cap: take the last HISTORY_LENGTH events
+#       of ANY pool type, already chronological (no per-pool split, no re-sort).
+#     - HISTORY_LENGTH is thus the LITERAL TOTAL UIH cap (not a per-pool L//3).
+#     - Consequence: the sequence fills to ~HISTORY_LENGTH (the only limit is how
+#       many pooled events exist in the scan window), so effective length is
+#       higher and the like share falls to its natural rate. Measured: ~4085
+#       events effective (~1.5x interleaved), ~1.2% of them likes.
+#     - Trade-off: more recent listen+/skip context (longer effective sequence)
+#       at the cost of fewer likes; ~1.4x eval/step compute (more non-skipped
+#       jagged-attention positions). Keep HISTORY_LENGTH=4086 to fill the 4k
+#       model budget.
+#
+# Both strategies are strategy-INDEPENDENT on disk: the gather runs at
+# sample-build time, so switching reuses the SAME hstu_cache_L<HISTORY_LENGTH>/
+# and positions cache — no rebuild needed.
+get_dataset.history_strategy = @hs/env_str()
+hs/env_str.key     = "HISTORY_STRATEGY"
+hs/env_str.default = "interleaved"
+
+# Anchor-eligibility floor: a LISTEN event becomes a trainable/eval anchor once
+# the user has >= MIN_HISTORY prior events. Decoupled from history_length (which
+# is only the gather/truncation cap) — jagged attention handles short UIH, so we
+# no longer need a full history_length of context to include a sample. The legacy
+# behavior (require a full history_length, which dropped ~60% of users) is
+# MIN_HISTORY=4086; the default below (0) includes ~all users AND their
+# cold-start first event (zero prior context). Positions/anchor-ts caches are
+# keyed by (L, MIN_HISTORY) so floors don't collide. Override via $MIN_HISTORY.
+get_dataset.min_history = @mh/env_int()
+mh/env_int.key     = "MIN_HISTORY"
+mh/env_int.default = 4086
+
+# Model-side attention budget. Dataset truncates UIH to fit this value if
+# `history_length + contextual + candidate` would overflow. Override via
+# $MAX_SEQ_LEN (default 4096, the 4k-no-truncation shape paired with
+# HISTORY_LENGTH=4086: 3*1362+9=4095 ≤ 4096). Set MAX_SEQ_LEN=2048 with
+# HISTORY_LENGTH=2039 for the previous 2k production single-task shape.
+get_hstu_configs.max_seq_len = @msl/env_int()
+msl/env_int.key     = "MAX_SEQ_LEN"
+msl/env_int.default = 4096
+
+# HSTU transformer depth (number of attention layers). Default 3.
+# Override per-run via $HSTU_NUM_LAYERS. NOTE: changing depth changes the model
+# shape, so a run with a new depth MUST use a FRESH CKPT_PATH (incompatible with
+# checkpoints of a different depth). Resolved in the full gin parse
+# (get_hstu_configs is not registered during the early skip_unknown parse), so
+# the @env_int reference is skipped on the first pass — same safe path as the LR knobs.
+get_hstu_configs.hstu_attn_num_layers = @nl/env_int()
+nl/env_int.key     = "HSTU_NUM_LAYERS"
+nl/env_int.default = 3
+
+# --- streaming (temporal-order) training -------------------------------------
+# Only consumed under `--mode streaming-train-eval`; the default train-eval
+# path above is unaffected. Trains time window T then evals window T+1,
+# advancing forward in wall-clock time (no future leakage). Window size is the
+# temporal-ordering granularity knob (default 1 day). num_train_ts is clamped
+# to the dataset's available window count at runtime; override via $NUM_TRAIN_TS.
+get_dataset.streaming_window_seconds = 86400
+get_dataset.streaming_sort_within_window = False
+# In-window shuffle to break user-major batching (consecutive sliding-window
+# anchors otherwise come from the same few users -> few unique embedding reads).
+# Diversity dial in [0,1] -- the AGREED, config-invariant benchmark knob. Maps to
+# a within-segment shuffle with K = round(fraction * per-window train-anchor
+# count): 0 = off (user-major, page-local mmap scans), 1 = full per-element
+# shuffle (max diversity), intermediate = interpolation. Same fraction => same
+# diversity regardless of world_size / #nodes / batch_size.
+#
+# Default 0.0 (no shuffle -> user-major, page-local mmap scans) so the standard
+# run matches the production streaming order. Together with the fixed seed below
+# the in-window order is fully DETERMINISTIC and identical across runs/resumes.
+# Override per-run via $STREAMING_SHUFFLE_FRACTION (e.g. 1.0 for a full
+# per-element shuffle / max diversity, 0.03 for the diversity/locality sweet spot).
+streaming_shuffle_fraction = 0.0
+get_dataset.streaming_shuffle_fraction = @ssf/env_float()
+ssf/env_float.key     = "STREAMING_SHUFFLE_FRACTION"
+ssf/env_float.default = %streaming_shuffle_fraction
+# Fixed shuffle seed -> reproducible permutation. Exposed as a knob; override via
+# $STREAMING_SHUFFLE_SEED only if you deliberately want a different draw.
+get_dataset.streaming_shuffle_seed = @ssfseed/env_int()
+ssfseed/env_int.key     = "STREAMING_SHUFFLE_SEED"
+ssfseed/env_int.default = 0
+# User-level train:eval holdout for the streaming path. With tsp<1.0, the top
+# (1 - tsp) fraction of users (by a deterministic hash of uid+split_salt) are
+# held out as a FIXED eval set and never trained -> no temporal/user leakage,
+# stable comparable eval curve, bounded eval time. split_salt lets you draw a
+# different holdout without changing the ratio. Override salt via $SPLIT_SALT.
+get_dataset.train_split_percentage = %TRAIN_SPLIT_PERCENTAGE
+get_dataset.split_salt = @ssalt/env_int()
+ssalt/env_int.key     = "SPLIT_SALT"
+ssalt/env_int.default = 0
+make_streaming_dataloader.batch_size = %batch_size
+make_streaming_dataloader.num_workers = %num_workers
+make_streaming_dataloader.prefetch_factor = %prefetch_factor
+make_persistent_streaming_dataloader.batch_size = %batch_size
+make_persistent_streaming_dataloader.num_workers = %num_workers
+make_persistent_streaming_dataloader.prefetch_factor = %prefetch_factor
+streaming_train_eval_loop.num_train_ts = @nts/env_int()
+nts/env_int.key = "NUM_TRAIN_TS"
+# 299 daily windows -> with start_ts=0 the run sweeps ts=0..298, the full corpus
+# (matches the long fp16 e2e run). Clamped to the dataset's available window
+# count at runtime. Override via $NUM_TRAIN_TS.
+nts/env_int.default = 299
+# Anchors need >= history_length prior events, so the first ~130 daily windows
+# are near-empty warm-up. Default start_ts=0 trains the full corpus from the
+# start (matches the canonical fp16 run); set $START_TS=150 to skip warm-up and
+# begin at a dense window. Override via $START_TS.
+streaming_train_eval_loop.start_ts = @sts/env_int()
+sts/env_int.key = "START_TS"
+sts/env_int.default = 0
+# Per-step metric logging cadence. Default 50 (one compute_and_log GPU->CPU
+# sync per 50 batches). The streaming-resume test sets METRIC_LOG_FREQ=1 so
+# every step emits a parseable "Step N metrics" line for trajectory comparison.
+streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
+mlf/env_int.key     = "METRIC_LOG_FREQ"
+mlf/env_int.default = 50
+# MLPerf train_loss event cadence (global train steps), INDEPENDENT of
+# METRIC_LOG_FREQ above. 0 (default) = fall back to METRIC_LOG_FREQ, preserving
+# the prior coupled behavior. Set $MLPERF_TRAIN_LOSS_LOG_FREQ>0 to log the MLPerf
+# train_loss event at a different rate than the console/TB metrics. Disable the
+# whole MLPerf stream with $MLPERF_LOGGING=0.
+streaming_train_eval_loop.mlperf_train_loss_log_frequency = @mltlf/env_int()
+mltlf/env_int.key     = "MLPERF_TRAIN_LOSS_LOG_FREQ"
+mltlf/env_int.default = 0
+# Diagnostic: log per-batch unique/total embedding-id counts on logged steps
+# (rank 0). Quantifies the user-major batching redundancy and the realized
+# diversity from get_dataset.streaming_shuffle_fraction. Off; set $DIAG_UNIQUE_EMB=1.
+streaming_train_eval_loop.streaming_diag_unique_emb = @due/env_int()
+due/env_int.key     = "DIAG_UNIQUE_EMB"
+due/env_int.default = 0
+# Chrome trace capture: reuses the shared Profiler.* bindings below (5-step
+# window at step 52). The streaming step counter advances across train+eval
+# batches, so step 52 lands in the first (train) window's compute. Off by
+# default to avoid profiler overhead in production runs; set $OUTPUT_TRACE=1.
+streaming_train_eval_loop.output_trace = @ot/env_int()
+ot/env_int.key     = "OUTPUT_TRACE"
+ot/env_int.default = 0
+# Reuse one DataLoader (persistent workers) across windows instead of respawning
+# per window. Skip eval to isolate window-reset cost. Override via env.
+streaming_train_eval_loop.persistent_loader = @pl/env_int()
+pl/env_int.key = "PERSISTENT_LOADER"
+pl/env_int.default = 1
+# ---- Eval cadence: choose EXACTLY ONE of the two knobs below ----------------
+# The streaming loop can decide WHEN to run the full-holdout eval pass in one of
+# two ways. They are MUTUALLY EXCLUSIVE — enabling the data-fraction cadence
+# (EVAL_EVERY_DATA_PCT>0) requires EVAL_EVERY_N_WINDOWS=0; setting both >0 raises
+# a ValueError at startup. The final end-of-run eval always runs in either mode.
+#
+# (1) PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS).
+# Full-holdout eval cadence (single knob; replaces the old EVAL_EACH_WINDOW
+# on/off switch). 0 (default) = per-window cadence OFF -> defer to the
+# data-fraction cadence below (EVAL_EVERY_DATA_PCT); if that is also 0, eval is
+# disabled entirely (train-only, e.g. perf benchmarking or the resume test; the
+# eval dataloader isn't even built). 1 = eval after every window. N>1 (e.g. 5
+# via $EVAL_EVERY_N_WINDOWS) = eval every Nth window (and always the final one)
+# to amortize the cost of consuming the full next-day eval window. The cadence is
+# anchored to the absolute ts grid so eval points stay stable across a mid-run
+# resume.
+# NOTE: each daily window has a DIFFERENT number of training samples, so a
+# per-window cadence produces eval points that are UNEVENLY spaced in terms of
+# how much data was trained between them. This is why the data-fraction cadence
+# below is now the default; enable this per-window knob only if you specifically
+# want eval anchored to the daily window grid.
+streaming_train_eval_loop.eval_every_n_windows = @evn/env_int()
+evn/env_int.key = "EVAL_EVERY_N_WINDOWS"
+evn/env_int.default = 0
+#
+# (2) DATA-FRACTION cadence (EVAL_EVERY_DATA_PCT).
+# Run the full-holdout eval every time the run has trained this FRACTION of the
+# run's TOTAL training data, so eval points are EVENLY spaced by data volume
+# (compute), independent of how many samples each daily window happens to hold.
+# This is the fix for the per-window cadence's uneven spacing noted above.
+#   value semantics (it is a fraction in (0, 1], NOT a percent number):
+#     0.0            = OFF  -> fall back to the per-window EVAL_EVERY_N_WINDOWS;
+#                      if that is also 0, eval is disabled entirely (train-only).
+#     0.005 (default)= eval every 0.5% of the data -> ~200 eval points total.
+#     0.01           = eval every 1%  of the data  -> ~100 eval points total.
+#     0.05           = eval every 5%  of the data  -> ~20  eval points total.
+#     0.10           = eval every 10% of the data  -> ~10  eval points total.
+# How "fraction of data" becomes an eval trigger: at startup the fraction is
+# converted ONCE into a global train-step interval
+#     eval_interval_steps = round(pct * total_train_anchors / (batch_size * world_size))
+# where total_train_anchors is counted over the ORIGINAL requested window range
+# [start_ts, start_ts+num_train_ts). Eval then fires whenever the monotonic
+# train global_step crosses a multiple of that interval (it can fire MID-WINDOW,
+# i.e. partway through a daily window, and across window boundaries). Because the
+# interval is computed over the original range and global_step is
+# checkpoint-restored, the eval grid is identical on a cold start and on every
+# resume. Each eval record's label carries "@step=<global_step>" so the
+# trajectory can be plotted against data volume. Override via $EVAL_EVERY_DATA_PCT.
+streaming_train_eval_loop.eval_every_data_pct = @edp/env_float()
+edp/env_float.key     = "EVAL_EVERY_DATA_PCT"
+edp/env_float.default = 0.005
+# Double-buffer windows: prepare the next window (index mask + first-batch
+# prefetch) in a background thread during the current window's compute, hiding
+# the per-window reset. Needs persistent_loader=1. Override via env.
+streaming_train_eval_loop.double_buffer = @db/env_int()
+db/env_int.key = "DOUBLE_BUFFER"
+db/env_int.default = 1
+# Fixed eval-holdout window range (held-out users' anchors over these windows
+# form the eval set evaluated at EVERY eval step). Default 299 = the window just
+# past the ts=0..298 training sweep (matches the canonical fp16 run). Set
+# EVAL_HOLDOUT_TS<0 to instead resolve at runtime to start_ts+num_train_ts (also
+# stable across resume). EVAL_HOLDOUT_NUM_WINDOWS widens the eval span.
+streaming_train_eval_loop.eval_holdout_ts = @eht/env_int()
+eht/env_int.key     = "EVAL_HOLDOUT_TS"
+eht/env_int.default = 299
+streaming_train_eval_loop.eval_holdout_num_windows = @ehnw/env_int()
+ehnw/env_int.key     = "EVAL_HOLDOUT_NUM_WINDOWS"
+ehnw/env_int.default = 1
+# num_train_batches / num_eval_batches unset => consume each full window.
+# Set them (e.g. via gin) to cap per-window steps for short experiments.
+
+# Default (non-streaming) train-eval loop variables; used unless
+# `--mode streaming-train-eval` selects the temporal-order path configured above.
+train_eval_loop.num_epochs = 1
+train_eval_loop.metric_log_frequency = 50
+train_eval_loop.eval_frequency = 500
+train_eval_loop.num_eval_batches = 200
+train_eval_loop.checkpoint_frequency = 1000000000  # disable mid-training checkpoints (disk-full guard)
+train_eval_loop.output_trace = True
+# 3-stage TorchRec pipeline: overlaps the embedding all-to-all (the dominant
+# exposed-comm bottleneck) with dense fwd/bwd. Set False to fall back to the
+# sequential fwd/bwd loop.
+train_eval_loop.use_pipeline = False
+
+# Run name → recommendation_v4/results/<run_name>/ (override via $RUN_NAME env).
+RUN_NAME = @run/env_path()
+run/env_path.key     = "RUN_NAME"
+run/env_path.default = "default"
+run_results_dir.run_name = %RUN_NAME
+
+# profiler: capture a 5-step window starting at step 52, every rank.
+# `trim_warmup = True` (default) post-filters the chrome trace so only the 5
+# `active` steps appear; the 1 WARMUP step still runs (lets CUPTI/ROCprof
+# settle) but its events are dropped from the output file.
+Profiler.trace_steps = [52]
+Profiler.warmup = 1
+Profiler.active = 5
+Profiler.trace_dir = @run_results_dir()
+
+# logger variables
+# TensorBoard event dir. DISABLED BY DEFAULT (empty path): the shared-NFS
+# tfevents writer is the only metrics sink whose I/O error is uncaught, and it
+# repeatedly crashed trainers on transient /apps `Errno 121` (Remote I/O) hiccups.
+# Nothing we consume reads TensorBoard — eval-window AUCs come from the durable
+# `<LOG>.metrics.jsonl` sink (try/except-guarded) and the text run log. An empty
+# path makes MetricsLogger install a no-op writer (see _NoOpSummaryWriter).
+# Re-enable for a run by setting $TENSORBOARD_LOG_PATH to a non-empty dir.
+MetricsLogger.tensorboard_log_path = @tbp/env_path()
+tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
+tbp/env_path.default = ""
+MetricsLogger.world_size = 8
+# MLPerf convergence target: run stops when the selected eval AUC reaches it.
+# Default 1.0 is unreachable, so the run trains through all windows (no early
+# stop) out of the box; set $AUC_THRESHOLD=0.80275 for the MLPerf target.
+MetricsLogger.auc_threshold = @at/env_float()
+at/env_float.key     = "AUC_THRESHOLD"
+at/env_float.default = 1.0
+# EVAL_ACCURACY + early-stop are driven by per-window AUC (window_auc) vs the
+# threshold above.
+# Lifetime-AUC backend, selectable independently for the train cumulative AUC and
+# the eval cumulative ("lifetime_*") AUC. Both default to "binned":
+#   "binned" = BinnedCumulativeAUC: exact-cumulative AUC from an O(bins) score
+#     histogram (additive all-reduce, memory independent of #samples/#windows).
+#   "capped" = LifetimeAUCMetricComputation: AUC over a trailing buffer of
+#     `lifetime_auc_window` samples/rank (legacy; per-rank buffer all-gathered).
+# Override per-run via $TRAIN_LIFETIME_AUC_MODE / $EVAL_LIFETIME_AUC_MODE.
+MetricsLogger.train_lifetime_auc_mode = @tlam/env_str()
+tlam/env_str.key     = "TRAIN_LIFETIME_AUC_MODE"
+tlam/env_str.default = "binned"
+MetricsLogger.eval_lifetime_auc_mode = @elam/env_str()
+elam/env_str.key     = "EVAL_LIFETIME_AUC_MODE"
+elam/env_str.default = "binned"
+# Score-histogram resolution for the "binned" backend. Higher = finer AUC
+# resolution at O(bins) memory. Override via $CUMULATIVE_AUC_BINS.
+MetricsLogger.cumulative_auc_bins = @cab/env_int()
+cab/env_int.key     = "CUMULATIVE_AUC_BINS"
+cab/env_int.default = 100000
+# Trailing-buffer size (samples/rank) for the "capped" backend. Override via
+# $LIFETIME_AUC_WINDOW. Ignored when the backend is "binned".
+MetricsLogger.lifetime_auc_window = @law/env_int()
+law/env_int.key     = "LIFETIME_AUC_WINDOW"
+law/env_int.default = 10000000
+# Checkpointing disabled by default — a full DMP checkpoint is ~100s of GB and
+# the streaming loop always saves on the final window. save_dmp_checkpoint
+# no-ops on the empty path. Set $CKPT_PATH to a directory to re-enable; the
+# load path auto-resolves to the highest-numbered numeric subdir inside it.
+save_dmp_checkpoint.path = @ckpt/env_path()
+ckpt/env_path.key     = "CKPT_PATH"
+ckpt/env_path.default = ""
+load_dmp_checkpoint.path = @ckpt/env_path()
+# Retention: keep only the most-recent N numeric subdirs after each successful
+# save (atomic rename + prune-older). Override via $KEEP_LAST_N.
+save_dmp_checkpoint.keep_last_n = @kln/env_int()
+kln/env_int.key     = "KEEP_LAST_N"
+kln/env_int.default = 1
+# In-window checkpoint cadence for streaming-train-eval. 0 (default) = end-of-
+# window only; on crash mid-window the partial progress is lost. Set N>0 (e.g.
+# via $IN_WINDOW_CKPT_FREQ) for batch-granularity exact-once-on-resume — paired
+# with the auto-latest load above, the resumed run skips the K already-trained
+# batches of the partial window and continues with bit-equal trajectory.
+streaming_train_eval_loop.in_window_checkpoint_frequency = @iwcf/env_int()
+iwcf/env_int.key     = "IN_WINDOW_CKPT_FREQ"
+iwcf/env_int.default = 0
+# Global-step checkpoint cadence: save whenever the monotonic train global_step
+# crosses a multiple of N (a true "every 1000 steps" trigger that spans windows
+# and survives resume). 0 (default) = off. Override via $CKPT_STEP_FREQ.
+streaming_train_eval_loop.checkpoint_step_frequency = @csf/env_int()
+csf/env_int.key     = "CKPT_STEP_FREQ"
+csf/env_int.default = 0
+# Wall-clock checkpoint cadence in seconds: save when >= this many seconds have
+# elapsed since the last save. Rank 0 owns the clock and broadcasts the decision
+# so all ranks save together. Default 3600 = hourly saves (matches the canonical
+# fp16 run); set 0.0 to disable. Override via $CKPT_TIME_INTERVAL_S.
+streaming_train_eval_loop.checkpoint_time_interval_s = @ctis/env_float()
+ctis/env_float.key     = "CKPT_TIME_INTERVAL_S"
+ctis/env_float.default = 3600.0
+# Cap each train_ts window's batch count (mostly for the resume test driver).
+# Unset / 0 = use the full window.
+streaming_train_eval_loop.num_train_batches = @ntb/env_int()
+ntb/env_int.key     = "NUM_TRAIN_BATCHES"
+ntb/env_int.default = 0
+# Cap each eval (full-holdout) window's batch count. Unset / <=0 = consume the
+# full eval window (the genuine full-holdout NE/AUC; this is what the long run
+# uses). Set >0 via $NUM_EVAL_BATCHES to subsample eval for fast validation.
+streaming_train_eval_loop.num_eval_batches = @neb/env_int()
+neb/env_int.key     = "NUM_EVAL_BATCHES"
+neb/env_int.default = 0
+# Test-only failure injection: when >=0 and metric_logger.global_step['train']
+# reaches this, the process exits with code 42 right after the in-window save
+# fires. Used by the streaming resume test harness (train/tests/) to verify resume.
+streaming_train_eval_loop.die_at_step = @das/env_int()
+das/env_int.key     = "DIE_AT_STEP"
+das/env_int.default = -1

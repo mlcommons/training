@@ -1,0 +1,60 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#!/usr/bin/env python3
+
+# pyre-strict
+
+import torch
+
+try:
+    from hammer.ops.triton.cc.addmm.triton_cc_addmm import triton_cc_addmm
+except ImportError:
+    triton_cc_addmm = None
+from generative_recommenders.common import HammerKernel
+from generative_recommenders.ops.triton.triton_addmm import triton_addmm
+
+try:
+    # @manual=//generative_recommenders/ops/triton_aot:triton_addmm
+    from generative_recommenders.ops.triton_aot.triton_addmm import (  # pyre-ignore[21]
+        aot_triton_kernel_wrapper_addmm,
+    )
+except ImportError:
+
+    def aot_triton_kernel_wrapper_addmm(
+        input: torch.Tensor,
+        mat1: torch.Tensor,
+        mat2: torch.Tensor,
+    ) -> torch.Tensor:
+        raise ImportError("AOT-T is required for the TRITON_INFERENCE addmm kernel.")
+
+
+def addmm(
+    input: torch.Tensor,
+    mat1: torch.Tensor,
+    mat2: torch.Tensor,
+    kernel: HammerKernel = HammerKernel.PYTORCH,
+) -> torch.Tensor:
+    if torch.jit.is_scripting():
+        return torch.addmm(input, mat1, mat2)
+    if kernel == HammerKernel.TRITON:
+        return triton_addmm(input, mat1, mat2)
+    elif kernel == HammerKernel.TRITON_INFERENCE:
+        return aot_triton_kernel_wrapper_addmm(input, mat1, mat2)
+    elif kernel == HammerKernel.TRITON_CC:
+        if triton_cc_addmm is None:
+            raise ImportError("hammer is required for the TRITON_CC kernel in addmm.")
+        return triton_cc_addmm(input, mat1, mat2)
+    else:
+        return torch.addmm(input, mat1, mat2)

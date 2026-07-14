@@ -1,0 +1,43 @@
+# Frozen dependency versions for the recommendation_v4 (HSTU / yambda-5b) MLPerf
+# reference. The CANONICAL, fully-reproducible environment is the Dockerfile
+# (built on rocm/primus:v26.3); see docs/training_recipe.md for the per-platform
+# (MI350X / B200) install commands and rationale. The pins below mirror that
+# stack. torch / torchvision / torchaudio / fbgemm_gpu / torchrec are
+# accelerator-specific and MUST be installed with --no-deps from the matching
+# index (see Dockerfile) so pip does not clobber the +rocm wheels.
+
+# --- accelerator stack (install via Dockerfile; --no-deps, matching index) ---
+# torch==2.12.0+rocm7.2          # --index-url https://download.pytorch.org/whl/rocm7.2
+# torchvision==0.27.0+rocm7.2
+# torchaudio==2.11.0+rocm7.2
+# fbgemm_gpu                     # built from FBGEMM commit 10b775730212923f65f7b78f79b6a01d80cf3c29 for gfx950
+torch==2.12.0
+fbgemm_gpu==1.7.0
+torchrec @ git+https://github.com/pytorch/torchrec.git@v2026.06.01.00
+
+# --- data / config / logging -------------------------------------------------
+polars-u64-idx==1.33.1
+gin-config==0.5.0
+absl-py==2.1.0
+pandas==2.2.3
+pyarrow==17.0.0
+numpy==1.26.4
+xxhash==3.5.0
+datasets==3.2.0
+huggingface_hub==0.27.0
+
+# --- metrics / training utils ------------------------------------------------
+torchmetrics==1.0.3
+tensordict==0.6.2
+tensorboard==2.19.0
+pyre-extensions==0.0.32
+iopath==0.1.10
+typing-inspect==0.9.0
+psutil==6.1.0
+tqdm==4.67.1
+pyyaml==6.0.2
+pybind11==2.13.6
+lightning-utilities==0.11.9
+
+# --- MLPerf compliance logging (pinned to the Training 6.0 tag) --------------
+mlperf-logging @ git+https://github.com/mlcommons/logging.git@6.0.0-rc6
