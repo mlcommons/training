@@ -10,16 +10,16 @@ Reads MLPerf ``:::MLLOG`` logs (``eval_accuracy`` == window_auc/listen_plus).
 Examples::
 
     # auto sweep 0.60 .. max-AUC @ step 0.005
-    python3 cv/steps_to_target_cv.py --log-dir /path/to/logs -o cv/table.csv
+    python3 scripts/cv/steps_to_target_cv.py --log-dir /path/to/logs -o cv/table.csv
 
     # single target
-    python3 cv/steps_to_target_cv.py --log-dir /path/to/logs --target 0.75
+    python3 scripts/cv/steps_to_target_cv.py --log-dir /path/to/logs --target 0.75
 
     # explicit list
-    python3 cv/steps_to_target_cv.py --log-dir /path/to/logs --targets 0.70,0.75,0.78
+    python3 scripts/cv/steps_to_target_cv.py --log-dir /path/to/logs --targets 0.70,0.75,0.78
 
     # range with step
-    python3 cv/steps_to_target_cv.py --log-dir /path/to/logs --target-range 0.60:0.78 --step 0.005
+    python3 scripts/cv/steps_to_target_cv.py --log-dir /path/to/logs --target-range 0.60:0.78 --step 0.005
 """
 import argparse
 import glob
