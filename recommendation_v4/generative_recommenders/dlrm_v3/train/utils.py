@@ -2007,6 +2007,11 @@ def streaming_train_eval_loop(
     # --- gradient clipping (streaming path, dense params). 0.0 = OFF, which
     #     preserves legacy streaming behavior. Wired to $GRAD_CLIP_NORM via gin. ---
     grad_clip_norm: float = 0.0,
+    # --- LR warmup (streaming path). Linearly ramp LR 0 -> base over the first
+    #     N GLOBAL train steps, then hold. Scales BOTH the dense optimizer and
+    #     the in-backward fused sparse-embedding optimizer. 0 = OFF (byte-
+    #     identical). Wired to $LR_WARMUP_STEPS via gin. ---
+    lr_warmup_steps: int = 0,
     # --- diagnostic: log per-batch unique/total embedding-id counts ---
     streaming_diag_unique_emb: bool = False,
     # --- test-only failure injection knob ---
@@ -2340,6 +2345,90 @@ def streaming_train_eval_loop(
             split_contract=live_split_contract,
         )
 
+    # --- LR warmup (streaming path) ------------------------------------------
+    # Linearly ramp LR from 0 -> base over the first `lr_warmup_steps` GLOBAL
+    # train steps, then hold at base. Keyed off the monotonic, checkpoint-
+    # restored global_step so the ramp is identical on cold start and on every
+    # resume (a run that crashes mid-warmup resumes at the correct multiplier;
+    # a run already past warmup is a no-op). Scales BOTH LR channels: the
+    # dense/non-fused optimizer passed in as `optimizer`, AND the in-backward
+    # fused sparse-embedding optimizer (model.fused_optimizer), whose per-table
+    # LR dominates this model. `lr_warmup_steps=0` (default) => OFF and the base
+    # LRs are never touched (byte-identical to the pre-warmup path).
+    _warmup_groups = list(optimizer.param_groups)
+    _warmup_fused_opt = getattr(model, "fused_optimizer", None)
+    if _warmup_fused_opt is not None:
+        _warmup_groups += list(_warmup_fused_opt.param_groups)
+    _warmup_base_lrs = [pg["lr"] for pg in _warmup_groups]
+    if lr_warmup_steps and lr_warmup_steps > 0 and rank == 0:
+        logger.info(
+            "[lr-warmup] linear warmup over %d global steps across %d param "
+            "group(s); base LRs: %s",
+            lr_warmup_steps,
+            len(_warmup_groups),
+            ", ".join(f"{b:.3e}" for b in _warmup_base_lrs),
+        )
+
+    def _apply_lr_warmup(gstep: int) -> None:
+        # OFF, or ramp already finished (kernel + param_groups already hold the
+        # base LR from the last sync at gstep==lr_warmup_steps): nothing to do.
+        if not (lr_warmup_steps and lr_warmup_steps > 0) or gstep > lr_warmup_steps:
+            return
+        mult = min(1.0, float(gstep) / float(lr_warmup_steps))
+        for pg, base in zip(_warmup_groups, _warmup_base_lrs):
+            pg["lr"] = base * mult
+        # Push the warmed LR into the FBGEMM TBE backward kernel. The in-backward
+        # fused embedding optimizer only calls
+        # `emb_module.set_learning_rate(param_groups[0]["lr"])` from its
+        # step()/zero_grad() (torchrec/distributed/batched_embedding_kernel.py),
+        # and this loop steps the dense `optimizer` — NOT model.fused_optimizer —
+        # so WITHOUT this explicit call the embedding tables would keep training
+        # at the construction-time base LR and warmup would silently apply to the
+        # dense params only. `.step()` on the fused (in-backward) optimizer does
+        # no parameter update; it only re-syncs the LR to the kernel.
+        if _warmup_fused_opt is not None:
+            _warmup_fused_opt.step()
+        if rank == 0 and gstep % max(1, metric_log_frequency) == 0:
+            _fused_lr = ""
+            if _warmup_fused_opt is not None:
+                _fused_lr = (
+                    f" fused_pg_lr={_warmup_fused_opt.param_groups[0]['lr']:.3e}"
+                )
+                # Best-effort readback of the ACTUAL kernel LR to confirm
+                # set_learning_rate() propagated. model.fused_optimizer is a
+                # (possibly nested) CombinedOptimizer whose leaves carry the TBE
+                # module as `_emb_module`, so recurse to the first leaf. Purely
+                # diagnostic; wrapped so it can never break training.
+                def _first_tbe_kernel_lr(opt, depth=0):
+                    if depth > 6 or opt is None:
+                        return None
+                    _em = getattr(opt, "_emb_module", None)
+                    if _em is not None and hasattr(_em, "get_learning_rate"):
+                        return float(_em.get_learning_rate())
+                    for _sub in getattr(opt, "_optims", []):
+                        _child = _sub[1] if isinstance(_sub, tuple) else _sub
+                        _lr = _first_tbe_kernel_lr(_child, depth + 1)
+                        if _lr is not None:
+                            return _lr
+                    _wrapped = getattr(opt, "_optimizer", None)
+                    if _wrapped is not None:
+                        return _first_tbe_kernel_lr(_wrapped, depth + 1)
+                    return None
+
+                try:
+                    _klr = _first_tbe_kernel_lr(_warmup_fused_opt)
+                    if _klr is not None:
+                        _fused_lr += f" tbe_kernel_lr={_klr:.3e}"
+                except Exception:
+                    pass
+            logger.info(
+                "[lr-warmup] gstep=%d mult=%.4f dense_lr=%.3e%s",
+                gstep,
+                mult,
+                _warmup_groups[0]["lr"],
+                _fused_lr,
+            )
+
     def _run_train_window(
         train_data_iterator,
         train_ts: int,
@@ -2373,6 +2462,12 @@ def streaming_train_eval_loop(
                     max_steps=int(os.environ.get("DIAG_EMB_STEPS", "100")),
                     log_every=metric_log_frequency,
                 )
+            # LR warmup: set the scaled LR on BOTH channels (dense param_groups
+            # + the fused embedding TBE via set_learning_rate) BEFORE the
+            # forward/backward, so the in-backward embedding update THIS step
+            # uses the warmed LR (the dense optimizer reads it at .step() below).
+            # No-op when lr_warmup_steps=0.
+            _apply_lr_warmup(metric_logger.global_step["train"])
             optimizer.zero_grad()
             sample.to(device)
             (

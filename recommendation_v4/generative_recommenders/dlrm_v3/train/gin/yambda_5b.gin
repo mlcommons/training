@@ -121,6 +121,54 @@ streaming_train_eval_loop.grad_clip_norm = @gcn/env_float()
 gcn/env_float.key     = "GRAD_CLIP_NORM"
 gcn/env_float.default = 1.0
 
+# ============================================================================
+# LR WARMUP (streaming train/eval path)
+# ============================================================================
+# WHAT IT DOES
+#   Linearly ramps the learning rate from 0 up to the configured base LR over
+#   the first N GLOBAL train steps, then holds flat at the base LR for the rest
+#   of the run:
+#
+#       effective_lr(gstep) = base_lr * min(1.0, gstep / N)
+#
+#   The ramp scales BOTH learning-rate channels in lockstep:
+#     1. the dense / non-fused optimizer (the `optimizer` passed to the loop), and
+#     2. the in-backward FUSED sparse-embedding optimizer (model.fused_optimizer),
+#        i.e. the per-table embedding LR that DOMINATES convergence for this
+#        model. The warmed LR is also pushed into the FBGEMM TBE backward kernel
+#        (via set_learning_rate), so the embedding backward actually sees the
+#        ramped value in the SAME step (not one step late).
+#
+# WHY IT EXISTS
+#   Warmup tames the early-step trajectory divergence that a large LR causes on
+#   freshly-initialized weights/embeddings. That early divergence is a major
+#   source of run-to-run variance (CV). Warmup lets us use a higher base LR (or
+#   stretch the gentle early-rise region) without paying the early-instability
+#   penalty. It does NOT reduce plateau-region CV (that is set by data ordering).
+#
+# RESUME SAFETY
+#   The ramp is keyed off the monotonic, checkpoint-restored global_step, so it
+#   is identical on a cold start and on every relaunch:
+#     - a run that crashes mid-warmup resumes at the correct multiplier;
+#     - a run already past step N is a pure no-op (LRs already hold base).
+#
+# HOW TO ENABLE / DISABLE
+#   Controlled by the $LR_WARMUP_STEPS environment variable (read at startup):
+#     - DISABLED (default): unset $LR_WARMUP_STEPS, or set it to 0.
+#         => warmup code early-returns; base LRs are NEVER mutated; behavior is
+#            byte-identical to the pre-warmup baseline. This is the default so
+#            existing/baseline runs are unaffected.
+#     - ENABLED: export LR_WARMUP_STEPS=<N>   (N = number of global steps to ramp)
+#         e.g.  export LR_WARMUP_STEPS=1500    # short warmup (~0.5% of data @ GB=8192)
+#               export LR_WARMUP_STEPS=16000   # long warmup  (~5.7% of data @ GB=8192)
+#         Rule of thumb: data fraction spent ramping = N * global_batch / total_train.
+#
+# NOTE: this only changes the LR SCHEDULE. The base LR itself is set separately
+#   via DENSE_LR / SPARSE_LR; warmup never overrides those base values.
+streaming_train_eval_loop.lr_warmup_steps = @lrw/env_int()
+lrw/env_int.key     = "LR_WARMUP_STEPS"
+lrw/env_int.default = 0          # 0 = OFF (disabled by default; baseline-safe)
+
 # Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
 # below. Used by both make_train_test_dataloaders and get_dataset.
 # Scoped (`data/env_path`) so this binding doesn't collide with the RUN_NAME
