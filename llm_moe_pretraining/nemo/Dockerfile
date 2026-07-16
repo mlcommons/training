@@ -60,6 +60,7 @@ RUN pip uninstall -y megatron-core && \
     # TODO(dfridman): knob for eval batch size. Remove once merged in the upstream
     git apply /workspace/code/eval_batch_size.patch && \
     git apply /workspace/code/deepseek_mtp_module_conversion.patch && \
+    git apply /workspace/code/start_eval_at_iter.patch && \
     cd /workspace/Megatron-Bridge/3rdparty/Megatron-LM && \
     echo MCORE_COMMIT_HASH=$(git rev-parse HEAD) && \
     echo $(git rev-parse HEAD) > /MCORE_COMMIT_HASH.env && \
