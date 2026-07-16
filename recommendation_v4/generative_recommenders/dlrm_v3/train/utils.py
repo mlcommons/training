@@ -2012,6 +2012,15 @@ def streaming_train_eval_loop(
     #     the in-backward fused sparse-embedding optimizer. 0 = OFF (byte-
     #     identical). Wired to $LR_WARMUP_STEPS via gin. ---
     lr_warmup_steps: int = 0,
+    # --- LR warmup floor (streaming path). Absolute LR the ramp STARTS from at
+    #     gstep 0 (per group, clamped to <= that group's base LR). The ramp then
+    #     goes start -> base over `lr_warmup_steps`. 0.0 (default) reproduces the
+    #     0 -> base ramp exactly (byte-identical). A small nonzero floor turns the
+    #     warmup into a "partial warmup" that reclaims the near-dead head of the
+    #     ramp (trading a little seed-divergence damping for faster time-to-target).
+    #     Only has any effect when lr_warmup_steps > 0. Wired to
+    #     $LR_WARMUP_START_LR via gin. ---
+    lr_warmup_start_lr: float = 0.0,
     # --- diagnostic: log per-batch unique/total embedding-id counts ---
     streaming_diag_unique_emb: bool = False,
     # --- test-only failure injection knob ---
@@ -2360,12 +2369,17 @@ def streaming_train_eval_loop(
     if _warmup_fused_opt is not None:
         _warmup_groups += list(_warmup_fused_opt.param_groups)
     _warmup_base_lrs = [pg["lr"] for pg in _warmup_groups]
+    # Per-group start LR for the ramp: the configured floor, clamped so it can
+    # never exceed a group's base (a floor >= base would mean "no ramp" for that
+    # group, which we express by starting it AT base). 0.0 => classic 0 -> base.
+    _warmup_start_lrs = [min(float(lr_warmup_start_lr), b) for b in _warmup_base_lrs]
     if lr_warmup_steps and lr_warmup_steps > 0 and rank == 0:
         logger.info(
             "[lr-warmup] linear warmup over %d global steps across %d param "
-            "group(s); base LRs: %s",
+            "group(s); start LRs: %s -> base LRs: %s",
             lr_warmup_steps,
             len(_warmup_groups),
+            ", ".join(f"{s:.3e}" for s in _warmup_start_lrs),
             ", ".join(f"{b:.3e}" for b in _warmup_base_lrs),
         )
 
@@ -2374,9 +2388,13 @@ def streaming_train_eval_loop(
         # base LR from the last sync at gstep==lr_warmup_steps): nothing to do.
         if not (lr_warmup_steps and lr_warmup_steps > 0) or gstep > lr_warmup_steps:
             return
-        mult = min(1.0, float(gstep) / float(lr_warmup_steps))
-        for pg, base in zip(_warmup_groups, _warmup_base_lrs):
-            pg["lr"] = base * mult
+        progress = min(1.0, float(gstep) / float(lr_warmup_steps))
+        # Ramp each group from its (clamped) start LR up to its base LR. With
+        # start=0 this collapses to `base * progress` (the original schedule).
+        for pg, base, start in zip(
+            _warmup_groups, _warmup_base_lrs, _warmup_start_lrs
+        ):
+            pg["lr"] = start + (base - start) * progress
         # Push the warmed LR into the FBGEMM TBE backward kernel. The in-backward
         # fused embedding optimizer only calls
         # `emb_module.set_learning_rate(param_groups[0]["lr"])` from its
@@ -2422,9 +2440,9 @@ def streaming_train_eval_loop(
                 except Exception:
                     pass
             logger.info(
-                "[lr-warmup] gstep=%d mult=%.4f dense_lr=%.3e%s",
+                "[lr-warmup] gstep=%d progress=%.4f dense_lr=%.3e%s",
                 gstep,
-                mult,
+                progress,
                 _warmup_groups[0]["lr"],
                 _fused_lr,
             )

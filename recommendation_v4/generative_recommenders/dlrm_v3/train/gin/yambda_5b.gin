@@ -169,6 +169,41 @@ streaming_train_eval_loop.lr_warmup_steps = @lrw/env_int()
 lrw/env_int.key     = "LR_WARMUP_STEPS"
 lrw/env_int.default = 0          # 0 = OFF (disabled by default; baseline-safe)
 
+# ----------------------------------------------------------------------------
+# LR WARMUP FLOOR / STARTING LR  (only meaningful when $LR_WARMUP_STEPS > 0)
+# ----------------------------------------------------------------------------
+# WHAT IT DOES
+#   Sets the LR the ramp STARTS from at global step 0 instead of starting from
+#   zero, turning the schedule into a "partial warmup" that ramps from `start`
+#   up to the base LR over $LR_WARMUP_STEPS, then holds flat:
+#
+#       effective_lr(gstep) = start + (base_lr - start) * min(1.0, gstep / N)
+#
+#   `start` is applied PER param group and clamped to <= that group's base LR
+#   (a floor >= base means "no ramp" for that group -> it starts at base). Like
+#   the main warmup, the floor scales both the dense optimizer and the fused
+#   sparse-embedding optimizer, and is pushed into the FBGEMM TBE kernel.
+#
+# WHY IT EXISTS
+#   With a long warmup the first several thousand steps run at a near-zero LR
+#   (e.g. at gstep 1k of a 24k ramp, LR ~= base/24 ~= 4e-9) and barely train.
+#   A small nonzero floor reclaims that near-dead head of the ramp, banking
+#   extra effective learning (integral rises from 1/2*N*base to
+#   1/2*N*(base+start)) to reach a target AUC in fewer steps. The trade-off is
+#   that a higher floor reintroduces some early seed-divergence, so it costs
+#   some of warmup's CV-reduction benefit; keep `start` << base to stay in the
+#   low-CV regime.
+#
+# HOW TO ENABLE / DISABLE
+#   Controlled by the $LR_WARMUP_START_LR environment variable (read at startup):
+#     - DEFAULT 0.0: classic 0 -> base ramp; byte-identical to plain warmup.
+#     - NONZERO: export LR_WARMUP_START_LR=<abs LR>   (must be < base LR)
+#         e.g. at base=1e-7:  1.25e-8 (= base/8)   2.5e-8 (= base/4)
+#   No effect unless $LR_WARMUP_STEPS > 0 (there is no ramp to lift a floor on).
+streaming_train_eval_loop.lr_warmup_start_lr = @lrws/env_float()
+lrws/env_float.key     = "LR_WARMUP_START_LR"
+lrws/env_float.default = 0.0     # 0.0 = classic 0 -> base ramp (baseline-safe)
+
 # Data root: resolved at runtime from $DLRM_DATA_PATH if set, else the literal
 # below. Used by both make_train_test_dataloaders and get_dataset.
 # Scoped (`data/env_path`) so this binding doesn't collide with the RUN_NAME
