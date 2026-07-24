@@ -1,0 +1,2 @@
+# RCP reference logs are intentionally tracked despite the parent *.log ignore
+!*.log
