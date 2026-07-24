@@ -1,6 +1,18 @@
-# 1. Problem
+# 1. Summary
 
-## SWE agent reinforcement learning: GRPO with NeMo Gym and OpenHands
+## Plain-language summary
+
+This benchmark measures how quickly a large language model learns to repair
+real software projects. For each task, the model receives a problem report and
+a copy of the affected project. It can inspect files, edit code, and run
+commands in an isolated environment. It receives credit only when the final
+change passes the task's automated evaluation.
+
+Every run starts from the same pretrained model and trains on the same ordered
+set of software tasks. The measured result is the time needed to reach a fixed
+success rate on a separate set of tasks that the model did not train on.
+
+## Technical summary
 
 This benchmark uses Reinforcement Learning with Verifiable Rewards (RLVR) to
 post-train [`Qwen/Qwen3.5-397B-A17B`](https://huggingface.co/Qwen/Qwen3.5-397B-A17B)
@@ -23,15 +35,20 @@ through Ray:
 The benchmark implementation is provided by
 [NVIDIA NeMo-RL](https://github.com/NVIDIA-NeMo/RL/tree/mlperf-training-qwen35-main).
 This repository checks out NeMo-RL under the local submodule path
-`llm_moe_grpro/RL`, pinned to commit
+`llm_moe_grpo/RL`, pinned to commit
 `3fca04c9b313d313302923a5bb6b0c8dc0340ed6`. The source commit, recursive
 submodule revisions, Python dependency lock, and downstream build-time patches
 are recorded in the benchmark container.
 
 The principal entrypoints are:
 
-| Purpose | Path in the NeMo-RL submodule |
+| Purpose | Path |
 |---|---|
+| Dataset download and preprocessing | `download_dataset.sh` |
+| Dataset identity verification | `verify_dataset.sh` |
+| Pretrained-checkpoint download | `download_checkpoint.sh` |
+| Pretrained-checkpoint conversion | `RL/docker/mlperf/data_scripts/convert_ckpt.sh` |
+| Benchmark run and timing | `RL/docker/mlperf/run_and_time.sh` |
 | Container recipe | `RL/docker/mlperf/Dockerfile` |
 | RCP submission wrapper | `RL/docker/mlperf/submit_rcp.sh` |
 | Slurm/Ray launcher | `RL/docker/mlperf/run.sub` |
@@ -57,6 +74,9 @@ the supplied `linux/arm64` benchmark image. A deployment must provide:
 The supplied launcher encodes the qualified node layout, policy/generation
 split, topology placement, and Slurm integration. Those are properties of the
 reference implementation rather than independent infrastructure requirements.
+Reference development and RCP qualification used NVIDIA GB300 GPUs in NVL72
+systems, with the qualified job exposed to the launcher as 64 four-GPU
+scheduler nodes.
 
 ## Initialize the reference source
 
@@ -130,7 +150,7 @@ The run requires five external artifacts:
 
 | Artifact | Runtime variable | Required identity or behavior |
 |---|---|---|
-| Qwen3.5 policy checkpoint | `HF_CKPT_PATH` | Hugging Face snapshot of `Qwen/Qwen3.5-397B-A17B` |
+| Qwen3.5 policy checkpoint | `HF_CKPT_PATH` | `Qwen/Qwen3.5-397B-A17B` snapshot `8472618112abcbd45acbcdc58436aff4233c23f7` |
 | Megatron checkpoint cache | `NRL_MEGATRON_CHECKPOINT_DIR` | Writable directory; an empty directory is converted from the HF checkpoint on first use |
 | Curriculum training JSONL | `QWEN35_CURRICULUM_DATA_PATH` | Exact 685-row curriculum-v2 artifact described below |
 | Validation JSONL | `NEMO_GYM_SWE_VALIDATION_DATA_PATH` | 256 held-out R2E-Gym tasks |
@@ -138,17 +158,18 @@ The run requires five external artifacts:
 
 ### Policy checkpoint
 
-The checked-in download helper uses the Hugging Face cache layout:
+The checked-in download helper pins the exact Hugging Face model revision and
+uses the standard Hugging Face cache layout:
 
 ```bash
-cd llm_moe_grpo/RL
+cd llm_moe_grpo
 
 export HF_HOME="<shared-path>/huggingface"
 export HF_TOKEN="<read-token>"  # if required by the installation
 
-bash docker/mlperf/data_scripts/download_base_ckpt.sh
+./download_checkpoint.sh
 
-export HF_CKPT_PATH="<shared-path>/huggingface/hub/models--Qwen--Qwen3.5-397B-A17B/snapshots/<snapshot>"
+export HF_CKPT_PATH="<shared-path>/huggingface/hub/models--Qwen--Qwen3.5-397B-A17B/snapshots/8472618112abcbd45acbcdc58436aff4233c23f7"
 mkdir -p "<shared-path>/qwen35-mcore-cache"
 export NRL_MEGATRON_CHECKPOINT_DIR="<shared-path>/qwen35-mcore-cache"
 ```
@@ -200,47 +221,35 @@ Its reference identity is:
 | Size | 173,801,096 bytes |
 | SHA-256 | `452d0e6b3c1973669334062dc24931355de51749df1ab51fc9bb71a129f7bb5c` |
 
-The converter creates the 685-row curriculum training split and 256-row
-validation split from
-[`R2E-Gym/R2E-Gym-Subset`](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset):
+The package pins source dataset revision
+`e8b9fcbce43eaca0dc2c0d4798ee6f3e965f590a` of
+[`R2E-Gym/R2E-Gym-Subset`](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset).
+The download script retrieves that revision, runs the pinned converter, gives
+the curriculum output its canonical name, and invokes the independent
+verification script. The preprocessing host requires `uv`/`uvx` and Git
+network access for repository metadata not already present in `cache_dir`.
 
 ```bash
-cd llm_moe_grpo/RL
+cd llm_moe_grpo
 
+dataset_dir="<work-path>/R2E-Gym__R2E-Gym-Subset"
 output_dir="<output-path>"
+cache_dir="<work-path>/r2e-repository-cache"
 
-hf download R2E-Gym/R2E-Gym-Subset \
-  --repo-type dataset \
-  --local-dir "<work-path>/R2E-Gym__R2E-Gym-Subset"
-
-uv run --with pyarrow python \
-  tools/create_r2e_gym_easy_subset_jsonl.py \
-  --dataset-dir "<work-path>/R2E-Gym__R2E-Gym-Subset" \
+./download_dataset.sh \
+  --dataset-dir "${dataset_dir}" \
   --output-dir "${output_dir}" \
-  --cache-dir "<work-path>/r2e-repository-cache" \
-  --container-image-dir /inputs/nemo_gym/sif \
-  --train-ids tools/train-instance-ids.txt \
-  --val-ids tools/val-instance-ids.txt
+  --cache-dir "${cache_dir}"
 
-# The converter's generic train filename contains the qualified curriculum
-# ordering. Give it the canonical artifact name used by the system profile.
-mv "${output_dir}/benchmark_r2e_gym_easy_train.jsonl" \
-  "${output_dir}/benchmark_r2e_gym_easy_train.filtered.curriculum-v2-classic-cycles2-seed20260710.jsonl"
-
-train_jsonl="${output_dir}/benchmark_r2e_gym_easy_train.filtered.curriculum-v2-classic-cycles2-seed20260710.jsonl"
-val_jsonl="${output_dir}/benchmark_r2e_gym_easy_val.jsonl"
-
-echo "c07bcd64ed1c558e28d091239104e38295a5e696c1d21bb0b61f0346c7eaa0f7  ${train_jsonl}" \
-  | sha256sum --check -
-echo "452d0e6b3c1973669334062dc24931355de51749df1ab51fc9bb71a129f7bb5c  ${val_jsonl}" \
-  | sha256sum --check -
-test "$(wc -l < "${train_jsonl}")" -eq 685
-test "$(wc -l < "${val_jsonl}")" -eq 256
+./verify_dataset.sh "${output_dir}"
 ```
 
-Use the `tools/` converter and ID files shown above. The similarly named copy
-under `docker/mlperf/data_scripts/` retains the earlier 721-row,
-non-curriculum training split and is not the qualified data generator.
+`download_dataset.sh` uses
+`RL/tools/create_r2e_gym_easy_subset_jsonl.py`,
+`RL/tools/train-instance-ids.txt`, and `RL/tools/val-instance-ids.txt`.
+The similarly named converter under `RL/docker/mlperf/data_scripts/` retains
+the earlier 721-row, non-curriculum training split and is not the qualified
+data generator.
 
 The curriculum algorithm is fixed in the script: seed `20260710`, 16 examples
 per curriculum batch, and two easy-to-hard cycles. It ranks difficulty using
@@ -346,6 +355,30 @@ gradient_clip(GBS) = 0.125 * sqrt(256 / GBS) = 2 / sqrt(GBS)
 These are the benchmark's selected GBS-dependent settings, not a general GRPO
 scaling rule.
 
+### Reference hyperparameter controls
+
+The qualified reference fixes the optimizer to Adam and does not allow an
+alternative optimizer. The RCP wrapper exposes the benchmark-affecting study
+controls as named command-line arguments with type checks:
+
+| Control | Command-line argument | Qualified value or rule |
+|---|---|---|
+| Global batch size | `--gbs` | One of 256, 512, or 1024 for the checked-in RCPs |
+| Learning rate and minimum LR | `--lr` | Exact GBS-dependent value in the table above |
+| Maximum gradient norm | `--clip` | Exact GBS-dependent value in the table above |
+| First validation step | `--val-start` | Exact GBS-dependent value in the table above |
+| Maximum training steps | `--max-steps` | Exact GBS-dependent value in the table above |
+| Quality target | `--target` | `0.69` |
+| Replica count | `--replicas` | Positive integer |
+| RNG seed | `--seed-base` | Nonnegative integer; omitted selects a random 32-bit seed |
+
+All remaining optimizer, GRPO, generation, and agent hyperparameters are fixed
+in the checked-in common and GBS-specific YAML recipes. The final list of
+submitter-tunable parameters and legal alternative values is governed by the
+MLPerf Training rules; the broader study controls accepted by
+`submit_rcp.sh` do not by themselves authorize an alternative submission
+configuration.
+
 The first-validation values in the table are explicit submission arguments.
 They intentionally override the child YAML defaults. Validation then runs at
 every training step because the common recipe sets `grpo.val_period: 1`.
@@ -419,21 +452,30 @@ responses_api_models/vllm_model/configs/vllm_model_for_training.yaml
 responses_api_agents/swe_agents/configs/swebench_openhands_training.yaml
 ```
 
-The agent is `CodeActAgent`, backed by the pinned OpenHands checkout. Both
-training and validation use these exact prompt templates from the pinned NeMo
-Gym submodule:
+The generated JSONL selects the Gym agent definitions through
+`agent_ref.type=responses_api_agents`: training rows use `swe_agents_train`,
+and validation rows use `swe_agents_val`. In the pinned Gym configuration,
+both definitions select `CodeActAgent`, set `diversify_tool_names: false`, and
+use the same prompt templates:
 
-```text
-RL/3rdparty/Gym-workspace/Gym/responses_api_agents/swe_agents/prompts/openhands/system_prompt.j2
-RL/3rdparty/Gym-workspace/Gym/responses_api_agents/swe_agents/prompts/openhands/user_prompt.j2
-```
+| Prompt | Path in the `RL` checkout | SHA-256 |
+|---|---|---|
+| System | `3rdparty/Gym-workspace/Gym/responses_api_agents/swe_agents/prompts/openhands/system_prompt.j2` | `8aff26bf83a11605ca9bab0336804d56d202f1555b0a073d21db21e4e41b8b9a` |
+| User | `3rdparty/Gym-workspace/Gym/responses_api_agents/swe_agents/prompts/openhands/user_prompt.j2` | `0b0489b934d2c229c439b7af2f588fe404a6327be9da3c12d4c7c9efd3cf1c03` |
 
-These templates are benchmark inputs. The user template injects the task's
-repository path and issue description and instructs the agent to make minimal
-non-test source changes. The system template defines the OpenHands role,
-tool-use workflow, code-editing behavior, and safety constraints. Replacing
-either template changes the agent policy presented to the model and may change
-benchmark results.
+The files and agent definitions above come from the pinned NeMo Gym revision
+`610a08ab5fe9f8f5fb5fff36b170429ea67f0f92`. The agent implementation is
+backed by the OpenHands revision
+`0d766ad06b2be64a42e6f0175b9ebcc4a06599d9` selected by the common recipe.
+
+These templates are benchmark inputs and must be used byte-for-byte when
+reproducing the reference RCPs. Do not replace them with package defaults,
+host-local templates, or custom prompt overrides. The user template injects
+the task's repository path and issue description and instructs the agent to
+make minimal non-test source changes. The system template defines the
+OpenHands role, tool-use workflow, code-editing behavior, and safety
+constraints. Replacing either template changes the agent policy presented to
+the model and may change benchmark results.
 
 Relevant environment settings are:
 
@@ -453,6 +495,13 @@ Relevant environment settings are:
 | Qwen thinking mode | Disabled with `enable_thinking: false` |
 | Sequential reasoning | Disabled |
 
+Every training and validation rollout must reach a normal terminal result. A
+rollout truncated by the agent timeout is incomplete and must not be included
+as a valid benchmark sample. Configure both agent timeouts high enough that no
+rollout is terminated by the timeout. The reference RCPs used 1,800 seconds for
+both training and validation; this is a reference value, not an upper bound,
+and should be increased when required to ensure rollout completion.
+
 Training generation uses temperature `1.0`, top-p `1.0`, and no top-k
 restriction. Validation generation uses temperature `0.1` and top-p `0.95`.
 The benchmark context and maximum generation length are both capped at 65,536
@@ -464,7 +513,12 @@ tokens.
 
 The initial policy is the Apache-2.0
 [`Qwen/Qwen3.5-397B-A17B`](https://huggingface.co/Qwen/Qwen3.5-397B-A17B)
-checkpoint released by the Qwen team.
+checkpoint released by the Qwen team. The authoritative public architecture
+sources are the
+[`Qwen3.5-397B-A17B` model card](https://huggingface.co/Qwen/Qwen3.5-397B-A17B)
+and the Qwen team's
+[`Qwen3.5: Towards Native Multimodal Agents`](https://qwen.ai/blog?id=qwen3.5)
+release publication.
 
 ## Model details
 
@@ -495,7 +549,7 @@ speculative decoding in this recipe (`mtp_num_layers: 0` and
 
 ## Benchmark runtime
 
-| Component | Qualified configuration |
+| Component | Reference RCP configuration |
 |---|---|
 | Policy training | 16 nodes x 4 GPUs; Megatron TP4, PP2, EP32, CP1; sequence parallelism and packed sequences enabled; BF16 policy precision |
 | Policy attention | FlashAttention backend through Transformer Engine, including the container's guarded SM103 allowlist update |
@@ -528,11 +582,17 @@ The immutable runtime authority is the built image's
 submodule status, lockfile hash, dependency records, and downstream patch
 hashes.
 
+The checked-in RCPs were generated with policy and generation math in BF16,
+while optimizer parameters and the MoE router used FP32. These values document
+the reference runs; they do not prescribe the precision used by other
+submissions. Permitted submission precision is governed by the applicable
+MLPerf Training rules.
+
 ## Weight initialization
 
 Training starts from the pretrained Hugging Face policy converted to
-Megatron-Core format. MoE router weights are frozen
-(`freeze_moe_router: true`). Policy weights remain BF16, while optimizer
+Megatron-Core format. In the checked-in RCPs, MoE router weights are frozen
+(`freeze_moe_router: true`), policy weights remain BF16, and optimizer
 parameters are FP32.
 
 ## Loss function
@@ -562,7 +622,7 @@ The Megatron recipe selects `optimizer: adam`. The MLPerf logger records this
 under the ruleset's `adamw` optimizer name; configured weight decay is zero.
 The optimizer uses distributed, precision-aware state.
 
-| Parameter | Value |
+| Parameter | Reference RCP value |
 |---|---|
 | Optimizer | Adam (`optimizer: adam`; MLPerf log name `adamw`) |
 | Base learning rate | `1.0e-6 * sqrt(GBS / 256)` |
@@ -579,8 +639,10 @@ The optimizer uses distributed, precision-aware state.
 | Optimizer parameter dtype | FP32 |
 | Policy precision | BF16 |
 
-Checkpointing and optimizer-state saving are disabled for the RCP
-time-to-target run.
+The pinned NeMo-RL implementation supports writing and resuming full policy and
+optimizer checkpoints. Periodic checkpointing and optimizer-state saving are
+disabled in the RCP time-to-target recipe so checkpoint I/O is not part of the
+measured run.
 
 # 5. Quality
 
@@ -607,6 +669,23 @@ The quality target is:
 pass@4 >= 0.69
 ```
 
+On a 256-task validation set, the first representable score meeting this
+threshold is `177 / 256 = 0.69140625`: at least 177 held-out tasks must be
+solved by one or more of their four attempts.
+
+The checked-in RCP logs provide six independent seeds at each qualified GBS:
+
+| GBS | RCP logs | Runs reaching target | First observed crossing | Observed pass@4 range at crossing |
+|---:|---|---:|---:|---:|
+| 256 | `rcp_logs/256/seed_*.out` | 6 / 6 | Step 18 | 0.703125 - 0.75390625 |
+| 512 | `rcp_logs/512/seed_*.out` | 6 / 6 | Step 10 | 0.6953125 - 0.73046875 |
+| 1024 | `rcp_logs/1024/seed_*.out` | 6 / 6 | Step 7 | 0.70703125 - 0.75000000 |
+
+All 18 runs therefore reach the target at the first scheduled validation.
+This is stable observed convergence at the configured evaluation schedule; it
+does not imply zero latent crossing-step variance before the first
+observation.
+
 When an evaluation reaches the target, the MLPerf logger emits a successful
 `run_stop` and terminates training. The submission wrapper must receive
 `--target 0.69`; an empty target disables target-based stopping and is not the
@@ -623,3 +702,9 @@ qualified time-to-target run.
 The validation dataloader uses the entire 256-task validation JSONL at every
 evaluation. The four trajectories for each task use validation temperature
 `0.1` and top-p `0.95`.
+
+Each validation executes 1,024 complete agent trajectories, so evaluation is
+substantially more expensive than a conventional forward-only validation
+pass. The schedule delays the first evaluation to the GBS-specific RCP
+convergence window, then evaluates every step so a later crossing is detected
+within one additional training step.
