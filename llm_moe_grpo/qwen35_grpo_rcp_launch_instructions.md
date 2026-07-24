@@ -249,8 +249,9 @@ training generation:
 
 GRPO:
   async enabled: true
-  maximum trajectory age: 1
+  maximum trajectory age: 1 (reference RCP setting; not constrained)
   sequence-mask TIS: [0.999, 1.002]
+  sequence logprob-error mask threshold: 2.0
   force_on_policy_ratio: true
   reference logprobs skipped: true
   checkpointing: disabled
@@ -262,10 +263,12 @@ policy:
   packed sequences: true
   FlashAttention backend
   flex MoE dispatcher with HybridEP backend
+  MTP training: disabled and not permitted
 
 generation:
   48 nodes x 4 GPUs
   vLLM TP8, PP1, EP8
+  speculative decoding: disabled and not permitted
   train and validation concurrency: 256
   train and validation agent timeout: 1800 seconds
   prefix caching: enabled

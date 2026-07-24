@@ -543,9 +543,10 @@ release publication.
 | Benchmark context length | 65,536 |
 
 The benchmark uses the language-model path only; image inputs are not part of
-the R2E-Gym task format. Qwen's MTP layers are not trained or used for
-speculative decoding in this recipe (`mtp_num_layers: 0` and
-`policy.draft.enabled: false`).
+the R2E-Gym task format. The reference recipe disables Qwen's MTP layers and
+speculative decoding (`mtp_num_layers: 0` and `policy.draft.enabled: false`).
+Benchmark runs must not train or enable MTP layers and must not use speculative
+decoding for either training or validation generation.
 
 ## Benchmark runtime
 
@@ -605,16 +606,29 @@ The recipe uses token-level GRPO with:
 - no reward shaping;
 - no reference-policy KL penalty (`reference_policy_kl_penalty: 0`);
 - asymmetric PPO ratio clipping configured as `0.2` and `0.28`;
-- asynchronous collection with a maximum trajectory age of one training step;
+- asynchronous collection, with the checked-in RCPs using a maximum trajectory
+  age of one training step;
 - sequence-mask truncated importance sampling (`seq-mask-tis`) with lower and
   upper bounds `0.999` and `1.002`;
 - importance-sampling correction enabled;
 - `force_on_policy_ratio: true`;
-- reference-policy log-probability calculation skipped; and
+- reference-policy log-probability calculation skipped;
+- sequence-level log-probability error masking with threshold `2.0`; and
 - overlong-response filtering enabled.
 
 The `[0.999, 1.002]` bounds replace the wider bounds used in earlier
 development configurations.
+
+Maximum trajectory age is not constrained by the benchmark. The value of one
+training step records the reference RCP configuration; submissions may use any
+maximum trajectory-age setting.
+
+For the log-probability error mask, NeMo-RL computes the mean of
+`exp(abs(generation_logprob - recomputed_logprob))` over the valid tokens in
+each completed training sequence. When that value exceeds `2.0`, the entire
+sequence is excluded from the policy update by setting its sample mask to zero.
+This stability filter does not make incomplete or timeout-truncated rollouts
+valid; the rollout-completion requirement above still applies.
 
 ## Optimizer
 
