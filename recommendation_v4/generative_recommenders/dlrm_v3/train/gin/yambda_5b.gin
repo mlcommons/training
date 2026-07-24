@@ -584,6 +584,33 @@ sts/env_int.default = 0
 streaming_train_eval_loop.metric_log_frequency = @mlf/env_int()
 mlf/env_int.key     = "METRIC_LOG_FREQ"
 mlf/env_int.default = 50
+# Interim eval logging: when >0, log partial-holdout metrics every
+# METRIC_LOG_FREQ batches DURING an eval pass (debug/progress only). The durable
+# <LOG>.metrics.jsonl, early-stop, and MLPerf EVAL_ACCURACY all use ONLY the
+# end-of-pass whole-holdout compute(), so these interim calls are redundant AUC
+# reductions (a BinnedCumulativeAUC histogram all-reduce + GPU->CPU sync per
+# call, x window_ and lifetime_ sets). 0 (default) = OFF -> skip them.
+#
+# *** AUC-METRIC NEUTRAL — toggling this NEVER changes the reported eval AUC. ***
+# WHY (by construction): every eval batch's predictions/labels are folded into
+# the metric state via metric_logger.update() UNCONDITIONALLY, once per batch,
+# regardless of this flag. The reported eval AUC is the SINGLE end-of-pass
+# metric_logger.compute(mode="eval") over the whole holdout, which is a pure
+# function of that accumulated state (BinnedCumulativeAUC integrates its score
+# histogram; compute() does NOT mutate the histogram). The interim
+# compute_and_log() calls this flag gates only READ that same state to print a
+# running partial-holdout number — they cannot alter what update() accumulated,
+# so the final AUC is identical whether they fire 0 or N times. This is why the
+# flag is safe to leave OFF by default (pure logging removal, not a metric change).
+# VERIFIED e2e (SEED=1, same node, 2 windows, interim actually firing when ON):
+#   OFF-vs-ON  max window/lifetime AUC |diff| = 2.4e-6
+#   OFF-vs-OFF control (identical runs) max AUC |diff| = 3.3e-6
+# i.e. the flag's effect on AUC is BELOW the run-to-run GPU FP nondeterminism
+# floor (the ~1e-6 residual is nondeterministic training kernels, not this flag).
+# Override via $EVAL_INTERIM_LOG.
+streaming_train_eval_loop.eval_interim_metrics = @eil/env_int()
+eil/env_int.key     = "EVAL_INTERIM_LOG"
+eil/env_int.default = 0
 # MLPerf train_loss event cadence (global train steps), INDEPENDENT of
 # METRIC_LOG_FREQ above. 0 (default) = fall back to METRIC_LOG_FREQ, preserving
 # the prior coupled behavior. Set $MLPERF_TRAIN_LOSS_LOG_FREQ>0 to log the MLPerf

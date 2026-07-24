@@ -1969,6 +1969,13 @@ def streaming_train_eval_loop(
     num_eval_batches: Optional[int] = None,
     output_trace: bool = False,
     metric_log_frequency: int = 1,
+    # Interim eval logging cadence gate. 0 (default) = OFF: skip the per-batch
+    # compute_and_log DURING an eval pass. Those interim calls only log
+    # partial-holdout metrics (progress/debug); the value we keep -- the durable
+    # metrics.jsonl, early-stop, and MLPerf EVAL_ACCURACY -- is the end-of-pass
+    # compute() over the whole holdout, so OFF is numerically neutral for the
+    # recorded eval AUC. >0 restores the old interim logging. $EVAL_INTERIM_LOG.
+    eval_interim_metrics: int = 0,
     # MLPerf `train_loss` event cadence, in global train steps, INDEPENDENT of
     # metric_log_frequency (the console/TB cadence). 0 = fall back to
     # metric_log_frequency (preserves prior coupled behavior). Wired to
@@ -2691,7 +2698,7 @@ def streaming_train_eval_loop(
                 if output_trace:
                     assert profiler is not None
                     profiler.step()
-                if eval_batch_idx % metric_log_frequency == 0:
+                if eval_interim_metrics and eval_batch_idx % metric_log_frequency == 0:
                     metric_logger.compute_and_log(mode="eval")
                 if num_eval_batches is not None and eval_batch_idx >= num_eval_batches:
                     break
