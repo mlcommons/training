@@ -1990,6 +1990,13 @@ def streaming_train_eval_loop(
     # once to a global train-step interval. 0.0 = OFF (use the per-window
     # cadence). Wired to $EVAL_EVERY_DATA_PCT via gin.
     eval_every_data_pct: float = 0.0,
+    # SKIP_EVAL: skip the FIRST N scheduled (periodic) eval passes to cut eval
+    # overhead early in the run (model far from the AUC target). 0 (default) =
+    # OFF (eval from the first scheduled point). Keyed off the same
+    # global_step / absolute-ts eval grid as the cadence, so the skip set is
+    # identical across resume; the end-of-run final eval is never skipped.
+    # Wired to $SKIP_EVAL via gin.
+    skip_eval: int = 0,
     double_buffer: bool = False,
     # --- fixed user-holdout eval set ---
     # Window range the fixed eval set is drawn from. None -> default to
@@ -2590,23 +2597,40 @@ def streaming_train_eval_loop(
                 and gstep > 0
                 and gstep % eval_interval_steps == 0
             ):
-                if rank == 0:
-                    logger.info(
-                        "[data-pct-eval] trigger eval train_ts=%d global_step=%d "
-                        "(interval=%d)",
-                        train_ts,
-                        gstep,
-                        eval_interval_steps,
-                    )
-                do_eval(train_ts, gstep)
-                model.train()
-                dataset.dataset.is_eval = False  # pyre-ignore [16]
-                # Data-fraction eval may hit the MLPerf target and emit RUN_STOP
-                # (via _do_eval_*). Stop the window immediately so we don't train
-                # past the convergence point; the outer window loop checks the
-                # same flag and breaks too.
-                if mlt.run_stopped:
-                    break
+                # SKIP_EVAL: the 1-based ordinal of this data-pct eval boundary is
+                # gstep / eval_interval_steps. Skip it (keep training) while that
+                # ordinal is within the first `skip_eval` points. Ordinal is a pure
+                # function of the checkpoint-restored global_step, so the skip set
+                # is identical across resume.
+                _eval_ordinal = gstep // eval_interval_steps
+                if skip_eval > 0 and _eval_ordinal <= skip_eval:
+                    if rank == 0:
+                        logger.info(
+                            "[data-pct-eval] SKIP eval train_ts=%d global_step=%d "
+                            "ordinal=%d <= SKIP_EVAL=%d",
+                            train_ts,
+                            gstep,
+                            _eval_ordinal,
+                            skip_eval,
+                        )
+                else:
+                    if rank == 0:
+                        logger.info(
+                            "[data-pct-eval] trigger eval train_ts=%d global_step=%d "
+                            "(interval=%d)",
+                            train_ts,
+                            gstep,
+                            eval_interval_steps,
+                        )
+                    do_eval(train_ts, gstep)
+                    model.train()
+                    dataset.dataset.is_eval = False  # pyre-ignore [16]
+                    # Data-fraction eval may hit the MLPerf target and emit RUN_STOP
+                    # (via _do_eval_*). Stop the window immediately so we don't train
+                    # past the convergence point; the outer window loop checks the
+                    # same flag and breaks too.
+                    if mlt.run_stopped:
+                        break
             # Test-only: deterministic crash for the failure-injection test.
             # Triggered AFTER the save above, so on resume we re-enter at
             # batch_idx_in_window=train_batch_idx and emit batches [K+1, end).
@@ -2797,6 +2821,19 @@ def streaming_train_eval_loop(
             return True
         return (train_ts_list[i] - eval_anchor_ts) % eval_every_n_windows == 0 or i == n_train - 1
 
+    def _skip_early_window_eval(i: int) -> bool:
+        """SKIP_EVAL for the PER-WINDOW cadence: skip the first `skip_eval`
+        eval-eligible points on the absolute-ts grid so early (low-signal) eval
+        passes are not run. The ordinal is derived from the absolute ts
+        ((train_ts - eval_anchor_ts) / eval_every_n_windows), so the skip set is
+        stable across a mid-run resume. The final window's eval is never skipped
+        so the trajectory always ends with an eval point.
+        """
+        if skip_eval <= 0 or i == n_train - 1:
+            return False
+        ordinal = (train_ts_list[i] - eval_anchor_ts) // max(1, eval_every_n_windows)
+        return ordinal < skip_eval
+
     # Fixed eval set: held-out users' anchors over the resolved holdout window
     # range, computed ONCE and reused at every eval step. Same anchors every
     # step -> stable, comparable eval-AUC curve, and bounded eval time
@@ -2984,7 +3021,7 @@ def streaming_train_eval_loop(
             if _per_window_blocks:
                 mlt.block_stop()
             should_stop = False
-            if _should_eval(i):
+            if _should_eval(i) and not _skip_early_window_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 assert eval_sampler is not None and eval_dl is not None
                 mlt.eval_start()
@@ -3075,7 +3112,7 @@ def streaming_train_eval_loop(
             if _per_window_blocks:
                 mlt.block_stop()
             should_stop = False
-            if _should_eval(i):
+            if _should_eval(i) and not _skip_early_window_eval(i):
                 dataset.dataset.is_eval = True  # pyre-ignore [16]
                 mlt.eval_start()
                 if eval_global_indices is not None:
@@ -3093,6 +3130,12 @@ def streaming_train_eval_loop(
                         iter(make_streaming_dataloader(dataset=dataset, ts=train_ts + 1))
                     )
                 should_stop = mlt.eval_stop(eval_metrics)
+            elif _should_eval(i) and rank == 0:
+                logger.info(
+                    "[per-window-eval] SKIP eval train_ts=%d (SKIP_EVAL=%d)",
+                    train_ts,
+                    skip_eval,
+                )
             _maybe_checkpoint(train_ts)
             # should_stop: per-window convergence. mlt.run_stopped:
             # data-fraction convergence (RUN_STOP fired mid-window by _do_eval_nb).
