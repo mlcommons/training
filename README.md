@@ -42,11 +42,16 @@ Each benchmark will run until the target quality is reached and then stop, print
 
 Some these benchmarks are rather slow or take a long time to run on the reference hardware. We expect to see significant performance improvements with more hardware and optimized implementations.
 
-# MLPerf Training v6.1 (Submission Deadline XXX, 2026)
+# MLPerf Training v6.1 (Submission Deadline Oct 16, 2026)
 
 | Model | reference implementation | framework* | dataset | model parameter count**
 | ---- | ---- | ---- | ---- | ----
-| qwen3.5_397b_a17b_swe_grpo | [llm_moe_grpo](https://github.com/mlcommons/training/tree/master/llm_moe_grpo) | NeMo-RL / NeMo-Gym | SWE tasks | 397B
+| flux.1 | [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | torchtitan | CC12M subset | 11.9B
+| llama3.1_8b | [small_llm_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_pretraining) | NeMo | C4 | 8b
+| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| gpt_oss_20b | [small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
+| deepseekv3 | [llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
+| qwen35_397b_grpo | [llm_post_training](https://github.com/mlcommons/training/tree/master/llm_post_training) | NeMo-RL / NeMo-Gym | SWE tasks | 397B
 
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
 
@@ -61,8 +66,8 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 | llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
 | llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/large_language_model_pretraining) | NeMo | C4 | 405B
 | dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
-| gpt_oss_20b | small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
-| deepseekv3 | llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
+| gpt_oss_20b | [small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
+| deepseekv3 | [llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
 
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
  
