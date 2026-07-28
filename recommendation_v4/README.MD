@@ -323,15 +323,21 @@ data eval frequency** (`EVAL_EVERY_DATA_PCT=0.001`) across all runs.
 threshold, so the sweep gives a complete samples-to-converge distribution at
 every batch size:
 
-| Global batch size | Dir | Seeds | Seeds reaching AUC >= 0.75 | Samples-to-converge (min / mean / max) | Wall-clock to AUC 0.75 (min / mean / max) |
-|---|---|---|---|---|---|
-| 8192  | [`rcp_logs/gbs_8192/`](rcp_logs/gbs_8192/)   | 20 | 20/20 | 61.9M / 69.3M / 80.3M   | 2h22m / 2h39m / 2h59m |
-| 16384 | [`rcp_logs/gbs_16384/`](rcp_logs/gbs_16384/) | 20 | 20/20 | 78.0M / 87.7M / 100.9M  | 1h39m / 1h52m / 2h12m |
-| 32768 | [`rcp_logs/gbs_32768/`](rcp_logs/gbs_32768/) | 20 | 20/20 | 98.6M / 113.0M / 128.5M | 1h17m / 1h23m / 1h36m |
+| Global batch size | Dir | Seeds | Seeds reaching AUC >= 0.75 | Samples-to-converge (min / mean / max) | CV (samples) | Epoch-to-converge (min / mean / max) | Wall-clock to AUC 0.75 (min / mean / max) |
+|---|---|---|---|---|---|---|---|
+| 8192  | [`rcp_logs/gbs_8192/`](rcp_logs/gbs_8192/)   | 20 | 20/20 | 61.9M / 69.3M / 80.3M   | 5.6% | 0.027 / 0.030 / 0.035 | 2h22m / 2h39m / 2h59m |
+| 16384 | [`rcp_logs/gbs_16384/`](rcp_logs/gbs_16384/) | 20 | 20/20 | 78.0M / 87.7M / 100.9M  | 7.2% | 0.034 / 0.038 / 0.044 | 1h39m / 1h52m / 2h12m |
+| 32768 | [`rcp_logs/gbs_32768/`](rcp_logs/gbs_32768/) | 20 | 20/20 | 98.6M / 113.0M / 128.5M | 6.7% | 0.043 / 0.049 / 0.056 | 1h17m / 1h23m / 1h36m |
 
 Each seed records the full `eval_accuracy` curve vs. `samples_count`;
-"samples-to-converge" is the first eval crossing AUC `>= 0.75`. As expected,
-samples-to-converge grows with global batch size.
+"samples-to-converge" is the first eval crossing AUC `>= 0.75`. Epoch-to-converge
+is that sample count as a fraction of one full training epoch
+(`train_samples = 2,290,835,423`, e.g. 50% of samples = 0.5 epoch), taken from
+the log's `epoch_num`. As expected, samples- and epoch-to-converge grow with
+global batch size (convergence is reached well within the first ~5% of an epoch).
+"CV (samples)" is the coefficient of variation (sample stddev / mean) of
+samples-to-converge across the 20 seeds — all under ~7%, i.e. low run-to-run
+variance.
 
 ### 10.1 Tunable hyperparameters (benchmark submission)
 
