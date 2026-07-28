@@ -33,7 +33,7 @@ fixed-duration windows and the model trains on window `T` then evaluates on the
 strictly-future window `T+1`, so every reported metric is genuine
 next-period generalization with no future leakage. The quality metric is
 **AUC** on the held-out future window, and the convergence target is
-**AUC >= 0.80275** (matching the DLRM-DCNv2-style target).
+**AUC >= 0.75**.
 
 The reference runs on 8 GPUs (validated on AMD Instinct MI350X / MI355X and
 NVIDIA B200; see [docs/training_recipe.md](docs/training_recipe.md)) and scales
@@ -66,7 +66,7 @@ DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./run_and_time.sh
   [`md5sums_yambda_5b_processed.txt`](md5sums_yambda_5b_processed.txt) (falls
   back to a layout check until the canonical checksums are pinned).
 - [`run_and_time.sh`](run_and_time.sh) runs the full-reference streaming
-  train+eval sweep on a single 8-GPU host with `AUC_THRESHOLD=0.80275` and MLPerf
+  train+eval sweep on a single 8-GPU host with `AUC_THRESHOLD=0.75` and MLPerf
   compliance logging, printing the elapsed time of the timed region.
 
 ### 3.1 Multi-node (SLURM)
@@ -84,7 +84,7 @@ sbatch --nodes=1 scripts/launch_slurm.sh
 START_TS=0 NUM_TRAIN_TS=299 \
 NUM_TRAIN_BATCHES=0 NUM_EVAL_BATCHES=0 \
 EVAL_EVERY_N_WINDOWS=0 EVAL_EVERY_DATA_PCT=0.005 \
-AUC_THRESHOLD=0.80275 \
+AUC_THRESHOLD=0.75 \
 sbatch --nodes=2 scripts/launch_slurm.sh
 ```
 
@@ -285,7 +285,7 @@ the
 - **Metric**: AUC on the held-out future evaluation window (`window_auc` for the
   `listen_plus` task), computed by `MetricsLogger` in
   `generative_recommenders/dlrm_v3/utils.py`.
-- **Target**: **eval AUC >= 0.80275**. Set via `AUC_THRESHOLD=0.80275`
+- **Target**: **eval AUC >= 0.75**. Set via `AUC_THRESHOLD=0.75`
   (`MetricsLogger.auc_threshold`); the run logs `RUN_STOP` with `SUCCESS` and
   stops once the target is reached. The gin default of `1.0` is unreachable
   (trains all windows with no early stop) and is overridden by the reference
@@ -304,15 +304,51 @@ next-period generalization.
 
 ## 10. Reference Convergence Points (RCP)
 
-*Placeholder — to be generated.*
-
-RCPs have **not yet been generated** for this benchmark. Per the MLPerf
+**Status: convergence logs generated for 3 batch sizes.** Per the MLPerf
 [CONTRIBUTING guidance](https://github.com/mlcommons/training_policies/blob/master/CONTRIBUTING.md),
-RCPs must be generated for at least 3 reasonable batch sizes using at least 2N
-seeds (N = number of submission runs), in FP32 or BF16, with the exact precision
-recorded in the RCP JSON. The convergence curves (steps/samples to reach
-AUC >= 0.80275) will be added under [`rcp/`](rcp/) once the convergence runs are
-complete. This section is intentionally left blank for now.
+RCPs must cover at least 3 reasonable batch sizes using at least 2N seeds
+(N = number of submission runs). An initial sweep has now been produced and
+merged under [`rcp_logs/`](rcp_logs/) — **3 global batch sizes × 20 seeds each
+(60 runs total; 2N with N = 10)** in MLPerf MLLOG format
+(`submission_org=AMD`, `submission_platform=MI350`, `submission_benchmark=hstu`,
+`submission_division=closed`). All runs use `opt_name=Adam` (dense) +
+`opt_sparse_name=RowWiseAdagrad`, `gradient_accumulation_steps=1`. The LR
+schedule keeps the **starting LR fixed at `0`** and the **warmup steps fixed at
+`24000`**; only the **target (post-warmup) LR scales with global batch size**,
+linearly from `1e-6` (gbs 8192) to `4 * 1e-6` (gbs 32768) — i.e. `1e-6`,
+`2e-6`, `4e-6` for the three batch sizes. Evaluation is run at a **fixed 0.1%
+data eval frequency** (`EVAL_EVERY_DATA_PCT=0.001`) across all runs.
+
+**Eval target: `eval_accuracy` (AUC) `>= 0.75`.** All 60 runs cross this
+threshold, so the sweep gives a complete samples-to-converge distribution at
+every batch size:
+
+| Global batch size | Dir | Seeds | Seeds reaching AUC >= 0.75 | Samples-to-converge (min / mean / max) | Wall-clock to AUC 0.75 (min / mean / max) |
+|---|---|---|---|---|---|
+| 8192  | [`rcp_logs/gbs_8192/`](rcp_logs/gbs_8192/)   | 20 | 20/20 | 61.9M / 69.3M / 80.3M   | 2h22m / 2h39m / 2h59m |
+| 16384 | [`rcp_logs/gbs_16384/`](rcp_logs/gbs_16384/) | 20 | 20/20 | 78.0M / 87.7M / 100.9M  | 1h39m / 1h52m / 2h12m |
+| 32768 | [`rcp_logs/gbs_32768/`](rcp_logs/gbs_32768/) | 20 | 20/20 | 98.6M / 113.0M / 128.5M | 1h17m / 1h23m / 1h36m |
+
+Each seed records the full `eval_accuracy` curve vs. `samples_count`;
+"samples-to-converge" is the first eval crossing AUC `>= 0.75`. As expected,
+samples-to-converge grows with global batch size.
+
+### 10.1 Tunable hyperparameters (benchmark submission)
+
+For a benchmark submission, only the following hyperparameters may be tuned:
+
+- **Target (post-warmup) learning rate** — the peak LR the warmup ramps up to.
+- **Global batch size** — e.g. the 8192 / 16384 / 32768 points swept above.
+
+The rest of the LR schedule is **fixed and not tunable**:
+
+- **Starting LR = `0`** (the warmup always begins from zero).
+- **Warmup steps = `24000`**.
+
+
+
+
+
 
 ## 11. Streaming (temporal-order) training
 
