@@ -346,10 +346,12 @@ For a benchmark submission, only the following hyperparameters may be tuned:
 - **Target (post-warmup) learning rate** — the peak LR the warmup ramps up to.
 - **Global batch size** — e.g. the 8192 / 16384 / 32768 points swept above.
 
-The rest of the LR schedule is **fixed and not tunable**:
+The rest of the parameters, including the following, are **fixed and not tunable**:
 
 - **Starting LR = `0`** (the warmup always begins from zero).
 - **Warmup steps = `24000`**.
+- **`skip_eval = 10`** — the first 10 eval rounds are skipped before convergence
+  is checked; fixed for submission.
 
 
 
