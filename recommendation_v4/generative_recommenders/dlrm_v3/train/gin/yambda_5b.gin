@@ -670,7 +670,9 @@ evn/env_int.default = 0
 #   value semantics (it is a fraction in (0, 1], NOT a percent number):
 #     0.0            = OFF  -> fall back to the per-window EVAL_EVERY_N_WINDOWS;
 #                      if that is also 0, eval is disabled entirely (train-only).
-#     0.005 (default)= eval every 0.5% of the data -> ~200 eval points total.
+#     0.001 (default)= eval every 0.1% of the data -> ~1000 eval points total
+#                      (the cadence used for the RCP sweep).
+#     0.005          = eval every 0.5% of the data -> ~200 eval points total.
 #     0.01           = eval every 1%  of the data  -> ~100 eval points total.
 #     0.05           = eval every 5%  of the data  -> ~20  eval points total.
 #     0.10           = eval every 10% of the data  -> ~10  eval points total.

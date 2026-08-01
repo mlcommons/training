@@ -14,7 +14,7 @@
 #   DLRM_DATA_PATH        data root (required).
 #   SEED                  RNG seed (default 1).
 #   START_TS / NUM_TRAIN_TS   window range (default 0 / 299 = full sweep).
-#   EVAL_EVERY_DATA_PCT   eval cadence as a fraction of train data (default 0.005).
+#   EVAL_EVERY_DATA_PCT   eval cadence as a fraction of train data (default 0.001).
 #   AUC_THRESHOLD         convergence target (default 0.80275).
 #   GPUS_PER_NODE         GPUs on this host (default 8).
 #   RUN_NAME              results dir name under results/ (default reference_run).
@@ -32,7 +32,7 @@ export NUM_TRAIN_TS="${NUM_TRAIN_TS:-299}"
 export NUM_TRAIN_BATCHES="${NUM_TRAIN_BATCHES:-0}"
 export NUM_EVAL_BATCHES="${NUM_EVAL_BATCHES:-0}"
 export EVAL_EVERY_N_WINDOWS="${EVAL_EVERY_N_WINDOWS:-0}"
-export EVAL_EVERY_DATA_PCT="${EVAL_EVERY_DATA_PCT:-0.005}"
+export EVAL_EVERY_DATA_PCT="${EVAL_EVERY_DATA_PCT:-0.001}"
 export AUC_THRESHOLD="${AUC_THRESHOLD:-0.80275}"
 export RUN_NAME="${RUN_NAME:-reference_run}"
 

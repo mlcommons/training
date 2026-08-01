@@ -83,7 +83,7 @@ sbatch --nodes=1 scripts/launch_slurm.sh
 # full reference sweep
 START_TS=0 NUM_TRAIN_TS=299 \
 NUM_TRAIN_BATCHES=0 NUM_EVAL_BATCHES=0 \
-EVAL_EVERY_N_WINDOWS=0 EVAL_EVERY_DATA_PCT=0.005 \
+EVAL_EVERY_N_WINDOWS=0 EVAL_EVERY_DATA_PCT=0.001 \
 AUC_THRESHOLD=0.75 \
 sbatch --nodes=2 scripts/launch_slurm.sh
 ```
@@ -291,9 +291,10 @@ the
   (trains all windows with no early stop) and is overridden by the reference
   scripts.
 - **Evaluation frequency**: the full-reference run uses
-  `EVAL_EVERY_DATA_PCT=0.005` — evaluate every 0.5% of the training stream
-  (~200 evenly-data-spaced eval points), independent of node count. The
-  alternative per-window cadence (`EVAL_EVERY_N_WINDOWS`) is mutually exclusive.
+  `EVAL_EVERY_DATA_PCT=0.001` — evaluate every 0.1% of the training stream
+  (~1000 evenly-data-spaced eval points), independent of node count. This matches
+  the cadence used for the RCP sweep in §10. The alternative per-window cadence
+  (`EVAL_EVERY_N_WINDOWS`) is mutually exclusive.
 - **Evaluation set**: a fixed held-out future window (`eval_holdout_ts`, default
   `start_ts + num_train_ts`); with `TRAIN_SPLIT_PERCENTAGE < 1.0` the held-out
   users' anchors over that window form the eval set. The temporal one-window
@@ -407,7 +408,7 @@ env overrides:
 | `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows |
 | `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread |
 | `EVAL_EVERY_N_WINDOWS` | `streaming_train_eval_loop.eval_every_n_windows` | 1 | eval cadence by window count (0 to use data-pct) |
-| `EVAL_EVERY_DATA_PCT` | `streaming_train_eval_loop.eval_every_data_pct` | 0.0 | eval cadence by fraction of train data (full ref: 0.005) |
+| `EVAL_EVERY_DATA_PCT` | `streaming_train_eval_loop.eval_every_data_pct` | 0.0 | eval cadence by fraction of train data (full ref / RCP: 0.001) |
 | `MIN_HISTORY` | `get_dataset.min_history` | 4086 | anchor-eligibility floor (0 = ~all users incl. cold-start) |
 
 ### 11.3 Checkpointing & resume
