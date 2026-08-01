@@ -123,7 +123,7 @@ if [ $TENSOR_PARALLEL_SIZE -gt 0 ]; then
 fi
 
 # Allows MLLogger objects to be constructed locally
-if [ ! -d /mlperf-outputs ]; then mkdir /mlperf-outputs; fi
+if [ ! -d "${LOCAL_MLPERF_OUTPUTS}" ]; then mkdir -p "${LOCAL_MLPERF_OUTPUTS}"; fi
 
 set -x
 
