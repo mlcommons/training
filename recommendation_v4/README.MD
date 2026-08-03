@@ -351,11 +351,87 @@ The rest of the parameters, including the following, are **fixed and not tunable
 
 - **Starting LR = `0`** (the warmup always begins from zero).
 - **Warmup steps = `24000`**.
-- **`skip_eval = 10`** — the first 10 eval rounds are skipped before convergence
-  is checked; fixed for submission.
+- **`skip_eval_epoch_pct`** — eval rounds are skipped until this fraction of the
+  epoch has been trained, then convergence is checked at every round. The value
+  is global-batch-size dependent (`0.027` at GBS 8192, `0.0323` at 16384,
+  `0.043` at 32768); fixed for submission. See §10.2 for how it is derived.
 
+### 10.2 Choosing the eval schedule for a given global batch size
 
+**Why it needs choosing.** The eval cadence (`EVAL_EVERY_DATA_PCT=0.001`) is
+fixed, but evaluating from the very first eval point is expensive: the holdout
+is 2,058,204 samples, ~90% the size of the 2,293,760-sample training block
+between two eval points. Eval is ~2.2x faster per sample than training (forward
+only), so each eval costs ~0.41x its preceding training block, and running every
+eval point spends **~29% of end-to-end time on evaluation**. Since convergence
+never happens before ~2.7% of an epoch (§10 table), those early eval points
+carry no signal. `SKIP_EVAL_EPOCH_PCT` suppresses them and cuts eval to **~5%**
+of end-to-end time.
 
+**Derivation from the RCP sweep.** The ideal start point is the latest one that
+still cannot miss a convergence: the *earliest* eval at which any seed crosses
+AUC 0.75. Because eval fires on a fixed grid of 2,293,760-sample blocks, that
+minimum always lands on a block boundary, and the §10 sweep gives it directly:
+
+| GBS | earliest crossing | = blocks | = samples |
+|---|---|---|---|
+| 8192  | eval #27 | 27 x 2,293,760 | 61,931,520 |
+| 16384 | eval #34 | 34 x 2,293,760 | 77,987,840 |
+| 32768 | eval #43 | 43 x 2,293,760 | 98,631,680 |
+
+Convergence arrives *later in epoch terms* as batch size grows (0.027 → 0.034 →
+0.043), so a single constant will not do — the start point has to scale with
+GBS. Fitting a straight line through the two endpoint measurements, (8192,
+61,931,520) and (32768, 98,631,680), gives
+
+```
+slope     = (98631680 - 61931520) / (32768 - 8192) = 1493.33 = 4480/3
+intercept = 61931520 - (4480/3) * 8192             = 49698133.33 = 149094400/3
+```
+
+which is where the two constants come from. Putting both over the common
+denominator and flooring to whole samples:
+
+```
+start_samples       = FLOOR((4480 * GBS + 149094400) / 3)
+skip_eval_epoch_pct = start_samples / 2290835423
+```
+
+**Resulting values.** The knob takes the fraction, so divide by the epoch:
+
+| GBS | `start_samples` | `skip_eval_epoch_pct` | first eval run | earliest crossing | eval share |
+|---|---|---|---|---|---|
+| 8192  | 61,931,520 | `0.027`  | eval #27 | eval #27 | 4.8% |
+| 16384 | 74,164,906 | `0.0323` | eval #33 | eval #34 | 5.1% |
+| 32768 | 98,631,680 | `0.043`  | eval #43 | eval #43 | 4.4% |
+
+"Eval share" is eval time as a fraction of end-to-end time from `run_start` to
+the eval that crosses AUC 0.75, averaged over the 20 seeds — down from ~29% with
+no skipping.
+
+At the two endpoints the fit reproduces the measurement exactly, so eval starts
+on precisely the earliest observed crossing. GBS 16384 is interpolated: the line
+predicts 74.2M against an observed 78.0M, which rounds up to eval #33 and so
+starts one block before its earliest crossing. Note that the fit tracks the
+*minimum* over 20 seeds, a statistic that can only move down as more seeds are
+collected — a seed faster than any in the sweep would cross the target before
+the first eval fires and keep training to the next eval point.
+
+**Setting it.** Export `SKIP_EVAL_EPOCH_PCT` alongside `BATCH_SIZE` — the gin
+default (`0.027`) is the GBS 8192 value and is **not** correct at other batch
+sizes. The trainer logs the resolved threshold at startup:
+
+```
+[skip-eval] skip_eval_epoch_pct=0.027 -> skip_eval_until_step=7551
+            (total_train_samples=2290835423 global_batch_size=8192 -> skip_until_samples=61852556)
+```
+
+Skipping never alters the eval grid or the training trajectory — it only removes
+early periodic passes. The end-of-run final eval always runs, and once eval
+starts, early-stop and MLPerf `EVAL_ACCURACY` behave normally. See the
+`SKIP_EVAL_EPOCH_PCT` block in
+[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin) for
+the full semantics.
 
 
 

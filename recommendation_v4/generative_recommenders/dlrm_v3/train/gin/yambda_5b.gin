@@ -690,49 +690,76 @@ evn/env_int.default = 0
 streaming_train_eval_loop.eval_every_data_pct = @edp/env_float()
 edp/env_float.key     = "EVAL_EVERY_DATA_PCT"
 edp/env_float.default = 0.001
-# ---- SKIP_EVAL: warm-up eval skipping (early-run overhead cut) --------------
+# ---- SKIP_EVAL_EPOCH_PCT: warm-up eval skipping (early-run overhead cut) ----
 # WHAT IT DOES
-#   Suppresses the FIRST N *scheduled/periodic* full-holdout eval passes. Early
-#   in a run the model sits far below the AUC target and those first eval points
-#   carry little signal, yet each full-holdout pass is a real cost (a forward
-#   sweep over the whole held-out set + its metric reduction). SKIP_EVAL lets you
-#   pay that cost only once training has advanced enough to matter.
-#     N = $SKIP_EVAL   (default 10 -> skip the first 10 scheduled eval passes;
-#                       set 0 to eval from the very first scheduled point.)
+#   Suppresses every *scheduled/periodic* full-holdout eval pass until the run
+#   has trained a given FRACTION OF THE EPOCH. Early in a run the model sits far
+#   below the AUC target, so those eval points carry no signal -- yet each one is
+#   a real cost (a forward sweep over the whole held-out set plus its metric
+#   all-reduce). On this benchmark the holdout is ~90% the size of the training
+#   data between two eval points and eval runs ~2.2x faster per sample than
+#   train, so evaluating at every point spends ~29% of the run on eval. Starting
+#   eval just before the earliest possible convergence cuts that to ~5-7%.
 #
-# HOW THE "FIRST N" ARE COUNTED (per cadence; only the active cadence applies)
-#   Eval boundaries are numbered on the SAME grid the cadence already uses, and
-#   a boundary is skipped while its index falls in the first N:
-#   * DATA-FRACTION cadence (EVAL_EVERY_DATA_PCT>0): a boundary fires when the
-#     global train step hits k*eval_interval_steps (k=1,2,3,...). Its 1-based
-#     ordinal is k = global_step / eval_interval_steps; the boundary is SKIPPED
-#     while k <= N. So eval begins at the (N+1)th data-fraction point, i.e. after
-#     ~ (N+1) * EVAL_EVERY_DATA_PCT of the data has been trained.
-#   * PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS>0): the eval-eligible windows are
-#     numbered on the absolute-ts grid as ordinal =
-#     (train_ts - eval_anchor_ts) / eval_every_n_windows (0-based); a window is
-#     SKIPPED while ordinal < N.
+# VALUE SEMANTICS -- a FRACTION of the epoch, not a percent number and not a
+# count of eval passes (this is what changed vs the old SKIP_EVAL=<N passes>):
+#     0.0    = OFF -> eval from the very first scheduled point.
+#     0.01   = start eval once 1% of the epoch has been trained.
+#     0.027  = DEFAULT -> start at 2.7% of the epoch (the GBS=8192 value; see
+#              the per-GBS table below -- this knob is GBS-DEPENDENT).
+#   "Epoch" here is total_train_samples, the SAME denominator MLPerf EPOCH_NUM
+#   uses, so the value can be read straight off an epoch-vs-eval_accuracy plot.
 #
-# RESUME SAFETY
-#   The ordinal is derived purely from the checkpoint-restored global_step
-#   (data-fraction) or the absolute ts grid (per-window) -- never from a
-#   per-process counter -- so the skipped set is IDENTICAL on a cold start and on
-#   every mid-run resume (a resume cannot re-skip points it already trained past,
-#   nor start eval'ing points an earlier attempt skipped).
+# HOW THE FRACTION BECOMES A SKIP DECISION
+#   At startup the fraction is resolved ONCE into a global train-step threshold
+#     skip_eval_until_step = CEIL(pct * total_train_samples / global_batch_size)
+#   (global_batch_size = per-rank batch_size * world_size). Any scheduled eval
+#   boundary landing at global_step < skip_eval_until_step is skipped; the first
+#   boundary at or after it runs, and every boundary after that runs normally.
+#   Both cadences consult the same threshold:
+#   * DATA-FRACTION cadence (EVAL_EVERY_DATA_PCT>0): boundaries fire at
+#     k*eval_interval_steps; those below the threshold are skipped.
+#   * PER-WINDOW cadence (EVAL_EVERY_N_WINDOWS>0): eval-eligible windows whose
+#     global_step is still below the threshold are skipped.
+#   Rounding is UP, so eval never starts earlier than the requested fraction.
+#   The startup log line `[skip-eval] skip_eval_epoch_pct=... ->
+#   skip_eval_until_step=...` records the resolved threshold.
+#
+# CHOOSING A VALUE (derived from the 20-seed RCP sweep, target AUC 0.75)
+#   The best start point is the EARLIEST eval at which any seed crossed 0.75 --
+#   the latest point that still cannot miss a convergence. That minimum moves
+#   later in epoch terms as GBS grows, so it must scale with GBS. Fitting a line
+#   through the two endpoint measurements -- (8192, 61,931,520 samples) and
+#   (32768, 98,631,680) -- gives slope 4480/3 and intercept 149094400/3, i.e.
+#       start_samples = FLOOR((4480*GBS + 149094400) / 3)
+#       pct           = start_samples / total_train_samples
+#   Resulting values (see README §10.2 for the full derivation):
+#       GBS     pct       first eval run   earliest crossing   eval share
+#       8192    0.027     eval #27         eval #27            4.8%
+#       16384   0.0323    eval #33         eval #34            5.1%
+#       32768   0.043     eval #43         eval #43            4.4%
+#   (vs ~29% eval share with no skipping.) Set this per run alongside
+#   BATCH_SIZE -- the default below is the GBS=8192 value, NOT correct for other
+#   GBS. The fit tracks the MINIMUM over 20 seeds, so at 8192/32768 there is no
+#   headroom: a seed faster than any in the sweep would cross the target before
+#   the first eval fires and train on to the next boundary.
+#
+# RESUME SAFETY / RANK SAFETY
+#   The threshold depends only on total_train_samples and the global batch size,
+#   and is compared against the monotonic, checkpoint-restored global_step --
+#   never a per-process or per-rank counter. So the skipped set is IDENTICAL on
+#   a cold start and on every mid-run resume, and every rank reaches the same
+#   verdict (a per-rank disagreement here would deadlock the next collective).
 #
 # WHAT IS NEVER SKIPPED
 #   The end-of-run FINAL eval always runs (it is the definitive convergence
-#   number), and early-stop / MLPerf EVAL_ACCURACY still fire normally once eval
-#   starts at the (N+1)th point. SKIP_EVAL only removes early *periodic* passes.
-#
-# EXAMPLE (verified e2e; per-window cadence, START_TS=150, NUM_TRAIN_TS=4,
-#   EVAL_EVERY_N_WINDOWS=1 -> eligible eval points ts=150,151,152,153 + final):
-#     SKIP_EVAL=0 -> eval at ts=150,151,152,153,final   (all points)
-#     SKIP_EVAL=2 -> eval at ts=152,153,final           (first two dropped)
-# Override via $SKIP_EVAL.
-streaming_train_eval_loop.skip_eval = @se/env_int()
-se/env_int.key     = "SKIP_EVAL"
-se/env_int.default = 10
+#   number), and early-stop / MLPerf EVAL_ACCURACY fire normally once eval
+#   starts. This knob only removes early *periodic* passes; it never changes the
+#   training trajectory, only how often the model is measured.
+# Override via $SKIP_EVAL_EPOCH_PCT.
+streaming_train_eval_loop.skip_eval_epoch_pct = @seep/env_float()
+seep/env_float.key     = "SKIP_EVAL_EPOCH_PCT"
+seep/env_float.default = 0.027
 # Double-buffer windows: prepare the next window (index mask + first-batch
 # prefetch) in a background thread during the current window's compute, hiding
 # the per-window reset. Needs persistent_loader=1. Override via env.

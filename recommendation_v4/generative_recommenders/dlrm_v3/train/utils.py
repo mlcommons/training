@@ -14,6 +14,7 @@
 
 # pyre-strict
 import logging
+import math
 import os
 import threading
 import time
@@ -1903,6 +1904,37 @@ def select_in_window_checkpoint_reason(
     return None
 
 
+def resolve_skip_eval_until_step(
+    *,
+    skip_eval_epoch_pct: float,
+    total_train_samples: int,
+    global_batch_size: int,
+) -> int:
+    """Convert SKIP_EVAL_EPOCH_PCT into a global train-step threshold.
+
+    Pure / distributed-agnostic so it can be unit-tested without a real run.
+    Returns the first global_step at which periodic eval is allowed to run;
+    every scheduled eval boundary at a STRICTLY smaller global_step is skipped.
+    0 means "no skipping" (feature off, or a degenerate denominator).
+
+    The fraction is expressed against `total_train_samples` -- the same epoch
+    denominator MLPerf's EPOCH_NUM uses -- so `skip_eval_epoch_pct` reads
+    directly off an epoch-vs-convergence plot. It is converted to samples, then
+    to steps at the GLOBAL batch size (per-rank batch x world_size), because
+    global_step is the only progress counter that is both rank-invariant (all
+    ranks step in lockstep) and checkpoint-restored. Deriving the threshold from
+    a per-rank sample tally instead could let ranks disagree about whether a
+    given boundary is skipped, and a disagreement deadlocks the next collective.
+
+    Rounds UP so the first eval lands at or after the requested fraction, never
+    before it.
+    """
+    if skip_eval_epoch_pct <= 0 or total_train_samples <= 0 or global_batch_size <= 0:
+        return 0
+    skip_until_samples = skip_eval_epoch_pct * float(total_train_samples)
+    return int(math.ceil(skip_until_samples / float(global_batch_size)))
+
+
 def _validate_split_contract(
     saved: Optional[Dict[str, Any]],
     live: Dict[str, Any],
@@ -1990,13 +2022,17 @@ def streaming_train_eval_loop(
     # once to a global train-step interval. 0.0 = OFF (use the per-window
     # cadence). Wired to $EVAL_EVERY_DATA_PCT via gin.
     eval_every_data_pct: float = 0.0,
-    # SKIP_EVAL: skip the FIRST N scheduled (periodic) eval passes to cut eval
-    # overhead early in the run (model far from the AUC target). 0 (default) =
-    # OFF (eval from the first scheduled point). Keyed off the same
-    # global_step / absolute-ts eval grid as the cadence, so the skip set is
-    # identical across resume; the end-of-run final eval is never skipped.
-    # Wired to $SKIP_EVAL via gin.
-    skip_eval: int = 0,
+    # SKIP_EVAL_EPOCH_PCT: suppress scheduled (periodic) eval passes until the
+    # run has trained this FRACTION of the epoch (0.027 = 2.7% of
+    # total_train_samples). Early in a run the model sits far below the AUC
+    # target, so those eval passes cost a full holdout forward sweep for no
+    # signal. 0.0 (default in code) = OFF (eval from the first scheduled point).
+    # Resolved ONCE into a global train-step threshold (see
+    # resolve_skip_eval_until_step) and compared against the monotonic,
+    # checkpoint-restored global_step, so the skipped set is identical on a cold
+    # start and on every resume, and is rank-invariant. The end-of-run final
+    # eval is never skipped. Wired to $SKIP_EVAL_EPOCH_PCT via gin.
+    skip_eval_epoch_pct: float = 0.0,
     double_buffer: bool = False,
     # --- fixed user-holdout eval set ---
     # Window range the fixed eval set is drawn from. None -> default to
@@ -2157,6 +2193,18 @@ def streaming_train_eval_loop(
         else requested_end_ts
     )
 
+    # Per-rank batch size: the persistent loader carries it directly; the
+    # per-window path uses the same gin %batch_size (env BATCH_SIZE, default
+    # 1024 — matches make_streaming_dataloader.batch_size). Hoisted out of the
+    # data-pct block below because SKIP_EVAL_EPOCH_PCT needs the same value to
+    # convert its epoch fraction into a global-step threshold.
+    bs = (
+        persistent_dl.batch_size
+        if persistent_dl is not None
+        else int(os.environ.get("BATCH_SIZE", "1024"))
+    )
+    global_batch_size = bs * world_size
+
     # Data-fraction eval cadence: convert eval_every_data_pct into a global
     # train-step interval ONCE, over the ORIGINAL requested window range
     # [eval_anchor_ts, requested_end_ts). Keying the later trigger off
@@ -2165,14 +2213,6 @@ def streaming_train_eval_loop(
     # every resume, exactly like checkpoint_step_frequency. 0 => disabled.
     eval_interval_steps = 0
     if eval_every_data_pct and eval_every_data_pct > 0:
-        # Per-rank batch size: the persistent loader carries it directly; the
-        # per-window path uses the same gin %batch_size (env BATCH_SIZE,
-        # default 1024 — matches make_streaming_dataloader.batch_size).
-        bs = (
-            persistent_dl.batch_size
-            if persistent_dl is not None
-            else int(os.environ.get("BATCH_SIZE", "1024"))
-        )
         if hasattr(dataset.dataset, "total_train_anchors"):
             # total_train_anchors does a full-range gather over the mmap'd uid
             # array for ~billions of positions + a uid hash. It is slow
@@ -2198,7 +2238,7 @@ def streaming_train_eval_loop(
                 total_train_anchors = dataset.dataset.total_train_anchors(  # pyre-ignore[16]
                     eval_anchor_ts, requested_end_ts - eval_anchor_ts
                 )
-            total_train_steps = total_train_anchors // max(1, bs * world_size)
+            total_train_steps = total_train_anchors // max(1, global_batch_size)
             eval_interval_steps = max(
                 1, round(eval_every_data_pct * total_train_steps)
             )
@@ -2597,21 +2637,22 @@ def streaming_train_eval_loop(
                 and gstep > 0
                 and gstep % eval_interval_steps == 0
             ):
-                # SKIP_EVAL: the 1-based ordinal of this data-pct eval boundary is
-                # gstep / eval_interval_steps. Skip it (keep training) while that
-                # ordinal is within the first `skip_eval` points. Ordinal is a pure
-                # function of the checkpoint-restored global_step, so the skip set
-                # is identical across resume.
-                _eval_ordinal = gstep // eval_interval_steps
-                if skip_eval > 0 and _eval_ordinal <= skip_eval:
+                # SKIP_EVAL_EPOCH_PCT: skip this boundary (keep training) while
+                # the run has not yet trained the requested fraction of the
+                # epoch. The threshold is a pure function of the epoch
+                # denominator + global batch size, and gstep is the
+                # checkpoint-restored global step, so the skip set is identical
+                # across resume and on every rank.
+                if gstep < skip_eval_until_step:
                     if rank == 0:
                         logger.info(
                             "[data-pct-eval] SKIP eval train_ts=%d global_step=%d "
-                            "ordinal=%d <= SKIP_EVAL=%d",
+                            "< skip_eval_until_step=%d "
+                            "(SKIP_EVAL_EPOCH_PCT=%.6g)",
                             train_ts,
                             gstep,
-                            _eval_ordinal,
-                            skip_eval,
+                            skip_eval_until_step,
+                            skip_eval_epoch_pct,
                         )
                 else:
                     if rank == 0:
@@ -2822,17 +2863,17 @@ def streaming_train_eval_loop(
         return (train_ts_list[i] - eval_anchor_ts) % eval_every_n_windows == 0 or i == n_train - 1
 
     def _skip_early_window_eval(i: int) -> bool:
-        """SKIP_EVAL for the PER-WINDOW cadence: skip the first `skip_eval`
-        eval-eligible points on the absolute-ts grid so early (low-signal) eval
-        passes are not run. The ordinal is derived from the absolute ts
-        ((train_ts - eval_anchor_ts) / eval_every_n_windows), so the skip set is
-        stable across a mid-run resume. The final window's eval is never skipped
-        so the trajectory always ends with an eval point.
+        """SKIP_EVAL_EPOCH_PCT for the PER-WINDOW cadence: skip eval-eligible
+        windows until the run has trained `skip_eval_epoch_pct` of the epoch, so
+        early (low-signal) eval passes are not run. Keyed off the monotonic,
+        checkpoint-restored global_step against the once-resolved
+        `skip_eval_until_step`, so the skip set is stable across a mid-run
+        resume and identical on every rank. The final window's eval is never
+        skipped so the trajectory always ends with an eval point.
         """
-        if skip_eval <= 0 or i == n_train - 1:
+        if skip_eval_until_step <= 0 or i == n_train - 1:
             return False
-        ordinal = (train_ts_list[i] - eval_anchor_ts) // max(1, eval_every_n_windows)
-        return ordinal < skip_eval
+        return metric_logger.global_step["train"] < skip_eval_until_step
 
     # Fixed eval set: held-out users' anchors over the resolved holdout window
     # range, computed ONCE and reused at every eval step. Same anchors every
@@ -2856,9 +2897,11 @@ def streaming_train_eval_loop(
 
     # --- MLPerf run tracking --------------------------------------------------
     # total_train_samples = epoch_num denominator (global trainable samples over
-    # the window range), computed once and logged as TRAIN_SAMPLES.
+    # the window range), computed once and logged as TRAIN_SAMPLES. Also the
+    # denominator SKIP_EVAL_EPOCH_PCT is expressed against, so it is needed even
+    # when MLPerf logging is off.
     total_train_samples = 0
-    if mlperf_logger is not None:
+    if mlperf_logger is not None or skip_eval_epoch_pct > 0:
         _idx_fn = getattr(
             dataset.dataset, "train_window_indices", None
         ) or getattr(dataset.dataset, "window_indices", None)
@@ -2871,6 +2914,28 @@ def streaming_train_eval_loop(
                 total_train_samples,
                 n_train,
             )
+    # SKIP_EVAL_EPOCH_PCT -> global-step threshold, resolved ONCE here (both
+    # cadences below consult it). Depends only on the epoch denominator and the
+    # global batch size, both of which are identical on every rank and across a
+    # resume, so the skipped set is too.
+    skip_eval_until_step = resolve_skip_eval_until_step(
+        skip_eval_epoch_pct=skip_eval_epoch_pct,
+        total_train_samples=total_train_samples,
+        global_batch_size=global_batch_size,
+    )
+    if rank == 0 and skip_eval_epoch_pct > 0:
+        logger.info(
+            "[skip-eval] skip_eval_epoch_pct=%.6g -> skip_eval_until_step=%d "
+            "(total_train_samples=%d global_batch_size=%d -> "
+            "skip_until_samples=%d)",
+            skip_eval_epoch_pct,
+            skip_eval_until_step,
+            total_train_samples,
+            global_batch_size,
+            int(skip_eval_epoch_pct * total_train_samples),
+        )
+
+    if mlperf_logger is not None:
         # Wire the logger + LR getter so MetricsLogger.compute emits train_loss.
         metric_logger.mlperf_logger = mlperf_logger
 
@@ -3038,6 +3103,15 @@ def streaming_train_eval_loop(
                 )
                 if next_eval_i is not None:
                     eval_iter = iter(eval_dl)
+            elif _should_eval(i) and rank == 0:
+                logger.info(
+                    "[per-window-eval] SKIP eval train_ts=%d global_step=%d "
+                    "< skip_eval_until_step=%d (SKIP_EVAL_EPOCH_PCT=%.6g)",
+                    train_ts,
+                    metric_logger.global_step["train"],
+                    skip_eval_until_step,
+                    skip_eval_epoch_pct,
+                )
             _maybe_checkpoint(train_ts)
             # should_stop: per-window convergence. mlt.run_stopped:
             # data-fraction convergence (RUN_STOP fired mid-window by _do_eval_db).
@@ -3132,9 +3206,12 @@ def streaming_train_eval_loop(
                 should_stop = mlt.eval_stop(eval_metrics)
             elif _should_eval(i) and rank == 0:
                 logger.info(
-                    "[per-window-eval] SKIP eval train_ts=%d (SKIP_EVAL=%d)",
+                    "[per-window-eval] SKIP eval train_ts=%d global_step=%d "
+                    "< skip_eval_until_step=%d (SKIP_EVAL_EPOCH_PCT=%.6g)",
                     train_ts,
-                    skip_eval,
+                    metric_logger.global_step["train"],
+                    skip_eval_until_step,
+                    skip_eval_epoch_pct,
                 )
             _maybe_checkpoint(train_ts)
             # should_stop: per-window convergence. mlt.run_stopped:
