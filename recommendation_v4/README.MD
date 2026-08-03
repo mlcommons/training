@@ -448,39 +448,42 @@ sparse embedding all-to-all defaults to fp32 in both directions
 
 ### Hyperparameters
 
-All tunable hyperparameters live in
+Hyperparameters live in
 [`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)
 (the config-file source of truth) and are **overridable via environment
 variables** (the env value takes precedence over the gin default, per MLPerf
 CONTRIBUTING rule 4d). The gin macros (`@env_int`, `@env_float`, `@env_str`)
 enforce the correct type for each parameter.
 
-| hyperparameter | env var | gin binding | type | default | tuning rule |
-|---|---|---|---|---|---|
-| Per-rank batch size | `BATCH_SIZE` | `batch_size` | int | 1024 | positive integer (global batch = `BATCH_SIZE × world_size`) |
-| Dense learning rate | `DENSE_LR` | `dense_optimizer_factory_and_class.learning_rate` | float | 1e-7 | positive float |
-| Sparse learning rate | `SPARSE_LR` | `sparse_optimizer_factory_and_class.learning_rate` | float | 1e-7 | positive float |
-| Grad clip max-norm | `GRAD_CLIP_NORM` | `streaming_train_eval_loop.grad_clip_norm` | float | 1.0 | float >= 0 (0 disables) |
-| RNG seed | `SEED` | `seed_everything.seed` | int | 1 | any integer (-1 = random per run) |
-| HSTU attention layers | `HSTU_NUM_LAYERS` | `get_hstu_configs.hstu_attn_num_layers` | int | 3 | positive integer |
-| UIH history length | `HISTORY_LENGTH` | `get_dataset.history_length` | int | 4086 | positive integer (per-pool cap = L//3) |
-| Max sequence length | `MAX_SEQ_LEN` | `get_hstu_configs.max_seq_len` | int | 4096 | positive integer (>= `history_length + 9`) |
-| History strategy | `HISTORY_STRATEGY` | `get_dataset.history_strategy` | str | `interleaved` | one of `interleaved` \| `last_n` |
-| Min history (anchor floor) | `MIN_HISTORY` | `get_dataset.min_history` | int | 4086 | integer >= 0 |
-| Train user split | `TRAIN_SPLIT_PERCENTAGE` | `*.train_split_percentage` | float | 1.0 | float in (0, 1] |
-| Streaming shuffle fraction | `STREAMING_SHUFFLE_FRACTION` | `get_dataset.streaming_shuffle_fraction` | float | 0.0 | float in [0, 1] |
-| Streaming shuffle seed | `STREAMING_SHUFFLE_SEED` | `get_dataset.streaming_shuffle_seed` | int | 0 | any integer |
-| Split salt | `SPLIT_SALT` | `get_dataset.split_salt` | int | 0 | any integer |
-| Start window | `START_TS` | `streaming_train_eval_loop.start_ts` | int | 150 | integer >= 0 |
-| Number of train windows | `NUM_TRAIN_TS` | `streaming_train_eval_loop.num_train_ts` | int | 149 | positive integer (clamped to available) |
-| Sparse A2A fwd precision | `SPARSE_A2A_FWD` | `make_optimizer_and_shard.sparse_a2a_forward_precision` | str | `fp32` | one of `fp32` \| `bf16` \| `fp16` |
-| Sparse A2A bwd precision | `SPARSE_A2A_BWD` | `make_optimizer_and_shard.sparse_a2a_backward_precision` | str | `fp32` | one of `fp32` \| `bf16` \| `fp16` |
+The main ones:
 
-Non-tunable / fixed reference values (optimizer betas (0.95, 0.999), eps 1e-8,
-weight_decay 0, bf16 training, streaming window = 86400 s) are pinned in the gin
-file. Submitters tuning hyperparameters must follow the allowed values above and
-the
-[MLPerf training rules](https://github.com/mlcommons/training_policies/blob/master/training_rules.adoc#hyperparameters).
+| hyperparameter | env var | gin binding | default |
+|---|---|---|---|
+| Per-rank batch size | `BATCH_SIZE` | `batch_size` | 1024 |
+| Dense learning rate | `DENSE_LR` | `dense_optimizer_factory_and_class.learning_rate` | 1e-7 |
+| Sparse learning rate | `SPARSE_LR` | `sparse_optimizer_factory_and_class.learning_rate` | 1e-7 |
+| LR warmup steps | `LR_WARMUP_STEPS` | `streaming_train_eval_loop.lr_warmup_steps` | 24000 |
+| LR the warmup ramps from | `LR_WARMUP_START_LR` | `streaming_train_eval_loop.lr_warmup_start_lr` | 0.0 |
+| Grad clip max-norm | `GRAD_CLIP_NORM` | `streaming_train_eval_loop.grad_clip_norm` | 1.0 (0 disables) |
+| HSTU attention layers | `HSTU_NUM_LAYERS` | `get_hstu_configs.hstu_attn_num_layers` | 3 |
+| UIH history length | `HISTORY_LENGTH` | `get_dataset.history_length` | 4086 |
+| Max sequence length | `MAX_SEQ_LEN` | `get_hstu_configs.max_seq_len` | 4096 |
+| RNG seed | `SEED` | `seed_everything.seed` | 1 (-1 = random per run) |
+
+`BATCH_SIZE` is per rank, so the global batch size is `BATCH_SIZE × world_size`;
+the RCP sweep's 8192 / 16384 / 32768 points are this default at world sizes 8 /
+16 / 32. `DENSE_LR` and `SPARSE_LR` set the **base** LR, which is the value the
+warmup ramps up to and then holds — the warmup schedule never overrides them.
+`LR_WARMUP_START_LR` is the LR at global step 0; the ramp is
+`start + (base - start) * min(1, gstep / LR_WARMUP_STEPS)`, keyed off the
+checkpoint-restored global step so it survives a resume unchanged.
+
+Streaming and windowing knobs (`START_TS`, `NUM_TRAIN_TS`, `MIN_HISTORY`, the
+eval cadence) are listed under
+[Training data order](#training-data-order); the sparse all-to-all precision
+knobs are under [Precision](#precision). Values that are not exposed as
+environment variables — optimizer betas (0.95, 0.999), eps 1e-8, weight decay 0,
+the 86400 s streaming window — are pinned directly in the gin file.
 
 # 5. Quality
 
