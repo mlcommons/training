@@ -7,7 +7,7 @@ model on the [Yambda-5b](https://huggingface.co/datasets/yandex/yambda)
 music-recommendation dataset, sized as an MLPerf-style training benchmark inside
 the `mlcommons/training` tree.
 
-## 1. Summary
+# 1. Problem
 
 This benchmark trains a model that predicts what a person will listen to next.
 Given the history of songs a user has played, liked, or skipped, the model
@@ -17,16 +17,14 @@ problem that powers music and video streaming feeds. The model is trained on a
 large public dataset of anonymized music-listening events and is scored on how
 well it predicts future listens it has never seen.
 
-## 2. Benchmark overview (technical)
-
-The model is a **sequential recommender**: instead of treating each interaction
-independently (as classic click-through-rate models like DLRM-DCNv2 do), it
-consumes a user's chronologically ordered interaction history as a sequence and
-applies a Transformer-style attention stack (HSTU) over it. Each training
-example is one "anchor" listen event together with that user's prior history
-(user interaction history, or UIH) and a set of contextual/cross features. The
-supervised target is a binary `listen_plus` label (a real listen: played for at
-least 50% of the track) versus a skip.
+Technically, the model is a **sequential recommender**: instead of treating each
+interaction independently (as classic click-through-rate models like DLRM-DCNv2
+do), it consumes a user's chronologically ordered interaction history as a
+sequence and applies a Transformer-style attention stack (HSTU) over it. Each
+training example is one "anchor" listen event together with that user's prior
+history (user interaction history, or UIH) and a set of contextual/cross
+features. The supervised target is a binary `listen_plus` label (a real listen:
+played for at least 50% of the track) versus a skip.
 
 Training is **streaming / temporal-order**: the timeline is sliced into
 fixed-duration windows and the model trains on window `T` then evaluates on the
@@ -39,37 +37,58 @@ The reference runs on 8 GPUs (validated on AMD Instinct MI350X / MI355X and
 NVIDIA B200; see [docs/training_recipe.md](docs/training_recipe.md)) and scales
 to multi-node via SLURM.
 
-## 3. Directions — steps to run
+# 2. Directions
 
-The benchmark follows the standard MLPerf reference script flow:
+The benchmark follows the standard MLPerf reference script flow.
+
+### Steps to configure machine
+
+Build and enter the container, which is the canonical frozen environment
+(torch 2.10 / fbgemm / torchrec 1.4.0 / triton 3.6):
 
 ```bash
-# 0. build/enter the container (canonical frozen environment)
 docker build -t recommendation_v4 .
 docker run --rm -it --device=/dev/kfd --device=/dev/dri \
     -v /path/to/dlrm_data:/data/mlperf_dlrm_v4 recommendation_v4
+```
 
-# 1. download + preprocess the dataset
+Full environment pinning, kernel selection and per-platform notes are in
+[docs/training_recipe.md](docs/training_recipe.md).
+
+### Steps to download and verify data
+
+```bash
+# download + preprocess the dataset
 DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./download_dataset.sh
 
-# 2. verify the preprocessed dataset
+# verify the preprocessed dataset
 DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./verify_dataset.sh
-
-# 3. run the benchmark to the quality target and report wall-clock time
-DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./run_and_time.sh
 ```
 
 - [`download_dataset.sh`](download_dataset.sh) wraps the preprocessing pipeline
   in `generative_recommenders.dlrm_v3.preprocess_public_data` (HuggingFace
   download + temporal split + session segmentation + item-popularity counts).
+  The pipeline itself is described in
+  [§3 Data preprocessing](#data-preprocessing).
 - [`verify_dataset.sh`](verify_dataset.sh) checks the preprocessed files against
   [`md5sums_yambda_5b_processed.txt`](md5sums_yambda_5b_processed.txt) (falls
   back to a layout check until the canonical checksums are pinned).
-- [`run_and_time.sh`](run_and_time.sh) runs the full-reference streaming
-  train+eval sweep on a single 8-GPU host with `AUC_THRESHOLD=0.75` and MLPerf
-  compliance logging, printing the elapsed time of the timed region.
 
-### 3.1 Multi-node (SLURM)
+For smaller variants (`yambda-50m` / `yambda-500m`) substitute the dataset name
+(`DATASET=yambda-50m ./download_dataset.sh`). Preprocessing takes ~2 min for 50m
+and ~53 min for 5b end-to-end.
+
+### Steps to run and time
+
+```bash
+DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./run_and_time.sh
+```
+
+[`run_and_time.sh`](run_and_time.sh) runs the full-reference streaming
+train+eval sweep on a single 8-GPU host with `AUC_THRESHOLD=0.75` and MLPerf
+compliance logging, printing the elapsed time of the timed region.
+
+### Multi-node (SLURM)
 
 For N >= 1 nodes use [`scripts/launch_slurm.sh`](scripts/launch_slurm.sh), which
 provisions the container on each node and launches the same trainer. A bare
@@ -93,36 +112,36 @@ Multi-node uses real RDMA (RoCEv2); the fabric/NCCL setup is documented in
 (log, checkpoints, mllog, TensorBoard) under a writable scratch path you own —
 the dataset mount is read-only.
 
-## 4. Model
+### Checkpointing and resume
 
-The model is **HSTU** (Hierarchical Sequential Transduction Units), the
-generative-recommender architecture from Meta's ICML'24 paper *Actions Speak
-Louder than Words: Trillion-Parameter Sequential Transducers for Generative
-Recommendations* ([arXiv:2402.17152](https://arxiv.org/abs/2402.17152)).
+The streaming loop is resume-aware: set `CKPT_PATH` to enable DMP checkpoint
+save/load (auto-resolves to the highest-numbered subdir), with retention via
+`KEEP_LAST_N` and cadences `IN_WINDOW_CKPT_FREQ` / `CKPT_STEP_FREQ` /
+`CKPT_TIME_INTERVAL_S`. The MLPerf run state (run-started flag, global sample
+count) is persisted across resume so compliance logging is continuous. See
+`generative_recommenders/dlrm_v3/checkpoint.py`.
 
-HSTU replaces the feature-interaction stack of a classic DLRM with a stack of
-pointwise-attention "transducer" layers operating over the user's interaction
-sequence. In this benchmark (the `dlrm_v3` path):
+# 3. Dataset/Environment
 
-- **Embeddings**: sparse tables for `item_id`, `artist_id`, `album_id`, `uid`,
-  and 7 cross-feature hashes (e.g. `user_x_artist`, `item_x_hour`), sharded
-  across GPUs with TorchRec `DistributedModelParallel`.
-- **Sequence model**: an HSTU attention stack (`HSTU_NUM_LAYERS`, default 3)
-  over the interleaved UIH, computed with a fused jagged-attention Triton kernel
-  in bf16.
-- **Supervision**: a single `listen_plus` binary task. The candidate event's
-  `action_weight` carries the supervision bit, and BCE loss is masked to
-  listen_plus candidates.
-
-See `generative_recommenders/dlrm_v3/configs.py`
-(`get_hstu_configs`, `get_embedding_table_config`) for the exact architecture
-and table specs, and the upstream README for the original modeling code.
-
-## 5. Dataset
+### Publication/Attribution
 
 [Yambda-5b](https://huggingface.co/datasets/yandex/yambda) is a public
-anonymized music-recommendation dataset from Yandex. The `5b` variant is used
-for the reference. Statistics after preprocessing:
+anonymized music-recommendation dataset released by Yandex from the
+Yandex.Music streaming platform. Cite:
+
+> Yambda-5B — A Large-Scale Multi-modal Dataset for Ranking And Retrieval.
+> [arXiv:2505.22238](https://arxiv.org/abs/2505.22238).
+
+The dataset is distributed on HuggingFace at
+[`yandex/yambda`](https://huggingface.co/datasets/yandex/yambda) under that
+repository's stated terms. The `5b` variant is used for the reference; `500m`
+and `50m` variants exist for smaller-scale experimentation. Yandex's own
+evaluation protocol is based on a Global Temporal Split, which this benchmark
+also uses (see [Training and test data separation](#training-and-test-data-separation)).
+
+### Data preprocessing
+
+Statistics after preprocessing:
 
 | | |
 |---|---|
@@ -135,7 +154,7 @@ for the reference. Statistics after preprocessing:
 | Test events (1d) | 22.4 M |
 | Item catalog size | 9.39 M |
 
-### 5.1 Per-event-type distribution (across the full 4.76 B corpus)
+Per-event-type distribution across the full 4.76 B corpus:
 
 | Pool | Definition | Count | Share |
 |---|---|---|---|
@@ -145,11 +164,9 @@ for the reference. Statistics after preprocessing:
 | other | dislike / unlike / undislike | 47 M | 1.0% |
 
 The `like` pool is roughly **30x rarer** than `lp` — important context for the
-gather strategy in §6.
+per-pool gather strategy below.
 
-### 5.2 Preprocessing & download
-
-`./download_dataset.sh` (which calls
+**Pipeline.** `./download_dataset.sh` (which calls
 `python3 -m generative_recommenders.dlrm_v3.preprocess_public_data --dataset
 yambda-5b --data-path <root>`) downloads the 5b variant from HuggingFace, then:
 
@@ -177,17 +194,9 @@ yambda-5b --data-path <root>`) downloads the 5b variant from HuggingFace, then:
     └── split_meta.json                            anchor + boundary stats
 ```
 
-For smaller variants (`yambda-50m` / `yambda-500m`) substitute the dataset name
-(`DATASET=yambda-50m ./download_dataset.sh`). Preprocessing takes ~2 min for 50m
-and ~53 min for 5b end-to-end.
-
-Integrity is verified with `./verify_dataset.sh` against
-[`md5sums_yambda_5b_processed.txt`](md5sums_yambda_5b_processed.txt).
-
-## 6. How data is fed to HSTU
-
-For every training anchor (a LISTEN event with >= `min_history` prior events),
-the dataset builds a `(uih_kjt, candidate_kjt)` pair:
+**Feature construction (how data is fed to HSTU).** For every training anchor (a
+LISTEN event with >= `min_history` prior events), the dataset builds a
+`(uih_kjt, candidate_kjt)` pair:
 
 ```
 UIH (User Interaction History):
@@ -208,12 +217,11 @@ CANDIDATE (the LISTEN event at the anchor):
 The candidate's `action_weight` is **the supervision label**: HSTU's
 `_get_supervision_labels_and_weights` masks BCE training to
 `(supervision_bitmask & task_weight) > 0`, with `task_weight = 1` (LP bit) for
-the single `listen_plus` task — so only listen_plus candidates supervise.
+the single `listen_plus` task — so only listen_plus candidates supervise (see
+[§4 Loss function](#loss-function)).
 
-### 6.1 Per-pool gather (the cap = L // 3 strategy)
-
-The UIH is built by `DLRMv3YambdaDataset._gather_interleaved_history`. For each
-anchor it:
+**Per-pool gather (the cap = L // 3 strategy).** The UIH is built by
+`DLRMv3YambdaDataset._gather_interleaved_history`. For each anchor it:
 
 1. Scans the most recent `scan_window` (default 20,000) events of any type
    before the anchor, **clipped to user_start**.
@@ -230,7 +238,194 @@ truncation). Because the `like` pool is rare (1.9%) it under-fills (~105 events
 per anchor on average); the Triton jagged-attention backend skips unfilled
 slots, so the under-fill costs sequence budget but not GPU compute.
 
-## 7. Optimizer
+### Training and test data separation
+
+Separation happens at two levels, one in preprocessing and one in the training
+loop.
+
+**Preprocessing (GTS).** Step 2 of the pipeline above carves the corpus by wall
+clock into 300 training days, a 30-minute gap, and a final 1 test day (22.4 M
+events). This is the dataset's own Global Temporal Split.
+
+**Training loop (streaming holdout).** Within the training portion, the
+benchmark holds out a future window rather than a random user subset. The
+evaluation set is a fixed held-out future window (`eval_holdout_ts`, default
+`start_ts + num_train_ts`); with `TRAIN_SPLIT_PERCENTAGE < 1.0` the held-out
+users' anchors over that window form the eval set. Because evaluation is always
+one window ahead of training, reported AUC is genuine next-period
+generalization.
+
+The streaming path enforces **no future leakage** at two levels:
+
+1. **Across windows** — a window is the set of anchors whose target/candidate
+   timestamp falls in `[t_min + T·W, t_min + (T+1)·W)`. Training only ever sees
+   windows `<= T`; the evaluation window `T+1` is strictly in the future of every
+   training anchor it is scored against.
+2. **Within an anchor** — history is gathered **causally**: the UIH scan is
+   `scan_start:flat_pos` (events strictly before the anchor), so no event at or
+   after the anchor's timestamp can enter its features.
+
+Windows are indexed off the per-anchor target timestamp via a lazily-built,
+mmap'd `anchor_ts` cache keyed by `(history_length, min_history)`.
+
+### Training data order
+
+The training data is traversed in **strict wall-clock order**, not shuffled.
+`scripts/launch_slurm.sh` and `run_and_time.sh` default to
+`--mode streaming-train-eval`: the timeline is sliced into fixed-duration
+**windows** (default 1 day, `get_dataset.streaming_window_seconds = 86400`), and
+the loop walks them forward:
+
+```
+window T:    train          window T+1:  eval (then train)   window T+2: eval (then train) ...
+   └─ train window T ─┐
+                      └─ eval window T+1 ─┐
+                                          └─ train window T+1 ─┐
+                                                               └─ eval window T+2 ...
+```
+
+i.e. for each step it **trains window T, then evaluates window T+1** before
+advancing — always predicting the immediate future from the past. Within a
+window, anchors are consumed in dataset order; an optional partial shuffle
+(`STREAMING_SHUFFLE_FRACTION`, default `0.0` = off) can perturb intra-window
+order without crossing window boundaries.
+
+Streaming knobs, all configurable via
+[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin) with
+env overrides:
+
+| env | gin | default | meaning |
+|---|---|---|---|
+| `START_TS` | `streaming_train_eval_loop.start_ts` | 150 | first window (early windows are near-empty warm-up) |
+| `NUM_TRAIN_TS` | `streaming_train_eval_loop.num_train_ts` | 149 | number of train windows (clamped to available) |
+| `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows |
+| `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread |
+| `EVAL_EVERY_N_WINDOWS` | `streaming_train_eval_loop.eval_every_n_windows` | 1 | eval cadence by window count (0 to use data-pct) |
+| `EVAL_EVERY_DATA_PCT` | `streaming_train_eval_loop.eval_every_data_pct` | 0.0 | eval cadence by fraction of train data (full ref / RCP: 0.001) |
+| `MIN_HISTORY` | `get_dataset.min_history` | 4086 | anchor-eligibility floor (0 = ~all users incl. cold-start) |
+
+### Test data order
+
+The evaluation window is traversed once per evaluation, in the same in-window
+dataset order, with no shuffling. Every eval pass scores the entire holdout
+window, so the test order does not affect the reported AUC.
+
+# 4. Model
+
+### Publication/Attribution
+
+The model is **HSTU** (Hierarchical Sequential Transduction Units), the
+generative-recommender architecture from Meta's ICML'24 paper *Actions Speak
+Louder than Words: Trillion-Parameter Sequential Transducers for Generative
+Recommendations* ([arXiv:2402.17152](https://arxiv.org/abs/2402.17152)).
+
+The implementation is a fork of
+[meta-recsys/generative-recommenders](https://github.com/meta-recsys/generative-recommenders);
+see the upstream README for the original modeling code. The exact architecture
+and table specs for this benchmark live in
+`generative_recommenders/dlrm_v3/configs.py` (`get_hstu_configs`,
+`get_embedding_table_config`).
+
+### List of layers
+
+HSTU replaces the feature-interaction stack of a classic DLRM with a stack of
+pointwise-attention "transducer" layers operating over the user's interaction
+sequence. In the `dlrm_v3` yambda path the forward pass is:
+
+**1. `EmbeddingCollection`** — sparse lookup, sharded across GPUs with TorchRec
+`DistributedModelParallel`. All tables are `embedding_dim = 512`, FP32:
+
+| Table | `num_embeddings` |
+|---|---|
+| `item_id` | 9,390,624 |
+| `artist_id` | 1,293,395 |
+| `album_id` | 3,367,692 |
+| `uid` | 1,000,001 |
+| `user_x_artist` | 100,000,000 |
+| `user_x_album` | 40,000,000 |
+| `user_x_hour` | 24,000,000 |
+| `item_x_hour` | 40,000,000 |
+| `artist_x_hour` | 32,000,000 |
+| `user_x_is_organic` | 2,000,000 |
+| `user_x_artist_x_hour` | 40,000,000 |
+
+**2. User path — `HSTUTransducer`**, over the merged UIH + candidate sequence:
+
+- `ContextualPreprocessor` — batched linear over the 8 contextual entries (uid +
+  7 cross hashes), a content MLP on the post-id embedding, and an action encoder
+  over the `action_weight` bits `[1, 2, 4]` (action embedding dim 8); the
+  branches are summed. Hidden dim 256, output dim 512.
+- `HSTUPositionalEncoder` — position (8192 buckets) and time (2048 buckets)
+  embeddings added to the sequence.
+- Input dropout, ratio 0.2.
+- `STUStack` of **3** `STULayer` (`HSTU_NUM_LAYERS`, default 3): embedding dim
+  512, 4 heads, hidden (U/V) dim 128, attention (Q/K) dim 128, causal
+  target-aware attention with a fused jagged-attention Triton kernel in bf16.
+  HSTU fuses attention and FFN into one UVQK projection plus SiLU gating, so
+  there is no separate feed-forward block. Linear dropout 0.1.
+- `TimestampLayerNormPostprocessor` — appends cyclical time features
+  (hour-of-day, day-of-week) and applies `Linear(516 -> 512) -> LayerNorm`.
+
+**3. Item path — `_item_embedding_mlp`**: concatenate the candidate's
+`item_id`, `artist_id`, `album_id` embeddings (3 x 512 = 1536), then
+`Linear(1536 -> 512) -> SwishLayerNorm(512) -> Linear(512 -> 512) -> LayerNorm(512)`.
+
+**4. Prediction head — `DefaultMultitaskModule`**: takes the element-wise
+product of the user and item embeddings (512-d) through
+`Linear(512 -> 512) -> SwishLayerNorm(512) -> Linear(512 -> 1)`, emitting raw
+logits for the single `listen_plus` task.
+
+### Weight and bias initialization
+
+**Embedding tables.** Each table gets a seeded uniform init in
+`uniform(-1/sqrt(N), +1/sqrt(N))` where `N = num_embeddings`, matching
+TorchRec's default bounds (`_uniform_init_bounds` in `configs.py`). The
+generator seed for each table is `sha256(f"{init_seed}:{table_name}")` rather
+than Python's salted `hash()`, so a given `$SEED` produces identical tables on
+every rank and every run (`_stable_table_seed` / `_make_seeded_uniform_init`).
+Because TorchRec first builds the collection on the meta device, the fused TBE
+path materializes real storage later under `DistributedModelParallel`; the
+trainer re-seeds `torch.manual_seed` / `torch.cuda.manual_seed_all` immediately
+before that step so sharded table init is reproducible too
+(`train/utils.py`, `make_optimizer_and_shard`).
+
+**Dense layers.** All MLPs (item MLP, preprocessor MLPs, postprocessor combiner,
+prediction head) use `init_mlp_weights_optional_bias` in
+`generative_recommenders/common.py`: `xavier_uniform_` on `Linear` weights and
+zero-filled biases.
+
+**HSTU attention (`STULayer`).** The fused UVQK projection weight and the output
+weight are `xavier_uniform_`; the UVQK beta is zeros; the input and output norm
+weights are ones with zero biases. Remaining non-STU `Linear` layers inside
+`HSTUTransducer` are `xavier_normal_`.
+
+**Other.** Action embeddings are `normal_(0, action_embedding_init_std)` with
+std 0.1; the positional encoder is uniform in `[-sqrt(1/buckets),
++sqrt(1/buckets)]`; `SwishLayerNorm` weights are ones and biases zeros.
+
+**Seeding.** `seed_everything(SEED)` (default `SEED=1`) seeds Python, NumPy and
+torch (CPU and CUDA) with the same value on every rank before the model is
+built, so dense init is rank-identical. After init, `decorrelate_runtime_rng()`
+re-seeds with `SEED + rank` so dropout differs per rank; this does not affect
+weight init.
+
+### Loss function
+
+**Masked binary cross-entropy with logits.** For the single `listen_plus` binary
+task, labels come from the candidate's supervision bitmask,
+`(supervision_bitmask & task_weight) > 0` with `task_weight = 1`
+(`_get_supervision_labels_and_weights` in `modules/dlrm_hstu.py`); per-sample
+weights default to all ones.
+
+`_compute_loss` in `modules/multitask_module.py` computes
+`F.binary_cross_entropy_with_logits(..., reduction="none")` per position, then
+reduces along the sequence as `sum(-1) / weights.sum(-1).clamp(min=1.0)` and
+scales by `causal_multitask_weights = 0.2`. Per-task scalars are summed to form
+the training loss; with one task the total loss is that single scaled term. The
+head emits raw logits (no sigmoid); sigmoid is applied only for inference
+predictions.
+
+### Optimizer
 
 Two optimizers, configured in
 [`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin):
@@ -242,9 +437,16 @@ Two optimizers, configured in
 
 Gradient clipping (`GRAD_CLIP_NORM`, default `max_norm=1.0`) is applied to the
 dense parameters on the streaming path; the fused sparse optimizer is
-unaffected. Training is bf16 mixed precision (`make_model.bf16_training=True`).
+unaffected.
 
-## 8. Hyperparameters
+### Precision
+
+Training is **bf16 mixed precision** (`make_model.bf16_training=True`), with the
+HSTU attention computed by a fused jagged-attention Triton kernel in bf16. The
+sparse embedding all-to-all defaults to fp32 in both directions
+(`SPARSE_A2A_FWD` / `SPARSE_A2A_BWD`) and can be lowered to bf16/fp16.
+
+### Hyperparameters
 
 All tunable hyperparameters live in
 [`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)
@@ -280,30 +482,45 @@ file. Submitters tuning hyperparameters must follow the allowed values above and
 the
 [MLPerf training rules](https://github.com/mlcommons/training_policies/blob/master/training_rules.adoc#hyperparameters).
 
-## 9. Quality target & evaluation
+# 5. Quality
 
-- **Metric**: AUC on the held-out future evaluation window (`window_auc` for the
-  `listen_plus` task), computed by `MetricsLogger` in
-  `generative_recommenders/dlrm_v3/utils.py`.
-- **Target**: **eval AUC >= 0.75**. Set via `AUC_THRESHOLD=0.75`
-  (`MetricsLogger.auc_threshold`); the run logs `RUN_STOP` with `SUCCESS` and
-  stops once the target is reached. The gin default of `1.0` is unreachable
-  (trains all windows with no early stop) and is overridden by the reference
-  scripts.
-- **Evaluation frequency**: the full-reference run uses
-  `EVAL_EVERY_DATA_PCT=0.001` — evaluate every 0.1% of the training stream
-  (~1000 evenly-data-spaced eval points), independent of node count. This matches
-  the cadence used for the RCP sweep in §10. The alternative per-window cadence
-  (`EVAL_EVERY_N_WINDOWS`) is mutually exclusive.
-- **Evaluation set**: a fixed held-out future window (`eval_holdout_ts`, default
-  `start_ts + num_train_ts`); with `TRAIN_SPLIT_PERCENTAGE < 1.0` the held-out
-  users' anchors over that window form the eval set. The temporal one-window
-  lead guarantees no future leakage (see §11).
+### Quality metric
 
-Evaluation is always one window ahead of training, so reported AUC is genuine
-next-period generalization.
+**AUC** on the held-out future evaluation window (`window_auc` for the
+`listen_plus` task), computed by `MetricsLogger` in
+`generative_recommenders/dlrm_v3/utils.py`.
 
-## 10. Reference Convergence Points (RCP)
+### Quality target
+
+**Eval AUC >= 0.75.** Set via `AUC_THRESHOLD=0.75`
+(`MetricsLogger.auc_threshold`); the run logs `RUN_STOP` with `SUCCESS` and
+stops once the target is reached. The gin default of `1.0` is unreachable
+(trains all windows with no early stop) and is overridden by the reference
+scripts.
+
+### Evaluation frequency
+
+The full-reference run uses `EVAL_EVERY_DATA_PCT=0.001` — evaluate every 0.1% of
+the training stream (`train_samples = 2,290,835,423`), rounded up to a whole
+number of global batches. That works out to **2,293,760 training samples**
+between eval points at each of the three RCP batch sizes (280 / 140 / 70 steps
+at GBS 8192 / 16384 / 32768), giving ~1000 evenly data-spaced eval points
+independent of node count. This matches the cadence used for the RCP sweep
+below. The alternative per-window cadence (`EVAL_EVERY_N_WINDOWS`) is mutually
+exclusive with it.
+
+Early eval points are suppressed by `SKIP_EVAL_EPOCH_PCT`, since no seed
+converges before ~2.7% of an epoch; see
+[Choosing the eval schedule](#choosing-the-eval-schedule-for-a-given-global-batch-size).
+
+### Evaluation thoroughness
+
+Every evaluation scores the **entire** holdout window — `eval_samples =
+2,058,204` samples, logged as the MLPerf `eval_samples` value. There is no
+subsampling, so each eval pass is ~90% the size of the 2,293,760-sample training
+block that precedes it.
+
+### Reference Convergence Points (RCP)
 
 **Status: convergence logs generated for 3 batch sizes.** Per the MLPerf
 [CONTRIBUTING guidance](https://github.com/mlcommons/training_policies/blob/master/CONTRIBUTING.md),
@@ -340,9 +557,7 @@ global batch size (convergence is reached well within the first ~5% of an epoch)
 samples-to-converge across the 20 seeds — all under ~7%, i.e. low run-to-run
 variance.
 
-### 10.1 Tunable hyperparameters (benchmark submission)
-
-For a benchmark submission, only the following hyperparameters may be tuned:
+**Tunable hyperparameters for a submission.** Only the following may be tuned:
 
 - **Target (post-warmup) learning rate** — the peak LR the warmup ramps up to.
 - **Global batch size** — e.g. the 8192 / 16384 / 32768 points swept above.
@@ -354,9 +569,9 @@ The rest of the parameters, including the following, are **fixed and not tunable
 - **`skip_eval_epoch_pct`** — eval rounds are skipped until this fraction of the
   epoch has been trained, then convergence is checked at every round. The value
   is global-batch-size dependent (`0.027` at GBS 8192, `0.0323` at 16384,
-  `0.043` at 32768); fixed for submission. See §10.2 for how it is derived.
+  `0.043` at 32768); fixed for submission. See below for how it is derived.
 
-### 10.2 Choosing the eval schedule for a given global batch size
+### Choosing the eval schedule for a given global batch size
 
 **Why it needs choosing.** The eval cadence (`EVAL_EVERY_DATA_PCT=0.001`) is
 fixed, but evaluating from the very first eval point is expensive: the holdout
@@ -364,14 +579,14 @@ is 2,058,204 samples, ~90% the size of the 2,293,760-sample training block
 between two eval points. Eval is ~2.2x faster per sample than training (forward
 only), so each eval costs ~0.41x its preceding training block, and running every
 eval point spends **~29% of end-to-end time on evaluation**. Since convergence
-never happens before ~2.7% of an epoch (§10 table), those early eval points
-carry no signal. `SKIP_EVAL_EPOCH_PCT` suppresses them and cuts eval to **~5%**
-of end-to-end time.
+never happens before ~2.7% of an epoch (RCP table above), those early eval
+points carry no signal. `SKIP_EVAL_EPOCH_PCT` suppresses them and cuts eval to
+**~5%** of end-to-end time.
 
 **Derivation from the RCP sweep.** The ideal start point is the latest one that
 still cannot miss a convergence: the *earliest* eval at which any seed crosses
 AUC 0.75. Because eval fires on a fixed grid of 2,293,760-sample blocks, that
-minimum always lands on a block boundary, and the §10 sweep gives it directly:
+minimum always lands on a block boundary, and the sweep gives it directly:
 
 | GBS | earliest crossing | = blocks | = samples |
 |---|---|---|---|
@@ -433,69 +648,24 @@ starts, early-stop and MLPerf `EVAL_ACCURACY` behave normally. See the
 [`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin) for
 the full semantics.
 
+# 6. Approx runtime
 
+Reference (unoptimized) time to reach the AUC 0.75 quality target, measured on
+**AMD Instinct MI350X** in **bf16 mixed precision**, from the 60-run RCP sweep in
+[`rcp_logs/`](rcp_logs/) (`submission_platform=MI350`). The reference per-rank
+batch size is 1024, so global batch size and GPU count scale together:
 
-## 11. Streaming (temporal-order) training
+| Global batch size | GPUs (at `BATCH_SIZE=1024`) | Wall-clock to AUC 0.75 (min / mean / max) |
+|---|---|---|
+| 8192  | 8  | 2h22m / 2h39m / 2h59m |
+| 16384 | 16 | 1h39m / 1h52m / 2h12m |
+| 32768 | 32 | 1h17m / 1h23m / 1h36m |
 
-`scripts/launch_slurm.sh` and `run_and_time.sh` default to
-`--mode streaming-train-eval`, which trains Yambda in strict wall-clock order
-instead of shuffling the whole corpus. The timeline is sliced into
-fixed-duration **windows** (default 1 day,
-`get_dataset.streaming_window_seconds = 86400`), and the loop walks them forward:
+These times include evaluation with `SKIP_EVAL_EPOCH_PCT` unset (every eval
+point runs, ~29% of end-to-end time). With the eval schedule of
+[§5](#choosing-the-eval-schedule-for-a-given-global-batch-size) applied, eval
+drops to ~5% of end-to-end time and total runtime falls accordingly.
 
-```
-window T:    train          window T+1:  eval (then train)   window T+2: eval (then train) ...
-   └─ train window T ─┐
-                      └─ eval window T+1 ─┐
-                                          └─ train window T+1 ─┐
-                                                               └─ eval window T+2 ...
-```
-
-i.e. for each step it **trains window T, then evaluates window T+1** before
-advancing — always predicting the immediate future from the past.
-
-### 11.1 Temporal guarantee
-
-The streaming path enforces **no future leakage** at two levels:
-
-1. **Across windows** — a window is the set of anchors whose target/candidate
-   timestamp falls in `[t_min + T·W, t_min + (T+1)·W)`. Training only ever sees
-   windows `<= T`; the evaluation window `T+1` is strictly in the future of every
-   training anchor it is scored against.
-2. **Within an anchor** — history is gathered **causally**: the UIH scan is
-   `scan_start:flat_pos` (events strictly before the anchor), so no event at or
-   after the anchor's timestamp can enter its features.
-
-This is a *temporal* split on the training stream — distinct from the
-preprocessing GTS split (§5) that carves off the final test day. Windows are
-indexed off the per-anchor target timestamp via a lazily-built, mmap'd
-`anchor_ts` cache keyed by `(history_length, min_history)`.
-
-### 11.2 Streaming knobs
-
-All configurable via
-[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin) with
-env overrides:
-
-| env | gin | default | meaning |
-|---|---|---|---|
-| `START_TS` | `streaming_train_eval_loop.start_ts` | 150 | first window (early windows are near-empty warm-up) |
-| `NUM_TRAIN_TS` | `streaming_train_eval_loop.num_train_ts` | 149 | number of train windows (clamped to available) |
-| `PERSISTENT_LOADER` | `streaming_train_eval_loop.persistent_loader` | 1 | reuse one worker pool across windows |
-| `DOUBLE_BUFFER` | `streaming_train_eval_loop.double_buffer` | 1 | prepare the next window in a background thread |
-| `EVAL_EVERY_N_WINDOWS` | `streaming_train_eval_loop.eval_every_n_windows` | 1 | eval cadence by window count (0 to use data-pct) |
-| `EVAL_EVERY_DATA_PCT` | `streaming_train_eval_loop.eval_every_data_pct` | 0.0 | eval cadence by fraction of train data (full ref / RCP: 0.001) |
-| `MIN_HISTORY` | `get_dataset.min_history` | 4086 | anchor-eligibility floor (0 = ~all users incl. cold-start) |
-
-### 11.3 Checkpointing & resume
-
-The streaming loop is resume-aware: set `CKPT_PATH` to enable DMP checkpoint
-save/load (auto-resolves to the highest-numbered subdir), with retention via
-`KEEP_LAST_N` and cadences `IN_WINDOW_CKPT_FREQ` / `CKPT_STEP_FREQ` /
-`CKPT_TIME_INTERVAL_S`. The MLPerf run state (run-started flag, global sample
-count) is persisted across resume so compliance logging is continuous. See
-`generative_recommenders/dlrm_v3/checkpoint.py`.
-
-## 12. License
+## License
 
 Apache 2.0 (inherited from upstream).
