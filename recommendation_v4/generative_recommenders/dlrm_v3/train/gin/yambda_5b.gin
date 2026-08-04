@@ -835,11 +835,12 @@ tbp/env_path.key     = "TENSORBOARD_LOG_PATH"
 tbp/env_path.default = ""
 MetricsLogger.world_size = 8
 # MLPerf convergence target: run stops when the selected eval AUC reaches it.
-# Default 1.0 is unreachable, so the run trains through all windows (no early
-# stop) out of the box; set $AUC_THRESHOLD=0.80275 for the MLPerf target.
+# 0.75 is the dlrmv4 quality target, so a default run early-stops at convergence
+# and emits RUN_STOP with status=success. Set $AUC_THRESHOLD=1.0 to make the
+# target unreachable and train through all windows instead (no early stop).
 MetricsLogger.auc_threshold = @at/env_float()
 at/env_float.key     = "AUC_THRESHOLD"
-at/env_float.default = 1.0
+at/env_float.default = 0.75
 # EVAL_ACCURACY + early-stop are driven by per-window AUC (window_auc) vs the
 # threshold above.
 # Lifetime-AUC backend, selectable independently for the train cumulative AUC and

@@ -68,7 +68,11 @@ class MLPerfLogger:
         rank: Optional[int] = None,
         log_path: Optional[str] = None,
         default_stack_offset: int = 2,
-        benchmark_name: str = "hstu",
+        # MLPerf Training 6.1 benchmark short name. Must match the string
+        # registered in mlcommons/logging (constants.py, the closed/open_common
+        # allow-lists, benchmark_meta and the rcp_checker tables) or the
+        # compliance checker rejects the log before reading anything else.
+        benchmark_name: str = "dlrmv4",
         submitter_name: str = "AMD",
         submission_platform: str = "MI355X",
         fresh: bool = True,
@@ -160,11 +164,15 @@ class MLPerfLogger:
     ) -> None:
         """Emit submission info + core hyperparameters, then INIT_STOP + RUN_START.
 
-        Optimizer names/LRs are read from gin (dense Adam + sparse RowWiseAdagrad),
-        resolving env-macro refs to concrete values. Call once on a genuine cold
-        start, after the model is built. INIT_STOP/RUN_START barrier so the
-        timestamp reflects the slowest rank, so ALL ranks must call this together
-        (non-rank-0 / disabled calls no-op the emit but still hit the barrier).
+        Optimizer config and the LR-warmup schedule are read from gin (dense Adam
+        + sparse RowWiseAdagrad), resolving env-macro refs to concrete values.
+        Every hyperparameter the closed division pins must appear here: the
+        compliance checker only evaluates a rule when a line carrying that key is
+        in the stream, so an unlogged value is an unenforceable one. Call once on
+        a genuine cold start, after the model is built. INIT_STOP/RUN_START
+        barrier so the timestamp reflects the slowest rank, so ALL ranks must call
+        this together (non-rank-0 / disabled calls no-op the emit but still hit
+        the barrier).
         """
         c = self.constants
         self.submission_info()
@@ -180,6 +188,31 @@ class MLPerfLogger:
         self.event(
             key=c.OPT_BASE_LR,
             value=_gin_param("dense_optimizer_factory_and_class.learning_rate", None),
+        )
+        betas = _gin_param("dense_optimizer_factory_and_class.betas", (0.95, 0.999))
+        self.event(key=c.OPT_ADAM_BETA_1, value=float(betas[0]))
+        self.event(key=c.OPT_ADAM_BETA_2, value=float(betas[1]))
+        self.event(
+            key=c.OPT_ADAM_EPSILON,
+            value=float(_gin_param("dense_optimizer_factory_and_class.eps", 1e-8)),
+        )
+        self.event(
+            key=c.OPT_WEIGHT_DECAY,
+            value=float(
+                _gin_param("dense_optimizer_factory_and_class.weight_decay", 0.0)
+            ),
+        )
+        self.event(
+            key=c.OPT_LR_WARMUP_STEPS,
+            value=int(_gin_param("streaming_train_eval_loop.lr_warmup_steps", 0)),
+        )
+        # No upstream constant for the absolute LR the warmup ramp starts from;
+        # registered alongside the sparse keys in the mlcommons/logging PR.
+        self.event(
+            key="opt_learning_rate_warmup_start_lr",
+            value=float(
+                _gin_param("streaming_train_eval_loop.lr_warmup_start_lr", 0.0)
+            ),
         )
         self.event(
             key="opt_sparse_name",
@@ -376,7 +409,7 @@ def mlperf_checkpoint_present(ckpt_path: str) -> bool:
 def get_mlperf_logger(
     rank: int = 0,
     log_path: str = "",
-    benchmark_name: str = "hstu",
+    benchmark_name: str = "dlrmv4",
     submitter_name: str = "AMD",
     submission_platform: str = "MI355X",
     fresh: bool = True,

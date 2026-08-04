@@ -495,11 +495,14 @@ the 86400 s streaming window — are pinned directly in the gin file.
 
 ### Quality target
 
-**Eval AUC >= 0.75.** Set via `AUC_THRESHOLD=0.75`
-(`MetricsLogger.auc_threshold`); the run logs `RUN_STOP` with `SUCCESS` and
-stops once the target is reached. The gin default of `1.0` is unreachable
-(trains all windows with no early stop) and is overridden by the reference
-scripts.
+**Eval AUC >= 0.75.** This is now the gin default for
+`MetricsLogger.auc_threshold`, so a plain run stops at the first eval reaching
+the target and logs `RUN_STOP` with `SUCCESS` — the shape both MLPerf checkers
+expect. Override with `AUC_THRESHOLD=1.0` to make the target unreachable and
+train through every window instead, which is what an RCP sweep wants: full
+convergence curves rather than a stop at the first crossing. The frozen sweep in
+[`rcp_logs/`](rcp_logs/) was produced that way, which is why those logs carry no
+`run_stop`.
 
 ### Evaluation frequency
 
@@ -533,7 +536,14 @@ RCPs must cover at least 3 reasonable batch sizes using at least 2N seeds
 merged under [`rcp_logs/`](rcp_logs/) — **3 global batch sizes × 20 seeds each
 (60 runs total; 2N with N = 10)** in MLPerf MLLOG format
 (`submission_org=AMD`, `submission_platform=MI350`, `submission_benchmark=hstu`,
-`submission_division=closed`). All runs use `opt_name=Adam` (dense) +
+`submission_division=closed`). Two properties of these logs are deliberate and
+should not be "fixed": they predate the rename of the benchmark short name to
+`dlrmv4` for MLPerf Training 6.1, and they carry no `run_stop` because the sweep
+ran full convergence curves rather than early-stopping at the target. Neither
+affects their use as RCP evidence — upstream tooling never parses reference logs,
+only submission logs and the hand-authored RCP JSON — so the sweep was not
+regenerated. New runs emit `submission_benchmark=dlrmv4` and stop at the first
+eval crossing the target. All runs use `opt_name=Adam` (dense) +
 `opt_sparse_name=RowWiseAdagrad`, `gradient_accumulation_steps=1`. The LR
 schedule keeps the **starting LR fixed at `0`** and the **warmup steps fixed at
 `24000`**; only the **target (post-warmup) LR scales with global batch size**,
