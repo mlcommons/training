@@ -1,7 +1,9 @@
-# MD5 checksums for the preprocessed yambda-5b dataset (processed_5b/).
+# MD5 checksums for the preprocessed yambda-5b dataset (processed_5b/) and the
+# two shared_metadata/ mappings the dataset reads at init.
 #
 # Format: standard `md5sum` output -> "<md5hash>  <relative_path>".
-# Paths are relative to ${DLRM_DATA_PATH}/processed_5b/.
+# Paths are relative to ${DLRM_DATA_PATH}/processed_5b/, hence the ../ prefix on
+# the shared_metadata entries.
 #
 # Verify with:
 #
@@ -12,28 +14,45 @@
 #   cd "${DLRM_DATA_PATH}/processed_5b"
 #   md5sum -c <repo>/md5sums_yambda_5b_processed.txt
 #
-# These pin the canonical preprocessing output: 47,618,139,057 bytes across the
-# five files below, produced by scripts/crusoe_spur/preprocess_5b.sbatch from
-# the yandex/yambda HuggingFace snapshot
-# dd6f3a19eef5866e346c3270e098baa641a44948. Regenerate with
-# scripts/crusoe_spur/md5_processed_5b.sbatch.
+# These pin the canonical preprocessing output: 47,710,942,572 bytes across the
+# seven files below, produced by ./download_dataset.sh from the yandex/yambda
+# HuggingFace snapshot dd6f3a19eef5866e346c3270e098baa641a44948.
 #
-# Not covered here: hstu_cache_L4086/ is a derived mmap cache the dataset
-# rebuilds on demand, and shared_metadata/ holds unmodified upstream artifacts.
+# Regenerate (emits these lines, in this order):
+#
+#   cd "${DLRM_DATA_PATH}/processed_5b"
+#   md5sum train_sessions.parquet test_events.parquet session_index.parquet \
+#          item_popularity.npy split_meta.json \
+#          ../shared_metadata/artist_item_mapping.parquet \
+#          ../shared_metadata/album_item_mapping.parquet
+#
+# The two item mappings are included because DLRMv4YambdaDataset._load_metadata
+# derives the embedding-table size from the maximum item_id across them. A
+# truncated or stale mapping would not raise; it would silently change the model
+# being benchmarked.
+#
+# Not covered here: shared_metadata/embeddings.parquet is unused by HSTU
+# training, raw/5b/multi_event.parquet is an input to preprocessing rather than
+# to training, and hstu_cache_L4086/ is a derived mmap cache the dataset rebuilds
+# on demand.
 #
 # Note that these hash the byte-for-byte artifacts, so they verify a copy or a
 # download of this dataset. Re-running preprocessing on another machine can
 # produce logically identical parquet files with different bytes, since the
 # parquet writer records its own version and row-group layout.
 #
-# Sizes, for a quick sanity check before hashing 47.6 GB:
+# Sizes, for a quick sanity check before hashing 47.7 GB:
 #     46791277705  train_sessions.parquet
 #       600103400  session_index.parquet
 #       151632471  test_events.parquet
 #        75125120  item_popularity.npy
 #             361  split_meta.json
+#        54528894  ../shared_metadata/album_item_mapping.parquet
+#        38274621  ../shared_metadata/artist_item_mapping.parquet
 fc7c4c5d42d43f0d1f1ed6033ad0eb6f  train_sessions.parquet
 462a8dc32205a9d2130cb42a0a06067c  test_events.parquet
 484c03ecea413c3ff1e4aa319de2b15a  session_index.parquet
 6a586fcf43109e34837f68d73213c01d  item_popularity.npy
 175984de3aadf6137922c4c30a09d69c  split_meta.json
+a7fa1226d16d2867eb7ca43f395091d0  ../shared_metadata/artist_item_mapping.parquet
+40a37753824093fa6d5c89a50c7c5191  ../shared_metadata/album_item_mapping.parquet

@@ -3,7 +3,9 @@
 #
 # Checks the integrity of the preprocessed dataset under
 #   ${DLRM_DATA_PATH}/${PROCESSED_SUBDIR}
-# against md5sums_yambda_5b_processed.txt (standard `md5sum -c` format).
+# against md5sums_yambda_5b_processed.txt (standard `md5sum -c` format), plus
+# the two ${DLRM_DATA_PATH}/shared_metadata/ item mappings the dataset reads at
+# init, which the checksum file addresses relative to the processed dir.
 #
 # If the checksum file still contains placeholder hashes (TODO_GENERATE_HASH),
 # the script falls back to an existence/layout check and warns that the
@@ -31,12 +33,17 @@ if [[ ! -d "${PROCESSED_DIR}" ]]; then
     exit 1
 fi
 
+# Relative to PROCESSED_DIR, matching the paths in the checksum file. The two
+# item mappings live in shared_metadata/ but are checked here because the
+# dataset reads them at init to size the embedding tables.
 EXPECTED_FILES=(
     train_sessions.parquet
     test_events.parquet
     session_index.parquet
     item_popularity.npy
     split_meta.json
+    ../shared_metadata/artist_item_mapping.parquet
+    ../shared_metadata/album_item_mapping.parquet
 )
 
 # Detect whether the checksum file has real (32 hex char) hashes or placeholders.
