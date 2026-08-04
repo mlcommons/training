@@ -1,6 +1,6 @@
 # pyre-strict
 """
-Streaming synthetic data generator for DLRMv3.
+Streaming synthetic data generator for DLRMv4.
 
 This module generates synthetic streaming recommendation data for benchmarking
 and testing purposes. It creates user-item interaction histories with timestamps,

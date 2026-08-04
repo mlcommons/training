@@ -21,14 +21,14 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from generative_recommenders.dlrm_v3.datasets.movie_lens import DLRMv3MovieLensDataset
+from generative_recommenders.dlrm_v4.datasets.movie_lens import DLRMv4MovieLensDataset
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTUConfig
 
 csv.field_size_limit(sys.maxsize)
 logger = logging.getLogger(__name__)
 
 
-class DLRMv3SyntheticMovieLensDataset(DLRMv3MovieLensDataset):
+class DLRMv4SyntheticMovieLensDataset(DLRMv4MovieLensDataset):
     def __init__(
         self,
         hstu_config: DlrmHSTUConfig,

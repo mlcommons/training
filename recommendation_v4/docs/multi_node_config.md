@@ -7,7 +7,7 @@ when the underlying network changes.
 
 Companion to [`perf_opt.md`](./perf_opt.md) and [`training_recipe.md`](./training_recipe.md).
 The single entry point is [`scripts/launch_slurm.sh`](../scripts/launch_slurm.sh);
-the Python side is `generative_recommenders/dlrm_v3/train/{train_ranker,utils}.py`.
+the Python side is `generative_recommenders/dlrm_v4/train/{train_ranker,utils}.py`.
 
 ---
 

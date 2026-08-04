@@ -14,7 +14,7 @@
 
 # pyre-strict
 """
-Checkpoint utilities for saving and loading DLRMv3 model checkpoints.
+Checkpoint utilities for saving and loading DLRMv4 model checkpoints.
 
 This module provides functions for saving and loading distributed model checkpoints,
 including both sparse (embedding) and dense (non-embedding) components.
@@ -32,7 +32,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 import gin
 import numpy as np
 import torch
-from generative_recommenders.dlrm_v3.utils import (
+from generative_recommenders.dlrm_v4.utils import (
     BinnedCumulativeAUC,
     LifetimeAUCMetricComputation,
     MetricsLogger,

@@ -66,7 +66,7 @@ DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./verify_dataset.sh
 ```
 
 - [`download_dataset.sh`](download_dataset.sh) wraps the preprocessing pipeline
-  in `generative_recommenders.dlrm_v3.preprocess_public_data` (HuggingFace
+  in `generative_recommenders.dlrm_v4.preprocess_public_data` (HuggingFace
   download + temporal split + session segmentation + item-popularity counts).
   The pipeline itself is described in
   [§3 Data preprocessing](#data-preprocessing).
@@ -119,7 +119,7 @@ save/load (auto-resolves to the highest-numbered subdir), with retention via
 `KEEP_LAST_N` and cadences `IN_WINDOW_CKPT_FREQ` / `CKPT_STEP_FREQ` /
 `CKPT_TIME_INTERVAL_S`. The MLPerf run state (run-started flag, global sample
 count) is persisted across resume so compliance logging is continuous. See
-`generative_recommenders/dlrm_v3/checkpoint.py`.
+`generative_recommenders/dlrm_v4/checkpoint.py`.
 
 # 3. Dataset/Environment
 
@@ -167,7 +167,7 @@ The `like` pool is roughly **30x rarer** than `lp` — important context for the
 per-pool gather strategy below.
 
 **Pipeline.** `./download_dataset.sh` (which calls
-`python3 -m generative_recommenders.dlrm_v3.preprocess_public_data --dataset
+`python3 -m generative_recommenders.dlrm_v4.preprocess_public_data --dataset
 yambda-5b --data-path <root>`) downloads the 5b variant from HuggingFace, then:
 
 1. **Encodes** the raw `event_type` string into a uint8 lookup (listen=0,
@@ -177,7 +177,7 @@ yambda-5b --data-path <root>`) downloads the 5b variant from HuggingFace, then:
 3. **Segments** per-user event timelines into sessions on a 30-min inactivity
    gap.
 4. **Computes** per-item popularity for downstream metric weighting.
-5. **Writes** the layout `DLRMv3YambdaDataset` expects:
+5. **Writes** the layout `DLRMv4YambdaDataset` expects:
 
 ```
 <data-path>/
@@ -221,7 +221,7 @@ the single `listen_plus` task — so only listen_plus candidates supervise (see
 [§4 Loss function](#loss-function)).
 
 **Per-pool gather (the cap = L // 3 strategy).** The UIH is built by
-`DLRMv3YambdaDataset._gather_interleaved_history`. For each anchor it:
+`DLRMv4YambdaDataset._gather_interleaved_history`. For each anchor it:
 
 1. Scans the most recent `scan_window` (default 20,000) events of any type
    before the anchor, **clipped to user_start**.
@@ -291,7 +291,7 @@ window, anchors are consumed in dataset order; an optional partial shuffle
 order without crossing window boundaries.
 
 Streaming knobs, all configurable via
-[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin) with
+[`yambda_5b.gin`](generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin) with
 env overrides:
 
 | env | gin | default | meaning |
@@ -323,14 +323,14 @@ The implementation is a fork of
 [meta-recsys/generative-recommenders](https://github.com/meta-recsys/generative-recommenders);
 see the upstream README for the original modeling code. The exact architecture
 and table specs for this benchmark live in
-`generative_recommenders/dlrm_v3/configs.py` (`get_hstu_configs`,
+`generative_recommenders/dlrm_v4/configs.py` (`get_hstu_configs`,
 `get_embedding_table_config`).
 
 ### List of layers
 
 HSTU replaces the feature-interaction stack of a classic DLRM with a stack of
 pointwise-attention "transducer" layers operating over the user's interaction
-sequence. In the `dlrm_v3` yambda path the forward pass is:
+sequence. In the `dlrm_v4` yambda path the forward pass is:
 
 **1. `EmbeddingCollection`** — sparse lookup, sharded across GPUs with TorchRec
 `DistributedModelParallel`. All tables are `embedding_dim = 512`, FP32:
@@ -428,7 +428,7 @@ predictions.
 ### Optimizer
 
 Two optimizers, configured in
-[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin):
+[`yambda_5b.gin`](generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin):
 
 | component | optimizer | gin binding | key settings |
 |---|---|---|---|
@@ -449,7 +449,7 @@ sparse embedding all-to-all defaults to fp32 in both directions
 ### Hyperparameters
 
 Hyperparameters live in
-[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin)
+[`yambda_5b.gin`](generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin)
 (the config-file source of truth) and are **overridable via environment
 variables** (the env value takes precedence over the gin default, per MLPerf
 CONTRIBUTING rule 4d). The gin macros (`@env_int`, `@env_float`, `@env_str`)
@@ -499,7 +499,7 @@ the 86400 s streaming window — are pinned directly in the gin file.
 
 **AUC** on the held-out future evaluation window (`window_auc` for the
 `listen_plus` task), computed by `MetricsLogger` in
-`generative_recommenders/dlrm_v3/utils.py`.
+`generative_recommenders/dlrm_v4/utils.py`.
 
 ### Quality target
 
@@ -705,7 +705,7 @@ Skipping never alters the eval grid or the training trajectory — it only remov
 early periodic passes. The end-of-run final eval always runs, and once eval
 starts, early-stop and MLPerf `EVAL_ACCURACY` behave normally. See the
 `SKIP_EVAL_EPOCH_PCT` block in
-[`yambda_5b.gin`](generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin) for
+[`yambda_5b.gin`](generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin) for
 the full semantics.
 
 # 6. Approx runtime

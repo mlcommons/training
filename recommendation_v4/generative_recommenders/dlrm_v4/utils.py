@@ -14,7 +14,7 @@
 
 # pyre-unsafe
 """
-mlperf dlrm_v3 inference benchmarking tool.
+mlperf dlrm_v4 inference benchmarking tool.
 """
 
 import contextlib
@@ -27,16 +27,16 @@ from typing import Any, Callable, Dict, List, Optional
 import gin
 import tensorboard  # @manual=//tensorboard:lib  # noqa: F401 - required implicit dep when using torch.utils.tensorboard
 import torch
-from generative_recommenders.dlrm_v3.datasets.dataset import DLRMv3RandomDataset
-from generative_recommenders.dlrm_v3.datasets.kuairand import DLRMv3KuaiRandDataset
-from generative_recommenders.dlrm_v3.datasets.movie_lens import DLRMv3MovieLensDataset
-from generative_recommenders.dlrm_v3.datasets.synthetic_movie_lens import (
-    DLRMv3SyntheticMovieLensDataset,
+from generative_recommenders.dlrm_v4.datasets.dataset import DLRMv4RandomDataset
+from generative_recommenders.dlrm_v4.datasets.kuairand import DLRMv4KuaiRandDataset
+from generative_recommenders.dlrm_v4.datasets.movie_lens import DLRMv4MovieLensDataset
+from generative_recommenders.dlrm_v4.datasets.synthetic_movie_lens import (
+    DLRMv4SyntheticMovieLensDataset,
 )
-from generative_recommenders.dlrm_v3.datasets.synthetic_streaming import (
-    DLRMv3SyntheticStreamingDataset,
+from generative_recommenders.dlrm_v4.datasets.synthetic_streaming import (
+    DLRMv4SyntheticStreamingDataset,
 )
-from generative_recommenders.dlrm_v3.datasets.yambda import DLRMv3YambdaDataset
+from generative_recommenders.dlrm_v4.datasets.yambda import DLRMv4YambdaDataset
 from generative_recommenders.modules.multitask_module import (
     MultitaskTaskType,
     TaskConfig,
@@ -679,7 +679,7 @@ def _deoverlap_gpu_annotations(path: str, max_snap_us: float = 5.0) -> None:
 
 def _on_trace_ready_fn(
     rank: Optional[int] = None,
-    trace_dir: str = "/tmp/dlrm_v3_traces",
+    trace_dir: str = "/tmp/dlrm_v4_traces",
     keep_n_active: Optional[int] = None,
     trace_steps: Optional[List[int]] = None,
 ) -> Callable[[torch.profiler.profile], None]:
@@ -752,7 +752,7 @@ def _on_trace_ready_fn(
 
 
 def profiler_or_nullcontext(
-    enabled: bool, with_stack: bool, trace_dir: str = "/tmp/dlrm_v3_traces"
+    enabled: bool, with_stack: bool, trace_dir: str = "/tmp/dlrm_v4_traces"
 ):
     """One-shot profile context for ad-hoc captures (no scheduling)."""
     return (
@@ -821,7 +821,7 @@ class Profiler:
         warmup: int = 20,
         repeat: int = 1,
         trace_steps: Optional[List[int]] = None,
-        trace_dir: str = "/tmp/dlrm_v3_traces",
+        trace_dir: str = "/tmp/dlrm_v4_traces",
         trim_warmup: bool = True,
         record_shapes: bool = True,
         profile_memory: bool = False,
@@ -1615,7 +1615,7 @@ def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
         run_results_dir.run_name = %RUN_NAME
         Profiler.trace_dir = @run_results_dir()
     """
-    # utils.py lives at <recommendation_v4>/generative_recommenders/dlrm_v3/utils.py;
+    # utils.py lives at <recommendation_v4>/generative_recommenders/dlrm_v4/utils.py;
     # parents[2] climbs to <recommendation_v4>/.
     repo_root = Path(__file__).resolve().parents[2]
     return str(repo_root / subdir / run_name)
@@ -1650,10 +1650,10 @@ def get_dataset(
     """
     assert name in SUPPORTED_DATASETS, f"dataset {name} not supported"
     if name == "debug":
-        return DLRMv3RandomDataset, {}
+        return DLRMv4RandomDataset, {}
     if name == "movielens-1m":
         return (
-            DLRMv3MovieLensDataset,
+            DLRMv4MovieLensDataset,
             {
                 "ratings_file": os.path.join(
                     new_path_prefix, "data/ml-1m/sasrec_format.csv"
@@ -1662,7 +1662,7 @@ def get_dataset(
         )
     if name == "movielens-20m":
         return (
-            DLRMv3MovieLensDataset,
+            DLRMv4MovieLensDataset,
             {
                 "ratings_file": os.path.join(
                     new_path_prefix, "data/ml-20m/sasrec_format.csv"
@@ -1671,7 +1671,7 @@ def get_dataset(
         )
     if name == "movielens-13b":
         return (
-            DLRMv3SyntheticMovieLensDataset,
+            DLRMv4SyntheticMovieLensDataset,
             {
                 "ratings_file_prefix": os.path.join(
                     new_path_prefix, "data/ml-13b/16x16384"
@@ -1680,7 +1680,7 @@ def get_dataset(
         )
     if name == "movielens-18b":
         return (
-            DLRMv3SyntheticMovieLensDataset,
+            DLRMv4SyntheticMovieLensDataset,
             {
                 "ratings_file_prefix": os.path.join(
                     new_path_prefix, "data/ml-18b/20x36864"
@@ -1689,7 +1689,7 @@ def get_dataset(
         )
     if name == "kuairand-1k":
         return (
-            DLRMv3KuaiRandDataset,
+            DLRMv4KuaiRandDataset,
             {
                 "seq_logs_file": os.path.join(
                     new_path_prefix, "data/KuaiRand-1K/data/processed_seqs.csv"
@@ -1698,7 +1698,7 @@ def get_dataset(
         )
     if name == "streaming-400m":
         return (
-            DLRMv3SyntheticStreamingDataset,
+            DLRMv4SyntheticStreamingDataset,
             {
                 "ratings_file_prefix": os.path.join(
                     new_path_prefix, "data/streaming-400m/"
@@ -1713,7 +1713,7 @@ def get_dataset(
         )
     if name == "streaming-200b":
         return (
-            DLRMv3SyntheticStreamingDataset,
+            DLRMv4SyntheticStreamingDataset,
             {
                 "ratings_file_prefix": os.path.join(
                     new_path_prefix, "data/streaming-200b/"
@@ -1728,7 +1728,7 @@ def get_dataset(
         )
     if name == "streaming-100b":
         return (
-            DLRMv3SyntheticStreamingDataset,
+            DLRMv4SyntheticStreamingDataset,
             {
                 "ratings_file_prefix": os.path.join(
                     new_path_prefix, "data/streaming-100b/"
@@ -1742,10 +1742,10 @@ def get_dataset(
             },
         )
     if name == "yambda-5b":
-        from generative_recommenders.dlrm_v3.configs import YAMBDA_5B_CROSS_SPECS
+        from generative_recommenders.dlrm_v4.configs import YAMBDA_5B_CROSS_SPECS
 
         return (
-            DLRMv3YambdaDataset,
+            DLRMv4YambdaDataset,
             {
                 # Layout: <new_path_prefix>/processed_5b/{train_sessions.parquet,...}
                 # and <new_path_prefix>/shared_metadata/{artist,album}_item_mapping.parquet.
@@ -1791,7 +1791,7 @@ def get_dataset(
         )
     if name == "sampled-streaming-100b":
         return (
-            DLRMv3SyntheticStreamingDataset,
+            DLRMv4SyntheticStreamingDataset,
             {
                 "ratings_file_prefix": os.path.join(
                     new_path_prefix, "data/streaming-100b/sampled_data/"

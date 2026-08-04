@@ -16,10 +16,10 @@
 import unittest
 
 from generative_recommenders.common import gpu_unavailable
-from generative_recommenders.dlrm_v3.train.train_ranker import main
+from generative_recommenders.dlrm_v4.train.train_ranker import main
 
 
-class DLRMV3TrainTest(unittest.TestCase):
+class DLRMV4TrainTest(unittest.TestCase):
     @unittest.skipIf(*gpu_unavailable)
     def test_e2e(self) -> None:
         main()

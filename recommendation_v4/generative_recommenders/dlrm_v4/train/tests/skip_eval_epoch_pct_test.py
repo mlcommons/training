@@ -29,7 +29,7 @@ assert eval starts on the intended boundary, using constants measured from the
 """
 import unittest
 
-from generative_recommenders.dlrm_v3.train.utils import resolve_skip_eval_until_step
+from generative_recommenders.dlrm_v4.train.utils import resolve_skip_eval_until_step
 
 # --- constants from the yambda-5b RCP sweep ---------------------------------
 # Epoch denominator (MLPerf TRAIN_SAMPLES) and the eval cadence in samples

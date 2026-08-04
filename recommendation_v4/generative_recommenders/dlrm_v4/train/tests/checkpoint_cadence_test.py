@@ -26,7 +26,7 @@ exercising the function directly fully covers the trigger semantics.
 """
 import unittest
 
-from generative_recommenders.dlrm_v3.train.utils import (
+from generative_recommenders.dlrm_v4.train.utils import (
     select_in_window_checkpoint_reason,
 )
 

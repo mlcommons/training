@@ -4,8 +4,8 @@
 # Downloads the Yambda dataset from HuggingFace (yandex/yambda) and runs the
 # preprocessing pipeline (event-type encoding, temporal GTS split, session
 # segmentation, item-popularity counts) into the on-disk layout that
-# DLRMv3YambdaDataset consumes. This is a thin wrapper over
-#   generative_recommenders.dlrm_v3.preprocess_public_data
+# DLRMv4YambdaDataset consumes. This is a thin wrapper over
+#   generative_recommenders.dlrm_v4.preprocess_public_data
 # so the full reference data pipeline lives in one place.
 #
 # Usage:
@@ -27,7 +27,7 @@ cd "${REPO_ROOT}"
 echo "[download_dataset] dataset=${DATASET} data-path=${DLRM_DATA_PATH}"
 mkdir -p "${DLRM_DATA_PATH}"
 
-python3 -m generative_recommenders.dlrm_v3.preprocess_public_data \
+python3 -m generative_recommenders.dlrm_v4.preprocess_public_data \
     --dataset "${DATASET}" \
     --data-path "${DLRM_DATA_PATH}"
 

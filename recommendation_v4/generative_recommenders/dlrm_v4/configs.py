@@ -14,7 +14,7 @@
 
 # pyre-strict
 """
-Configuration module for DLRMv3 model.
+Configuration module for DLRMv4 model.
 
 This module provides configuration functions for the HSTU model architecture and embedding table configurations.
 """
@@ -34,7 +34,7 @@ from generative_recommenders.modules.multitask_module import (
 )
 from torchrec.modules.embedding_configs import DataType, EmbeddingConfig
 
-HSTU_EMBEDDING_DIM = 512  # final DLRMv3 model
+HSTU_EMBEDDING_DIM = 512  # final DLRMv4 model
 HASH_SIZE = 10_000_000
 HASH_SIZE_1B = 1_000_000_000
 

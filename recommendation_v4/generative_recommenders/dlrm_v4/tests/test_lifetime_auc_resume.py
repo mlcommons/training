@@ -40,7 +40,7 @@ import unittest
 import torch
 
 try:
-    from generative_recommenders.dlrm_v3.utils import LifetimeAUCMetricComputation
+    from generative_recommenders.dlrm_v4.utils import LifetimeAUCMetricComputation
 
     _HAVE_DEPS = True
 except Exception:  # pragma: no cover - import guard for envs without torchrec
@@ -125,7 +125,7 @@ class LifetimeAUCResumeTest(unittest.TestCase):
         self.assertAlmostEqual(auc_ref, auc_resumed, places=6)
 
     def test_blob_state_dict_strips_buffers(self) -> None:
-        from generative_recommenders.dlrm_v3.checkpoint import (
+        from generative_recommenders.dlrm_v4.checkpoint import (
             _metric_blob_state_dict,
         )
 

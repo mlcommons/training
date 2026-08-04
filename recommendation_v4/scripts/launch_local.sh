@@ -15,7 +15,7 @@
 #
 # PREREQUISITES
 #   1) Data prepared (run once, CPU-only — no GPU needed):
-#        python generative_recommenders/dlrm_v3/preprocess_public_data.py \
+#        python generative_recommenders/dlrm_v4/preprocess_public_data.py \
 #            --dataset yambda-5b --data-path "$DLRM_DATA_PATH"
 #      producing  $DLRM_DATA_PATH/processed_5b/{train_sessions.parquet,...}
 #             and $DLRM_DATA_PATH/shared_metadata/{artist,album}_item_mapping.parquet
@@ -117,7 +117,7 @@ if [ "$DATASET" = "yambda-5b" ] && { [ ! -f "$PROCESSED" ] || [ ! -f "$META" ]; 
   echo "  expected: $PROCESSED" | tee -a "$LOG"
   echo "        and: $META" | tee -a "$LOG"
   echo "  run preprocessing first:" | tee -a "$LOG"
-  echo "    $PYTHON generative_recommenders/dlrm_v3/preprocess_public_data.py --dataset $DATASET --data-path $DLRM_DATA_PATH" | tee -a "$LOG"
+  echo "    $PYTHON generative_recommenders/dlrm_v4/preprocess_public_data.py --dataset $DATASET --data-path $DLRM_DATA_PATH" | tee -a "$LOG"
   exit 1
 fi
 
@@ -151,7 +151,7 @@ fi
 
 # ---- launch -----------------------------------------------------------------
 echo "[$(date)] launching train_ranker ($DATASET, mode=$MODE)" | tee -a "$LOG"
-"$PYTHON" -m generative_recommenders.dlrm_v3.train.train_ranker \
+"$PYTHON" -m generative_recommenders.dlrm_v4.train.train_ranker \
     --dataset "$DATASET" --mode "$MODE" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
 echo "[$(date)] launch_local finished rc=$rc" | tee -a "$LOG"

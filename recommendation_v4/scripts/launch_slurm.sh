@@ -655,7 +655,7 @@ worker() {
   fi
 
   echo "[$(date)] launching train_ranker with WORLD_SIZE=$WORLD_SIZE" | tee -a "$LOG"
-  python -m generative_recommenders.dlrm_v3.train.train_ranker \
+  python -m generative_recommenders.dlrm_v4.train.train_ranker \
       --dataset yambda-5b --mode "${MODE:-streaming-train-eval}" 2>&1 | tee -a "$LOG"
 }
 

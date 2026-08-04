@@ -212,7 +212,7 @@ class DLRMKuaiRandProcessor(DataProcessor):
 #   3) Splits temporally into train + test (Global Temporal Split, GTS).
 #   4) Builds per-user sessions by inactivity gap.
 #   5) Computes item popularity counts.
-#   6) Writes the layout expected by `DLRMv3YambdaDataset`:
+#   6) Writes the layout expected by `DLRMv4YambdaDataset`:
 #
 #      <data_path>/processed_<size>/
 #          train_sessions.parquet
@@ -246,7 +246,7 @@ EVENT_TYPE_MAP = {"listen": 0, "like": 1, "dislike": 2, "unlike": 3, "undislike"
 
 
 class DLRMYambdaProcessor(DataProcessor):
-    """Download + preprocess Yambda (50m / 500m / 5b) for DLRMv3YambdaDataset."""
+    """Download + preprocess Yambda (50m / 500m / 5b) for DLRMv4YambdaDataset."""
 
     def __init__(
         self,

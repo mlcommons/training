@@ -19,8 +19,8 @@ from typing import List, Optional
 
 import pandas as pd
 import torch
-from generative_recommenders.dlrm_v3.datasets.dataset import DLRMv3RandomDataset
-from generative_recommenders.dlrm_v3.datasets.utils import (
+from generative_recommenders.dlrm_v4.datasets.dataset import DLRMv4RandomDataset
+from generative_recommenders.dlrm_v4.datasets.utils import (
     maybe_truncate_seq,
     separate_uih_candidates,
 )
@@ -30,7 +30,7 @@ from torchrec.sparse.jagged_tensor import KeyedJaggedTensor
 logger = logging.getLogger(__name__)
 
 
-class DLRMv3MovieLensDataset(DLRMv3RandomDataset):
+class DLRMv4MovieLensDataset(DLRMv4RandomDataset):
     def __init__(
         self,
         hstu_config: DlrmHSTUConfig,

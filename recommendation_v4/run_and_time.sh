@@ -55,7 +55,7 @@ mkdir -p "$(dirname "${MLPERF_LOG_PATH}")"
 start=$(date +%s)
 echo "STARTING TIMING RUN AT $(date -u '+%Y-%m-%d %r')"
 
-python -m generative_recommenders.dlrm_v3.train.train_ranker \
+python -m generative_recommenders.dlrm_v4.train.train_ranker \
     --dataset yambda-5b \
     --mode streaming-train-eval
 

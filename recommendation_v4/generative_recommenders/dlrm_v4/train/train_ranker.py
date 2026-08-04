@@ -26,7 +26,7 @@ import torch
 from torch import multiprocessing as mp
 from torchrec.test_utils import get_free_port
 
-# NOTE: heavy imports of generative_recommenders.dlrm_v3.* are deferred to
+# NOTE: heavy imports of generative_recommenders.dlrm_v4.* are deferred to
 # inside _main_func so that gin-driven env-var bootstrap (see
 # _env_bootstrap.apply_env_bootstrap) can run BEFORE the triton kernel
 # modules evaluate their `@triton.autotune` decorators at module-load time.
@@ -75,8 +75,8 @@ def _main_func(
     # discovers itself. This is required because triton @triton.autotune
     # decorators in generative_recommenders.ops.triton.* read env vars at
     # module import time, and the heavy imports below pull those in.
-    from generative_recommenders.dlrm_v3.train._env_bootstrap import apply_env_bootstrap
-    from generative_recommenders.dlrm_v3.train.mlperf_logging_utils import (
+    from generative_recommenders.dlrm_v4.train._env_bootstrap import apply_env_bootstrap
+    from generative_recommenders.dlrm_v4.train.mlperf_logging_utils import (
         get_mlperf_logger,
         mlperf_checkpoint_present,
     )
@@ -106,8 +106,8 @@ def _main_func(
 
     # Phase 2: heavy imports. Triton kernel modules evaluate their autotune
     # decorators here, using the env vars set above.
-    from generative_recommenders.dlrm_v3.checkpoint import load_dmp_checkpoint
-    from generative_recommenders.dlrm_v3.train.utils import (
+    from generative_recommenders.dlrm_v4.checkpoint import load_dmp_checkpoint
+    from generative_recommenders.dlrm_v4.train.utils import (
         cleanup,
         decorrelate_runtime_rng,
         eval_loop,
@@ -120,7 +120,7 @@ def _main_func(
         train_eval_loop,
         train_loop,
     )
-    from generative_recommenders.dlrm_v3.utils import (
+    from generative_recommenders.dlrm_v4.utils import (
         MetricsLogger,
         get_gpu_peak_flops,
     )

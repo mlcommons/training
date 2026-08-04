@@ -14,7 +14,7 @@
 
 # pyre-strict
 """
-Synthetic streaming dataset for DLRMv3 inference benchmarking.
+Synthetic streaming dataset for DLRMv4 inference benchmarking.
 
 This module provides a streaming dataset implementation that loads user interaction
 data from pre-generated CSV files with temporal (timestamp) organization, suitable
@@ -29,12 +29,12 @@ from typing import Any, Dict, List, Set, Tuple
 
 import pandas as pd
 import torch
-from generative_recommenders.dlrm_v3.datasets.dataset import (
+from generative_recommenders.dlrm_v4.datasets.dataset import (
     collate_fn,
-    DLRMv3RandomDataset,
+    DLRMv4RandomDataset,
     Samples,
 )
-from generative_recommenders.dlrm_v3.datasets.utils import (
+from generative_recommenders.dlrm_v4.datasets.utils import (
     json_loads,
     maybe_truncate_seq,
 )
@@ -45,7 +45,7 @@ csv.field_size_limit(sys.maxsize)
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-class DLRMv3SyntheticStreamingDataset(DLRMv3RandomDataset):
+class DLRMv4SyntheticStreamingDataset(DLRMv4RandomDataset):
     """
     Streaming dataset that loads pre-generated synthetic recommendation data.
 
@@ -293,10 +293,10 @@ class DLRMv3SyntheticStreamingDataset(DLRMv3RandomDataset):
             assert len(row) == 1
             requests = json_loads(row[0])
             self.requests = requests
-            logger.warning(f"DLRMv3SyntheticStreamingDataset: ts={ts} requests loaded")
+            logger.warning(f"DLRMv4SyntheticStreamingDataset: ts={ts} requests loaded")
         assert self.ts_to_users_cumsum[self.ts][-1] == len(self.requests)
         logger.warning(
-            f"DLRMv3SyntheticStreamingDataset: ts={ts} users_cumsum={self.ts_to_users_cumsum[self.ts]}"
+            f"DLRMv4SyntheticStreamingDataset: ts={ts} users_cumsum={self.ts_to_users_cumsum[self.ts]}"
         )
 
     def load_item(

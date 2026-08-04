@@ -17,7 +17,7 @@
 Utility functions for dataset processing.
 
 This module provides helper functions for parsing and processing data
-in the DLRMv3 dataset pipeline.
+in the DLRMv4 dataset pipeline.
 """
 
 import json

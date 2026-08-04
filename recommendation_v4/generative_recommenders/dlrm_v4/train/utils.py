@@ -36,17 +36,17 @@ from typing import (
 import gin
 import torch
 import torchrec
-from generative_recommenders.dlrm_v3.checkpoint import save_dmp_checkpoint, WINDOW_COMPLETE
-from generative_recommenders.dlrm_v3.configs import (
+from generative_recommenders.dlrm_v4.checkpoint import save_dmp_checkpoint, WINDOW_COMPLETE
+from generative_recommenders.dlrm_v4.configs import (
     get_embedding_table_config,
     get_hstu_configs,
 )
-from generative_recommenders.dlrm_v3.datasets.dataset import (
+from generative_recommenders.dlrm_v4.datasets.dataset import (
     collate_fn,
     Dataset,
     Samples,
 )
-from generative_recommenders.dlrm_v3.utils import get_dataset, MetricsLogger, Profiler
+from generative_recommenders.dlrm_v4.utils import get_dataset, MetricsLogger, Profiler
 from generative_recommenders.common import HammerKernel
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTU, DlrmHSTUConfig
 from torch import distributed as dist
@@ -1373,7 +1373,7 @@ def _log_unique_embedding_diag(
         return
     global _EMB_DIAG_NBATCH
     try:
-        from generative_recommenders.dlrm_v3.configs import YAMBDA_5B_CROSS_SPECS
+        from generative_recommenders.dlrm_v4.configs import YAMBDA_5B_CROSS_SPECS
 
         cross_caps = {name: n for (name, _k, n, _s) in YAMBDA_5B_CROSS_SPECS}
 
@@ -2948,7 +2948,7 @@ def streaming_train_eval_loop(
     # SAMPLES_COUNT/EPOCH_NUM progress metadata, and the per-window-AUC vs
     # auc_threshold convergence decision. Every method no-ops when mlperf_logger
     # is None, so the loop below calls them unconditionally.
-    from generative_recommenders.dlrm_v3.train.mlperf_logging_utils import (
+    from generative_recommenders.dlrm_v4.train.mlperf_logging_utils import (
         MLPerfRunTracker,
     )
 

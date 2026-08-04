@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # pyre-unsafe
-"""MLPerf Training compliance logging for the DLRMv3 streaming-train-eval path.
+"""MLPerf Training compliance logging for the DLRMv4 streaming-train-eval path.
 
 Rank-0-gated wrapper around ``mlperf_logging.mllog`` so the streaming loop emits
 the MLPerf event stream without every call site re-checking rank or the dep.

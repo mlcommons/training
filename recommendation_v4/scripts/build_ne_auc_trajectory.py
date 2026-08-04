@@ -15,7 +15,7 @@
 
 """Build a combined train+eval NE/AUC trajectory from a streaming-train-eval log.
 
-The streaming loop (generative_recommenders/dlrm_v3/train/utils.py) emits, via
+The streaming loop (generative_recommenders/dlrm_v4/train/utils.py) emits, via
 MetricsLogger.compute(), one line per logged step of the form:
 
   INFO:utils:train - Step 201 metrics: {'metric/lifetime_ne/listen_plus':

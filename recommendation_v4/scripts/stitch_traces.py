@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stitch per-rank Chrome traces from a dlrm_v3 run into one merged file.
+"""Stitch per-rank Chrome traces from a dlrm_v4 run into one merged file.
 
 When ``Profiler`` runs on multiple ranks, each rank writes its own file:
 

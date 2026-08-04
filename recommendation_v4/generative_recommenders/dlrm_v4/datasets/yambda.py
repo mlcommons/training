@@ -8,9 +8,9 @@
 
 # pyre-unsafe
 """
-Yambda dataset for the DLRMv3 HSTU `modules/` path.
+Yambda dataset for the DLRMv4 HSTU `modules/` path.
 
-Reads the parquets produced by `dlrm_v3/preprocess_public_data.py
+Reads the parquets produced by `dlrm_v4/preprocess_public_data.py
 --dataset yambda-<size>`. Each sample is one anchor LISTEN event with:
   * label = (played_ratio >= LISTEN_PLUS_THRESHOLD) — the listen_plus bit
   * a chronologically interleaved 3-pool history (listen+/like/skip), with
@@ -28,8 +28,8 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import polars as pl
 import torch
-from generative_recommenders.dlrm_v3.datasets.dataset import DLRMv3RandomDataset
-from generative_recommenders.dlrm_v3.datasets.utils import xxhash_cross
+from generative_recommenders.dlrm_v4.datasets.dataset import DLRMv4RandomDataset
+from generative_recommenders.dlrm_v4.datasets.utils import xxhash_cross
 from generative_recommenders.modules.dlrm_hstu import DlrmHSTUConfig
 from torchrec.sparse.jagged_tensor import KeyedJaggedTensor
 
@@ -183,8 +183,8 @@ class _FlatEventStore:
         logger.info(f"FlatEventStore saved to {cache_dir}")
 
 
-class DLRMv3YambdaDataset(DLRMv3RandomDataset):
-    """Yambda-5b dataset for the DLRMv3 HSTU modules/ path.
+class DLRMv4YambdaDataset(DLRMv4RandomDataset):
+    """Yambda-5b dataset for the DLRMv4 HSTU modules/ path.
 
     Args:
         hstu_config: DlrmHSTUConfig (must come from `get_hstu_configs("yambda-5b")`).
@@ -197,7 +197,7 @@ class DLRMv3YambdaDataset(DLRMv3RandomDataset):
         history_strategy: "interleaved" (equal per-pool L//3 cap, re-interleaved)
             or "last_n" (last history_length pooled events, no per-pool split).
         cross_specs: list of (name, keys, num_embeddings, salt). Source of truth
-            in `dlrm_v3/configs.py:YAMBDA_5B_CROSS_SPECS`.
+            in `dlrm_v4/configs.py:YAMBDA_5B_CROSS_SPECS`.
         is_inference: passed through to base class.
     """
 

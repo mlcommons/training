@@ -42,7 +42,7 @@ torchrec / fbgemm_gpu are all replaced; only the image's triton stays.
 
 ### Training configuration
 
-From `generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin`:
+From `generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin`:
 
 | parameter | value | gin binding |
 |---|---|---|
@@ -73,7 +73,7 @@ Effective global batch = `batch_size × world_size = 32 × 8 = 256` samples/step
 | `HIP_VISIBLE_DEVICES` / `CUDA_VISIBLE_DEVICES` | `0,1,2,3,4,5,6,7` | rank visibility |
 
 `TRITON_FULL_AUTOTUNE` is set automatically by the gin-driven bootstrap
-(`generative_recommenders.dlrm_v3.train._env_bootstrap.apply_env_bootstrap`),
+(`generative_recommenders.dlrm_v4.train._env_bootstrap.apply_env_bootstrap`),
 which runs in `train_ranker._main_func` BEFORE the triton kernel modules
 import — so the gin file is the source of truth.
 
@@ -157,7 +157,7 @@ Additional Python deps:
 
 ### Training configuration
 
-From `generative_recommenders/dlrm_v3/train/gin/yambda_5b.gin`:
+From `generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin`:
 
 | parameter | value | gin binding |
 |---|---|---|

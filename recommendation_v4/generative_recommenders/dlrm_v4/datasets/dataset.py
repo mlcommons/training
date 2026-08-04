@@ -14,7 +14,7 @@
 
 # pyre-unsafe
 """
-Dataset implementations for DLRMv3.
+Dataset implementations for DLRMv4.
 
 This module provides dataset classes for loading and processing recommendation
 data, including sample containers, collation functions, and random data generation.
@@ -32,7 +32,7 @@ from torchrec.streamable import Pipelineable
 
 
 logging.basicConfig(level=logging.INFO)
-logger: logging.Logger = logging.getLogger("dlrmv3_dataset")
+logger: logging.Logger = logging.getLogger("dlrmv4_dataset")
 
 
 @dataclass
@@ -155,7 +155,7 @@ def collate_fn(
 
 class Dataset:
     """
-    Base dataset class for DLRMv3.
+    Base dataset class for DLRMv4.
 
     Provides the interface for loading, accessing, and managing samples
     for recommendation model training and inference.
@@ -351,9 +351,9 @@ def get_random_data(
     return uih_features_kjt, candidates_features_kjt
 
 
-class DLRMv3RandomDataset(Dataset):
+class DLRMv4RandomDataset(Dataset):
     """
-    Dataset that generates random synthetic data for DLRMv3.
+    Dataset that generates random synthetic data for DLRMv4.
 
     Useful for testing and benchmarking without real data dependencies.
 

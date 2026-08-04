@@ -355,7 +355,7 @@ saab/env_str.default = "fp16"
 #   in the embedding all-to-all -> ~30-min NCCL watchdog timeout -> the whole job
 #   SIGABRTs. This was a DETERMINISTIC hang (same window/step every run; e.g.
 #   yambda-5b 4-node fp16 a2a hit it at window 235 / global step 43621).
-#   See generative_recommenders/dlrm_v3/train/utils.py
+#   See generative_recommenders/dlrm_v4/train/utils.py
 #   (_patch_fbgemm_lowmem_clamp_cast) for the full diagnosis + flight-recorder
 #   evidence.
 #

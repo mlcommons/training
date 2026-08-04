@@ -122,7 +122,7 @@
 #   are grep-able from the head node on both platforms.
 #
 # Usage:
-#   bash generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh \
+#   bash generative_recommenders/dlrm_v4/train/tests/streaming_resume_test.sh \
 #       --jobid <slurm-jobid> [--platform b200|mi350] [--scenario all]
 #       [--container <name>] [--data-path <path>] [--ckpt-root <path>] [--start-ts 150]
 #       [--num-train-batches 200] [--die-at-step 100]      # midwindow knobs
@@ -138,7 +138,7 @@ set -uo pipefail
 
 JOBID=""
 # Repo root is derived from THIS script's location
-# (<repo>/generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.sh —
+# (<repo>/generative_recommenders/dlrm_v4/train/tests/streaming_resume_test.sh —
 # four levels up), so the test is not pinned to any one user's home. Override with
 # --repo if the repo is mounted at a different path inside the container.
 _SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -270,7 +270,7 @@ esac
 echo "[$(date)] platform=$PLATFORM container=$CONTAINER data_path=${DATA_PATH:-<gin default>} ckpt_root=$CKPT_ROOT phase_timeout=${MW_TIMEOUT}s mw_run_timeout=${MW_RUN_TIMEOUT}s"
 
 mkdir -p "$LOG_DIR"
-PYHELPER="$REPO/generative_recommenders/dlrm_v3/train/tests/streaming_resume_test.py"
+PYHELPER="$REPO/generative_recommenders/dlrm_v4/train/tests/streaming_resume_test.py"
 
 # --- container helpers (inspect CKPT/dataset via docker exec — works whether the
 #     path is node-local on B200 or shared NFS on MI350) ---
