@@ -616,14 +616,27 @@ with nothing to spare. That minimum is a statistic over 20 seeds and can only
 move down as more seeds are collected: a seed faster than any in the sweep would
 cross the target before the first eval fires and train on to the next boundary,
 inflating its reported time to converge. So the start point is backed off by a
-fixed **margin of 2 eval blocks** — 2 x 2,293,760 = 4,587,520 samples. Putting
-the fit over a common denominator, flooring to whole samples, and subtracting
-the margin:
+fixed **margin of 2 eval blocks** — 2 x 2,293,760 = 4,587,520 samples.
+
+That margin is an exact multiple of 3, so it folds into the intercept rather
+than trailing the fit as a separate term (149,094,400 - 3 x 4,587,520 =
+135,331,840). Every value is unchanged, and the start point is a single
+expression:
 
 ```
-start_samples       = FLOOR((4480 * GBS + 149094400) / 3) - 2 * 2293760
-skip_eval_epoch_pct = start_samples / 2290835423
+start_eval_samples  = FLOOR((4480 * GBS + 135331840) / 3)
+skip_eval_epoch_pct = start_eval_samples / 2290835423
 ```
+
+![First eval_accuracy > 0.75 by global batch size, with the start-eval line](docs/images/skip_eval_start_by_gbs.png)
+
+The figure plots, for each GBS, the epoch at which the 20 seeds first cross AUC
+0.75 — min, max, median and mean — against the start-eval line this formula
+produces. All four statistics rise with batch size, which is why the start point
+has to be a line in GBS rather than a constant. The fit is built on the `min`
+curve (0.027 / 0.034 / 0.043) specifically, because a start point above it would
+cut off the fastest seed. And the dashed line runs strictly below `min` at every
+batch size: that visible gap is the safety margin.
 
 The margin is expressed in eval blocks rather than samples or epoch fraction
 because the eval grid is rounded to whole steps
@@ -638,7 +651,7 @@ back up into a whole missed eval.
 **Resulting values.** The knob takes the fraction, so divide by the epoch and
 round down to the printed precision:
 
-| GBS | `start_samples` | `skip_eval_epoch_pct` | first eval run | earliest crossing | margin | eval share |
+| GBS | `start_eval_samples` | `skip_eval_epoch_pct` | first eval run | earliest crossing | margin | eval share |
 |---|---|---|---|---|---|---|
 | 8192  | 57,344,000 | `0.025`  | eval #25 | eval #27 | 2 evals | 6.9% |
 | 16384 | 69,577,386 | `0.0303` | eval #31 | eval #34 | 3 evals | 6.7% |

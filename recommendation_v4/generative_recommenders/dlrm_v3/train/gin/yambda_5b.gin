@@ -736,9 +736,12 @@ edp/env_float.default = 0.001
 #   minimum exactly), and the minimum over 20 seeds can only move down as more
 #   seeds are collected -- a faster seed would cross the target before the first
 #   eval fires and train on to the next boundary, inflating its time-to-converge.
-#   So the start point is backed off by a MARGIN OF 2 EVAL BLOCKS:
-#       start_samples = FLOOR((4480*GBS + 149094400) / 3) - 2*2293760
-#       pct           = start_samples / total_train_samples
+#   So the start point is backed off by a MARGIN OF 2 EVAL BLOCKS (2*2,293,760 =
+#   4,587,520 samples). That margin is an exact multiple of 3, so it folds into
+#   the intercept (149,094,400 - 3*4,587,520 = 135,331,840) instead of trailing
+#   the fit as a separate term -- same values, one expression:
+#       start_eval_samples = FLOOR((4480*GBS + 135331840) / 3)
+#       pct                = start_eval_samples / total_train_samples
 #   One eval block is eval_interval_steps*GBS = 2,293,760 samples at all three
 #   GBS (280/140/70 steps). Use that, NOT the nominal EVAL_EVERY_DATA_PCT *
 #   total_train_samples (= 2,290,835): the grid is rounded to whole steps, so the
