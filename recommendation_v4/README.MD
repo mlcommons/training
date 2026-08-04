@@ -478,6 +478,14 @@ warmup ramps up to and then holds — the warmup schedule never overrides them.
 `start + (base - start) * min(1, gstep / LR_WARMUP_STEPS)`, keyed off the
 checkpoint-restored global step so it survives a resume unchanged.
 
+Everything the closed division fixes is emitted to the MLLog stream at
+`RUN_START`, read from the same gin bindings the model itself resolves, so the
+log cannot drift from the config: the Adam betas, epsilon and weight decay, the
+grad clip norm, both warmup knobs, both optimizer names and base LRs, the max
+sequence length, and the eval cadence. The closed rules pin each one, which is
+what makes "fixed" enforceable rather than merely documented — a value that is
+never logged can never be checked.
+
 Streaming and windowing knobs (`START_TS`, `NUM_TRAIN_TS`, `MIN_HISTORY`, the
 eval cadence) are listed under
 [Training data order](#training-data-order); the sparse all-to-all precision
@@ -686,6 +694,12 @@ sizes. The trainer logs the resolved threshold at startup:
 [skip-eval] skip_eval_epoch_pct=0.025 -> skip_eval_until_step=6992
             (total_train_samples=2290835423 global_batch_size=8192 -> skip_until_samples=57270885)
 ```
+
+Both this and `EVAL_EVERY_DATA_PCT` are logged at `RUN_START`, and the closed
+rules recompute the expected skip fraction from the logged `global_batch_size`
+using the formula above — so exporting the wrong one for your batch size now
+fails the compliance checker rather than silently shifting where measurement
+starts.
 
 Skipping never alters the eval grid or the training trajectory — it only removes
 early periodic passes. The end-of-run final eval always runs, and once eval

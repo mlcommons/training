@@ -203,6 +203,10 @@ class MLPerfLogger:
             ),
         )
         self.event(
+            key=c.OPT_GRADIENT_CLIP_NORM,
+            value=float(_gin_param("streaming_train_eval_loop.grad_clip_norm", 0.0)),
+        )
+        self.event(
             key=c.OPT_LR_WARMUP_STEPS,
             value=int(_gin_param("streaming_train_eval_loop.lr_warmup_steps", 0)),
         )
@@ -224,6 +228,27 @@ class MLPerfLogger:
             key="opt_sparse_base_learning_rate",
             value=_gin_param(
                 "sparse_optimizer_factory_and_class.learning_rate", None
+            ),
+        )
+        self.event(
+            key=c.MAX_SEQUENCE_LENGTH,
+            value=int(_gin_param("get_hstu_configs.max_seq_len", 4096)),
+        )
+        # Eval schedule. Convergence is reported on a fixed grid of
+        # eval_every_data_pct * train_samples blocks, so samples-to-converge is
+        # quantized to that grid and is only comparable against the RCPs if the
+        # grid matches. skip_eval_epoch_pct suppresses the early passes that
+        # cannot converge; it moves where the grid starts, not its spacing.
+        self.event(
+            key="eval_every_data_pct",
+            value=float(
+                _gin_param("streaming_train_eval_loop.eval_every_data_pct", 0.0)
+            ),
+        )
+        self.event(
+            key="skip_eval_epoch_pct",
+            value=float(
+                _gin_param("streaming_train_eval_loop.skip_eval_epoch_pct", 0.0)
             ),
         )
         self.end(key=c.INIT_STOP, sync=True)
