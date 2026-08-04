@@ -705,7 +705,7 @@ edp/env_float.default = 0.001
 # count of eval passes (this is what changed vs the old SKIP_EVAL=<N passes>):
 #     0.0    = OFF -> eval from the very first scheduled point.
 #     0.01   = start eval once 1% of the epoch has been trained.
-#     0.027  = DEFAULT -> start at 2.7% of the epoch (the GBS=8192 value; see
+#     0.025  = DEFAULT -> start at 2.5% of the epoch (the GBS=8192 value; see
 #              the per-GBS table below -- this knob is GBS-DEPENDENT).
 #   "Epoch" here is total_train_samples, the SAME denominator MLPerf EPOCH_NUM
 #   uses, so the value can be read straight off an epoch-vs-eval_accuracy plot.
@@ -726,23 +726,34 @@ edp/env_float.default = 0.001
 #   skip_eval_until_step=...` records the resolved threshold.
 #
 # CHOOSING A VALUE (derived from the 20-seed RCP sweep, target AUC 0.75)
-#   The best start point is the EARLIEST eval at which any seed crossed 0.75 --
-#   the latest point that still cannot miss a convergence. That minimum moves
-#   later in epoch terms as GBS grows, so it must scale with GBS. Fitting a line
-#   through the two endpoint measurements -- (8192, 61,931,520 samples) and
-#   (32768, 98,631,680) -- gives slope 4480/3 and intercept 149094400/3, i.e.
-#       start_samples = FLOOR((4480*GBS + 149094400) / 3)
+#   The latest start point that still cannot miss a convergence is the EARLIEST
+#   eval at which any seed crossed 0.75. That minimum moves later in epoch terms
+#   as GBS grows, so it must scale with GBS. Fitting a line through the two
+#   endpoint measurements -- (8192, 61,931,520 samples) and (32768, 98,631,680)
+#   -- gives slope 4480/3 and intercept 149094400/3.
+#
+#   That fit alone leaves NO headroom at 8192/32768 (it reproduces the measured
+#   minimum exactly), and the minimum over 20 seeds can only move down as more
+#   seeds are collected -- a faster seed would cross the target before the first
+#   eval fires and train on to the next boundary, inflating its time-to-converge.
+#   So the start point is backed off by a MARGIN OF 2 EVAL BLOCKS:
+#       start_samples = FLOOR((4480*GBS + 149094400) / 3) - 2*2293760
 #       pct           = start_samples / total_train_samples
-#   Resulting values (see README §10.2 for the full derivation):
-#       GBS     pct       first eval run   earliest crossing   eval share
-#       8192    0.027     eval #27         eval #27            4.8%
-#       16384   0.0323    eval #33         eval #34            5.1%
-#       32768   0.043     eval #43         eval #43            4.4%
-#   (vs ~29% eval share with no skipping.) Set this per run alongside
-#   BATCH_SIZE -- the default below is the GBS=8192 value, NOT correct for other
-#   GBS. The fit tracks the MINIMUM over 20 seeds, so at 8192/32768 there is no
-#   headroom: a seed faster than any in the sweep would cross the target before
-#   the first eval fires and train on to the next boundary.
+#   One eval block is eval_interval_steps*GBS = 2,293,760 samples at all three
+#   GBS (280/140/70 steps). Use that, NOT the nominal EVAL_EVERY_DATA_PCT *
+#   total_train_samples (= 2,290,835): the grid is rounded to whole steps, so the
+#   nominal value leaves the margin a fraction of a step short and the CEIL in
+#   the threshold resolution rounds it back up into a whole MISSED eval.
+#   Resulting values (see README section 5 for the full derivation):
+#       GBS     pct       first eval run   earliest crossing   margin   eval share
+#       8192    0.025     eval #25         eval #27            2        6.9%
+#       16384   0.0303    eval #31         eval #34            3        6.7%
+#       32768   0.041     eval #41         eval #43            2        5.5%
+#   (vs ~29% eval share with no skipping, and 4.8/5.1/4.4% with no margin -- the
+#   margin costs <3 min of wall clock.) 16384 gets a 3rd eval of margin for free
+#   because the fit interpolates below its observed crossing there. Set this per
+#   run alongside BATCH_SIZE -- the default below is the GBS=8192 value, NOT
+#   correct for other GBS.
 #
 # RESUME SAFETY / RANK SAFETY
 #   The threshold depends only on total_train_samples and the global batch size,
@@ -759,7 +770,7 @@ edp/env_float.default = 0.001
 # Override via $SKIP_EVAL_EPOCH_PCT.
 streaming_train_eval_loop.skip_eval_epoch_pct = @seep/env_float()
 seep/env_float.key     = "SKIP_EVAL_EPOCH_PCT"
-seep/env_float.default = 0.027
+seep/env_float.default = 0.025
 # Double-buffer windows: prepare the next window (index mask + first-batch
 # prefetch) in a background thread during the current window's compute, hiding
 # the per-window reset. Needs persistent_loader=1. Override via env.

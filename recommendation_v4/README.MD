@@ -513,7 +513,8 @@ below. The alternative per-window cadence (`EVAL_EVERY_N_WINDOWS`) is mutually
 exclusive with it.
 
 Early eval points are suppressed by `SKIP_EVAL_EPOCH_PCT`, since no seed
-converges before ~2.7% of an epoch; see
+converges before ~2.7% of an epoch (at GBS 8192; later at larger batch sizes);
+see
 [Choosing the eval schedule](#choosing-the-eval-schedule-for-a-given-global-batch-size).
 
 ### Evaluation thoroughness
@@ -571,8 +572,8 @@ The rest of the parameters, including the following, are **fixed and not tunable
 - **Warmup steps = `24000`**.
 - **`skip_eval_epoch_pct`** — eval rounds are skipped until this fraction of the
   epoch has been trained, then convergence is checked at every round. The value
-  is global-batch-size dependent (`0.027` at GBS 8192, `0.0323` at 16384,
-  `0.043` at 32768); fixed for submission. See below for how it is derived.
+  is global-batch-size dependent (`0.025` at GBS 8192, `0.0303` at 16384,
+  `0.041` at 32768); fixed for submission. See below for how it is derived.
 
 ### Choosing the eval schedule for a given global batch size
 
@@ -584,12 +585,12 @@ only), so each eval costs ~0.41x its preceding training block, and running every
 eval point spends **~29% of end-to-end time on evaluation**. Since convergence
 never happens before ~2.7% of an epoch (RCP table above), those early eval
 points carry no signal. `SKIP_EVAL_EPOCH_PCT` suppresses them and cuts eval to
-**~5%** of end-to-end time.
+**~6%** of end-to-end time.
 
-**Derivation from the RCP sweep.** The ideal start point is the latest one that
-still cannot miss a convergence: the *earliest* eval at which any seed crosses
-AUC 0.75. Because eval fires on a fixed grid of 2,293,760-sample blocks, that
-minimum always lands on a block boundary, and the sweep gives it directly:
+**Derivation from the RCP sweep.** The latest start point that still cannot miss
+a convergence is the *earliest* eval at which any seed crosses AUC 0.75. Because
+eval fires on a fixed grid of 2,293,760-sample blocks, that minimum always lands
+on a block boundary, and the sweep gives it directly:
 
 | GBS | earliest crossing | = blocks | = samples |
 |---|---|---|---|
@@ -607,41 +608,60 @@ slope     = (98631680 - 61931520) / (32768 - 8192) = 1493.33 = 4480/3
 intercept = 61931520 - (4480/3) * 8192             = 49698133.33 = 149094400/3
 ```
 
-which is where the two constants come from. Putting both over the common
-denominator and flooring to whole samples:
+which is where the two constants come from.
+
+**Safety margin.** Taken bare, the fit reproduces the measurement exactly at
+8192 and 32768, so eval would start on precisely the earliest observed crossing
+with nothing to spare. That minimum is a statistic over 20 seeds and can only
+move down as more seeds are collected: a seed faster than any in the sweep would
+cross the target before the first eval fires and train on to the next boundary,
+inflating its reported time to converge. So the start point is backed off by a
+fixed **margin of 2 eval blocks** — 2 x 2,293,760 = 4,587,520 samples. Putting
+the fit over a common denominator, flooring to whole samples, and subtracting
+the margin:
 
 ```
-start_samples       = FLOOR((4480 * GBS + 149094400) / 3)
+start_samples       = FLOOR((4480 * GBS + 149094400) / 3) - 2 * 2293760
 skip_eval_epoch_pct = start_samples / 2290835423
 ```
 
-**Resulting values.** The knob takes the fraction, so divide by the epoch:
+The margin is expressed in eval blocks rather than samples or epoch fraction
+because the eval grid is rounded to whole steps
+(`eval_interval_steps = ROUND(EVAL_EVERY_DATA_PCT * total_train_steps)`, giving
+280 / 140 / 70 steps at GBS 8192 / 16384 / 32768). One block is therefore
+2,293,760 samples at all three batch sizes, slightly more than the nominal
+`EVAL_EVERY_DATA_PCT * 2290835423 = 2,290,835`. Using the nominal value instead
+would leave the margin a fraction of a step short of the grid, and the `CEIL`
+when the fraction is resolved to a step threshold would round that shortfall
+back up into a whole missed eval.
 
-| GBS | `start_samples` | `skip_eval_epoch_pct` | first eval run | earliest crossing | eval share |
-|---|---|---|---|---|---|
-| 8192  | 61,931,520 | `0.027`  | eval #27 | eval #27 | 4.8% |
-| 16384 | 74,164,906 | `0.0323` | eval #33 | eval #34 | 5.1% |
-| 32768 | 98,631,680 | `0.043`  | eval #43 | eval #43 | 4.4% |
+**Resulting values.** The knob takes the fraction, so divide by the epoch and
+round down to the printed precision:
+
+| GBS | `start_samples` | `skip_eval_epoch_pct` | first eval run | earliest crossing | margin | eval share |
+|---|---|---|---|---|---|---|
+| 8192  | 57,344,000 | `0.025`  | eval #25 | eval #27 | 2 evals | 6.9% |
+| 16384 | 69,577,386 | `0.0303` | eval #31 | eval #34 | 3 evals | 6.7% |
+| 32768 | 94,044,160 | `0.041`  | eval #41 | eval #43 | 2 evals | 5.5% |
 
 "Eval share" is eval time as a fraction of end-to-end time from `run_start` to
 the eval that crosses AUC 0.75, averaged over the 20 seeds — down from ~29% with
-no skipping.
+no skipping, and ~1-2 percentage points above what the zero-margin start point
+would cost (4.8% / 5.1% / 4.4%). In wall-clock terms the margin buys its
+headroom for under three minutes: at GBS 8192 the mean run goes from 2h02m to
+2h05m, at 16384 from 1h28m to 1h29m, and at 32768 from 1h06m to 1h07m.
 
-At the two endpoints the fit reproduces the measurement exactly, so eval starts
-on precisely the earliest observed crossing. GBS 16384 is interpolated: the line
-predicts 74.2M against an observed 78.0M, which rounds up to eval #33 and so
-starts one block before its earliest crossing. Note that the fit tracks the
-*minimum* over 20 seeds, a statistic that can only move down as more seeds are
-collected — a seed faster than any in the sweep would cross the target before
-the first eval fires and keep training to the next eval point.
+GBS 16384 gets a third eval of margin for free: the fit interpolates there,
+predicting 74.2M against an observed earliest crossing of 78.0M, so its start
+point was already one block early before the margin was applied.
 
 **Setting it.** Export `SKIP_EVAL_EPOCH_PCT` alongside `BATCH_SIZE` — the gin
-default (`0.027`) is the GBS 8192 value and is **not** correct at other batch
+default (`0.025`) is the GBS 8192 value and is **not** correct at other batch
 sizes. The trainer logs the resolved threshold at startup:
 
 ```
-[skip-eval] skip_eval_epoch_pct=0.027 -> skip_eval_until_step=7551
-            (total_train_samples=2290835423 global_batch_size=8192 -> skip_until_samples=61852556)
+[skip-eval] skip_eval_epoch_pct=0.025 -> skip_eval_until_step=6992
+            (total_train_samples=2290835423 global_batch_size=8192 -> skip_until_samples=57270885)
 ```
 
 Skipping never alters the eval grid or the training trajectory — it only removes
