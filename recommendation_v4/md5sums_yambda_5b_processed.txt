@@ -3,20 +3,37 @@
 # Format: standard `md5sum` output -> "<md5hash>  <relative_path>".
 # Paths are relative to ${DLRM_DATA_PATH}/processed_5b/.
 #
-# These hashes are PLACEHOLDERS (TODO). They must be generated from a canonical
-# preprocessing run before this benchmark is submitted, e.g.:
+# Verify with:
+#
+#   DLRM_DATA_PATH=/path/to/dlrm_data ./verify_dataset.sh
+#
+# or directly:
 #
 #   cd "${DLRM_DATA_PATH}/processed_5b"
-#   md5sum train_sessions.parquet test_events.parquet session_index.parquet \
-#          item_popularity.npy split_meta.json \
-#     > <repo>/md5sums_yambda_5b_processed.txt
+#   md5sum -c <repo>/md5sums_yambda_5b_processed.txt
 #
-# Until then `verify_dataset.sh` falls back to an existence/layout check and
-# warns that checksums are not yet pinned.
+# These pin the canonical preprocessing output: 47,618,139,057 bytes across the
+# five files below, produced by scripts/crusoe_spur/preprocess_5b.sbatch from
+# the yandex/yambda HuggingFace snapshot
+# dd6f3a19eef5866e346c3270e098baa641a44948. Regenerate with
+# scripts/crusoe_spur/md5_processed_5b.sbatch.
 #
-# TODO(rcp/data): replace the lines below with real md5 hashes.
-TODO_GENERATE_HASH  train_sessions.parquet
-TODO_GENERATE_HASH  test_events.parquet
-TODO_GENERATE_HASH  session_index.parquet
-TODO_GENERATE_HASH  item_popularity.npy
-TODO_GENERATE_HASH  split_meta.json
+# Not covered here: hstu_cache_L4086/ is a derived mmap cache the dataset
+# rebuilds on demand, and shared_metadata/ holds unmodified upstream artifacts.
+#
+# Note that these hash the byte-for-byte artifacts, so they verify a copy or a
+# download of this dataset. Re-running preprocessing on another machine can
+# produce logically identical parquet files with different bytes, since the
+# parquet writer records its own version and row-group layout.
+#
+# Sizes, for a quick sanity check before hashing 47.6 GB:
+#     46791277705  train_sessions.parquet
+#       600103400  session_index.parquet
+#       151632471  test_events.parquet
+#        75125120  item_popularity.npy
+#             361  split_meta.json
+fc7c4c5d42d43f0d1f1ed6033ad0eb6f  train_sessions.parquet
+462a8dc32205a9d2130cb42a0a06067c  test_events.parquet
+484c03ecea413c3ff1e4aa319de2b15a  session_index.parquet
+6a586fcf43109e34837f68d73213c01d  item_popularity.npy
+175984de3aadf6137922c4c30a09d69c  split_meta.json
