@@ -544,22 +544,29 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
                 fcntl.flock(lf, fcntl.LOCK_UN)
 
     def _load_metadata(self, metadata_dir: str) -> None:
-        item_pop_path = os.path.join(metadata_dir, "item_popularity.npy")
-        if os.path.exists(item_pop_path):
-            item_popularity = np.load(item_pop_path)
-        else:
-            # Fallback: derive vocab size from the artist+album maps.
-            item_popularity = None
-
         artist_map = pl.read_parquet(os.path.join(metadata_dir, "artist_item_mapping.parquet"))
         album_map = pl.read_parquet(os.path.join(metadata_dir, "album_item_mapping.parquet"))
         n_items = int(
             max(
                 int(artist_map["item_id"].max()) + 1,
                 int(album_map["item_id"].max()) + 1,
-                len(item_popularity) if item_popularity is not None else 0,
             )
         )
+        # item_popularity.npy sits next to the sessions, not in metadata_dir.
+        # It holds one entry per item, so a length that disagrees with the
+        # mappings means the two came from different preprocessing runs. That
+        # would resize the embedding tables without raising, which changes the
+        # model the RCPs describe, so refuse to run instead.
+        item_pop_path = os.path.join(self._processed_dir, "item_popularity.npy")
+        if os.path.exists(item_pop_path):
+            n_popularity = len(np.load(item_pop_path, mmap_mode="r"))
+            if n_popularity != n_items:
+                raise ValueError(
+                    f"item_popularity.npy has {n_popularity} entries but the "
+                    f"artist/album mappings describe {n_items} items. "
+                    f"{item_pop_path} and {metadata_dir} are out of sync; "
+                    "re-run preprocessing so both come from the same pass."
+                )
         self.item_to_artist: np.ndarray = np.zeros(n_items, dtype=np.int64)
         valid = artist_map.filter(pl.col("item_id") < n_items)
         self.item_to_artist[valid["item_id"].to_numpy()] = valid["artist_id"].to_numpy()
