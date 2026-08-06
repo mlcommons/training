@@ -1,0 +1,43 @@
+# SHA-256 checksums for the derived flat-event cache (processed_5b/hstu_cache_L4086/).
+#
+# Format: standard `sha256sum` output -> "<sha256hash>  <relative_path>".
+# Paths are relative to ${DLRM_DATA_PATH}/processed_5b/.
+#
+# Verify with:
+#
+#   DLRM_DATA_PATH=/path/to/dlrm_data ./verify_dataset.sh
+#
+# or directly:
+#
+#   cd "${DLRM_DATA_PATH}/processed_5b"
+#   sha256sum -c <repo>/sha256sums_yambda_5b_cache.txt
+#
+# These pin 227,241,207,610 bytes across the sixteen files below: the mmap store
+# DLRMv4YambdaDataset builds from train_sessions.parquet on first use.
+#
+# Unlike the parquet checksums in md5sums_yambda_5b_processed.txt, these verify a
+# LOCALLY BUILT cache as well as a downloaded one. The build is deterministic:
+# sessions are sorted by (uid, session_id), which is a total order, and the .npy
+# format records only dtype and shape, so nothing run-specific reaches the bytes.
+# Validated by rebuilding from the same train_sessions.parquet on a different
+# host -- all sixteen files reproduced byte-for-byte.
+#
+# positions_L4086.npy and anchor_ts_L4086.npy are versioned by min_history. These
+# hashes are for the default floor (min_history == history_length == 4086); a run
+# with a different floor writes differently-named files and these will not apply.
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  hstu_cache_L4086/_READY
+42247ad5f10013bf1fe414175c76e08de0e6239144b9416ed0cf4f7b67f9df80  hstu_cache_L4086/anchor_ts_L4086.npy
+0f8781f498d8aa5df103ea45075c8b55df02338c514ff02e3ae17130caa6db3c  hstu_cache_L4086/flat_event_types.npy
+65be7d0af07c30b639d731c9c09c4af4e64dcad964872e65c42dcf6882e7c705  hstu_cache_L4086/flat_is_like.npy
+08a4ad3222205e27c029677f5d475166550093507a0f88063ce79a9b1c54376d  hstu_cache_L4086/flat_is_listen_plus.npy
+43d46dddfc1c1ead520b694afc9f6542da8eb52e93559cdeb54bb1f494777d47  hstu_cache_L4086/flat_is_organic.npy
+bc4f8fe47ef4c12ffd7cd2e4977f8ad045b5cbec879610ecb1fbe637a8450d35  hstu_cache_L4086/flat_is_skip.npy
+7ae0f3e5740c932b2ea074c4b5aaed30156088a9231d392f875f13facd59ddc8  hstu_cache_L4086/flat_item_ids.npy
+cbb46a73876588dce07d35fe0aa9556c3e203a5b63e6aadf0871dc5f38dad4f4  hstu_cache_L4086/flat_played_ratio.npy
+6d889e2aedb8f80393ba9bb8d99300984d8b3e749e8ec0e81f633988326b34de  hstu_cache_L4086/flat_timestamps.npy
+ae1488572ad46e1252ace1b7b0ec9a358b5bbf9e4f0d8e10a577d3bd4289fa7a  hstu_cache_L4086/flat_uid.npy
+3e8e3a7ecf68b4b4d69de985e6004e3afdbff19008d3dd8d1d992443d5aa365b  hstu_cache_L4086/positions_L4086.npy
+dab13cf71beb3c57e29e3eff68c38f3db69eb79533ede9a9eb727bfdce3eefa3  hstu_cache_L4086/store_meta.json
+aa3f4073761b68a4f240371f3af14947830d4484e0753249ce844eeeeff9436b  hstu_cache_L4086/unique_uids.npy
+d23230058991edfbfe4caeeceacecf7506f47b1e7fb8254f9c6bb1f588a6776a  hstu_cache_L4086/user_end.npy
+0aa433a9dcda2868f9f765f5561ea1041c7340f323e0f84949b2e8ac963e8764  hstu_cache_L4086/user_start.npy

@@ -57,11 +57,70 @@ Full environment pinning, kernel selection and per-platform notes are in
 
 ### Steps to download and verify data
 
+There are two ways to get the data. Option A downloads a ready-to-train copy
+from MLCommons. Option B builds it from the upstream HuggingFace release. Both
+end at a tree the trainer accepts, but they deliver different files:
+
+```
+$DLRM_DATA_PATH/                                          A       B
+├── processed_5b/
+│   ├── hstu_cache_L4086/            227.24 GB       download  built on 1st run
+│   ├── item_popularity.npy              75 MB       download  preprocessing
+│   ├── train_sessions.parquet        46.79 GB          --     preprocessing
+│   ├── session_index.parquet           600 MB          --     preprocessing
+│   ├── test_events.parquet             152 MB          --     preprocessing
+│   └── split_meta.json                  361 B          --     preprocessing
+└── shared_metadata/
+    ├── album_item_mapping.parquet     54.5 MB       download  download
+    └── artist_item_mapping.parquet    38.3 MB       download  download
+```
+
+The trainer opens only `hstu_cache_L4086/` and the two mappings.
+`item_popularity.npy` is read solely to cross-check the vocabulary size against
+the mappings. Option A therefore ships no parquet: `train_sessions.parquet` is
+the input the cache is built from, and the other three files are preprocessing
+outputs nothing reads.
+
+#### Option A — download the prepared dataset
+
+227.41 GB, ready to train with no preprocessing and no cache build. Needs
+[rclone](https://rclone.org/downloads/); the endpoint and credentials are
+published with the submission package.
+
 ```bash
-# download + preprocess the dataset
+export DLRM_DATA_PATH=/data/mlperf_dlrm_v4
+rclone config create mlperf-dlrmv4 s3 provider=Cloudflare \
+    access_key_id=<KEY> secret_access_key=<SECRET> \
+    endpoint=<ENDPOINT> no_check_bucket=true
+
+rclone copy --progress mlperf-dlrmv4:<BUCKET>/dlrm_v4_yambda_5b "$DLRM_DATA_PATH"
+```
+
+Verify:
+
+```bash
+DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./verify_dataset.sh
+```
+
+This is the same script Option B uses; it detects which layout is present and
+checks what it finds. For Option A that is the two mappings and
+`item_popularity.npy` against
+[`md5sums_yambda_5b_processed.txt`](md5sums_yambda_5b_processed.txt), and the
+sixteen cache files against
+[`sha256sums_yambda_5b_cache.txt`](sha256sums_yambda_5b_cache.txt).
+
+Most of the transfer buys you a cache build that needs ~190 GB of RAM, which is
+the binding constraint on smaller hosts. If you would rather build it, take
+Option B — the cache is fully derived from `train_sessions.parquet`, and the two
+routes converge on byte-identical files (see below).
+
+#### Option B — build from the upstream HuggingFace release
+
+```bash
+# download raw + preprocess (~53 min for 5b, ~2 min for 50m)
 DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./download_dataset.sh
 
-# verify the preprocessed dataset
+# verify the preprocessed files
 DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./verify_dataset.sh
 ```
 
@@ -69,14 +128,30 @@ DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./verify_dataset.sh
   in `generative_recommenders.dlrm_v4.preprocess_public_data` (HuggingFace
   download + temporal split + session segmentation + item-popularity counts).
   The pipeline itself is described in
-  [§3 Data preprocessing](#data-preprocessing).
+  [§3 Data preprocessing](#data-preprocessing). It pulls 38.3 GB from the
+  `yandex/yambda` repository — `flat/5b/multi_event.parquet` plus the two item
+  mappings — not the full 195 GB repository.
 - [`verify_dataset.sh`](verify_dataset.sh) checks the preprocessed files against
-  [`md5sums_yambda_5b_processed.txt`](md5sums_yambda_5b_processed.txt) (falls
-  back to a layout check until the canonical checksums are pinned).
+  [`md5sums_yambda_5b_processed.txt`](md5sums_yambda_5b_processed.txt). Those
+  hash byte-for-byte artifacts, so they verify a copy or a download; re-running
+  preprocessing elsewhere can produce logically identical parquet files with
+  different bytes.
+- The flat-event cache is built on the first training run, not here. Re-run
+  `verify_dataset.sh` afterwards and it will additionally check the cache
+  against [`sha256sums_yambda_5b_cache.txt`](sha256sums_yambda_5b_cache.txt).
+  That works because the build is deterministic: sessions are sorted by
+  `(uid, session_id)`, which is a total order, and `.npy` records only dtype and
+  shape, so nothing run-specific reaches the bytes. Rebuilding from the same
+  `train_sessions.parquet` on a different host reproduces all sixteen files
+  byte-for-byte, so a locally built cache verifies against the same hashes as
+  the Option A download.
+
+Budget ~313 GB of disk for the peak (raw + preprocessed + cache) and a host with
+~190 GB of RAM for the cache build. Deleting `raw/` after preprocessing brings
+the steady state to ~275 GB.
 
 For smaller variants (`yambda-50m` / `yambda-500m`) substitute the dataset name
-(`DATASET=yambda-50m ./download_dataset.sh`). Preprocessing takes ~2 min for 50m
-and ~53 min for 5b end-to-end.
+(`DATASET=yambda-50m ./download_dataset.sh`).
 
 ### Steps to run and time
 
