@@ -83,20 +83,24 @@ outputs nothing reads.
 
 #### Option A — download the prepared dataset
 
-227.41 GB, ready to train with no preprocessing and no cache build. Needs
-[rclone](https://rclone.org/downloads/); the endpoint and credentials are
-published with the submission package.
+227.41 GB across 19 files, ready to train with no preprocessing and no cache
+build. Hosted on the
+[MLCommons training data page](https://training.mlcommons-storage.org/index.html#dlrm-v4-benchmark)
+and fetched with the standard MLCommons R2 downloader:
 
 ```bash
 export DLRM_DATA_PATH=/data/mlperf_dlrm_v4
-rclone config create mlperf-dlrmv4 s3 provider=Cloudflare \
-    access_key_id=<KEY> secret_access_key=<SECRET> \
-    endpoint=<ENDPOINT> no_check_bucket=true
-
-rclone copy --progress mlperf-dlrmv4:<BUCKET>/dlrm_v4_yambda_5b "$DLRM_DATA_PATH"
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+    -d "$DLRM_DATA_PATH" \
+    https://training.mlcommons-storage.org/metadata/dlrmv4_dataset.uri
 ```
 
-Verify:
+Omitting `-d` downloads into `./dlrmv4_dataset/` instead, in which case point
+`DLRM_DATA_PATH` at that directory. Either way the result is the `processed_5b/`
+and `shared_metadata/` tree above; the downloader md5-verifies every file as it
+goes.
+
+Verify independently:
 
 ```bash
 DLRM_DATA_PATH=/data/mlperf_dlrm_v4 ./verify_dataset.sh
