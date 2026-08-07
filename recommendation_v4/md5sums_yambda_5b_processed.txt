@@ -14,6 +14,12 @@
 #   cd "${DLRM_DATA_PATH}/processed_5b"
 #   md5sum -c <repo>/md5sums_yambda_5b_processed.txt
 #
+# The direct form assumes the full local-build layout. A prepared download from
+# MLCommons ships no parquet -- only item_popularity.npy and the two mappings of
+# the seven below -- so use verify_dataset.sh, which checks what is present, or
+# add --ignore-missing. The derived cache that download carries is covered
+# separately by sha256sums_yambda_5b_cache.txt.
+#
 # These pin the canonical preprocessing output: 47,710,942,572 bytes across the
 # seven files below, produced by ./download_dataset.sh from the yandex/yambda
 # HuggingFace snapshot dd6f3a19eef5866e346c3270e098baa641a44948.
