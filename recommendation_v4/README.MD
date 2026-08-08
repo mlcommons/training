@@ -830,10 +830,10 @@ sizes. The trainer logs the resolved threshold at startup:
 ```
 
 Both this and `EVAL_EVERY_DATA_PCT` are logged at `RUN_START`, and the closed
-rules recompute the expected skip fraction from the logged `global_batch_size`
-using the formula above — so exporting the wrong one for your batch size now
-fails the compliance checker rather than silently shifting where measurement
-starts.
+rules recompute the expected start point from the logged `global_batch_size`
+using the formula above, then require the run's first `eval_accuracy` to land on
+exactly that eval — so exporting the wrong one for your batch size now fails the
+compliance checker rather than silently shifting where measurement starts.
 
 Skipping never alters the eval grid or the training trajectory — it only removes
 early periodic passes. The end-of-run final eval always runs, and once eval
