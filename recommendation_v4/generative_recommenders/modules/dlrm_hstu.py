@@ -19,7 +19,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, Final, List, NamedTuple, Optional, Tuple
 
 import torch
 from generative_recommenders.common import (
@@ -289,29 +289,102 @@ class DlrmHSTU(HammerModule):
             LayerNorm(hstu_configs.hstu_transducer_embedding_dim),
         ).apply(init_mlp_weights_optional_bias)
 
-    # -- FLOPs estimation -----------------------------------------------------
-    # Convention matches TorchTitan / Primus-DLRM: matmul = 6 × M × N × K
-    # (×3 fwd+bwd, ×2 FMA), attention = 2 matmuls (Q·K^T + att·V).
-    # Embedding lookups excluded — they're memory-bound, not compute.
+    # ========================= FLOPs estimation ==============================
+    # An HSTU layer is three GEMM groups. With S = sequence positions,
+    # D = transducer dim, H = heads, d_qk / d_v = per-head Q/K and V/U dims:
     #
-    # HSTU vs OneTrans: HSTU collapses attention + FFN into a single UVQK
-    # projection plus SiLU(U) ⊙ y elementwise gating. There is NO separate
-    # FFN block (which dominates FLOPs in a standard transformer), so HSTU
-    # is intentionally compute-leaner per layer for the same N.
+    #   UVQK projection   S · D · H·(2·d_qk + 2·d_v)  MACs   (emits U, V, Q, K)
+    #   attention         S²/2 · H·(d_qk + d_v)       MACs   (Q·K^T, then att·V)
+    #   output projection S · (3·H·d_v) · D           MACs
+    #
+    # MULTIPLIERS. 2 FLOPs per MAC. Weight GEMMs ×3 for fwd+bwd (backward
+    # computes both dX and dW). Attention ×3.5, not ×3: forward is 2 GEMMs
+    # (Q·K^T, att·V) while backward needs ~5 to produce dQ/dK/dV, i.e. ~2.5×
+    # forward. Attention additionally ×1/2 for causality — HSTU attention is
+    # causal (STULayerConfig(causal=True)) and the kernel's key loop stops at
+    # the diagonal (`high = start_m + BLOCK_M` in triton_hstu_attention), so the
+    # upper triangle is never evaluated and counting full S² would overstate
+    # required work 2× on the term that dominates at S=4096.
+    #
+    # Both choices matter: at the yambda-5b shape attention is ~57% of the
+    # total, so charging ×3 instead of ×3.5 would move it by −8% and dropping
+    # the causal ×1/2 by +57%. These are not cosmetic conventions.
+    #
+    # WHY THE ODD-LOOKING COEFFICIENTS ARE RIGHT (verified against real weight
+    # shapes, not inferred):
+    #   * 4·D output width on UVQK — `_uvqk_weight` is (D, (2·d_v+2·d_qk)·H)
+    #     = (512, 2048) = (D, 4D), since H·d_qk == H·d_v == D here.
+    #   * 3·H·d_v input width on the output projection — `_output_weight` is
+    #     (3·H·d_v, D) = (1536, 512), because hstu_compute_output is called with
+    #     concat_u=True, concat_x=True: the projection consumes a concatenation
+    #     of the normed attention output, the gate U, and the residual X.
+    #   * D is `hstu_transducer_embedding_dim`, NOT the embedding-table dim.
+    #     Both are 512 in yambda-5b but only the former is the width the
+    #     layer's GEMMs see, and the two are independently settable.
+    #
+    # RELATION TO THE PUBLISHED DLRMv3 FORMULA [1],
+    #     FLOP_fwd = 2 · layers · (S²·D/2 + 4·S·D² + 3·S·D²)
+    # whose three terms line up 1:1 with attn / uvqk / out above. Per-layer
+    # forward MACs at S=4096:
+    #
+    #   term                 here     DLRMv3
+    #   UVQK                4.29G      4.29G     agree
+    #   output projection   3.22G      3.22G     agree
+    #   attention           8.59G      4.29G     differ 2×
+    #
+    # The GEMM terms match exactly, including the non-obvious 3 on the output
+    # projection, which independently corroborates the concat_u/concat_x reading
+    # above. The attention terms do not: S²·D/2 is the cost of ONE causal
+    # attention GEMM, but there are two (Q·K^T and att·V), each H·d = D wide.
+    # It is not a config difference — the reference dlrm_v3 config sets
+    # num_heads=4 and attn_qk_dim=attn_linear_dim=128, identical to here — and
+    # the `/2` itself is a legitimate causal factor; the second GEMM simply
+    # appears to have been dropped. Recomputed with both GEMMs that formula
+    # gives ~395 GFLOP/sample forward rather than the published ~260.
+    #
+    # Note also that the 3× output projection is specific to this HSTU variant.
+    # An implementation that skips the U/X concatenation projects H·d_v → D and
+    # so carries that term at 1×, which is an architectural difference rather
+    # than a disagreement about how to count.
+    #
+    # EXCLUDED (all of which make this estimate slightly conservative):
+    #   * embedding lookups and the sparse all-to-all — memory/network bound,
+    #     a large share of step time but not of FLOPs;
+    #   * layer norms, SiLU gating, dropout — elementwise;
+    #   * the preprocessor item MLP — runs per candidate (~9), not per position;
+    #   * the causal ×1/2 is applied uniformly, but the leading contextual
+    #     tokens actually attend bidirectionally (the kernel takes low=0,
+    #     high=seq_len for start_m < contextual_seq_len). At 8 contextual tokens
+    #     against S=4096 that understates attention by ~0.4%.
+    #
+    # There is deliberately no FFN term: HSTU collapses attention and FFN into
+    # the single UVQK projection plus SiLU(U) ⊙ y elementwise gating, so unlike
+    # a standard transformer layer there is no separate FFN block to charge.
+    #
+    # [1] https://mlcommons.org/2026/02/dlrmv3-inference-meta/
+    #
+    # Final[] so the values stay TorchScript-safe constants if this module is
+    # ever scripted (main_forward guards the jagged call, but be defensive).
+    _FLOPS_PER_MAC: Final[float] = 2.0
+    _GEMM_FWD_BWD: Final[float] = 3.0  # backward computes dX and dW
+    _ATTN_FWD_BWD: Final[float] = 3.5  # backward computes dQ/dK/dV, ~2.5× fwd
+
     def _hstu_layer_flops(
         self, n_tokens_linear: float, n_tokens_attn_sq: float
     ) -> float:
         """Per-layer FLOPs given linear-op token count and attention-token²
-        count. Dense estimate uses ``N`` and ``N²``; jagged estimate
+        count. Dense estimate uses ``S`` and ``S²``; jagged estimate
         substitutes ``mean(s_i)`` and ``mean(s_i²)``."""
         cfg = self._hstu_configs
-        D = cfg.hstu_embedding_table_dim
+        D = cfg.hstu_transducer_embedding_dim
         H = cfg.hstu_num_heads
         hd = cfg.hstu_attn_linear_dim  # V/U head dim
-        qd = cfg.hstu_attn_qk_dim       # Q/K head dim
-        uvqk = 6 * n_tokens_linear * D * (2 * hd + 2 * qd) * H
-        attn = 6 * n_tokens_attn_sq * H * (qd + hd)  # Q·K^T + att·V
-        out = 6 * n_tokens_linear * (3 * H * hd) * D
+        qd = cfg.hstu_attn_qk_dim  # Q/K head dim
+        gemm = self._FLOPS_PER_MAC * self._GEMM_FWD_BWD  # 6
+        attn_mult = self._FLOPS_PER_MAC * self._ATTN_FWD_BWD  # 7
+        uvqk = gemm * n_tokens_linear * D * (2 * hd + 2 * qd) * H
+        attn = attn_mult * (n_tokens_attn_sq / 2) * H * (qd + hd)
+        out = gemm * n_tokens_linear * (3 * H * hd) * D
         return uvqk + attn + out
 
     def get_num_flops_per_sample(self) -> float:
@@ -323,15 +396,20 @@ class DlrmHSTU(HammerModule):
         the jagged estimate stashed by ``main_forward``.
         """
         cfg = self._hstu_configs
-        N = float(cfg.max_seq_len)
+        S = float(cfg.max_seq_len)
         n_layers = cfg.hstu_attn_num_layers
         flops = n_layers * self._hstu_layer_flops(
-            n_tokens_linear=N, n_tokens_attn_sq=N * N
+            n_tokens_linear=S, n_tokens_attn_sq=S * S
         )
         # Multitask head (Linear(D, n_tasks)) — negligible but cheap to add.
         n_tasks = len(self._multitask_configs)
         if n_tasks > 0:
-            flops += 6 * n_tasks * cfg.hstu_embedding_table_dim
+            flops += (
+                self._FLOPS_PER_MAC
+                * self._GEMM_FWD_BWD
+                * n_tasks
+                * cfg.hstu_transducer_embedding_dim
+            )
         return float(flops)
 
     def _compute_jagged_flops_per_sample(
@@ -346,22 +424,23 @@ class DlrmHSTU(HammerModule):
         caller should ``.item()`` it (one D→H sync per logging interval).
         """
         s = (uih_seq_lengths + num_candidates).float()
-        mean_s = s.mean()
-        mean_s_sq = (s * s).mean()
         cfg = self._hstu_configs
-        n_layers = cfg.hstu_attn_num_layers
-        flops = n_layers * (
-            6 * mean_s * cfg.hstu_embedding_table_dim
-              * (2 * cfg.hstu_attn_linear_dim + 2 * cfg.hstu_attn_qk_dim)
-              * cfg.hstu_num_heads
-            + 6 * mean_s_sq * cfg.hstu_num_heads
-              * (cfg.hstu_attn_qk_dim + cfg.hstu_attn_linear_dim)
-            + 6 * mean_s * (3 * cfg.hstu_num_heads * cfg.hstu_attn_linear_dim)
-              * cfg.hstu_embedding_table_dim
+        # Same per-layer expression as the dense estimate, with mean(s_i) and
+        # mean(s_i²) substituted for S and S²; sharing it keeps the two in step.
+        # mean(s_i²) rather than mean(s_i)² is what the attention term needs:
+        # cost is quadratic per sample, so it must be averaged after squaring
+        # (Jensen — using the squared mean would understate a skewed batch).
+        flops = cfg.hstu_attn_num_layers * self._hstu_layer_flops(
+            n_tokens_linear=s.mean(), n_tokens_attn_sq=(s * s).mean()
         )
         n_tasks = len(self._multitask_configs)
         if n_tasks > 0:
-            flops = flops + 6 * n_tasks * cfg.hstu_embedding_table_dim
+            flops = flops + (
+                self._FLOPS_PER_MAC
+                * self._GEMM_FWD_BWD
+                * n_tasks
+                * cfg.hstu_transducer_embedding_dim
+            )
         return flops
 
     def _construct_payload(

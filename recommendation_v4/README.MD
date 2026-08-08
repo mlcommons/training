@@ -525,6 +525,61 @@ HSTU attention computed by a fused jagged-attention Triton kernel in bf16. The
 sparse embedding all-to-all defaults to fp32 in both directions
 (`SPARSE_A2A_FWD` / `SPARSE_A2A_BWD`) and can be lowered to bf16/fp16.
 
+### Computation cost analysis
+
+Model FLOPs per sample, used as the MFU denominator and implemented in
+`_hstu_layer_flops` (`modules/dlrm_hstu.py`). Symbols, with the yambda-5b
+defaults:
+
+| symbol | meaning | default |
+|---|---|---|
+| `S` | sequence positions per sample (`max_seq_len`) | 4096 |
+| `D` | transducer/layer width (`hstu_transducer_embedding_dim`) | 512 |
+| `H` | attention heads | 4 |
+| `d_qk` | per-head Q/K dim (`hstu_attn_qk_dim`) | 128 |
+| `d_v` | per-head V/U dim (`hstu_attn_linear_dim`) | 128 |
+| `L` | number of `STULayer`s (`HSTU_NUM_LAYERS`) | 3 |
+| `B` | global batch size (samples per step) | 1024 |
+
+Each layer is three GEMM groups. Their multiply-accumulate counts in the forward
+pass are `S · D · H·(2·d_qk + 2·d_v)` for the UVQK projection,
+`(S²/2) · H·(d_qk + d_v)` for attention and `S · (3·H·d_v) · D` for the output
+projection. FLOPs then follow from three multipliers: 2 FLOPs per MAC; `×3` for
+forward-plus-backward on the weight GEMMs, since backward computes both the
+input gradient and the weight gradient; and `×3.5` rather than `×3` on
+attention, because its forward is 2 GEMMs while its backward needs roughly 5 to
+produce dQ/dK/dV. Per step:
+
+| component | FWD+BWD cost expression | TFLOPs per step | why this shape |
+|---|---|---|---|
+| HSTU attention (causal) | `B · L · 3.5 · 2 · (S²/2) · H·(d_qk + d_v)` | 184.72 | two GEMMs, `Q·K^T` (`d_qk` deep) then `att·V` (`d_v` wide); `S²/2` because the attention is causal and the Triton kernel evaluates only the lower triangle |
+| UVQK GEMMs | `B · L · 3 · 2 · S · D · H·(2·d_qk + 2·d_v)` | 79.16 | one fused `Linear` emits U, V, Q and K, so its output is `H·(2·d_qk + 2·d_v)` wide — `_uvqk_weight` is literally `(512, 2048)` |
+| Output projection GEMMs | `B · L · 3 · 2 · S · (3·H·d_v) · D` | 59.37 | the projection back to `D` consumes a concatenation of the attention output, the gate `U` and the residual `X`, hence `3×` the width — `_output_weight` is `(1536, 512)` |
+| **total** | | **323.26** | |
+
+Equivalently 315.7 GFLOP per sample (attention 180.4, UVQK 77.3, output
+projection 58.0), which is the per-sample form the code returns and the MFU
+denominator uses; the per-step figures above are that times `B`.
+
+Attention dominates at `S=4096` (57% of the total), which is why the causal
+halving and the `×3.5` are worth getting right: charging `×3` would shift the
+total by −8%, and counting the full `S²` score matrix by +57%.
+
+Deliberately excluded, all of which make the figure a slight underestimate:
+embedding lookups and the sparse all-to-all (memory- and network-bound, a large
+share of step time but not of FLOPs), layer norms and SiLU gating (elementwise),
+and the item MLP and prediction head (per candidate, roughly 9 per sample,
+rather than per position). There is no FFN term because HSTU folds attention and
+FFN into the UVQK projection plus gating. The causal `×1/2` is also applied
+uniformly even though the 8 leading contextual tokens attend bidirectionally,
+understating attention by about 0.4%.
+
+Note that this differs from the formula published for the DLRMv3 inference
+benchmark, which prices one attention GEMM (`S²·D/2`) where there are two; the
+projection terms, including the `3×` output projection, agree exactly. The
+`3×` is specific to this HSTU variant — an implementation without the U/X
+concatenation projects `H·d_v → D` and carries that term at `1×`.
+
 ### Hyperparameters
 
 Hyperparameters live in
