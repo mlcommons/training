@@ -6,6 +6,7 @@
 	path = text_to_image/torchtitan
 	url = https://github.com/pytorch/torchtitan.git
 	branch = mlperf-training-flux.1
-[submodule "recommendation_v4/cutlass"]
-	path = recommendation_v4/generative_recommenders/ops/cpp/cutlass
-	url = https://github.com/NVIDIA/cutlass.git
+[submodule "llm_post_training/RL"]
+	path = llm_post_training/RL
+	url = https://github.com/NVIDIA-NeMo/RL.git
+	branch = mlperf-training-qwen35-main

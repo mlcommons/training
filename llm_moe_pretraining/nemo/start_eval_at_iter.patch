@@ -1,0 +1,42 @@
+From 21b78b0bdd731cdb10bbcb08e9c399f80fbd3fcb Mon Sep 17 00:00:00 2001
+From: Denys Fridman <dfridman@nvidia.com>
+Date: Sun, 29 Jun 2026 00:00:00 +0000
+Subject: [PATCH] feat(training): add start_eval_at_iter to skip first N evaluations
+
+---
+ src/megatron/bridge/training/config.py | 5 +++++
+ src/megatron/bridge/training/train.py  | 4 ++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/src/megatron/bridge/training/config.py b/src/megatron/bridge/training/config.py
+--- a/src/megatron/bridge/training/config.py
++++ b/src/megatron/bridge/training/config.py
+@@ -738,6 +738,11 @@ class TrainingConfig:
+
+     skip_train: bool = False
+     """If set, bypass the training loop, optionally do evaluation for validation/test, and exit."""
+
++    start_eval_at_iter: Optional[int] = None
++    """If set, evaluation will only start after this iteration number. Useful for skipping
++    evaluation during early training iterations. If not set, evaluation starts from the
++    first eval_interval."""
++
+     def finalize(self) -> None:
+         """Validate training mode specification and calculate train_iters from train_samples if needed."""
+
+diff --git a/src/megatron/bridge/training/train.py b/src/megatron/bridge/training/train.py
+--- a/src/megatron/bridge/training/train.py
++++ b/src/megatron/bridge/training/train.py
+@@ -501,6 +501,10 @@ def train(
+         if (
+             global_state.train_state.do_valid
+             and train_config.eval_interval
++            and (
++                train_config.start_eval_at_iter is None
++                or global_state.train_state.step >= train_config.start_eval_at_iter
++            )
+             and global_state.train_state.step % train_config.eval_interval == 0
+         ):
+             if energy_monitor is not None:
+--
+2.34.1

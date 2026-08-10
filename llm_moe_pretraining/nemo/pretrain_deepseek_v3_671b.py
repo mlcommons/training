@@ -167,6 +167,9 @@ def create_config(args):
     train_cfg.eval_iters = args.eval_batches
     if args.eval_batch_size is not None:
         train_cfg.eval_batch_size = args.eval_batch_size
+    start_eval_at_iter = os.getenv("START_EVAL_AT_ITER")
+    if start_eval_at_iter is not None:
+        train_cfg.start_eval_at_iter = int(start_eval_at_iter)
 
     # Optimizer configuration
     optimizer_cfg = config.optimizer

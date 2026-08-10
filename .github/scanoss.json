@@ -1,0 +1,52 @@
+{
+  "settings": {
+    "skip": {
+      "patterns": {
+        "scanning": [
+          "tests/",
+          "test/",
+          "__tests__/",
+          "test_*.py",
+          "*_test.py",
+          "*_test.go",
+          "*.test.js",
+          "*.test.ts",
+          "*.spec.js",
+          "*.spec.ts",
+          "conftest.py",
+          "vendor/",
+          "third_party/",
+          "third-party/",
+          "external/",
+          "node_modules/",
+          "deps/",
+          "*_pb2.py",
+          "*_pb2_grpc.py",
+          "*.pb.go"
+        ]
+      },
+      "sizes": {}
+    }
+  },
+  "bom": {
+    "include": [
+      {
+        "purl": "pkg:github/mlcommons/training"
+      },
+      {
+        "purl": "pkg:github/christopherpryer/pyords"
+      },
+      {
+        "purl": "pkg:github/shedou/neuro"
+      },
+      {
+        "purl": "pkg:pypi/pyords"
+      }
+    ],
+    "exclude": [
+      {
+        "purl": "pkg:golang/github.com/mlcommons/training"
+      }
+    ]
+  }
+}
