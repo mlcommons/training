@@ -1904,6 +1904,32 @@ def select_in_window_checkpoint_reason(
     return None
 
 
+def data_pct_to_global_steps(
+    *,
+    data_pct: float,
+    total_train_samples: int,
+    global_batch_size: int,
+) -> int:
+    """Convert a fraction of the epoch's training data into a global train-step
+    count -- the single source of truth for the percent -> steps conversion.
+
+    Used by BOTH the data-fraction eval cadence (EVAL_EVERY_DATA_PCT ->
+    eval_interval_steps) and the skip-eval threshold (SKIP_EVAL_EPOCH_PCT ->
+    skip_eval_until_step) so a percentage is turned into steps identically in
+    both places. The fraction is taken in SAMPLE space against the epoch
+    denominator MLPerf's EPOCH_NUM uses, then divided ONCE by the global batch
+    size (per-rank batch x world_size) -- the only progress counter that is both
+    rank-invariant (all ranks step in lockstep) and checkpoint-restored. Rounds
+    UP so the result lands at or after the requested fraction, never before it.
+    Returns 0 for a disabled / degenerate config (any non-positive input).
+    """
+    if data_pct <= 0 or total_train_samples <= 0 or global_batch_size <= 0:
+        return 0
+    return int(
+        math.ceil(data_pct * float(total_train_samples) / float(global_batch_size))
+    )
+
+
 def resolve_skip_eval_until_step(
     *,
     skip_eval_epoch_pct: float,
@@ -1929,10 +1955,11 @@ def resolve_skip_eval_until_step(
     Rounds UP so the first eval lands at or after the requested fraction, never
     before it.
     """
-    if skip_eval_epoch_pct <= 0 or total_train_samples <= 0 or global_batch_size <= 0:
-        return 0
-    skip_until_samples = skip_eval_epoch_pct * float(total_train_samples)
-    return int(math.ceil(skip_until_samples / float(global_batch_size)))
+    return data_pct_to_global_steps(
+        data_pct=skip_eval_epoch_pct,
+        total_train_samples=total_train_samples,
+        global_batch_size=global_batch_size,
+    )
 
 
 def _validate_split_contract(
@@ -2238,9 +2265,20 @@ def streaming_train_eval_loop(
                 total_train_anchors = dataset.dataset.total_train_anchors(  # pyre-ignore[16]
                     eval_anchor_ts, requested_end_ts - eval_anchor_ts
                 )
+            # Percent -> global-steps via the SAME conversion as the skip-eval
+            # threshold (data_pct_to_global_steps): fraction taken in sample
+            # space, divided once by the global batch size, rounded up. max(1, .)
+            # because an eval INTERVAL must be >= 1 step, whereas the skip
+            # threshold may legitimately resolve to 0 (feature off). total_train_
+            # steps is the epoch length in full global batches, kept for the log.
             total_train_steps = total_train_anchors // max(1, global_batch_size)
             eval_interval_steps = max(
-                1, round(eval_every_data_pct * total_train_steps)
+                1,
+                data_pct_to_global_steps(
+                    data_pct=eval_every_data_pct,
+                    total_train_samples=total_train_anchors,
+                    global_batch_size=global_batch_size,
+                ),
             )
             if rank == 0:
                 logger.info(

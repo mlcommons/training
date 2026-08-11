@@ -29,7 +29,10 @@ assert eval starts on the intended boundary, using constants measured from the
 """
 import unittest
 
-from generative_recommenders.dlrm_v4.train.utils import resolve_skip_eval_until_step
+from generative_recommenders.dlrm_v4.train.utils import (
+    data_pct_to_global_steps,
+    resolve_skip_eval_until_step,
+)
 
 # --- constants from the yambda-5b RCP sweep ---------------------------------
 # Epoch denominator (MLPerf TRAIN_SAMPLES) and the eval cadence in samples
@@ -193,6 +196,81 @@ class ResolveSkipEvalUntilStepTest(unittest.TestCase):
                 self.assertEqual(
                     _first_eval_boundary(pct, gbs),
                     _first_eval_boundary(bare_pct, gbs) - MARGIN_EVALS,
+                )
+
+
+class DataPctToGlobalStepsTest(unittest.TestCase):
+    """The percent -> global-steps conversion shared by the skip-eval threshold
+    (SKIP_EVAL_EPOCH_PCT) and the data-fraction eval cadence
+    (EVAL_EVERY_DATA_PCT). Both call sites route through this one function, so a
+    percentage is turned into steps identically everywhere."""
+
+    def test_disabled_and_degenerate_return_zero(self) -> None:
+        for pct, tot, gbs in (
+            (0.0, TOTAL_TRAIN_SAMPLES, 8192),
+            (-0.1, TOTAL_TRAIN_SAMPLES, 8192),
+            (0.025, 0, 8192),
+            (0.025, TOTAL_TRAIN_SAMPLES, 0),
+        ):
+            self.assertEqual(
+                data_pct_to_global_steps(
+                    data_pct=pct,
+                    total_train_samples=tot,
+                    global_batch_size=gbs,
+                ),
+                0,
+            )
+
+    def test_rounds_up(self) -> None:
+        # 0.1 * 10000 = 1000 samples at gbs 300 -> 3.33 steps -> ceil 4.
+        self.assertEqual(
+            data_pct_to_global_steps(
+                data_pct=0.1, total_train_samples=10000, global_batch_size=300
+            ),
+            4,
+        )
+        # Exact division stays exact.
+        self.assertEqual(
+            data_pct_to_global_steps(
+                data_pct=0.5, total_train_samples=10000, global_batch_size=1000
+            ),
+            5,
+        )
+
+    def test_skip_eval_delegates_to_shared_helper(self) -> None:
+        # resolve_skip_eval_until_step must be exactly the shared conversion, so
+        # the skip threshold and the eval cadence can never drift apart.
+        for pct in (0.0, 0.001, 0.025, 0.041, 0.1):
+            for gbs in (8192, 16384, 32768):
+                self.assertEqual(
+                    resolve_skip_eval_until_step(
+                        skip_eval_epoch_pct=pct,
+                        total_train_samples=TOTAL_TRAIN_SAMPLES,
+                        global_batch_size=gbs,
+                    ),
+                    data_pct_to_global_steps(
+                        data_pct=pct,
+                        total_train_samples=TOTAL_TRAIN_SAMPLES,
+                        global_batch_size=gbs,
+                    ),
+                )
+
+    def test_matches_production_eval_interval(self) -> None:
+        # The data-fraction eval cadence resolves EVAL_EVERY_DATA_PCT=0.001 to
+        # these per-GBS intervals via the same helper (max(1, .) applied by the
+        # caller). Guards the value the streaming loop logs as eval_interval_steps.
+        for gbs, expected in ((8192, 280), (16384, 140), (32768, 70)):
+            with self.subTest(gbs=gbs):
+                self.assertEqual(
+                    max(
+                        1,
+                        data_pct_to_global_steps(
+                            data_pct=0.001,
+                            total_train_samples=TOTAL_TRAIN_SAMPLES,
+                            global_batch_size=gbs,
+                        ),
+                    ),
+                    expected,
                 )
 
 

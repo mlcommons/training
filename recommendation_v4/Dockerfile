@@ -19,8 +19,16 @@ RUN pip install --upgrade --no-deps \
 RUN pip install --force-reinstall --no-deps \
         "git+https://github.com/pytorch/torchrec.git@v2026.06.01.00"
 
-# fbgemm_gpu — training_recipe.md:42. Build from FBGEMM commit 10b77573 for
-# gfx950 against the replaced torch. ~30-60 min.
+# fbgemm_gpu — training_recipe.md:42. requirements.txt pins `fbgemm_gpu==1.7.0`,
+# but there is NO prebuilt gfx950 / ROCm 7.2 wheel for it: the public wheels on
+# PyPI / download.pytorch.org are CUDA/CPU-only and ABI-incompatible with the
+# torch 2.12.0+rocm7.2 installed above. So we compile that same 1.7.0 line from
+# source at the pinned FBGEMM commit 10b77573 (same SHA as the B200 path), built
+# against the replaced torch. setup.py's from-source artifact is named
+# `fbgemm_gpu_nightly_rocm-<build-date>` (e.g. 2026.x) — the "nightly" is the
+# package-CHANNEL name for a source build and the date is the BUILD date, not a
+# nightly-vs-release version choice; identify this build by the commit, not the
+# wheel's version string. ~30-60 min.
 RUN apt-get update && apt-get install -y --no-install-recommends git build-essential && \
     rm -rf /var/lib/apt/lists/* && \
     git clone --recursive https://github.com/pytorch/FBGEMM.git /tmp/FBGEMM && \

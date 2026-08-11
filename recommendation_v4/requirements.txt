@@ -12,6 +12,12 @@
 # torchaudio==2.11.0+rocm7.2
 # fbgemm_gpu                     # built from FBGEMM commit 10b775730212923f65f7b78f79b6a01d80cf3c29 for gfx950
 torch==2.12.0
+# fbgemm_gpu 1.7.0 is the release LINE this stack targets, but no prebuilt
+# gfx950/ROCm wheel exists for it — the Dockerfile compiles it from FBGEMM
+# commit 10b775730212923f65f7b78f79b6a01d80cf3c29 (the artifact is named
+# fbgemm_gpu_nightly_rocm-<build-date>; that date is the build date, not a
+# version choice). This ==1.7.0 pin applies only to prebuilt-wheel (CUDA/CPU)
+# environments; on ROCm it is superseded by the source build.
 fbgemm_gpu==1.7.0
 torchrec @ git+https://github.com/pytorch/torchrec.git@v2026.06.01.00
 
