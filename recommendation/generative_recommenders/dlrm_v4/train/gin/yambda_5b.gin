@@ -807,7 +807,7 @@ train_eval_loop.output_trace = True
 # sequential fwd/bwd loop.
 train_eval_loop.use_pipeline = False
 
-# Run name → recommendation_v4/results/<run_name>/ (override via $RUN_NAME env).
+# Run name → recommendation/results/<run_name>/ (override via $RUN_NAME env).
 RUN_NAME = @run/env_path()
 run/env_path.key     = "RUN_NAME"
 run/env_path.default = "default"

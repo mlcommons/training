@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /workspace/recommendation_v4
+WORKDIR /workspace/recommendation
 
 # torch / torchvision / torchaudio — training_recipe.md:38-40.
 RUN pip install --upgrade --no-deps \
@@ -85,7 +85,7 @@ RUN pip install --no-deps "git+https://github.com/mlcommons/logging.git@6.0.0-rc
 RUN python -c "import torch, fbgemm_gpu, torchrec, polars, xxhash, gin; \
 print('torch', torch.__version__, '| hip', getattr(torch.version, 'hip', None))"
 
-COPY . /workspace/recommendation_v4
+COPY . /workspace/recommendation
 
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     HSTU_HAMMER_KERNEL=TRITON \

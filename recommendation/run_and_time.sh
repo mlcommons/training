@@ -62,4 +62,4 @@ python -m generative_recommenders.dlrm_v4.train.train_ranker \
 end=$(date +%s)
 result=$(( end - start ))
 echo "ENDING TIMING RUN AT $(date -u '+%Y-%m-%d %r')"
-echo "RESULT,recommendation_v4_hstu_yambda_5b,${SEED},${result},$(whoami),$(date -u '+%Y-%m-%d %r')"
+echo "RESULT,recommendation_hstu_yambda_5b,${SEED},${result},$(whoami),$(date -u '+%Y-%m-%d %r')"

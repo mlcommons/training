@@ -1602,10 +1602,10 @@ def get_gpu_peak_flops(dtype: str = "bf16") -> float:
 
 @gin.configurable
 def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
-    """Resolve ``<recommendation_v4>/<subdir>/<run_name>`` from this file's location.
+    """Resolve ``<recommendation>/<subdir>/<run_name>`` from this file's location.
 
     Used as a gin macro to give per-run output directories that persist on the
-    host (recommendation_v4 is bind-mounted into the training container).
+    host (recommendation is bind-mounted into the training container).
 
     Example gin usage::
 
@@ -1615,8 +1615,8 @@ def run_results_dir(run_name: str = "default", subdir: str = "results") -> str:
         run_results_dir.run_name = %RUN_NAME
         Profiler.trace_dir = @run_results_dir()
     """
-    # utils.py lives at <recommendation_v4>/generative_recommenders/dlrm_v4/utils.py;
-    # parents[2] climbs to <recommendation_v4>/.
+    # utils.py lives at <recommendation>/generative_recommenders/dlrm_v4/utils.py;
+    # parents[2] climbs to <recommendation>/.
     repo_root = Path(__file__).resolve().parents[2]
     return str(repo_root / subdir / run_name)
 

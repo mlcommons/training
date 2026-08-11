@@ -47,9 +47,9 @@ Build and enter the container, which is the canonical frozen environment
 (torch 2.10 / fbgemm / torchrec 1.4.0 / triton 3.6):
 
 ```bash
-docker build -t recommendation_v4 .
+docker build -t recommendation .
 docker run --rm -it --device=/dev/kfd --device=/dev/dri \
-    -v /path/to/dlrm_data:/data/mlperf_dlrm_v4 recommendation_v4
+    -v /path/to/dlrm_data:/data/mlperf_dlrm_v4 recommendation
 ```
 
 Full environment pinning, kernel selection and per-platform notes are in

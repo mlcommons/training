@@ -1,4 +1,4 @@
-# Frozen dependency versions for the recommendation_v4 (HSTU / yambda-5b) MLPerf
+# Frozen dependency versions for the recommendation (HSTU / yambda-5b) MLPerf
 # reference. The CANONICAL, fully-reproducible environment is the Dockerfile
 # (built on rocm/primus:v26.3); see docs/training_recipe.md for the per-platform
 # (MI350X / B200) install commands and rationale. The pins below mirror that
