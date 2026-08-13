@@ -1,3 +1,5 @@
+Use checklists for new reference benchmark and new training round additions. 
+
 ---
 name: New Benchmark
 about: Checklist for introducing a new benchmark to MLPerf Training
