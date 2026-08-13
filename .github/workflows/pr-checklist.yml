@@ -1,0 +1,71 @@
+name: Add PR checklist
+
+# pull_request_target is required so fork PRs can have their description
+# updated. Only templates from the base repo are read; head/fork code is
+# never checked out or executed.
+on:
+  pull_request_target:
+    types: [opened, edited, labeled, unlabeled, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base-repo templates
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/PULL_REQUEST_TEMPLATE
+          sparse-checkout-cone-mode: false
+
+      - name: Append checklist if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          labels=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+          body=$(gh pr view "$PR" --json body --jq '.body // ""')
+          updated=0
+
+          append_template() {
+            local label="$1"
+            local template="$2"
+            local marker="<!-- mlperf-checklist:$(basename "$template") -->"
+
+            if ! echo "$labels" | grep -qx "$label"; then
+              return 0
+            fi
+            if [ ! -f "$template" ]; then
+              echo "Template not found: $template"
+              return 0
+            fi
+            if printf '%s\n' "$body" | grep -qF "$marker"; then
+              echo "Checklist already present for $label"
+              return 0
+            fi
+
+            local content
+            content=$(awk 'BEGIN{p=1} /^---$/{if(NR==1){p=0;next} if(!p){p=1;next}} p' "$template")
+            body=$(printf '%s\n\n%s\n\n%s\n' "$body" "$marker" "$content")
+            updated=1
+            echo "Will append checklist for $label"
+          }
+
+          append_template new-benchmark .github/PULL_REQUEST_TEMPLATE/new_benchmark.md
+          append_template new-round .github/PULL_REQUEST_TEMPLATE/new_round.md
+
+          if [ "$updated" -eq 0 ]; then
+            echo "No checklist updates needed"
+            exit 0
+          fi
+
+          printf '%s\n' "$body" > /tmp/new_body.md
+          gh pr edit "$PR" --body-file /tmp/new_body.md

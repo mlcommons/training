@@ -10,13 +10,15 @@ MLCommons project work is tracked with issue trackers and pull requests. Modify 
 
 ## Pull Request Templates
 
-This repository uses PR templates to ensure all necessary steps are tracked. When you open a PR, the **New Benchmark** template is loaded by default. If your PR is for a different purpose, select the appropriate template by appending `?template=<template_name>.md` to the PR URL, or by choosing from the template picker.
+This repository uses PR templates plus a GitHub Action so the right checklist is added whether the PR is opened from the GitHub UI, `gh` / the API, or a fork.
 
-Available templates:
+Add one or both labels; the [Add PR checklist](.github/workflows/pr-checklist.yml) workflow appends the matching checklist to the PR description if it is not already there:
 
-| Template | File | When to use |
-|----------|------|------------|
-| **New Benchmark** (default) | [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) | Introducing a new benchmark to MLPerf Training. Includes the full checklist from [issue #810](https://github.com/mlcommons/training/issues/810). |
-| **New Round Introduction** | [`.github/PULL_REQUEST_TEMPLATE/new_round.md`](.github/PULL_REQUEST_TEMPLATE/new_round.md) | Preparing and introducing a new training round. Select via `?template=new_round.md` in the PR URL. |
+| Label | Checklist | When to use |
+|-------|-----------|-------------|
+| `new-benchmark` | [`.github/PULL_REQUEST_TEMPLATE/new_benchmark.md`](.github/PULL_REQUEST_TEMPLATE/new_benchmark.md) | Introducing a new benchmark to MLPerf Training. Includes the full checklist from [issue #810](https://github.com/mlcommons/training/issues/810). |
+| `new-round` | [`.github/PULL_REQUEST_TEMPLATE/new_round.md`](.github/PULL_REQUEST_TEMPLATE/new_round.md) | Preparing and introducing a new training round. |
+
+You can also pick a template in the GitHub UI, pass `?template=<file>.md` in the PR URL, or run `gh pr create --template <file>.md --label <label>`.
 
 Please complete all applicable checklist items before requesting review. If a checklist item does not apply to your PR, mark it as complete and note why it was skipped.
