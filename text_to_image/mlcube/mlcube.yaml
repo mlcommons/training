@@ -1,0 +1,29 @@
+name: Flux
+description: Flux text to image
+authors:
+  - { name: "MLCommons Best Practices Working Group" }
+
+platform:
+  accelerator_count: 1
+
+docker:
+  image: mlcommons/flux_benchmark:0.0.1
+  build_context: ".."
+  build_file: "mlcube/Dockerfile"
+  gpu_args: "--gpus=all -e HUGGING_FACE_HUB_TOKEN"
+
+tasks:
+  download_demo:
+    entrypoint: ./scripts/download_demo.sh -a
+    parameters:
+      outputs:
+        data_path: demo_data/
+        model_path: models/
+  demo:
+      entrypoint: ./scripts/run_demo.sh -a
+      parameters:
+        inputs:
+          data_path: demo_data/data/
+          model_path: models/
+        outputs:
+          log_dir: demo_logs/
