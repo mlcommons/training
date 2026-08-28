@@ -2727,6 +2727,129 @@ def _hstu_attn_bwd(  # noqa C901
             )
 
 
+@triton.jit
+def _hstu_attn_delta_bwd(
+    Q,
+    K,
+    V,
+    seq_offsets,
+    DOut,
+    DQ,
+    DK,
+    DV,
+    stride_qm,
+    stride_qh,
+    stride_kn,
+    stride_kh,
+    stride_vn,
+    stride_vh,
+    stride_dom,
+    stride_doh,
+    stride_dqm,
+    stride_dqh,
+    stride_dkn,
+    stride_dkh,
+    stride_dvn,
+    stride_dvh,
+    alpha,
+    H,
+    MAX_SEQ_LEN,
+    BLOCK_D_Q: tl.constexpr,
+    BLOCK_D_V: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """Backward for one compact suffix query per jagged sequence.
+
+    This specialization is intentionally narrower than the cached inference
+    path: every sequence has exactly one target, contextual/window modes are
+    disabled, and target-aware masking makes that target attend all history
+    rows plus itself. Each program owns one sequence/head, so dK/dV stores are
+    disjoint and dQ can stay in registers across the key loop.
+
+    MAX_SEQ_LEN is a runtime scalar, not a tl.constexpr, and must stay that way.
+    Production derives it per batch as max_uih_len + num_candidates, so making it
+    constexpr keys the JIT cache on a value that changes nearly every step: a
+    cold process then pays a fresh ~110 ms compile per batch, and that compile
+    blocks the launch queue, so it shows up as GPU idle rather than as host time.
+    It is only ever used as the 1/MAX_SEQ_LEN scale below -- the same expression
+    _hstu_attn_bwd already evaluates from a runtime value -- so nothing here
+    benefits from constant folding. _hstu_attn_fwd/_hstu_attn_bwd handle this by
+    passing a separately quantized AUTOTUNE_MAX_SEQ_LEN as the autotuning key;
+    this kernel has a fixed config and needs no such key.
+    """
+    off_hz = tl.program_id(0)
+    off_z = off_hz // H
+    off_h = (off_hz % H).to(tl.int64)
+    seq_start = tl.load(seq_offsets + off_z).to(tl.int64)
+    seq_end = tl.load(seq_offsets + off_z + 1)
+    seq_len = (seq_end - seq_start).to(tl.int32)
+
+    offs_q = tl.arange(0, BLOCK_D_Q)
+    offs_v = tl.arange(0, BLOCK_D_V)
+    q = tl.load(
+        Q + off_z * stride_qm + off_h * stride_qh + offs_q,
+        mask=offs_q < BLOCK_D_Q,
+        other=0.0,
+    ).to(tl.float32)
+    dout = tl.load(
+        DOut + off_z * stride_dom + off_h * stride_doh + offs_v,
+        mask=offs_v < BLOCK_D_V,
+        other=0.0,
+    ).to(tl.float32)
+    dq = tl.zeros([BLOCK_D_Q], dtype=tl.float32)
+
+    for start_n in tl.range(0, seq_len, BLOCK_N, num_stages=1):
+        offs_n = start_n + tl.arange(0, BLOCK_N)
+        mask_n = offs_n < seq_len
+        k_ptrs = (
+            K
+            + (seq_start + offs_n[:, None]) * stride_kn
+            + off_h * stride_kh
+            + offs_q[None, :]
+        )
+        v_ptrs = (
+            V
+            + (seq_start + offs_n[:, None]) * stride_vn
+            + off_h * stride_vh
+            + offs_v[None, :]
+        )
+        k = tl.load(k_ptrs, mask=mask_n[:, None], other=0.0)
+        v = tl.load(v_ptrs, mask=mask_n[:, None], other=0.0)
+
+        qk = tl.sum(k.to(tl.float32) * q[None, :], axis=1) * alpha
+        sig = fast_dividef(1.0, 1.0 + tl.exp(-qk))
+        silu = fast_dividef(qk, 1.0 + fast_expf(-qk)) * (1.0 / MAX_SEQ_LEN)
+        silu = tl.where(mask_n, silu, 0.0).to(v.dtype)
+
+        dv = silu[:, None].to(tl.float32) * dout[None, :]
+        dqk = tl.sum(v.to(tl.float32) * dout[None, :], axis=1)
+        dqk *= sig * (1.0 + qk * (1.0 - sig)) * (1.0 / MAX_SEQ_LEN)
+        dqk = tl.where(mask_n, dqk, 0.0).to(k.dtype)
+        dk = dqk[:, None].to(tl.float32) * q[None, :] * alpha
+        dq += tl.sum(dqk[:, None].to(tl.float32) * k.to(tl.float32), axis=0)
+
+        dk_ptrs = (
+            DK
+            + (seq_start + offs_n[:, None]) * stride_dkn
+            + off_h * stride_dkh
+            + offs_q[None, :]
+        )
+        dv_ptrs = (
+            DV
+            + (seq_start + offs_n[:, None]) * stride_dvn
+            + off_h * stride_dvh
+            + offs_v[None, :]
+        )
+        tl.store(dk_ptrs, dk.to(DK.dtype.element_ty), mask=mask_n[:, None])
+        tl.store(dv_ptrs, dv.to(DV.dtype.element_ty), mask=mask_n[:, None])
+
+    tl.store(
+        DQ + off_z * stride_dqm + off_h * stride_dqh + offs_q,
+        (dq * alpha).to(DQ.dtype.element_ty),
+        mask=offs_q < BLOCK_D_Q,
+    )
+
+
 @maybe_register_custom_op(
     "generative_recommenders::triton_hstu_attention_fwd", mutates_args=()
 )
@@ -2948,6 +3071,95 @@ def triton_hstu_attention_bwd(
     copy_if_different_ptr(orig_dq, dq)
     copy_if_different_ptr(orig_dk, dk)
     copy_if_different_ptr(orig_dv, dv)
+
+
+@maybe_register_custom_op(
+    "generative_recommenders::triton_hstu_attention_delta_bwd",
+    mutates_args=("dq", "dk", "dv"),
+)
+def triton_hstu_attention_delta_bwd(
+    dout: torch.Tensor,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    dq: torch.Tensor,
+    dk: torch.Tensor,
+    dv: torch.Tensor,
+    seq_offsets: torch.Tensor,
+    N: int,
+    alpha: float,
+) -> None:
+    """Differentiate one compact suffix query per sequence against full K/V."""
+    orig_dq, orig_dk, orig_dv = dq, dk, dv
+    dout = switch_to_contiguous_if_needed(dout)
+    q = switch_to_contiguous_if_needed(q)
+    k = switch_to_contiguous_if_needed(k)
+    v = switch_to_contiguous_if_needed(v)
+    dq = switch_to_contiguous_if_needed(dq)
+    dk = switch_to_contiguous_if_needed(dk)
+    dv = switch_to_contiguous_if_needed(dv)
+    if dout.shape[0] == 0:
+        orig_dq.zero_()
+        orig_dk.zero_()
+        orig_dv.zero_()
+        return
+
+    Z = seq_offsets.numel() - 1
+    _, H, DimQ = q.shape
+    _, _, DimV = v.shape
+    if q.shape[0] != Z or dout.shape[0] != Z:
+        raise ValueError("delta attention training requires one query per sequence")
+
+    _hstu_attn_delta_bwd[(Z * H,)](
+        Q=q,
+        K=k,
+        V=v,
+        seq_offsets=seq_offsets,
+        DOut=dout,
+        DQ=dq,
+        DK=dk,
+        DV=dv,
+        stride_qm=q.stride(0),
+        stride_qh=q.stride(1),
+        stride_kn=k.stride(0),
+        stride_kh=k.stride(1),
+        stride_vn=v.stride(0),
+        stride_vh=v.stride(1),
+        stride_dom=dout.stride(0),
+        stride_doh=dout.stride(1),
+        stride_dqm=dq.stride(0),
+        stride_dqh=dq.stride(1),
+        stride_dkn=dk.stride(0),
+        stride_dkh=dk.stride(1),
+        stride_dvn=dv.stride(0),
+        stride_dvh=dv.stride(1),
+        alpha=alpha,
+        H=H,
+        MAX_SEQ_LEN=N,
+        BLOCK_D_Q=DimQ,
+        BLOCK_D_V=DimV,
+        BLOCK_N=32,
+        num_warps=4,
+    )
+    copy_if_different_ptr(orig_dq, dq)
+    copy_if_different_ptr(orig_dk, dk)
+    copy_if_different_ptr(orig_dv, dv)
+
+
+@triton_hstu_attention_delta_bwd.register_fake
+def _triton_hstu_attention_delta_bwd_fake(
+    dout: torch.Tensor,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    dq: torch.Tensor,
+    dk: torch.Tensor,
+    dv: torch.Tensor,
+    seq_offsets: torch.Tensor,
+    N: int,
+    alpha: float,
+) -> None:
+    return None
 
 
 @triton_hstu_attention_fwd.register_fake

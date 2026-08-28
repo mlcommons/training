@@ -83,6 +83,18 @@ def set_fuse_output_ln_rng_blackwell(value: bool) -> None:
     FUSE_OUTPUT_LN_RNG_BLACKWELL = value
 
 
+def supports_indexed_output_dropout() -> bool:
+    """Whether ``rng_row_indices`` can be honoured on this device.
+
+    The indexed dropout mask is only built on the separated-RNG path, so a
+    caller that needs a compact subset of rows to draw the same mask the
+    full-length pass would have drawn must check this first and take the
+    full-length path when it is False. Passing indices anyway is rejected
+    below rather than silently drawing a different mask.
+    """
+    return not FUSE_OUTPUT_LN_RNG_BLACKWELL and use_separated_rng_ln_mul_dropout()
+
+
 @triton.jit
 def rand3x(seed, offsets, n_rounds: tl.constexpr = 10):  # pyre-ignore [9]
     i1, i2, i3, _ = tl.randint4x(seed, offsets, n_rounds)
@@ -139,6 +151,43 @@ def _generate_random_mask(
     tl.store(base_ptr + STRIDE, packed1, mask=row1_mask)
     tl.store(base_ptr + 2 * STRIDE, packed2, mask=row2_mask)
     tl.store(base_ptr + 3 * STRIDE, packed3, mask=row3_mask)
+
+
+@triton.jit
+def _generate_indexed_random_mask(
+    MASK_BUFFER,
+    ROW_INDICES,
+    N,
+    dropout_ratio,
+    seed,
+    D: tl.constexpr,
+    STRIDE: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    NUM_MASKS: tl.constexpr,
+):
+    """Generate masks for compact rows using their full-tensor RNG row IDs."""
+    row = tl.program_id(0)
+    cols = tl.arange(0, BLOCK_D)
+    col_mask = cols < D
+    logical_row = tl.load(ROW_INDICES + row).to(tl.int64)
+    philox_group = logical_row // 4
+    philox_lane = logical_row % 4
+    rand_offset = philox_group * (NUM_MASKS * BLOCK_D) + cols
+    packed = tl.zeros([BLOCK_D], dtype=tl.int8)
+    for j in tl.static_range(NUM_MASKS):
+        r0, r1, r2, r3 = tl.rand4x(seed, rand_offset)
+        selected = tl.where(
+            philox_lane == 0,
+            r0,
+            tl.where(philox_lane == 1, r1, tl.where(philox_lane == 2, r2, r3)),
+        )
+        packed |= (selected > dropout_ratio).to(tl.int8) << j
+        rand_offset += BLOCK_D
+    tl.store(
+        MASK_BUFFER + row.to(tl.int64) * STRIDE + cols,
+        packed,
+        mask=(row < N) & col_mask,
+    )
 
 
 @triton_autotune(
@@ -1021,6 +1070,34 @@ def _create_dropout_mask(
     return random_mask
 
 
+def _create_indexed_dropout_mask(
+    row_indices: torch.Tensor,
+    N: int,
+    D: int,
+    BLOCK_D: int,
+    concat_u: bool,
+    concat_x: bool,
+    dropout_ratio: float,
+    seed: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Create compact masks identical to selected rows of a full mask."""
+    num_masks = 1 + int(concat_u) + int(concat_x)
+    random_mask = torch.empty([N, D], dtype=torch.int8, device=device)
+    _generate_indexed_random_mask[(N,)](
+        random_mask,
+        row_indices,
+        N,
+        dropout_ratio,
+        seed,
+        D,  # pyre-ignore[6]
+        random_mask.stride(0),  # pyre-ignore[6]
+        BLOCK_D,  # pyre-fixme[6]: Triton constexpr param
+        num_masks,  # pyre-ignore[6]: NUM_MASKS constexpr
+    )
+    return random_mask
+
+
 @maybe_register_custom_op(
     "generative_recommenders::_triton_layer_norm_mul_dropout_fwd_impl", mutates_args=()
 )
@@ -1037,6 +1114,7 @@ def _triton_layer_norm_mul_dropout_fwd_impl(
     concat_x: bool,
     mul_u_activation_type: str,
     seed: int,
+    rng_row_indices: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Internal implementation that returns only tensors for custom_op compatibility.
 
@@ -1069,21 +1147,30 @@ def _triton_layer_norm_mul_dropout_fwd_impl(
     # backward, instead of launching one program per row with fused RNG. This is a large
     # win on Blackwell (sm_100) and AMD MI350 (gfx950); other GPUs keep the fused path.
     # Extended to support concat_u + concat_x for mask reuse optimization
-    if (
-        not FUSE_OUTPUT_LN_RNG_BLACKWELL
-        and use_separated_rng_ln_mul_dropout()
-        and training
-    ):
-        random_mask = _create_dropout_mask(
-            N=N,
-            D=D,
-            BLOCK_D=BLOCK_D,
-            concat_u=concat_u,
-            concat_x=concat_x,
-            dropout_ratio=dropout_ratio,
-            seed=seed,
-            device=x.device,
-        )
+    if supports_indexed_output_dropout() and training:
+        if rng_row_indices.numel() > 0:
+            random_mask = _create_indexed_dropout_mask(
+                row_indices=rng_row_indices,
+                N=N,
+                D=D,
+                BLOCK_D=BLOCK_D,
+                concat_u=concat_u,
+                concat_x=concat_x,
+                dropout_ratio=dropout_ratio,
+                seed=seed,
+                device=x.device,
+            )
+        else:
+            random_mask = _create_dropout_mask(
+                N=N,
+                D=D,
+                BLOCK_D=BLOCK_D,
+                concat_u=concat_u,
+                concat_x=concat_x,
+                dropout_ratio=dropout_ratio,
+                seed=seed,
+                device=x.device,
+            )
 
         def grid(META):
             return (triton.cdiv(N, META["BLOCK_N"]),)
@@ -1115,6 +1202,8 @@ def _triton_layer_norm_mul_dropout_fwd_impl(
         )
 
     else:
+        if rng_row_indices.numel() > 0 and training:
+            raise RuntimeError("indexed output dropout requires separated RNG masks")
         # Default path: fused RNG generation
         # Mask cannot be saved with fused RNG - it's generated inline in the kernel
         # pyre-ignore[28]
@@ -1159,6 +1248,7 @@ def _triton_layer_norm_mul_dropout_fwd_impl_fake(
     concat_x: bool,
     mul_u_activation_type: str,
     seed: int,
+    rng_row_indices: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Fake implementation for FakeTensor tracing."""
     N, D = x.shape
@@ -1189,6 +1279,7 @@ def triton_layer_norm_mul_dropout_fwd(
     concat_x: bool = False,
     mul_u_activation_type: str = "none",
     seed: Optional[int] = None,
+    rng_row_indices: Optional[torch.Tensor] = None,
 ) -> Tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, int, int, int, Optional[torch.Tensor]
 ]:  # y, mean, rstd, BLOCK_D, num_warps, seed, random_mask
@@ -1221,6 +1312,9 @@ def triton_layer_norm_mul_dropout_fwd(
     assert bias.dim() == 1
     assert weight.numel() == D
     assert bias.numel() == D
+    if rng_row_indices is not None:
+        assert rng_row_indices.dim() == 1
+        assert rng_row_indices.numel() == N
 
     if N == 0:
         D = x.shape[1]
@@ -1252,6 +1346,11 @@ def triton_layer_norm_mul_dropout_fwd(
     num_warps: int = min(max(BLOCK_D // 256, 1), 8)
 
     # Call internal implementation
+    rng_row_indices_tensor = (
+        rng_row_indices
+        if rng_row_indices is not None
+        else torch.empty(0, dtype=torch.int64, device=x.device)
+    )
     y, mean, rstd, random_mask_tensor = _triton_layer_norm_mul_dropout_fwd_impl(
         x,
         u,
@@ -1265,6 +1364,7 @@ def triton_layer_norm_mul_dropout_fwd(
         concat_x,
         mul_u_activation_type,
         seed if seed is not None else 0,
+        rng_row_indices_tensor,
     )
 
     # Convert empty tensor back to None
@@ -2231,6 +2331,7 @@ class HSTUComputeOutputFunction(torch.autograd.Function):
         linear_dim: int = -1,
         seed: Optional[int] = None,
         recompute_y_in_backward: bool = False,
+        rng_row_indices: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if dropout_ratio == 0.0:
             training = False
@@ -2268,6 +2369,7 @@ class HSTUComputeOutputFunction(torch.autograd.Function):
                     concat_u=concat_u,
                     concat_x=concat_x,
                     seed=seed,
+                    rng_row_indices=rng_row_indices,
                 )
             )
 
@@ -2323,6 +2425,7 @@ class HSTUComputeOutputFunction(torch.autograd.Function):
         None,  # linear_dim
         None,  # seed
         None,  # recompute_y_in_backward
+        None,  # rng_row_indices
     ]:
         attn, u, norm_weight, norm_bias, mean, rstd, output_weight = ctx.saved_tensors[
             :7
@@ -2410,6 +2513,7 @@ class HSTUComputeOutputFunction(torch.autograd.Function):
             None,  # linear_dim
             None,  # seed
             None,  # recompute_y_in_backward
+            None,  # rng_row_indices
         )
 
 
@@ -3024,6 +3128,7 @@ def triton_hstu_compute_output(
     linear_dim: int = -1,
     seed: Optional[int] = None,
     recompute_y_in_backward: bool = False,
+    rng_row_indices: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     return HSTUComputeOutputFunction.apply(
         attn,
@@ -3044,4 +3149,5 @@ def triton_hstu_compute_output(
         linear_dim,
         seed,
         recompute_y_in_backward,
+        rng_row_indices,
     )

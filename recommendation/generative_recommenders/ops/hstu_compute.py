@@ -45,6 +45,7 @@ from generative_recommenders.ops.triton.triton_hstu_linear import (
 )
 from generative_recommenders.ops.triton.triton_hstu_preprocess_and_attention import (
     triton_hstu_preprocess_and_attention,
+    triton_hstu_preprocess_and_attention_targets_only,
 )
 from torch.fx._symbolic_trace import is_fx_tracing
 
@@ -151,6 +152,7 @@ def hstu_compute_output(
     group_norm: bool,
     recompute_y_in_backward: bool,
     kernel: HammerKernel = HammerKernel.PYTORCH,
+    rng_row_indices: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     if torch.jit.is_scripting():
         return pytorch_hstu_compute_output(
@@ -189,6 +191,7 @@ def hstu_compute_output(
             linear_dim=linear_dim,
             seed=None,
             recompute_y_in_backward=recompute_y_in_backward,
+            rng_row_indices=rng_row_indices,
         )
     elif kernel == HammerKernel.TRITON_INFERENCE:
         if group_norm:
@@ -388,3 +391,42 @@ def hstu_preprocess_and_attention(
             kernel=kernel,
         ).view(-1, hidden_dim * num_heads)
     return u, attn_output, k, v
+
+
+def hstu_preprocess_and_attention_targets_only(
+    x: torch.Tensor,
+    norm_weight: torch.Tensor,
+    norm_bias: torch.Tensor,
+    norm_eps: float,
+    num_heads: int,
+    attn_dim: int,
+    hidden_dim: int,
+    uvqk_weight: torch.Tensor,
+    uvqk_bias: torch.Tensor,
+    max_seq_len: int,
+    seq_offsets: torch.Tensor,
+    attn_alpha: float,
+    num_targets: torch.Tensor,
+    kernel: HammerKernel = HammerKernel.TRITON,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute compact final-layer U/Q attention while retaining full K/V."""
+    if not is_fx_tracing():
+        torch._assert(kernel == HammerKernel.TRITON, "targets-only requires Triton")
+        torch._assert(x.dim() == 2, "x must be 2-D")
+        torch._assert(num_targets.dim() == 1, "num_targets must be 1-D")
+    u, attn_output = triton_hstu_preprocess_and_attention_targets_only(
+        x=x,
+        norm_weight=norm_weight,
+        norm_bias=norm_bias,
+        norm_eps=norm_eps,
+        num_heads=num_heads,
+        attn_dim=attn_dim,
+        hidden_dim=hidden_dim,
+        uvqk_weight=uvqk_weight,
+        uvqk_bias=uvqk_bias,
+        max_seq_len=max_seq_len,
+        seq_offsets=seq_offsets,
+        attn_alpha=attn_alpha,
+        num_targets=num_targets,
+    )
+    return u, attn_output.view(-1, hidden_dim * num_heads)

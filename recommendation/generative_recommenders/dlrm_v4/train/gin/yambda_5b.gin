@@ -32,6 +32,40 @@ make_model.hammer_kernel = "TRITON"
 # pinned constants in ops/triton/_autotune_pinning.py call sites.
 apply_env_bootstrap.TRITON_FULL_AUTOTUNE = False
 
+# In the LAST HSTU layer, compute U/Q for only the one candidate row per
+# sequence instead of all L rows. That row is the only one whose output the loss
+# consumes, so the full-length U/Q projection, the full attention, and the full
+# output projection are all discarded work; K/V stay full length because the
+# candidate attends over the entire history. Exact in math (the surviving row is
+# the same function of the same inputs, and the dropout mask is drawn with the
+# candidate's own RNG row indices so the mask stream matches the full path),
+# though not bit-identical: the compacted reductions run in a different order.
+#
+# GUARDED AT RUNTIME. It activates only for a shape where the rewrite is
+# provably equivalent — not inference, non-listwise, exactly one
+# non-interleaved suffix target per sequence, target-aware causal attention, no
+# contextual/window mask, no group norm, no full-embedding consumer, hardware
+# with separated-RNG dropout masks, and the Triton kernel path. Anything else
+# takes the normal full-length forward, so this is safe to leave on across
+# configs. See STULayer.supports_targets_only.
+#
+# NOTE FOR PERF ACCOUNTING: this removes real FLOPs. HFU prices them — it
+# divides by the `exec` budget, which carries the discount. MFU deliberately
+# keeps the full-length yardstick so it stays a fixed reference, which means it
+# RISES when this is on and must not be read as better utilization. Compare
+# ms/step or HFU, not MFU.
+# Override per-run via $TRITON_HSTU_LAST_LAYER_TARGETS_ONLY.
+apply_env_bootstrap.TRITON_HSTU_LAST_LAYER_TARGETS_ONLY = True
+
+# Whether the eval passes take that same path. The holdout batches are one
+# target per sequence just like the training ones, so the rewrite is equally
+# exact there, and eval would otherwise pay a full-length last layer for no
+# reason. Split out from the knob above only so an A/B can move eval without
+# moving training: eval numerics are what the convergence metric and the RCP
+# comparison are built on, and reduction order shifts them in the last digits.
+# Override per-run via $TRITON_HSTU_TARGETS_ONLY_EVAL.
+apply_env_bootstrap.TRITON_HSTU_TARGETS_ONLY_EVAL = True
+
 # =============================================================================
 # $SEED — global RNG seed for reproducible MODEL INITIALIZATION.
 #

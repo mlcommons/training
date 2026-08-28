@@ -148,11 +148,14 @@ class DlrmHSTU(HammerModule):
         self._pipeline_mode: bool = False
         self._hstu_configs = hstu_configs
         self._bf16_training: bool = bf16_training
-        # Last batch's jagged FLOPs/sample (0-d tensor on GPU). Populated by
-        # main_forward; MetricsLogger reads + .item()s on each compute_and_log
-        # to compute tflops_real/gpu and hfu (vs dense yardstick from
-        # get_num_flops_per_sample()).
+        # Last batch's FLOPs/sample (0-d tensors on GPU), populated by
+        # main_forward and read + .item()ed by MetricsLogger on each
+        # compute_and_log, both against the dense yardstick from
+        # get_num_flops_per_sample(). `jagged` charges every layer at full
+        # length and yields `fill`; `executed` also discounts a targets-only
+        # last layer and yields tflops_real/gpu, hfu and `exec`.
         self._last_jagged_flops_per_sample: Optional[torch.Tensor] = None
+        self._last_executed_flops_per_sample: Optional[torch.Tensor] = None
         set_static_max_seq_lens([self._hstu_configs.max_seq_len])
 
         if not is_dense:
@@ -387,6 +390,32 @@ class DlrmHSTU(HammerModule):
         out = gemm * n_tokens_linear * (3 * H * hd) * D
         return uvqk + attn + out
 
+    def _hstu_layer_flops_targets_only(self, n_tokens_linear: float) -> float:
+        """Per-layer FLOPs for a layer running the targets-only path.
+
+        With ``TRITON_HSTU_LAST_LAYER_TARGETS_ONLY`` the loss consumes one
+        candidate row per sequence, so that layer computes U/Q for that row
+        alone while V/K stay full length: the ``uvqk`` gemm keeps the V and K
+        halves and drops all but one row of the U and Q halves, attention
+        becomes one query row over the whole history rather than a causal
+        triangle, and the output projection runs on that single row.
+
+        Charging this instead of ``_hstu_layer_flops`` is what keeps HFU
+        honest -- billing the layer at full length credits the model with
+        ~28% of the 3-layer total that it never executes.
+        """
+        cfg = self._hstu_configs
+        D = cfg.hstu_transducer_embedding_dim
+        H = cfg.hstu_num_heads
+        hd = cfg.hstu_attn_linear_dim
+        qd = cfg.hstu_attn_qk_dim
+        gemm = self._FLOPS_PER_MAC * self._GEMM_FWD_BWD
+        attn_mult = self._FLOPS_PER_MAC * self._ATTN_FWD_BWD
+        uvqk = gemm * (n_tokens_linear + 1.0) * D * (hd + qd) * H
+        attn = attn_mult * n_tokens_linear * H * (qd + hd)
+        out = gemm * (3 * H * hd) * D
+        return uvqk + attn + out
+
     def get_num_flops_per_sample(self) -> float:
         """Dense-equivalent fwd+bwd FLOPs per sample at ``max_seq_len``.
 
@@ -394,6 +423,11 @@ class DlrmHSTU(HammerModule):
         theoretically reach if every sample's sequence were the full padded
         length). The actual ``tflops_real``/``hfu`` reported per step uses
         the jagged estimate stashed by ``main_forward``.
+
+        Deliberately blind to ``TRITON_HSTU_LAST_LAYER_TARGETS_ONLY``: this is
+        the workload the model *defines*, so a knob that removes work should
+        not move it. That does mean MFU rises when the knob is on -- the
+        jagged estimate, and therefore HFU, is the one that tracks what ran.
         """
         cfg = self._hstu_configs
         S = float(cfg.max_seq_len)
@@ -416,12 +450,31 @@ class DlrmHSTU(HammerModule):
         self,
         uih_seq_lengths: torch.Tensor,
         num_candidates: torch.Tensor,
-    ) -> torch.Tensor:
+        targets_only: bool = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Jagged fwd+bwd FLOPs per sample for THIS batch's actual lengths.
 
         Per-sample merged sequence length s_i = uih_seq_lengths[i] +
-        num_candidates[i]. Returns a 0-d tensor on the batch's device;
-        caller should ``.item()`` it (one D→H sync per logging interval).
+        num_candidates[i]. Returns ``(ragged, executed)`` as 0-d tensors on the
+        batch's device; the caller should ``.item()`` them (one D→H sync per
+        logging interval).
+
+        Two numbers because two independent things shrink the work below the
+        dense yardstick, and collapsing them would make either one unreadable:
+
+        * ``ragged`` charges every layer at full length, so against the dense
+          yardstick it isolates ragged sequences alone. This is ``fill``.
+        * ``executed`` additionally discounts the last layer when it took the
+          targets-only path, so it is the work the GPU really did. This drives
+          ``tflops_real``/``hfu``, and against the yardstick it is ``exec``.
+
+        The two are equal whenever the knob is off or the gate declined, so
+        ``exec``/``fill`` isolates the work removal on its own.
+
+        ``targets_only`` reports whether the last layer actually took the
+        targets-only path on this batch, and must come from the transducer
+        rather than the env flag: the gate declines per batch at eval, or when
+        a batch is not exactly one target per sequence.
         """
         s = (uih_seq_lengths + num_candidates).float()
         cfg = self._hstu_configs
@@ -430,18 +483,29 @@ class DlrmHSTU(HammerModule):
         # mean(s_i²) rather than mean(s_i)² is what the attention term needs:
         # cost is quadratic per sample, so it must be averaged after squaring
         # (Jensen — using the squared mean would understate a skewed batch).
-        flops = cfg.hstu_attn_num_layers * self._hstu_layer_flops(
+        per_layer = self._hstu_layer_flops(
             n_tokens_linear=s.mean(), n_tokens_attn_sq=(s * s).mean()
         )
+        ragged = cfg.hstu_attn_num_layers * per_layer
+        if targets_only:
+            executed = (
+                cfg.hstu_attn_num_layers - 1
+            ) * per_layer + self._hstu_layer_flops_targets_only(
+                n_tokens_linear=s.mean()
+            )
+        else:
+            executed = ragged
         n_tasks = len(self._multitask_configs)
         if n_tasks > 0:
-            flops = flops + (
+            head = (
                 self._FLOPS_PER_MAC
                 * self._GEMM_FWD_BWD
                 * n_tasks
                 * cfg.hstu_transducer_embedding_dim
             )
-        return flops
+            ragged = ragged + head
+            executed = executed + head
+        return ragged, executed
 
     def _construct_payload(
         self,
@@ -701,18 +765,6 @@ class DlrmHSTU(HammerModule):
         Optional[torch.Tensor],
         Optional[torch.Tensor],
     ]:
-        # Stash this batch's jagged FLOPs/sample for MetricsLogger to read.
-        # No D->H sync: the .item() happens once per metric_log_frequency in
-        # the trainer, not on every step. Eval-mode batches also produce a
-        # stash but the trainer only consumes it on train batches.
-        if not torch.jit.is_scripting():
-            self._last_jagged_flops_per_sample = (
-                self._compute_jagged_flops_per_sample(
-                    uih_seq_lengths=uih_seq_lengths,
-                    num_candidates=num_candidates,
-                )
-            )
-
         # merge uih and candidates embeddings
         for (
             uih_feature_name,
@@ -751,6 +803,23 @@ class DlrmHSTU(HammerModule):
                 total_uih_len=total_uih_len,
                 total_targets=total_targets,
             )
+
+        # Stash this batch's jagged FLOPs/sample for MetricsLogger to read.
+        # No D->H sync: the .item() happens once per metric_log_frequency in
+        # the trainer, not on every step. Eval-mode batches also produce a
+        # stash but the trainer only consumes it on train batches. Stashed
+        # after the transducer ran so it can be priced against the path that
+        # was actually taken, not the one the env flag asked for.
+        if not torch.jit.is_scripting():
+            (
+                self._last_jagged_flops_per_sample,
+                self._last_executed_flops_per_sample,
+            ) = self._compute_jagged_flops_per_sample(
+                uih_seq_lengths=uih_seq_lengths,
+                num_candidates=num_candidates,
+                targets_only=self._hstu_transducer._last_targets_only,
+            )
+
         with record_function("## multitask_module ##"):
             supervision_labels, supervision_weights = (
                 _get_supervision_labels_and_weights(
