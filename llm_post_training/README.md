@@ -33,10 +33,10 @@ through Ray:
   in per-task Apptainer/Singularity containers.
 
 The benchmark implementation is provided by
-[NVIDIA NeMo-RL](https://github.com/NVIDIA-NeMo/RL/tree/mlperf-training-qwen35-main).
+[NVIDIA NeMo-RL](https://github.com/NVIDIA-NeMo/RL/tree/mlperf-training-qwen35-next-v2).
 This repository checks out NeMo-RL under the local submodule path
-`llm_moe_grpo/RL`, pinned to commit
-`644f3708e34a04afe0ffd36a908ff75e574fb5c1`. The source commit, recursive
+`llm_post_training/RL`, pinned to commit
+`f987c0596af2bd6cfb9958e768deb8df951d7504`. The source commit, recursive
 submodule revisions, Python dependency lock, and downstream build-time patches
 are recorded in the benchmark container.
 
@@ -84,11 +84,11 @@ scheduler nodes.
 From the root of this repository:
 
 ```bash
-git submodule update --init --recursive llm_moe_grpo/RL
-cd llm_moe_grpo/RL
+git submodule update --init --recursive llm_post_training/RL
+cd llm_post_training/RL
 
 test "$(git rev-parse HEAD)" = \
-  "644f3708e34a04afe0ffd36a908ff75e574fb5c1"
+  "f987c0596af2bd6cfb9958e768deb8df951d7504"
 git submodule update --init --recursive
 ```
 
@@ -104,7 +104,7 @@ submodules, installs the locked dependencies, applies the benchmark's guarded
 patches, builds the Arm HybridEP dependency, installs Apptainer, and prefetches
 the Ray and NeMo Gym virtual environments.
 
-From the `llm_moe_grpo/RL` directory:
+From the `llm_post_training/RL` directory:
 
 ```bash
 source_commit="$(git rev-parse HEAD)"
@@ -324,7 +324,7 @@ The helper below builds all 951 Arm Docker images, pushes them to a
 user-supplied registry, and converts them to SIF:
 
 ```bash
-cd llm_moe_grpo/RL
+cd llm_post_training/RL
 
 export DOCKER_REGISTRY="<registry>"
 export DOCKER_USER="<registry-user>"
@@ -378,7 +378,7 @@ installation requires them.
 
 ## Run and time the benchmark
 
-Run the submission wrapper from the `llm_moe_grpo/RL` directory. Supply the
+Run the submission wrapper from the `llm_post_training/RL` directory. Supply the
 container, external data configuration, shared result root, and Slurm routing:
 
 ```bash
@@ -620,7 +620,7 @@ The pinned runtime identities are:
 
 | Component | Version | Revision or source |
 |---|---|---|
-| NeMo-RL | source reports `0.6.0` | `644f3708e34a04afe0ffd36a908ff75e574fb5c1` |
+| NeMo-RL | source reports `0.6.0` | `f987c0596af2bd6cfb9958e768deb8df951d7504` |
 | NeMo Gym | `0.4.0rc0` | `610a08ab5fe9f8f5fb5fff36b170429ea67f0f92` |
 | Megatron Bridge | `0.6.0` | `554c7b9324225aa863eee52e8b8fdde7abced2b1` |
 | Megatron Core | `0.19.0` | `002255075c3728fded9a2e435677840b08560d55` |
@@ -775,6 +775,25 @@ substantially more expensive than a conventional forward-only validation
 pass. The schedule delays the first evaluation to the GBS-specific RCP
 convergence window, then evaluates every step so a later crossing is detected
 within one additional training step.
+
+## Offline evaluation
+
+The benchmark rules require offline evaluation for this benchmark:
+`qwen35_397b_grpo` does not validate inline. Training must save a checkpoint
+after every step from the table's first-evaluation step until training stops,
+each checkpoint must record the timestamp of its latest weight update, and the
+saved checkpoints are evaluated after the run until one reaches the target
+accuracy. The run's `run_stop` event is emitted with the passing checkpoint's
+weight-update timestamp, so checkpoint writing and evaluation time are
+excluded from the measured time.
+
+With `DEFERRED_OFFLINE_EVAL=1` (see `RL/docker/mlperf/README.md`), the
+reference implements this directly: training runs without inline validation
+and saves a weights-only checkpoint after every step from the table's
+first-evaluation step through the final step, recording each checkpoint's
+weight-update end time in its metadata. After training stops, the launcher
+evaluates the saved checkpoints in the same allocation, in step order,
+stopping at the first checkpoint that reaches the target.
 
 # 6. Approximate runtime
 
