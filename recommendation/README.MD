@@ -383,6 +383,30 @@ env overrides:
 | `EVAL_EVERY_DATA_PCT` | `streaming_train_eval_loop.eval_every_data_pct` | 0.0 | eval cadence by fraction of train data (full ref / RCP: 0.001) |
 | `MIN_HISTORY` | `get_dataset.min_history` | 4086 | anchor-eligibility floor (0 = ~all users incl. cold-start) |
 
+#### Offline time-window indices
+
+To bucketize anchors by time window, set this in
+[`yambda_5b.gin`](generative_recommenders/dlrm_v4/train/gin/yambda_5b.gin):
+
+```gin
+get_dataset.use_offline_ts_indices = True
+```
+
+The default is `False`. When enabled, `ts_indices_*.npy` and `ts_offsets_*.npy`
+are **built automatically on the first run** during dataset initialization,
+alongside the positions cache. This also works with an existing cache folder
+that lacks these files. Later runs reuse them.
+
+For read-only data mounts, build them beforehand from an existing cache:
+
+```bash
+python3 -m generative_recommenders.dlrm_v4.datasets.offline_ts_indices \
+    --cache-dir "$DLRM_DATA_PATH/processed_5b/hstu_cache_L4086" \
+    --history-length 4086 --min-history 4086 --window-seconds 86400
+```
+
+Use the same history and window settings as training.
+
 ### Test data order
 
 The evaluation window is traversed once per evaluation, in the same in-window

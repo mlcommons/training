@@ -219,6 +219,7 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         streaming_shuffle_seed: int = 0,
         train_split_percentage: float = 1.0,
         split_salt: int = 0,
+        use_offline_ts_indices: bool = False,
         *args,
         **kwargs,
     ) -> None:
@@ -283,6 +284,9 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         self._active: Optional[np.ndarray] = None
         self.is_eval: bool = False
         self._anchor_ts: Optional[np.ndarray] = None
+        self._use_offline_ts_indices = use_offline_ts_indices
+        self._ts_indices: Optional[np.ndarray] = None
+        self._ts_offsets: Optional[np.ndarray] = None
         self._t_min: Optional[int] = None
         self._t_max: Optional[int] = None
         self._cache_dir: Optional[str] = cache_dir
@@ -315,6 +319,15 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         self._ensure_positions_built(
             cache_dir, self._positions_name, self._min_history
         )
+        if self._use_offline_ts_indices:
+            from generative_recommenders.dlrm_v4.datasets.offline_ts_indices import (
+                build_offline_ts_indices,
+            )
+
+            build_offline_ts_indices(
+                cache_dir, history_length, self._min_history,
+                window_seconds=self._streaming_window_seconds,
+            )
         self._positions: np.ndarray = _load_npy_readonly(
             os.path.join(cache_dir, self._positions_name)
         )
@@ -596,6 +609,25 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         Multi-rank safe via an exclusive file lock + atomic rename; all ranks
         then mmap the result read-only (shared physical pages, ~0 anon).
         """
+        if self._use_offline_ts_indices:
+            if self._ts_indices is None:
+                directory = Path(self._cache_dir)
+                tag = self._positions_name[len("positions_"):-4]
+                tag += f"_W{self._streaming_window_seconds}"
+                indices = _load_npy_readonly(directory / f"ts_indices_{tag}.npy")
+                offsets = _load_npy_readonly(directory / f"ts_offsets_{tag}.npy")
+                if (
+                    indices.dtype != np.int64 or indices.ndim != 1
+                    or len(indices) != len(self._positions)
+                    or offsets.dtype != np.int64 or offsets.ndim != 1
+                    or len(offsets) == 0 or offsets[0] != 0
+                    or offsets[-1] != len(indices)
+                    or np.any(offsets[1:] < offsets[:-1])
+                ):
+                    raise ValueError("Invalid offline TS indices or offsets")
+                self._ts_offsets = offsets
+                self._ts_indices = indices
+            return
         if self._anchor_ts is not None:
             return
         import fcntl
@@ -626,9 +658,21 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         self._t_min = int(self._anchor_ts.min())
         self._t_max = int(self._anchor_ts.max())
 
+    def _offline_window_bounds(self, start_ts: int, num_ts: int = 1) -> Tuple[int, int]:
+        windows = len(self._ts_offsets) - 1
+        start = min(windows, max(0, start_ts))
+        end = min(windows, max(0, start_ts + max(0, num_ts)))
+        return int(self._ts_offsets[start]), int(self._ts_offsets[end])
+
+    def _offline_window_indices(self, start_ts: int, num_ts: int = 1) -> np.ndarray:
+        lo, hi = self._offline_window_bounds(start_ts, num_ts)
+        return self._ts_indices[lo:hi]
+
     def num_windows(self) -> int:
         """Number of fixed-duration windows spanning [t_min, t_max]."""
         self._ensure_streaming_index()
+        if self._ts_offsets is not None:
+            return len(self._ts_offsets) - 1
         assert self._t_min is not None and self._t_max is not None
         span = self._t_max - self._t_min + 1
         w = self._streaming_window_seconds
@@ -653,6 +697,13 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         O(N) mask here keeps only one ~26 GB array resident and is robust.
         """
         self._ensure_streaming_index()
+        if self._ts_indices is not None:
+            idx = self._offline_window_indices(ts)
+            do_sort = self._streaming_sort_within_window if sort_by_time is None else sort_by_time
+            if do_sort and idx.size:
+                timestamps = self.store.flat_timestamps[self._positions[idx]]
+                idx = idx[np.argsort(timestamps, kind="stable")]
+            return idx
         assert self._anchor_ts is not None and self._t_min is not None
         w = self._streaming_window_seconds
         lo = self._t_min + ts * w
@@ -778,6 +829,15 @@ class DLRMv4YambdaDataset(DLRMv4RandomDataset):
         by a fraction of a window).
         """
         self._ensure_streaming_index()
+        if self._ts_indices is not None:
+            lo, hi = self._offline_window_bounds(start_ts, num_ts)
+            if self._train_split_percentage >= 1.0:
+                return hi - lo
+            indices = self._ts_indices[lo:hi]
+            return sum(
+                int(np.count_nonzero(~self._eval_anchor_mask(indices[start:start + 1_000_000])))
+                for start in range(0, len(indices), 1_000_000)
+            )
         assert self._anchor_ts is not None and self._t_min is not None
         if num_ts <= 0:
             return 0
