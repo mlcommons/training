@@ -20,12 +20,17 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import torch
-from generative_recommenders.common import fx_unwrap_optional_tensor, HammerModule
+from generative_recommenders.common import (
+    fx_unwrap_optional_tensor,
+    HammerKernel,
+    HammerModule,
+)
 from generative_recommenders.ops.hstu_attention import delta_hstu_mha
 from generative_recommenders.ops.hstu_compute import (
     hstu_compute_output,
     hstu_compute_uqvk,
     hstu_preprocess_and_attention,
+    hstu_preprocess_and_attention_targets_only,
 )
 from generative_recommenders.ops.jagged_tensors import concat_2D_jagged, split_2D_jagged
 from torch.autograd.profiler import record_function
@@ -39,12 +44,38 @@ except OSError:
 
 
 class STU(HammerModule, abc.ABC):
+    @torch.jit.unused
+    def targets_only_unsupported_reason(self) -> Optional[str]:
+        """Why this module cannot run the targets-only path, or None if it can.
+
+        A reason rather than a bool because the caller raises with it: the knob
+        is opt-in, so a config that can never satisfy it is a mistake to
+        surface, and "unsupported" alone does not say which of nine conditions
+        to go fix.
+        """
+        return f"{type(self).__name__} has no targets-only path"
+
+    @torch.jit.unused
+    def supports_targets_only(self) -> bool:
+        return self.targets_only_unsupported_reason() is None
+
     def cached_forward(
         self,
         delta_x: torch.Tensor,
         num_targets: torch.Tensor,
         max_kv_caching_len: int = 0,
         kv_caching_lengths: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+    @torch.jit.unused
+    def forward_targets_only(
+        self,
+        x: torch.Tensor,
+        x_lengths: torch.Tensor,
+        x_offsets: torch.Tensor,
+        max_seq_len: int,
+        num_targets: torch.Tensor,
     ) -> torch.Tensor:
         raise NotImplementedError
 
@@ -354,6 +385,82 @@ class STULayer(STU):
                 recompute_y_in_backward=self._recompute_y,
             )
 
+    @torch.jit.unused
+    def targets_only_unsupported_reason(self) -> Optional[str]:
+        if self._is_inference:
+            return "layer is in inference mode"
+        if self.hammer_kernel() != HammerKernel.TRITON:
+            return f"hammer kernel is {self.hammer_kernel()}, not TRITON"
+        if self._use_group_norm:
+            return "group norm couples the candidate row to the rows dropped"
+        if not self._target_aware:
+            return "attention is not target-aware, so targets are not a suffix"
+        if not self._causal:
+            return "attention is not causal, so the candidate row is not last"
+        if self._max_attn_len != 0:
+            return f"max_attn_len={self._max_attn_len} windows attention"
+        if self._contextual_seq_len != 0:
+            return f"contextual_seq_len={self._contextual_seq_len} prefixes the sequence"
+        if not self._recompute_normed_x:
+            return "recompute_normed_x is off"
+        if not self._recompute_uvqk:
+            return "recompute_uvqk is off"
+        return None
+
+    @torch.jit.unused
+    def forward_targets_only(
+        self,
+        x: torch.Tensor,
+        x_lengths: torch.Tensor,
+        x_offsets: torch.Tensor,
+        max_seq_len: int,
+        num_targets: torch.Tensor,
+    ) -> torch.Tensor:
+        """Exact final-layer training path for one suffix target per sequence."""
+        if not self.supports_targets_only():
+            raise RuntimeError("unsupported HSTU targets-only activation contract")
+
+        candidate_rows = x_offsets[1:] - 1
+        with record_function("## stu_targets_only_preprocess_and_attention ##"):
+            u, attn_output = hstu_preprocess_and_attention_targets_only(
+                x=x,
+                norm_weight=self._input_norm_weight.to(x.dtype),
+                norm_bias=self._input_norm_bias.to(x.dtype),
+                norm_eps=1e-6,
+                num_heads=self._num_heads,
+                attn_dim=self._attention_dim,
+                hidden_dim=self._hidden_dim,
+                uvqk_weight=self._uvqk_weight.to(x.dtype),
+                uvqk_bias=self._uvqk_beta.to(x.dtype),
+                max_seq_len=max_seq_len,
+                seq_offsets=x_offsets,
+                attn_alpha=self._attn_alpha,
+                num_targets=num_targets,
+                kernel=HammerKernel.TRITON,
+            )
+        candidate_x = torch.index_select(x, 0, candidate_rows)
+        with record_function("## stu_targets_only_compute_output ##"):
+            return hstu_compute_output(
+                attn=attn_output,
+                u=u,
+                x=candidate_x,
+                norm_weight=self._output_norm_weight.to(x.dtype),
+                norm_bias=self._output_norm_bias.to(x.dtype),
+                norm_eps=1e-6,
+                dropout_ratio=self._output_dropout_ratio,
+                output_weight=self._output_weight.to(x.dtype),
+                group_norm=False,
+                num_heads=self._num_heads,
+                linear_dim=self._hidden_dim,
+                concat_u=True,
+                concat_x=True,
+                mul_u_activation_type="none",
+                training=self.training,
+                kernel=HammerKernel.TRITON,
+                recompute_y_in_backward=self._recompute_y,
+                rng_row_indices=candidate_rows,
+            )
+
     def cached_forward(
         self,
         delta_x: torch.Tensor,
@@ -432,6 +539,15 @@ class STUStack(STU):
         super().__init__(is_inference=is_inference)
         self._stu_layers: torch.nn.ModuleList = torch.nn.ModuleList(modules=stu_list)
 
+    @torch.jit.unused
+    def targets_only_unsupported_reason(self) -> Optional[str]:
+        if len(self._stu_layers) == 0:
+            return "stack has no STU layers"
+        reason = self._stu_layers[
+            len(self._stu_layers) - 1
+        ].targets_only_unsupported_reason()  # pyre-ignore [29]
+        return None if reason is None else f"last STU layer: {reason}"
+
     def forward(
         self,
         x: torch.Tensor,
@@ -453,6 +569,36 @@ class STUStack(STU):
                 kv_caching_lengths=kv_caching_lengths,
             )
         return x
+
+    @torch.jit.unused
+    def forward_targets_only(
+        self,
+        x: torch.Tensor,
+        x_lengths: torch.Tensor,
+        x_offsets: torch.Tensor,
+        max_seq_len: int,
+        num_targets: torch.Tensor,
+    ) -> torch.Tensor:
+        num_layers = len(self._stu_layers)
+        if num_layers == 0:
+            raise RuntimeError("targets-only requires at least one STU layer")
+        for layer_index, layer in enumerate(self._stu_layers):
+            if layer_index == num_layers - 1:
+                return layer.forward_targets_only(  # pyre-ignore [29]
+                    x=x,
+                    x_lengths=x_lengths,
+                    x_offsets=x_offsets,
+                    max_seq_len=max_seq_len,
+                    num_targets=num_targets,
+                )
+            x = layer(
+                x=x,
+                x_lengths=x_lengths,
+                x_offsets=x_offsets,
+                max_seq_len=max_seq_len,
+                num_targets=num_targets,
+            )
+        raise AssertionError("unreachable")
 
     def cached_forward(
         self,

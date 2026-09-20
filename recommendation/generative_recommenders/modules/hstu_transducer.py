@@ -17,7 +17,8 @@
 # pyre-strict
 
 import logging
-from typing import Dict, Optional, Tuple
+import os
+from typing import Dict, Optional, Set, Tuple
 
 import torch
 from generative_recommenders.common import fx_unwrap_optional_tensor, HammerModule
@@ -33,6 +34,26 @@ from torch.profiler import record_function
 
 logger: logging.Logger = logging.getLogger(__name__)
 torch.fx.wrap("len")
+_HSTU_LAST_LAYER_TARGETS_ONLY: bool = (
+    os.environ.get("TRITON_HSTU_LAST_LAYER_TARGETS_ONLY", "0") == "1"
+)
+# Whether eval takes the targets-only path too. Separately switchable because
+# eval numerics feed the convergence metric the RCP sweep is compared against,
+# so an A/B has to be able to move eval without moving training.
+_HSTU_TARGETS_ONLY_EVAL: bool = (
+    os.environ.get("TRITON_HSTU_TARGETS_ONLY_EVAL", "1") == "1"
+)
+_TARGETS_ONLY_CHECKED: bool = False
+_TARGETS_ONLY_SKIPS: Set[str] = set()
+
+
+def _log_targets_only_skip_once(reason: str) -> None:
+    if reason not in _TARGETS_ONLY_SKIPS:
+        _TARGETS_ONLY_SKIPS.add(reason)
+        logger.warning(
+            "[hstu] last layer: falling back to the full path for this batch "
+            f"({reason}); targets-only needs exactly one target per sequence"
+        )
 
 try:
     torch.ops.load_library("//deeplearning/fbgemm/fbgemm_gpu:sparse_ops")
@@ -78,6 +99,11 @@ class HSTUTransducer(HammerModule):
         self._input_dropout_ratio: float = input_dropout_ratio
         self._return_full_embeddings: bool = return_full_embeddings
         self._listwise_training: bool = listwise and self.is_train
+        # Whether the last forward actually took the targets-only path. Read by
+        # DlrmHSTU to price the FLOPs counter, which would otherwise bill the
+        # last layer at full sequence length. Per-batch, because the gate can
+        # legitimately decline (eval, or not one target per sequence).
+        self._last_targets_only: bool = False
 
         for name, m in self.named_modules():
             if "_stu_module" in name:
@@ -168,6 +194,87 @@ class HSTUTransducer(HammerModule):
             output_seq_payloads,
         )
 
+    @torch.jit.unused
+    def _targets_only_unsupported_reason(self) -> Optional[str]:
+        """Why targets-only can never run in this configuration, or None.
+
+        Only conditions fixed for the whole run belong here. Anything that can
+        differ between two batches of the same run is decided per call instead.
+        """
+        if self._is_inference:
+            return "transducer is in inference mode"
+        if self._return_full_embeddings:
+            return "return_full_embeddings=True consumes every row, not just candidates"
+        if self._listwise_training:
+            return "listwise training does not pass num_targets to attention"
+        if self._input_preprocessor.interleave_targets():
+            return "preprocessor interleaves targets, so they are not a suffix"
+        return self._stu_module.targets_only_unsupported_reason()
+
+    @torch.jit.unused
+    def _resolve_targets_only(
+        self, max_targets: int, total_targets: int, batch_size: int
+    ) -> bool:
+        """Decide the last-layer targets-only path, and fail loudly if asked for
+        something this configuration can never do.
+
+        The knob defaults off, so reaching here means it was explicitly turned
+        on. A config that cannot satisfy it is then a mistake worth raising on:
+        a silent fallback would read as "the optimization simply didn't help",
+        and nobody re-checks a knob that appears to be working. A batch that is
+        not exactly one target per sequence is not a mistake, so that only falls
+        back, logged once per distinct reason so a rare shape cannot hide. A
+        device without the separated-RNG dropout path falls back the same way:
+        that is not a mistake either, since no config change can fix it.
+
+        Eval takes the same path as training. The two are exact in math -- with
+        one target per sequence the standard path's ``split_2D_jagged`` selects
+        precisely the row targets-only computes, and both feed it through the
+        same output postprocessor -- so the only difference is reduction order.
+        Dropout is keyed off ``self.training`` inside the layer, not off this
+        decision, so it stays off in eval either way.
+        """
+        global _TARGETS_ONLY_CHECKED
+        if not _TARGETS_ONLY_CHECKED:
+            _TARGETS_ONLY_CHECKED = True
+            reason = self._targets_only_unsupported_reason()
+            if reason is not None:
+                raise RuntimeError(
+                    "TRITON_HSTU_LAST_LAYER_TARGETS_ONLY=1 was requested but "
+                    f"this configuration cannot support it: {reason}. Set "
+                    "TRITON_HSTU_LAST_LAYER_TARGETS_ONLY=0 (or gin "
+                    "apply_env_bootstrap.TRITON_HSTU_LAST_LAYER_TARGETS_ONLY"
+                    "=False) to run the standard last layer instead."
+                )
+            logger.info(
+                "[hstu] last layer: targets-only (one candidate row per sequence)"
+            )
+        # Hardware, unlike the conditions above, is not something the caller can
+        # go fix, so this declines instead of raising. Training needs the
+        # candidate row to draw the same dropout mask the full-length pass would
+        # have drawn, and only the separated-RNG path can index a mask that way.
+        # Eval is unaffected: dropout is off, so no mask has to match.
+        from generative_recommenders.ops.triton.triton_hstu_linear import (
+            supports_indexed_output_dropout,
+        )
+
+        if self.training and not supports_indexed_output_dropout():
+            _log_targets_only_skip_once(
+                "device has no separated-RNG dropout mask path, so the compact "
+                "row cannot reproduce the full-length dropout stream"
+            )
+            return False
+        if not self.training and not _HSTU_TARGETS_ONLY_EVAL:
+            _log_targets_only_skip_once("eval (TRITON_HSTU_TARGETS_ONLY_EVAL=0)")
+            return False
+        if max_targets != 1 or total_targets != batch_size:
+            _log_targets_only_skip_once(
+                f"max_targets={max_targets} total_targets={total_targets} "
+                f"batch_size={batch_size}"
+            )
+            return False
+        return True
+
     def _hstu_compute(
         self,
         max_seq_len: int,
@@ -176,15 +283,25 @@ class HSTUTransducer(HammerModule):
         seq_timestamps: torch.Tensor,
         seq_embeddings: torch.Tensor,
         num_targets: torch.Tensor,
+        targets_only: bool,
     ) -> torch.Tensor:
         with record_function("hstu"):
-            seq_embeddings = self._stu_module(
-                max_seq_len=max_seq_len,
-                x=seq_embeddings,
-                x_lengths=seq_lengths,
-                x_offsets=seq_offsets,
-                num_targets=(None if self._listwise_training else num_targets),
-            )
+            if targets_only:
+                seq_embeddings = self._stu_module.forward_targets_only(
+                    max_seq_len=max_seq_len,
+                    x=seq_embeddings,
+                    x_lengths=seq_lengths,
+                    x_offsets=seq_offsets,
+                    num_targets=num_targets,
+                )
+            else:
+                seq_embeddings = self._stu_module(
+                    max_seq_len=max_seq_len,
+                    x=seq_embeddings,
+                    x_lengths=seq_lengths,
+                    x_offsets=seq_offsets,
+                    num_targets=(None if self._listwise_training else num_targets),
+                )
         return seq_embeddings
 
     def _postprocess(
@@ -199,8 +316,23 @@ class HSTUTransducer(HammerModule):
         seq_embeddings: torch.Tensor,
         num_targets: torch.Tensor,
         seq_payloads: Dict[str, torch.Tensor],
+        targets_only: bool,
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
         with record_function("hstu_output_postprocessor"):
+            if targets_only:
+                seq_offsets = torch.ops.fbgemm.asynchronous_complete_cumsum(
+                    seq_lengths
+                )
+                candidate_rows = seq_offsets[1:] - 1
+                candidate_timestamps = torch.index_select(
+                    seq_timestamps, 0, candidate_rows
+                )
+                candidate_embeddings = self._output_postprocessor(
+                    seq_embeddings=seq_embeddings,
+                    seq_timestamps=candidate_timestamps,
+                    seq_payloads=seq_payloads,
+                )
+                return None, candidate_embeddings
             if self._return_full_embeddings:
                 seq_embeddings = self._output_postprocessor(
                     seq_embeddings=seq_embeddings,
@@ -296,6 +428,15 @@ class HSTUTransducer(HammerModule):
             seq_payloads=seq_payloads,
         )
 
+        targets_only = False
+        if _HSTU_LAST_LAYER_TARGETS_ONLY and not torch.jit.is_scripting():
+            targets_only = self._resolve_targets_only(
+                max_targets=max_targets,
+                total_targets=total_targets,
+                batch_size=seq_lengths.size(0),
+            )
+        if not torch.jit.is_scripting():
+            self._last_targets_only = targets_only
         encoded_embeddings = self._hstu_compute(
             max_seq_len=max_seq_len,
             seq_lengths=seq_lengths,
@@ -303,6 +444,7 @@ class HSTUTransducer(HammerModule):
             seq_timestamps=seq_timestamps,
             seq_embeddings=seq_embeddings,
             num_targets=num_targets,
+            targets_only=targets_only,
         )
 
         encoded_embeddings, encoded_candidate_embeddings = self._postprocess(
@@ -316,6 +458,7 @@ class HSTUTransducer(HammerModule):
             seq_timestamps=seq_timestamps,
             num_targets=num_targets,
             seq_payloads=seq_payloads,
+            targets_only=targets_only,
         )
 
         if not self._is_inference:

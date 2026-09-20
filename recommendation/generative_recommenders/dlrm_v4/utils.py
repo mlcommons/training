@@ -1370,10 +1370,15 @@ class MetricsLogger:
             #   tflops_algo/gpu, mfu  — uses max_seq_len^2 attention work (the
             #     MFU yardstick: the FLOPs the workload would do if every
             #     user's UIH filled the padded seq length).
-            #   tflops_real/gpu, hfu — uses this batch's mean(s_i^2) (actual
-            #     GPU work; hardware utilization).
-            #   fill                  — real / algo as a percent; how much of
-            #     the algo budget the model actually executed this batch.
+            #   tflops_real/gpu, hfu — uses this batch's mean(s_i^2) and
+            #     discounts a targets-only last layer (actual GPU work;
+            #     hardware utilization).
+            #   fill                  — ragged / algo as a percent; how much of
+            #     the padded sequence budget this batch's sequences fill.
+            #   exec                  — real / algo as a percent; how much of
+            #     the algo budget the model actually executed, so it carries
+            #     both the ragged fill and any work a knob removed outright
+            #     (exec / fill isolates the latter).
             # The jagged stash is read from the inner model; the model ref may
             # be a DMP wrapper, so unwrap via .module if present.
             tflops_str = ""
@@ -1385,20 +1390,29 @@ class MetricsLogger:
                 self.tb_logger.add_scalar("perf/train_mfu_pct", mfu, global_step=step)
                 tflops_str = f" tflops_algo/gpu={tflops_algo:.1f} mfu={mfu:.1f}%"
                 jagged_t = None
+                executed_t = None
                 m = self._model_ref
                 if m is not None:
                     inner = m.module if hasattr(m, "module") else m
                     jagged_t = getattr(inner, "_last_jagged_flops_per_sample", None)
+                    executed_t = getattr(
+                        inner, "_last_executed_flops_per_sample", None
+                    )
                 if jagged_t is not None:
-                    jagged = float(jagged_t.item())
-                    if 0 < jagged < self._num_flops_per_sample:
-                        tflops_real = jagged * local_sps / 1e12
-                        hfu = 100.0 * jagged * local_sps / self._gpu_peak_flops
+                    if executed_t is None:
+                        executed_t = jagged_t
+                    # One D->H sync for both, not two.
+                    jagged, executed = torch.stack([jagged_t, executed_t]).tolist()
+                    if 0 < executed <= jagged < self._num_flops_per_sample:
+                        tflops_real = executed * local_sps / 1e12
+                        hfu = 100.0 * executed * local_sps / self._gpu_peak_flops
                         fill = 100.0 * jagged / self._num_flops_per_sample
+                        executed_pct = 100.0 * executed / self._num_flops_per_sample
                         self.tb_logger.add_scalar("perf/train_tflops_real_gpu", tflops_real, global_step=step)
                         self.tb_logger.add_scalar("perf/train_hfu_pct", hfu, global_step=step)
                         self.tb_logger.add_scalar("perf/train_fill_pct", fill, global_step=step)
-                        tflops_str += f" tflops_real/gpu={tflops_real:.1f} hfu={hfu:.1f}% fill={fill:.1f}%"
+                        self.tb_logger.add_scalar("perf/train_exec_pct", executed_pct, global_step=step)
+                        tflops_str += f" tflops_real/gpu={tflops_real:.1f} hfu={hfu:.1f}% fill={fill:.1f}% exec={executed_pct:.1f}%"
             logger.info(
                 f"train - Step {step} perf: local_sps={local_sps:.1f} "
                 f"global_sps={global_sps:.1f} step_ms={step_ms:.2f} "
