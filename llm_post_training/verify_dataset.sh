@@ -16,15 +16,15 @@
 
 set -euo pipefail
 
-readonly TRAIN_FILENAME="benchmark_r2e_gym_easy_train.filtered.curriculum-v2-classic-cycles2-seed20260710.jsonl"
-readonly TRAIN_SHA256="c07bcd64ed1c558e28d091239104e38295a5e696c1d21bb0b61f0346c7eaa0f7"
-readonly TRAIN_ROWS="685"
-readonly TRAIN_BYTES="444421669"
+readonly TRAIN_FILENAME="benchmark_r2e_gym_easy_train.jsonl"
+readonly TRAIN_SHA256="e772af09599270ab16a04ccbbcef395bcb2929607f050478033a84b087a606fc"
+readonly TRAIN_ROWS="700"
+readonly TRAIN_BYTES="446364412"
 
 readonly VAL_FILENAME="benchmark_r2e_gym_easy_val.jsonl"
-readonly VAL_SHA256="452d0e6b3c1973669334062dc24931355de51749df1ab51fc9bb71a129f7bb5c"
-readonly VAL_ROWS="256"
-readonly VAL_BYTES="173801096"
+readonly VAL_SHA256="2d5bddf717afb4389510a7d197f26ce5eb7f610aab4b20d6af6e0150de6f2c79"
+readonly VAL_ROWS="251"
+readonly VAL_BYTES="172078629"
 
 usage() {
     cat <<'EOF'

@@ -31,15 +31,37 @@ export NRL_SOURCE_OVERLAY=0
 
 ## Data configuration
 
+Download the checkpoint, Arm SIF bundle, 700-row training file, and 251-row
+validation file from the
+[Qwen3.5 397B benchmark page](https://training.mlcommons-storage.org/index.html#qwen3-5-397b-benchmark):
+
+```bash
+checkpoint_dir="<shared-path>/qwen35-397b-a17b"
+sif_package_dir="<shared-path>/r2egym-sifs-aarch64"
+dataset_dir="<shared-path>/benchmark-r2e-gym-easy"
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+  -d "${checkpoint_dir}" \
+  https://training.mlcommons-storage.org/metadata/qwen35-397b-a17b.uri
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+  -d "${sif_package_dir}" \
+  https://training.mlcommons-storage.org/metadata/r2egym-sifs-aarch64.uri
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+  -d "${dataset_dir}" \
+  https://training.mlcommons-storage.org/metadata/benchmark-r2e-gym-easy.uri
+```
+
 Create a shell file outside the repository containing the paths and MLPerf
 metadata for the target installation:
 
 ```bash
-export HF_CKPT_PATH="<HF_397B_CHECKPOINT>"
+export HF_CKPT_PATH="<CHECKPOINT_DIRECTORY>"
 export NRL_MEGATRON_CHECKPOINT_DIR="<WRITABLE_MCORE_CHECKPOINT_CACHE>"
-export NEMO_GYM_SWE_SIF_DIR="<R2E_GYM_SIF_DIRECTORY>"
-export NEMO_GYM_SWE_VALIDATION_DATA_PATH="<VALIDATION_JSONL>"
-export QWEN35_CURRICULUM_DATA_PATH="<CURRICULUM_V2_JSONL>"
+export NEMO_GYM_SWE_SIF_DIR="<SIF_PACKAGE_DIRECTORY>/images"
+export NEMO_GYM_SWE_VALIDATION_DATA_PATH="<DATASET_DIRECTORY>/benchmark_r2e_gym_easy_val.jsonl"
+export QWEN35_CURRICULUM_DATA_PATH="<DATASET_DIRECTORY>/benchmark_r2e_gym_easy_train.jsonl"
 
 export MLPERF_SUBMITTER="<ORGANIZATION>"
 export MLPERF_STATUS="<SYSTEM_STATUS>"
@@ -271,6 +293,8 @@ generation:
   speculative decoding: disabled and not permitted
   train and validation concurrency: 256
   train and validation agent timeout: 1800 seconds
+  train and validation test timeout: 60 seconds
+  train and validation command timeout: 60 seconds
   prefix caching: enabled
   chunked prefill: enabled
   max_num_batched_tokens: 16384

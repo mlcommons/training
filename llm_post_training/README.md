@@ -33,18 +33,19 @@ through Ray:
   in per-task Apptainer/Singularity containers.
 
 The benchmark implementation is provided by
-[NVIDIA NeMo-RL](https://github.com/NVIDIA-NeMo/RL/tree/mlperf-training-qwen35-main).
+[NVIDIA NeMo-RL](https://github.com/NVIDIA-NeMo/RL/tree/mlperf-training-qwen35-next-v2).
 This repository checks out NeMo-RL under the local submodule path
-`llm_moe_grpo/RL`, pinned to commit
-`3fca04c9b313d313302923a5bb6b0c8dc0340ed6`. The source commit, recursive
+`llm_post_training/RL`, pinned to commit
+`f987c0596af2bd6cfb9958e768deb8df951d7504`. The source commit, recursive
 submodule revisions, Python dependency lock, and downstream build-time patches
 are recorded in the benchmark container.
 
-The principal entrypoints are:
+The principal entrypoints and reference sections are:
 
-| Purpose | Path |
+| Purpose | Path or section |
 |---|---|
-| Dataset download and preprocessing | `download_dataset.sh` |
+| Qualified dataset download | [Training and validation JSONL](#training-and-validation-jsonl) |
+| Dataset production from source | `download_dataset.sh` |
 | Dataset identity verification | `verify_dataset.sh` |
 | Pretrained-checkpoint download | `download_checkpoint.sh` |
 | Pretrained-checkpoint conversion | `RL/docker/mlperf/data_scripts/convert_ckpt.sh` |
@@ -83,11 +84,11 @@ scheduler nodes.
 From the root of this repository:
 
 ```bash
-git submodule update --init --recursive llm_moe_grpo/RL
-cd llm_moe_grpo/RL
+git submodule update --init --recursive llm_post_training/RL
+cd llm_post_training/RL
 
 test "$(git rev-parse HEAD)" = \
-  "3fca04c9b313d313302923a5bb6b0c8dc0340ed6"
+  "f987c0596af2bd6cfb9958e768deb8df951d7504"
 git submodule update --init --recursive
 ```
 
@@ -103,7 +104,7 @@ submodules, installs the locked dependencies, applies the benchmark's guarded
 patches, builds the Arm HybridEP dependency, installs Apptainer, and prefetches
 the Ray and NeMo Gym virtual environments.
 
-From the `llm_moe_grpo/RL` directory:
+From the `llm_post_training/RL` directory:
 
 ```bash
 source_commit="$(git rev-parse HEAD)"
@@ -152,11 +153,37 @@ The run requires five external artifacts:
 |---|---|---|
 | Qwen3.5 policy checkpoint | `HF_CKPT_PATH` | `Qwen/Qwen3.5-397B-A17B` snapshot `8472618112abcbd45acbcdc58436aff4233c23f7` |
 | Megatron checkpoint cache | `NRL_MEGATRON_CHECKPOINT_DIR` | Writable directory; an empty directory is converted from the HF checkpoint on first use |
-| Curriculum training JSONL | `QWEN35_CURRICULUM_DATA_PATH` | Exact 685-row curriculum-v2 artifact described below |
-| Validation JSONL | `NEMO_GYM_SWE_VALIDATION_DATA_PATH` | 256 held-out R2E-Gym tasks |
-| Per-task SIF images | `NEMO_GYM_SWE_SIF_DIR` | All 941 environments referenced by the qualified train/validation lists; the checked-in helper builds a compatible 977-image superset |
+| Curriculum training JSONL | `QWEN35_CURRICULUM_DATA_PATH` | Exact 700-row artifact described below |
+| Validation JSONL | `NEMO_GYM_SWE_VALIDATION_DATA_PATH` | 251 held-out R2E-Gym tasks |
+| Per-task SIF images | `NEMO_GYM_SWE_SIF_DIR` | All 951 environments referenced by the qualified train/validation files |
 
 ### Policy checkpoint
+
+Download the qualified Hugging Face checkpoint from
+[MLCommons storage](https://training.mlcommons-storage.org/index.html#qwen3-5-397b-benchmark):
+
+```bash
+cd llm_moe_grpo
+
+checkpoint_dir="<shared-path>/qwen35-397b-a17b"
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+  -d "${checkpoint_dir}" \
+  https://training.mlcommons-storage.org/metadata/qwen35-397b-a17b.uri
+
+export HF_CKPT_PATH="${checkpoint_dir}"
+mkdir -p "<shared-path>/qwen35-mcore-cache"
+export NRL_MEGATRON_CHECKPOINT_DIR="<shared-path>/qwen35-mcore-cache"
+```
+
+The downloader verifies the package's MD5 manifest. `HF_CKPT_PATH` must name
+the directory containing `config.json` and the model weight shards. The
+MLCommons package mirrors Hugging Face revision
+`98d1a504ba52e88924b3a3a008447cf2fdbd518c`; its model, configuration, and
+tokenizer files match revision `8472618112abcbd45acbcdc58436aff4233c23f7`
+pinned by the helper below. Those revisions differ only in `README.md`.
+
+#### Optionally, download the checkpoint from Hugging Face
 
 The checked-in download helper pins the exact Hugging Face model revision and
 uses the standard Hugging Face cache layout:
@@ -190,22 +217,16 @@ incompatible NeMo-RL/Megatron Bridge/Megatron Core stack is not supported.
 The benchmark training input is:
 
 ```text
-benchmark_r2e_gym_easy_train.filtered.curriculum-v2-classic-cycles2-seed20260710.jsonl
+benchmark_r2e_gym_easy_train.jsonl
 ```
 
 Its known identity is:
 
 | Property | Value |
 |---|---:|
-| Rows | 685 |
-| Size | 444,421,669 bytes |
-| SHA-256 | `c07bcd64ed1c558e28d091239104e38295a5e696c1d21bb0b61f0346c7eaa0f7` |
-
-The checked-in converter and instance-ID lists reproduce this filtered,
-curriculum-ordered input. Commit
-`9e64cc37197c9d00954ee8285c623fd7e53595e2`, which is included in the pinned
-NeMo-RL revision, removes 36 unusable environments from the former 721-row
-training list and orders the remaining 685 rows deterministically.
+| Rows | 700 |
+| Size | 446,364,412 bytes |
+| SHA-256 | `e772af09599270ab16a04ccbbcef395bcb2929607f050478033a84b087a606fc` |
 
 The held-out validation input is:
 
@@ -217,17 +238,38 @@ Its reference identity is:
 
 | Property | Value |
 |---|---:|
-| Rows | 256 |
-| Size | 173,801,096 bytes |
-| SHA-256 | `452d0e6b3c1973669334062dc24931355de51749df1ab51fc9bb71a129f7bb5c` |
+| Rows | 251 |
+| Size | 172,078,629 bytes |
+| SHA-256 | `2d5bddf717afb4389510a7d197f26ce5eb7f610aab4b20d6af6e0150de6f2c79` |
 
-The package pins source dataset revision
-`e8b9fcbce43eaca0dc2c0d4798ee6f3e965f590a` of
-[`R2E-Gym/R2E-Gym-Subset`](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset).
-The download script retrieves that revision, runs the pinned converter, gives
-the curriculum output its canonical name, and invokes the independent
-verification script. The preprocessing host requires `uv`/`uvx` and Git
-network access for repository metadata not already present in `cache_dir`.
+Download both qualified files from the
+[Qwen3.5 397B benchmark page](https://training.mlcommons-storage.org/index.html#qwen3-5-397b-benchmark)
+with the MLCommons R2 Downloader:
+
+```bash
+cd llm_moe_grpo
+
+dataset_dir="<shared-path>/benchmark-r2e-gym-easy"
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+  -d "${dataset_dir}" \
+  https://training.mlcommons-storage.org/metadata/benchmark-r2e-gym-easy.uri
+
+export QWEN35_CURRICULUM_DATA_PATH="${dataset_dir}/benchmark_r2e_gym_easy_train.jsonl"
+export NEMO_GYM_SWE_VALIDATION_DATA_PATH="${dataset_dir}/benchmark_r2e_gym_easy_val.jsonl"
+```
+
+The downloader verifies the package's MD5 manifest. Verify the SHA-256 values
+above before running because `data.shuffle: false` makes training row order
+part of the benchmark input.
+
+#### Optionally, produce the dataset from source
+
+The checked-in converter and instance-ID lists reproduce the qualified,
+curriculum-ordered input from the pinned
+[`R2E-Gym/R2E-Gym-Subset`](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset)
+source revision. The preprocessing host requires `uv`/`uvx` and Git network
+access for repository metadata not already present in `cache_dir`.
 
 ```bash
 cd llm_moe_grpo
@@ -246,33 +288,43 @@ cache_dir="<work-path>/r2e-repository-cache"
 
 `download_dataset.sh` uses
 `RL/tools/create_r2e_gym_easy_subset_jsonl.py`,
-`RL/tools/train-instance-ids.txt`, and `RL/tools/val-instance-ids.txt`.
-The similarly named converter under `RL/docker/mlperf/data_scripts/` retains
-the earlier 721-row, non-curriculum training split and is not the qualified
-data generator.
-
-The curriculum algorithm is fixed in the script: seed `20260710`, 16 examples
-per curriculum batch, and two easy-to-hard cycles. It ranks difficulty using
-75% inverse classic pass rate and 25% changed-line count capped at 20, divides
-the training set into 25% easy, 50% medium, and 25% hard buckets, and changes
-the per-batch mixture through warmup, core, and hardening phases. The converter
-also validates row structure, verifies that all requested IDs were found, and
-rejects overlapping train and validation ID sets. The hash checks above are
-the final identity gate because `data.shuffle: false` makes row order part of
-the benchmark input.
+`RL/tools/train-instance-ids.txt`, and `RL/tools/val-instance-ids.txt`. The
+converter validates row structure, verifies that all requested IDs were
+found, and rejects overlapping train and validation ID sets. The verification
+script checks the resulting files against the row counts, sizes, and SHA-256
+identities above.
 
 ### R2E-Gym task containers
 
-The qualified lists under `RL/tools` contain 685 training IDs and 256
-validation IDs, for 941 task environments used by the benchmark. The SIF
-builder's committed manifest is a 977-environment superset: it also contains
-the 36 training environments filtered out by the qualified training list.
-Those extra images are never selected by the generated JSONL. The helper below
-builds all 977 Arm Docker images, pushes them to a user-supplied registry, and
-converts them to SIF:
+The qualified dataset contains 700 training tasks and 251 validation tasks,
+for 951 task environments used by the benchmark. The SIF builder's committed
+manifest contains those 951 environments.
+
+Download the SIF bundle for the target host architecture from
+[MLCommons storage](https://training.mlcommons-storage.org/index.html#qwen3-5-397b-benchmark).
+The qualified Arm reference uses the `aarch64` bundle:
 
 ```bash
-cd llm_moe_grpo/RL
+sif_package_dir="<shared-path>/r2egym-sifs-aarch64"
+
+bash <(curl -s https://raw.githubusercontent.com/mlcommons/r2-downloader/refs/heads/main/mlc-r2-downloader.sh) \
+  -d "${sif_package_dir}" \
+  https://training.mlcommons-storage.org/metadata/r2egym-sifs-aarch64.uri
+
+export NEMO_GYM_SWE_SIF_DIR="${sif_package_dir}/images"
+```
+
+For an x86_64 host, use
+`https://training.mlcommons-storage.org/metadata/r2egym-sifs-x86_64.uri`
+instead. Both packages store the SIF files under `images/`.
+
+#### Optionally, build the Arm SIF files from source
+
+The helper below builds all 951 Arm Docker images, pushes them to a
+user-supplied registry, and converts them to SIF:
+
+```bash
+cd llm_post_training/RL
 
 export DOCKER_REGISTRY="<registry>"
 export DOCKER_USER="<registry-user>"
@@ -326,7 +378,7 @@ installation requires them.
 
 ## Run and time the benchmark
 
-Run the submission wrapper from the `llm_moe_grpo/RL` directory. Supply the
+Run the submission wrapper from the `llm_post_training/RL` directory. Supply the
 container, external data configuration, shared result root, and Slurm routing:
 
 ```bash
@@ -436,11 +488,11 @@ The task data originates from
 [`R2E-Gym/R2E-Gym-Subset`](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset).
 The fixed easy split retains tasks whose environments can be built for the
 target architecture and whose source changes satisfy the easy-subset
-selection. The qualified instance-ID files under `RL/tools` define disjoint
-685-task training and 256-task validation sets.
+selection. The qualified MLCommons package defines disjoint 700-task training
+and 251-task validation sets.
 
-The benchmark trains on the fixed 685-row curriculum-v2 artifact identified in
-Section 2. It validates on all 256 held-out tasks. Runtime data shuffling is
+The benchmark trains on the fixed 700-row artifact identified in Section 2. It
+validates on all 251 held-out tasks. Runtime data shuffling is
 disabled, so training row order is preserved.
 
 ## NeMo Gym and OpenHands configuration
@@ -487,8 +539,10 @@ Relevant environment settings are:
 | Validation concurrency | 256 |
 | Training agent timeout | 1,800 seconds |
 | Validation agent timeout | 1,800 seconds |
-| Training test timeout | 300 seconds |
-| Validation test timeout | 180 seconds |
+| Training test timeout | 60 seconds |
+| Validation test timeout | 60 seconds |
+| Training command timeout | 60 seconds |
+| Validation command timeout | 60 seconds |
 | Task runtime | Apptainer/Singularity SIF |
 | Model reasoning parser | `qwen3` |
 | Tool parser | `qwen3_xml` |
@@ -566,7 +620,7 @@ The pinned runtime identities are:
 
 | Component | Version | Revision or source |
 |---|---|---|
-| NeMo-RL | source reports `0.6.0` | `3fca04c9b313d313302923a5bb6b0c8dc0340ed6` |
+| NeMo-RL | source reports `0.6.0` | `f987c0596af2bd6cfb9958e768deb8df951d7504` |
 | NeMo Gym | `0.4.0rc0` | `610a08ab5fe9f8f5fb5fff36b170429ea67f0f92` |
 | Megatron Bridge | `0.6.0` | `554c7b9324225aa863eee52e8b8fdde7abced2b1` |
 | Megatron Core | `0.19.0` | `002255075c3728fded9a2e435677840b08560d55` |
@@ -662,7 +716,7 @@ measured run.
 
 ## Quality metric
 
-The quality metric is observed grouped `pass@4` on the 256-task validation
+The quality metric is observed grouped `pass@4` on the 251-task validation
 set. Each task is evaluated with four independently sampled trajectories. A
 task passes when at least one of its four rewards is positive:
 
@@ -670,7 +724,7 @@ task passes when at least one of its four rewards is positive:
 pass@4 = mean_over_tasks(any(reward[task, generation] > 0))
 ```
 
-One complete validation therefore executes 1,024 agent trajectories. NeMo-RL
+One complete validation therefore executes 1,004 agent trajectories. NeMo-RL
 also reports all-four-pass `pass^4` and average pass@1 across the four
 trajectories as diagnostics, but the MLPerf `eval_accuracy` and convergence
 decision use `pass@4`.
@@ -683,8 +737,8 @@ The quality target is:
 pass@4 >= 0.69
 ```
 
-On a 256-task validation set, the first representable score meeting this
-threshold is `177 / 256 = 0.69140625`: at least 177 held-out tasks must be
+On a 251-task validation set, the first representable score meeting this
+threshold is `174 / 251 = 0.6932270916`: at least 174 held-out tasks must be
 solved by one or more of their four attempts.
 
 The checked-in RCP logs provide six independent seeds at each qualified GBS:
@@ -695,10 +749,9 @@ The checked-in RCP logs provide six independent seeds at each qualified GBS:
 | 512 | `rcp_logs/512/seed_*.out` | 6 / 6 | Step 10 | 0.6953125 - 0.73046875 |
 | 1024 | `rcp_logs/1024/seed_*.out` | 6 / 6 | Step 7 | 0.70703125 - 0.75000000 |
 
-All 18 runs therefore reach the target at the first scheduled validation.
-This is stable observed convergence at the configured evaluation schedule; it
-does not imply zero latent crossing-step variance before the first
-observation.
+All 18 runs reach the target at the first scheduled validation. This is stable
+observed convergence at the configured evaluation schedule; it does not imply
+zero latent crossing-step variance before the first observation.
 
 When an evaluation reaches the target, the MLPerf logger emits a successful
 `run_stop` and terminates training. The submission wrapper must receive
@@ -713,15 +766,34 @@ qualified time-to-target run.
 | 512 | No | 10 | Every step | No | 20 |
 | 1024 | No | 7 | Every step | No | 10 |
 
-The validation dataloader uses the entire 256-task validation JSONL at every
+The validation dataloader uses the entire 251-task validation JSONL at every
 evaluation. The four trajectories for each task use validation temperature
 `0.1` and top-p `0.95`.
 
-Each validation executes 1,024 complete agent trajectories, so evaluation is
+Each validation executes 1,004 complete agent trajectories, so evaluation is
 substantially more expensive than a conventional forward-only validation
 pass. The schedule delays the first evaluation to the GBS-specific RCP
 convergence window, then evaluates every step so a later crossing is detected
 within one additional training step.
+
+## Offline evaluation
+
+The benchmark rules require offline evaluation for this benchmark:
+`qwen35_397b_grpo` does not validate inline. Training must save a checkpoint
+after every step from the table's first-evaluation step until training stops,
+each checkpoint must record the timestamp of its latest weight update, and the
+saved checkpoints are evaluated after the run until one reaches the target
+accuracy. The run's `run_stop` event is emitted with the passing checkpoint's
+weight-update timestamp, so checkpoint writing and evaluation time are
+excluded from the measured time.
+
+With `DEFERRED_OFFLINE_EVAL=1` (see `RL/docker/mlperf/README.md`), the
+reference implements this directly: training runs without inline validation
+and saves a weights-only checkpoint after every step from the table's
+first-evaluation step through the final step, recording each checkpoint's
+weight-update end time in its metadata. After training stops, the launcher
+evaluates the saved checkpoints in the same allocation, in step order,
+stopping at the first checkpoint that reaches the target.
 
 # 6. Approximate runtime
 
