@@ -562,6 +562,8 @@ nl/env_int.default = 3
 # to the dataset's available window count at runtime; override via $NUM_TRAIN_TS.
 get_dataset.streaming_window_seconds = 86400
 get_dataset.streaming_sort_within_window = False
+# Bucketize anchors by time window on first use and reuse the cached indices.
+get_dataset.use_offline_ts_indices = False
 # In-window shuffle to break user-major batching (consecutive sliding-window
 # anchors otherwise come from the same few users -> few unique embedding reads).
 # Diversity dial in [0,1] -- the AGREED, config-invariant benchmark knob. Maps to
