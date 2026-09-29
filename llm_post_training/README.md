@@ -659,13 +659,13 @@ The recipe uses token-level GRPO with:
 - a leave-one-out baseline;
 - no reward shaping;
 - no reference-policy KL penalty (`reference_policy_kl_penalty: 0`);
-- asymmetric PPO ratio clipping configured as `0.2` and `0.28`;
 - asynchronous collection, with the checked-in RCPs using a maximum trajectory
   age of one training step;
 - sequence-mask truncated importance sampling (`seq-mask-tis`) with lower and
   upper bounds `0.999` and `1.002`;
 - importance-sampling correction enabled;
 - `force_on_policy_ratio: true`;
+  - asymmetric PPO ratio clipping is not used due to `force_on_policy_ratio: true` (any configured values are ignored)
 - reference-policy log-probability calculation skipped;
 - sequence-level log-probability error masking with threshold `2.0`; and
 - overlong-response filtering enabled.
