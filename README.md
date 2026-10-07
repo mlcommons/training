@@ -44,15 +44,15 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 
 # MLPerf Training v6.1 (Submission Deadline Oct 16, 2026)
 
-| Model | reference implementation | framework* | dataset | model parameter count**
-| ---- | ---- | ---- | ---- | ----
-| flux.1 | [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | torchtitan | CC12M subset | 11.9B
-| llama3.1_8b | [small_llm_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_pretraining) | NeMo | C4 | 8b
-| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
-| gpt_oss_20b | [small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
-| deepseekv3 | [llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
-| qwen35_397b_grpo | [llm_post_training](https://github.com/mlcommons/training/tree/master/llm_post_training) | NeMo-RL / NeMo-Gym | SWE tasks | 397B
-| dlrm_v4_hstu | [recommendation](https://github.com/mlcommons/training/tree/master/recommendation) | pytorch | Yambda-5b | HSTU
+| model | framework* | dataset | model parameter count**
+| ---- | ---- | ---- | ----
+| [flux1](https://github.com/mlcommons/training/tree/master/flux1) | torchtitan | CC12M subset | 11.9B
+| [llama31_8b](https://github.com/mlcommons/training/tree/master/llama31_8b) | NeMo | C4 | 8b
+| [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| [gpt_oss_20b](https://github.com/mlcommons/training/tree/master/gpt_oss_20b/primus) | Primus | C4 | 20B |
+| [deepseekv3_671b](https://github.com/mlcommons/training/tree/master/deepseekv3_671b/nemo) | NeMo | C4 | 671B |
+| [qwen35_397b_grpo](https://github.com/mlcommons/training/tree/master/qwen35_397b_grpo) | NeMo-RL / NeMo-Gym | SWE tasks | 397B
+| [dlrmv4](https://github.com/mlcommons/training/tree/master/dlrmv4) | pytorch | Yambda-5b | HSTU
 
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
 
@@ -60,15 +60,15 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 
 # MLPerf Training v6.0 (Submission Deadline May 15, 2026)
 
-| Model | reference implementation | framework* | dataset | model parameter count**
-| ---- | ---- | ---- | ---- | ----
-| flux.1 | [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | torchtitan | CC12M subset | 11.9B
-| llama3.1_8b | [small_llm_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_pretraining) | NeMo | C4 | 8b
-| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
-| llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/retired_benchmarks/large_language_model_pretraining) | NeMo | C4 | 405B
-| dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
-| gpt_oss_20b | [small_llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_moe_pretraining/primus) | Primus | C4 | 20B |
-| deepseekv3 | [llm_moe_pretraining](https://github.com/mlcommons/training/tree/master/llm_moe_pretraining/nemo) | NeMo | C4 | 671B |
+| model | framework* | dataset | model parameter count**
+| ---- | ---- | ---- | ----
+| [flux1](https://github.com/mlcommons/training/tree/master/flux1) | torchtitan | CC12M subset | 11.9B
+| [llama31_8b](https://github.com/mlcommons/training/tree/master/llama31_8b) | NeMo | C4 | 8b
+| [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| [llama31_405b](https://github.com/mlcommons/training/tree/master/retired_benchmarks/llama31_405b) | NeMo | C4 | 405B
+| [dlrm_dcnv2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/dlrm_dcnv2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
+| [gpt_oss_20b](https://github.com/mlcommons/training/tree/master/gpt_oss_20b/primus) | Primus | C4 | 20B |
+| [deepseekv3_671b](https://github.com/mlcommons/training/tree/master/deepseekv3_671b/nemo) | NeMo | C4 | 671B |
 
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
  
@@ -76,15 +76,15 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 
 # MLPerf Training v5.1 (Submission Deadline Oct 10, 2025)
 
-| Model | reference implementation | framework* | dataset | model parameter count**
-| ---- | ---- | ---- | ---- | ----
-| retinanet | [single_stage_detector](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages | 37M
-| flux.1 | [text_to_image](https://github.com/mlcommons/training/tree/master/text_to_image) | torchtitan | CC12M subset | 11.9B
-| llama3.1_8b | [small_llm_pretraining](https://github.com/mlcommons/training/tree/master/small_llm_pretraining) | NeMo | C4 | 8b
-| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
-| llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/retired_benchmarks/large_language_model_pretraining) | NeMo | C4 | 405B
-| dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
-| rgat | [graph_neural_network](https://github.com/mlcommons/training/tree/master/graph_neural_network) | GLT | IGBH-Full | 25M
+| model | framework* | dataset | model parameter count**
+| ---- | ---- | ---- | ----
+| [retinanet](https://github.com/mlcommons/training/tree/master/retired_benchmarks/retinanet) | pytorch | OpenImages | 37M
+| [flux1](https://github.com/mlcommons/training/tree/master/flux1) | torchtitan | CC12M subset | 11.9B
+| [llama31_8b](https://github.com/mlcommons/training/tree/master/llama31_8b) | NeMo | C4 | 8b
+| [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| [llama31_405b](https://github.com/mlcommons/training/tree/master/retired_benchmarks/llama31_405b) | NeMo | C4 | 405B
+| [dlrm_dcnv2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/dlrm_dcnv2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
+| [rgat](https://github.com/mlcommons/training/tree/master/retired_benchmarks/rgat) | GLT | IGBH-Full | 25M
 
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
  
@@ -95,44 +95,42 @@ Some these benchmarks are rather slow or take a long time to run on the referenc
 * Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark. 
 * Model parameter count is not the same as active parameter that are being trained in the benchmark. 
 
-| Model | reference implementation | framework | dataset | model parameter count
-| ---- | ---- | ---- | ---- | ----
-| retinanet | [single_stage_detector](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages | 37M
-| Stable Diffusionv2 | [image generation](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered | 865M
-| bert | [language_model](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01 | 340M
-| llama3.1_405b | [large_language_model_pretraining](https://github.com/mlcommons/training/tree/master/retired_benchmarks/large_language_model_pretraining) | NeMo | C4 | 405B
-| llama2_70b_lora | [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
-| dlrm_dcnv2 | [recommendation_v2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
-| rgat | [graph_neural_network](https://github.com/mlcommons/training/tree/master/graph_neural_network) | GLT | IGBH-Full | 25M
+| model | framework | dataset | model parameter count
+| ---- | ---- | ---- | ----
+| [retinanet](https://github.com/mlcommons/training/tree/master/retired_benchmarks/retinanet) | pytorch | OpenImages | 37M
+| [stable_diffusion](https://github.com/mlcommons/training/tree/master/retired_benchmarks/stable_diffusion) | pytorch | LAION-400M-filtered | 865M
+| [bert](https://github.com/mlcommons/training/tree/master/retired_benchmarks/bert) | tensorflow | Wikipedia 2020/01/01 | 340M
+| [llama31_405b](https://github.com/mlcommons/training/tree/master/retired_benchmarks/llama31_405b) | NeMo | C4 | 405B
+| [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| [dlrm_dcnv2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/dlrm_dcnv2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
+| [rgat](https://github.com/mlcommons/training/tree/master/retired_benchmarks/rgat) | GLT | IGBH-Full | 25M
 
 # MLPerf Training v4.1 (Submission Deadline Oct 11, 2024)
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
 
-| model | reference implementation | framework | dataset | model parameter count
-| ---- | ---- | ---- | ---- | ----
-| RetinaNet | [vision/object detection](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages | 37M
-| Stable Diffusionv2 | [image generation](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered | 865M
-| BERT-large | [language/nlp](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01 | 340M
-| GPT3 | [language/llm](https://github.com/mlcommons/training/tree/master/large_language_model) | paxml,megatron-lm | C4 | 175B
-| LLama2 70B-LoRA | [language/LLM fine-tuning](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
-| DLRMv2 | [recommendation](https://github.com/mlcommons/training/tree/master/retired_benchmarks/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
-| RGAT | [GNN](https://github.com/mlcommons/training/tree/master/graph_neural_network) | pytorch | IGBH-Full | 25M 
+| model | framework | dataset | model parameter count
+| ---- | ---- | ---- | ----
+| [retinanet](https://github.com/mlcommons/training/tree/master/retired_benchmarks/retinanet) | pytorch | OpenImages | 37M
+| [stable_diffusion](https://github.com/mlcommons/training/tree/master/retired_benchmarks/stable_diffusion) | pytorch | LAION-400M-filtered | 865M
+| [bert](https://github.com/mlcommons/training/tree/master/retired_benchmarks/bert) | tensorflow | Wikipedia 2020/01/01 | 340M
+| [gpt3](https://github.com/mlcommons/training/tree/master/retired_benchmarks/gpt3) | paxml,megatron-lm | C4 | 175B
+| [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport | 70B
+| [dlrm_dcnv2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/dlrm_dcnv2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot | 167M
+| [rgat](https://github.com/mlcommons/training/tree/master/retired_benchmarks/rgat) | pytorch | IGBH-Full | 25M
 
 *Note model parameter count is not the same as active parameter that are being trained in the benchmark. 
 
 # MLPerf Training v4.0 (Submission Deadline May 10, 2024)
 *Framework here is given for the reference implementation. Submitters are free to use their own frameworks to run the benchmark.
 
-| model | reference implementation | framework | dataset
-| ---- | ---- | ---- | ---- |
-| resnet50v1.5 | [vision/classification_and_detection](https://github.com/mlcommons/training/tree/master/image_classification) | tensorflow2 | Imagenet
-| RetinaNet | [vision/object detection](https://github.com/mlcommons/training/tree/master/single_stage_detector) | pytorch | OpenImages
-| 3DUnet | [vision/image segmentation](https://github.com/mlcommons/training/tree/master/image_segmentation/pytorch) | pytorch | KiTS19
-| Stable Diffusionv2 | [image generation](https://github.com/mlcommons/training/tree/master/stable_diffusion) | pytorch | LAION-400M-filtered
-| BERT-large | [language/nlp](https://github.com/mlcommons/training/tree/master/language_model/tensorflow/bert) | tensorflow | Wikipedia 2020/01/01
-| GPT3 | [language/llm](https://github.com/mlcommons/training/tree/master/large_language_model) | paxml,megatron-lm | C4
-| LLama2 70B-LoRA | [language/LLM fine-tuning](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport
-| DLRMv2 | [recommendation](https://github.com/mlcommons/training/tree/master/retired_benchmarks/recommendation_v2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot
-| RGAT | [GNN](https://github.com/mlcommons/training/tree/master/graph_neural_network) | pytorch | IGBFull
-
-
+| model | framework | dataset
+| ---- | ---- | ---- |
+| [resnet](https://github.com/mlcommons/training/tree/master/retired_benchmarks/resnet) | tensorflow2 | Imagenet
+| [retinanet](https://github.com/mlcommons/training/tree/master/retired_benchmarks/retinanet) | pytorch | OpenImages
+| [unet3d](https://github.com/mlcommons/training/tree/master/retired_benchmarks/unet3d/pytorch) | pytorch | KiTS19
+| [stable_diffusion](https://github.com/mlcommons/training/tree/master/retired_benchmarks/stable_diffusion) | pytorch | LAION-400M-filtered
+| [bert](https://github.com/mlcommons/training/tree/master/retired_benchmarks/bert) | tensorflow | Wikipedia 2020/01/01
+| [gpt3](https://github.com/mlcommons/training/tree/master/retired_benchmarks/gpt3) | paxml,megatron-lm | C4
+| [llama2_70b_lora](https://github.com/mlcommons/training/tree/master/llama2_70b_lora) | pytorch | SCROLLS GovReport
+| [dlrm_dcnv2](https://github.com/mlcommons/training/tree/master/retired_benchmarks/dlrm_dcnv2/torchrec_dlrm) | torchrec | Criteo 3.5TB multi-hot
+| [rgat](https://github.com/mlcommons/training/tree/master/retired_benchmarks/rgat) | pytorch | IGBFull
