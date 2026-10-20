@@ -396,6 +396,7 @@ The target-0.69 RCP configurations are:
 | 256 | 16 x 16 | `1.0e-6` | `0.125` | 18 | 30 |
 | 512 | 32 x 16 | `1.4142135624e-6` | `0.08838834765` | 10 | 20 |
 | 1024 | 64 x 16 | `2.0e-6` | `0.0625` | 7 | 10 |
+| 1152 | 72 x 16 | `2.1213203436e-6` | `0.05892556510` | 6 | 10 |
 
 The learning-rate and clipping schedules represented by this table are:
 
@@ -748,8 +749,9 @@ The checked-in RCP logs provide six independent seeds at each qualified GBS:
 | 256 | `rcp_logs/256/seed_*.out` | 6 / 6 | Step 18 | 0.703125 - 0.75390625 |
 | 512 | `rcp_logs/512/seed_*.out` | 6 / 6 | Step 10 | 0.6953125 - 0.73046875 |
 | 1024 | `rcp_logs/1024/seed_*.out` | 6 / 6 | Step 7 | 0.70703125 - 0.75000000 |
+| 1152 | `rcp_logs/GBS1152/seed_*.out` | 6 / 6 | Step 6 | 0.72908366 - 0.78087652 |
 
-All 18 runs reach the target at the first scheduled validation. This is stable
+All 24 runs reach the target at the first scheduled validation. This is stable
 observed convergence at the configured evaluation schedule; it does not imply
 zero latent crossing-step variance before the first observation.
 
@@ -765,6 +767,7 @@ qualified time-to-target run.
 | 256 | No | 18 | Every step | No | 30 |
 | 512 | No | 10 | Every step | No | 20 |
 | 1024 | No | 7 | Every step | No | 10 |
+| 1152 | No | 6 | Every step | No | 10 |
 
 The validation dataloader uses the entire 251-task validation JSONL at every
 evaluation. The four trajectories for each task use validation temperature
