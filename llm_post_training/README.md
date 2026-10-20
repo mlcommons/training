@@ -416,7 +416,7 @@ controls as named command-line arguments with type checks:
 
 | Control | Command-line argument | Qualified value or rule |
 |---|---|---|
-| Global batch size | `--gbs` | One of 256, 512, or 1024 for the checked-in RCPs |
+| Global batch size | `--gbs` | One of 256, 512, 1024, or 1152 for the checked-in RCPs |
 | Learning rate and minimum LR | `--lr` | Exact GBS-dependent value in the table above |
 | Maximum gradient norm | `--clip` | Exact GBS-dependent value in the table above |
 | First validation step | `--val-start` | Exact GBS-dependent value in the table above |
@@ -749,7 +749,7 @@ The checked-in RCP logs provide six independent seeds at each qualified GBS:
 | 256 | `rcp_logs/256/seed_*.out` | 6 / 6 | Step 18 | 0.703125 - 0.75390625 |
 | 512 | `rcp_logs/512/seed_*.out` | 6 / 6 | Step 10 | 0.6953125 - 0.73046875 |
 | 1024 | `rcp_logs/1024/seed_*.out` | 6 / 6 | Step 7 | 0.70703125 - 0.75000000 |
-| 1152 | `rcp_logs/GBS1152/seed_*.out` | 6 / 6 | Step 6 | 0.72908366 - 0.78087652 |
+| 1152 | `rcp_logs/1152/seed_*.out` | 6 / 6 | Step 6 | 0.72908366 - 0.78087652 |
 
 All 24 runs reach the target at the first scheduled validation. This is stable
 observed convergence at the configured evaluation schedule; it does not imply
