@@ -38,8 +38,13 @@ This script parses all three, for a chosen task (default listen_plus), and write
 It is dependency-light (stdlib + optional matplotlib) so it runs anywhere the
 log is readable, including the head node.
 
+The trainer's .metrics.jsonl files are also accepted. They supply end-of-pass
+eval metrics at each global_step, without train or perf points. For repeated
+steps (e.g. after resume), the last record containing the selected task wins.
+
 Usage:
   python3 scripts/build_ne_auc_trajectory.py LOG [--out DIR] [--task listen_plus]
+  python3 scripts/build_ne_auc_trajectory.py run.metrics.jsonl --task listen_plus
 """
 
 import argparse
@@ -169,6 +174,33 @@ def parse_log(
     return out, perf
 
 
+def parse_metrics_jsonl(log_path: str, task: str):
+    """Read the streaming trainer's structured, end-of-pass eval metrics."""
+    out = {"train": {}, "eval": {}}
+    prefix, suffix = "metric/", f"/{task}"
+    with open(log_path, "r") as f:
+        for line_number, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+                step = int(record["global_step"])
+                row = {
+                    key[len(prefix):-len(suffix)]: float(value)
+                    for key, value in record.items()
+                    if key.startswith(prefix) and key.endswith(suffix)
+                }
+            except (ValueError, KeyError, TypeError, AttributeError) as e:
+                raise ValueError(
+                    f"{log_path}:{line_number}: invalid eval metrics record"
+                ) from e
+            if row:
+                out["eval"][step] = row
+    if not out["eval"]:
+        raise ValueError(f"{log_path}: no eval metrics found for task {task!r}")
+    return out, []
+
+
 def write_outputs(
     traj: Dict[str, Dict[int, Dict[str, float]]],
     perf: List[Dict[str, float]],
@@ -262,7 +294,7 @@ def _maybe_plot(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("log", help="Path to the streaming train.log")
+    ap.add_argument("log", help="Path to the streaming train.log or .metrics.jsonl")
     ap.add_argument("--out", default=None,
                     help="Output dir (default: <log_dir>/<log_stem>_trajectory)")
     ap.add_argument("--task", default="listen_plus",
@@ -278,7 +310,12 @@ def main() -> int:
         out_dir = os.path.join(os.path.dirname(os.path.abspath(args.log)),
                                f"{stem}_trajectory")
 
-    traj, perf = parse_log(args.log, args.task)
+    parser = parse_metrics_jsonl if args.log.endswith(".jsonl") else parse_log
+    try:
+        traj, perf = parser(args.log, args.task)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
     write_outputs(traj, perf, out_dir, args.task)
     return 0
 
